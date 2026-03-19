@@ -12,7 +12,7 @@ from inference_engine import InferenceEngine
 from text_injector import TextInjector
 from gui.tray_icon import WhisperTrayIcon
 from gui.settings_window import SettingsWindow
-from gui.overlay_window import OverlayWindow
+from gui.waveform_overlay import WaveformOverlay
 
 @contextlib.contextmanager
 def ignore_stderr():
@@ -44,10 +44,12 @@ def main():
     realtime_text_queue = queue.Queue()
 
     # Initialize components
-    overlay = OverlayWindow()
+    waveform = WaveformOverlay()
     
     with ignore_stderr():
         recorder = AudioRecorder(config, audio_queue)
+    
+    recorder.visualizer_callback = waveform.update_audio
     
     inference = InferenceEngine(config, audio_queue, text_queue, realtime_text_queue)
     injector = TextInjector(config, text_queue)
@@ -55,8 +57,6 @@ def main():
     def on_press():
         print("\n[!] Triggered: Recording...")
         state.recording_started.emit()
-        if config.get("show_overlay", True):
-            overlay.set_text("Listening...", force_show=True)
         with ignore_stderr():
             recorder.start_recording()
         inference.set_recording(True)
@@ -66,26 +66,23 @@ def main():
         state.recording_stopped.emit()
         inference.set_recording(False)
         recorder.stop_recording()
-        overlay.clear_and_hide()
 
     listener = InputListener(config, on_press, on_release)
 
-    # Periodic check for real-time text
-    def check_realtime():
-        try:
-            while True:
-                text = realtime_text_queue.get_nowait()
-                if config.get("show_overlay", True):
-                    state.text_updated.emit(text)
-        except queue.Empty:
-            pass
+    # Note: real-time text feature is now disabled in the UI based on user request.
+    # We keep the inference running but don't show the overlay.
 
-    timer = QTimer()
-    timer.timeout.connect(check_realtime)
-    timer.start(50)
+    # UI Toggles
+    def show_recording_ui():
+        # Only show the waveform as the primary indicator
+        waveform.show_mode()
 
-    # Signals
-    state.text_updated.connect(overlay.set_text)
+    def hide_recording_ui():
+        waveform.hide_mode()
+
+    from PyQt6.QtCore import Qt
+    state.recording_started.connect(show_recording_ui, Qt.ConnectionType.QueuedConnection)
+    state.recording_stopped.connect(hide_recording_ui, Qt.ConnectionType.QueuedConnection)
 
     # UI
     settings_window = SettingsWindow(config, inference)

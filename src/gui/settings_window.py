@@ -120,6 +120,13 @@ class SettingsWindow(QWidget):
         self.recorded_toggle_keys = set()
         self.active_recording_mode = None # "hold" or "toggle"
         
+        # System Check
+        self.layout().addWidget(QLabel("System Troubleshooting:"))
+        self.check_btn = QPushButton("Run Component & Permission Check")
+        self.check_btn.setStyleSheet("background-color: #f0f0f0; margin-top: 10px;")
+        self.check_btn.clicked.connect(self.run_system_check)
+        self.layout().addWidget(self.check_btn)
+        
         # Save/Cancel
         buttons = QHBoxLayout()
         save_btn = QPushButton("Save")
@@ -130,6 +137,60 @@ class SettingsWindow(QWidget):
         cancel_btn.clicked.connect(self.close)
         buttons.addWidget(cancel_btn)
         self.layout().addLayout(buttons)
+
+    def run_system_check(self):
+        import shutil
+        import os
+        import stat
+        import grp
+        
+        report = []
+        all_ok = True
+        
+        # 1. uinput
+        uinput_path = "/dev/uinput"
+        if os.path.exists(uinput_path):
+            if os.access(uinput_path, os.W_OK):
+                report.append("✅ /dev/uinput: Writable")
+            else:
+                report.append("❌ /dev/uinput: Permission denied")
+                all_ok = False
+        else:
+            report.append("❌ /dev/uinput: Device not found")
+            all_ok = False
+            
+        # 2. input group
+        try:
+            current_user = os.getlogin()
+            user_groups = [grp.getgrgid(g).gr_name for g in os.getgroups()]
+            if "input" in user_groups:
+                report.append("✅ Group Membership: User in 'input' group")
+            else:
+                report.append("❌ Group Membership: User NOT in 'input' group")
+                all_ok = False
+        except Exception:
+            report.append("⚠️ Group Membership: Could not verify")
+            
+        # 3. wl-clipboard
+        if shutil.which("wl-copy"):
+            report.append("✅ wl-clipboard: Installed (wl-copy found)")
+        else:
+            report.append("❌ wl-clipboard: Not found (Required for Wayland injection)")
+            all_ok = False
+            
+        # 4. nvidia libs (check if we found them in inference engine)
+        if self.inference_engine and self.inference_engine.actual_device == "cuda":
+            report.append("✅ GPU Acceleration (CUDA): Active")
+        elif self.config.get("device") == "cuda":
+            report.append("⚠️ GPU Acceleration: Selected (Require restart to verify)")
+
+        status_msg = "\n".join(report)
+        if all_ok:
+            QMessageBox.information(self, "System Check", f"System integration looks correct!\n\n{status_msg}")
+        else:
+            fix_msg = "\n\nSuggested Fix for permissions:\nsudo usermod -aG input $USER\n(Note: You must log out and back in for this to take effect)"
+            QMessageBox.warning(self, "System Check", f"Issues detected:\n\n{status_msg}{fix_msg}")
+
 
     def populate_audio_devices(self):
         p = pyaudio.PyAudio()

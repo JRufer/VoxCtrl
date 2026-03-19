@@ -15,6 +15,7 @@ class AudioRecorder(threading.Thread):
         self.chunk_size = 1024
         self.target_rate = 16000 # Whisper expects 16kHz
         self.actual_rate = 16000 # Will be updated on start
+        self.visualizer_callback = None
         self._lock = threading.Lock()
 
     def start_recording(self):
@@ -91,6 +92,9 @@ class AudioRecorder(threading.Thread):
                         # Clip and convert back to int16 to avoid overflow
                         audio_data = np.clip(audio_data, -32768, 32767)
                     
+                    if self.visualizer_callback:
+                        self.visualizer_callback(audio_data)
+
                     if self.actual_rate != self.target_rate:
                         # Resample to 16kHz
                         num_samples = int(len(audio_data) * self.target_rate / self.actual_rate)

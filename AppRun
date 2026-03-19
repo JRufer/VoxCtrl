@@ -1,0 +1,18 @@
+#!/bin/bash
+# AppRun entry point for Whisper Wayland AppImage
+
+# Determine the directory of the AppImage
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+# Export library paths for bundled CUDA and Python libs
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+export PYTHONPATH="${HERE}/usr/share/whisper-wayland:${PYTHONPATH}"
+
+# Ensure we use the bundled python interpreter
+export PYTHONHOME="${HERE}/usr"
+
+# For Wayland apps, some compositors need these
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS}"
+
+# Launch the main application
+exec "${HERE}/usr/bin/python3" "${HERE}/usr/share/whisper-wayland/src/main.py" "$@"

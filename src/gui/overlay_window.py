@@ -7,13 +7,13 @@ class OverlayWindow(QWidget):
         super().__init__()
         
         # Frameless, Always on top, Tool window (no taskbar entry), Click-through
+        # Use Frameless + Window
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | 
-            Qt.WindowType.WindowStaysOnTopHint | 
-            Qt.WindowType.Tool | 
-            Qt.WindowType.WindowTransparentForInput
+            Qt.WindowType.Window |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         
         layout = QVBoxLayout()
@@ -22,7 +22,8 @@ class OverlayWindow(QWidget):
         self.label.setStyleSheet("""
             QLabel {
                 color: white;
-                background-color: rgba(0, 0, 0, 160);
+                background-color: rgba(0, 0, 0, 200);
+                border: 1px solid #444444;
                 border-radius: 15px;
                 padding: 10px 20px;
                 font-size: 18px;
