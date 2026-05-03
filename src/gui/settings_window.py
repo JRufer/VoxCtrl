@@ -1,6 +1,6 @@
 import pyaudio
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QLineEdit, QPushButton, QMessageBox, QSlider, QCheckBox)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                             QComboBox, QLineEdit, QPushButton, QMessageBox, QSlider, QCheckBox, QTextEdit)
 from PyQt6.QtCore import pyqtSignal, Qt
 import evdev
 from evdev import ecodes
@@ -89,6 +89,20 @@ class SettingsWindow(QWidget):
         gain_layout.addWidget(self.gain_label)
         self.layout().addLayout(gain_layout)
         
+        # Filler Word Removal
+        self.filler_checkbox = QCheckBox("Remove filler words (um, uh, hmm, er, ah)")
+        self.filler_checkbox.setChecked(self.config.get("remove_fillers", True))
+        self.layout().addWidget(self.filler_checkbox)
+
+        # Custom Vocabulary
+        self.layout().addWidget(QLabel("Custom Vocabulary (comma-separated words/phrases):"))
+        self.vocab_edit = QTextEdit()
+        self.vocab_edit.setPlaceholderText("e.g. PyQt6, Wayland, kubernetes, Josh Rufer")
+        self.vocab_edit.setFixedHeight(64)
+        vocab_list = self.config.get("custom_vocabulary", [])
+        self.vocab_edit.setPlainText(", ".join(vocab_list))
+        self.layout().addWidget(self.vocab_edit)
+
         # Hold Hotkey Selection
         self.layout().addWidget(QLabel("Global 'Hold-to-Talk' Hotkey:"))
         h_layout = QHBoxLayout()
@@ -256,20 +270,6 @@ class SettingsWindow(QWidget):
             self.toggle_hotkey_label.setText(", ".join(self.config.get("toggle_hotkey")))
 
     def keyPressEvent(self, event):
-        if self.is_recording_hotkey:
-            # We need the evdev scancode name. 
-            # Qt key codes are different, but we can try to map some or just use evdev directly.
-            # Actually, grabbing keyboard in Qt doesn't give us scancodes easily.
-            # A better way for Linux/Wayland to "record" is to temporarily listen to evdev.
-            pass
-        super().keyPressEvent(event)
-
-    # Since we can't easily get raw scancodes from Qt keyPressEvent for all keys (like Meta),
-    # let's use a simpler approach for now: allow typing them or a basic mapper.
-    # OR: The user asked for "click record button and then press key combo".
-    # I'll implement a simple Qt key mapper for common keys.
-    
-    def keyPressEvent(self, event):
         if self.active_recording_mode:
             key = event.key()
             mapping = {
@@ -324,6 +324,14 @@ class SettingsWindow(QWidget):
         
         # Overlay
         self.config.set("show_overlay", self.overlay_checkbox.isChecked())
+
+        # Filler removal
+        self.config.set("remove_fillers", self.filler_checkbox.isChecked())
+
+        # Custom vocabulary — split on commas, strip whitespace, drop empties
+        raw = self.vocab_edit.toPlainText()
+        vocab = [w.strip() for w in raw.split(",") if w.strip()]
+        self.config.set("custom_vocabulary", vocab)
         
         # Inference Device & Auto-Compute
         new_device = self.device_type_combo.currentText()

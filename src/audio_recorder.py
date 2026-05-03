@@ -1,6 +1,7 @@
 import pyaudio
 import threading
 import queue
+import time
 import numpy as np
 
 class AudioRecorder(threading.Thread):
@@ -71,16 +72,20 @@ class AudioRecorder(threading.Thread):
     def run(self):
         while self.running:
             data = None
+            # Capture stream reference under lock, then read outside it so
+            # stop_recording() is never blocked waiting for a chunk to finish.
             with self._lock:
-                if self.recording and self.stream:
-                    try:
-                        data = self.stream.read(self.chunk_size, exception_on_overflow=False)
-                    except Exception as e:
-                        if self.recording:
-                            print(f"Error reading audio: {e}")
-                        if "Unanticipated host error" in str(e):
-                            self.recording = False
-            
+                stream = self.stream if self.recording else None
+
+            if stream:
+                try:
+                    data = stream.read(self.chunk_size, exception_on_overflow=False)
+                except Exception as e:
+                    if self.recording:
+                        print(f"Error reading audio: {e}")
+                    if "Unanticipated host error" in str(e):
+                        self.recording = False
+
             if data:
                 try:
                     # Apply Gain (Boost)
@@ -109,7 +114,7 @@ class AudioRecorder(threading.Thread):
                 except Exception as e:
                     print(f"Error processing audio data: {e}")
             else:
-                threading.Event().wait(0.01)
+                time.sleep(0.01)
 
     def stop(self):
         self.running = False

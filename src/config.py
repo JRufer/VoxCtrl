@@ -14,6 +14,8 @@ DEFAULT_CONFIG = {
     "input_device_index": None,  # For PyAudio
     "evdev_device": None, # e.g. /dev/input/event0
     "show_overlay": True,
+    "remove_fillers": True,
+    "custom_vocabulary": [],
 }
 
 CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"

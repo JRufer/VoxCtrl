@@ -4,6 +4,13 @@ import threading
 import queue
 import time
 import os
+import re
+
+# Matches standalone filler sounds, with an optional trailing comma+space
+_FILLER_RE = re.compile(
+    r'\b(uh+|um+|hmm+|hm+|er+|ah)\b,?\s*',
+    re.IGNORECASE
+)
 
 class InferenceEngine(threading.Thread):
     def __init__(self, config, audio_queue, text_queue, realtime_text_queue):
@@ -15,6 +22,7 @@ class InferenceEngine(threading.Thread):
         self.running = True
         self.recording = False
         self.buffer = bytearray()
+        self._buffer_lock = threading.Lock()
         self.actual_device = "Unknown"
         self.actual_compute_type = "Unknown"
         
@@ -113,19 +121,36 @@ class InferenceEngine(threading.Thread):
             else:
                 raise e
 
+    def _build_initial_prompt(self):
+        vocab = self.config.get("custom_vocabulary", [])
+        if not vocab:
+            return None
+        return ", ".join(vocab)
+
+    def _postprocess(self, text):
+        if self.config.get("remove_fillers", True):
+            text = _FILLER_RE.sub('', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            # Re-capitalize first letter lost after stripping a leading filler
+            if text:
+                text = text[0].upper() + text[1:]
+        return text
+
     def set_recording(self, recording):
         self.recording = recording
         if not recording:
-            # Flush on stop
             self.process_buffer(incremental=False)
-            self.buffer.clear()
+            with self._buffer_lock:
+                self.buffer.clear()
 
     def process_buffer(self, incremental=True):
-        if not self.buffer:
-            return
+        with self._buffer_lock:
+            if not self.buffer:
+                return
+            # Snapshot so the audio thread can keep appending while we transcribe
+            audio_bytes = bytes(self.buffer)
 
-        # Convert bytearray to float32 numpy array
-        audio_data = np.frombuffer(self.buffer, dtype=np.int16).astype(np.float32) / 32768.0
+        audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
         
         try:
             segments, info = self.model.transcribe(
@@ -136,14 +161,15 @@ class InferenceEngine(threading.Thread):
                 vad_parameters=dict(
                     min_silence_duration_ms=self.config.get("min_silence_duration_ms", 500),
                     threshold=self.config.get("vad_threshold", 0.5)
-                )
+                ),
+                initial_prompt=self._build_initial_prompt(),
             )
-            
+
             full_text = ""
             for segment in segments:
                 full_text += segment.text
-            
-            full_text = full_text.strip()
+
+            full_text = self._postprocess(full_text.strip())
             if full_text:
                 if incremental:
                     self.realtime_text_queue.put(full_text)
@@ -169,7 +195,8 @@ class InferenceEngine(threading.Thread):
                     while True:
                         chunk = self.audio_queue.get_nowait()
                         if self.recording:
-                            self.buffer.extend(chunk)
+                            with self._buffer_lock:
+                                self.buffer.extend(chunk)
                 except queue.Empty:
                     pass
 

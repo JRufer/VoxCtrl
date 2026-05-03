@@ -1,7 +1,7 @@
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QRect
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QRect, QMetaObject
 from PyQt6.QtGui import QColor, QSurfaceFormat, QPainter, QBrush, QPen
 from OpenGL.GL import *
 from OpenGL.GL import shaders
@@ -19,10 +19,9 @@ class WaveformGLWidget(QOpenGLWidget):
         self.setFormat(fmt)
         
     def update_audio(self, data):
-        if not self.isVisible():
-            return
-        self.audio_data = data
-        self.update()
+        # Called from the audio thread — store data then schedule repaint on GUI thread.
+        self.audio_data = data  # atomic under Python GIL
+        QMetaObject.invokeMethod(self, "update", Qt.ConnectionType.QueuedConnection)
 
     def initializeGL(self):
         glClearColor(0.0, 0.0, 0.0, 0.0)

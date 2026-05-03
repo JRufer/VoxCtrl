@@ -64,8 +64,8 @@ def main():
     def on_release():
         print("[!] Released: Transcribing...")
         state.recording_stopped.emit()
-        inference.set_recording(False)
         recorder.stop_recording()
+        inference.set_recording(False)
 
     listener = InputListener(config, on_press, on_release)
 

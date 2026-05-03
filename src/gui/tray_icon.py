@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
+from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 from PyQt6.QtGui import QIcon, QAction, QColor, QPixmap
 from PyQt6.QtCore import QObject
 import os
@@ -23,7 +23,7 @@ class WhisperTrayIcon(QSystemTrayIcon):
         self.menu = QMenu()
         self.settings_action = QAction("Settings")
         self.quit_action = QAction("Quit")
-        self.quit_action.triggered.connect(lambda: exit(0))
+        self.quit_action.triggered.connect(QApplication.instance().quit)
         
         self.menu.addAction(self.settings_action)
         self.menu.addSeparator()
