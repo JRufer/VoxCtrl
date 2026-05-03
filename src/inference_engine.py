@@ -12,6 +12,36 @@ _FILLER_RE = re.compile(
     re.IGNORECASE
 )
 
+# Spoken punctuation: ordered longest-first so multi-word phrases match before single words
+_PUNCT_MAP = [
+    (re.compile(r'\bnew paragraph\b',       re.IGNORECASE), '\n\n'),
+    (re.compile(r'\bnew line\b',            re.IGNORECASE), '\n'),
+    (re.compile(r'\bopen paren(?:thesis)?\b', re.IGNORECASE), '('),
+    (re.compile(r'\bclose paren(?:thesis)?\b', re.IGNORECASE), ')'),
+    (re.compile(r'\bopen bracket\b',        re.IGNORECASE), '['),
+    (re.compile(r'\bclose bracket\b',       re.IGNORECASE), ']'),
+    (re.compile(r'\bopen brace\b',          re.IGNORECASE), '{'),
+    (re.compile(r'\bclose brace\b',         re.IGNORECASE), '}'),
+    (re.compile(r'\bexclamation(?: mark| point)?\b', re.IGNORECASE), '!'),
+    (re.compile(r'\bquestion mark\b',       re.IGNORECASE), '?'),
+    (re.compile(r'\bfull stop\b',           re.IGNORECASE), '.'),
+    (re.compile(r'\bellipsis\b',            re.IGNORECASE), '...'),
+    (re.compile(r'\bsemicolon\b',           re.IGNORECASE), ';'),
+    (re.compile(r'\bcolon\b',               re.IGNORECASE), ':'),
+    (re.compile(r'\bcomma\b',               re.IGNORECASE), ','),
+    (re.compile(r'\bperiod\b',              re.IGNORECASE), '.'),
+    (re.compile(r'\bdash\b',               re.IGNORECASE), '\u2013'),
+    (re.compile(r'\bhyphen\b',              re.IGNORECASE), '-'),
+    (re.compile(r'\bat sign\b',             re.IGNORECASE), '@'),
+    (re.compile(r'\bhash(?:tag)?\b',        re.IGNORECASE), '#'),
+    (re.compile(r'\bampersand\b',           re.IGNORECASE), '&'),
+    (re.compile(r'\bpercent(?: sign)?\b',   re.IGNORECASE), '%'),
+    (re.compile(r'\bdollar(?: sign)?\b',    re.IGNORECASE), '$'),
+]
+
+# Numbered list detector: two or more "N. text" items
+_LIST_ITEM_RE = re.compile(r'(?:^|\s)(\d+)\.\s+(.+?)(?=\s+\d+\.|$)', re.DOTALL)
+
 class InferenceEngine(threading.Thread):
     def __init__(self, config, audio_queue, text_queue, realtime_text_queue):
         super().__init__(daemon=True)
@@ -127,6 +157,22 @@ class InferenceEngine(threading.Thread):
             return None
         return ", ".join(vocab)
 
+    def _apply_spoken_punctuation(self, text):
+        """Replace spoken punctuation words with their symbols."""
+        for pattern, symbol in _PUNCT_MAP:
+            # Strip surrounding whitespace after replacement to keep text clean
+            text = pattern.sub(lambda m: symbol, text)
+        # Collapse extra spaces that may have been left around inserted symbols
+        text = re.sub(r' +', ' ', text).strip()
+        return text
+
+    def _apply_list_formatting(self, text):
+        """Reformat spoken numbered lists into newline-separated items."""
+        items = _LIST_ITEM_RE.findall(text)
+        if len(items) < 2:
+            return text
+        return '\n'.join(f"{num}. {content.strip()}" for num, content in items)
+
     def _postprocess(self, text):
         if self.config.get("remove_fillers", True):
             text = _FILLER_RE.sub('', text)
@@ -134,6 +180,10 @@ class InferenceEngine(threading.Thread):
             # Re-capitalize first letter lost after stripping a leading filler
             if text:
                 text = text[0].upper() + text[1:]
+        if self.config.get("spoken_punctuation", True):
+            text = self._apply_spoken_punctuation(text)
+        if self.config.get("auto_format_lists", True):
+            text = self._apply_list_formatting(text)
         return text
 
     def set_recording(self, recording):
@@ -142,6 +192,16 @@ class InferenceEngine(threading.Thread):
             self.process_buffer(incremental=False)
             with self._buffer_lock:
                 self.buffer.clear()
+
+    @property
+    def last_language(self):
+        """Returns the last detected language code, e.g. 'en', 'es'. P0.3"""
+        return getattr(self, '_last_language', None)
+
+    @property
+    def last_language_prob(self):
+        """Returns probability (0.0–1.0) of the last detected language. P0.3"""
+        return getattr(self, '_last_language_prob', None)
 
     def process_buffer(self, incremental=True):
         with self._buffer_lock:
@@ -153,6 +213,10 @@ class InferenceEngine(threading.Thread):
         audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
         
         try:
+            # P0.4: quiet mode lowers VAD threshold so soft speech is picked up
+            quiet = self.config.get("quiet_mode", False)
+            vad_threshold = 0.2 if quiet else self.config.get("vad_threshold", 0.5)
+
             segments, info = self.model.transcribe(
                 audio_data,
                 beam_size=1,
@@ -160,10 +224,13 @@ class InferenceEngine(threading.Thread):
                 vad_filter=True,
                 vad_parameters=dict(
                     min_silence_duration_ms=self.config.get("min_silence_duration_ms", 500),
-                    threshold=self.config.get("vad_threshold", 0.5)
+                    threshold=vad_threshold,
                 ),
                 initial_prompt=self._build_initial_prompt(),
             )
+            # P0.3: store detected language for display in overlay / tray
+            self._last_language = info.language
+            self._last_language_prob = info.language_probability
 
             full_text = ""
             for segment in segments:

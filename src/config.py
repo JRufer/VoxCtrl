@@ -12,10 +12,15 @@ DEFAULT_CONFIG = {
     "vad_threshold": 0.5,
     "min_silence_duration_ms": 500,
     "input_device_index": None,  # For PyAudio
-    "evdev_device": None, # e.g. /dev/input/event0
+    "evdev_device": None,         # e.g. /dev/input/event0
     "show_overlay": True,
     "remove_fillers": True,
     "custom_vocabulary": [],
+    # P0 features
+    "spoken_punctuation": True,   # Replace "period", "comma", etc. with symbols
+    "auto_format_lists": True,    # Reformat "1. X 2. Y" → newline-separated list
+    "quiet_mode": False,          # Lower VAD threshold + raise gain for whispering
+    "show_notification": False,   # notify-send popup after each transcription
 }
 
 CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"

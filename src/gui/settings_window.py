@@ -1,9 +1,178 @@
+import os
 import pyaudio
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QLineEdit, QPushButton, QMessageBox, QSlider, QCheckBox, QTextEdit)
-from PyQt6.QtCore import pyqtSignal, Qt
 import evdev
 from evdev import ecodes
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QPushButton, QMessageBox, QSlider, QCheckBox, QTextEdit,
+    QTabWidget, QGroupBox, QSizePolicy, QFrame, QScrollArea
+)
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QIcon, QFont
+
+# ── Palette ────────────────────────────────────────────────────────────────
+QSS = """
+QWidget {
+    background-color: #0f1117;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', 'Inter', 'Ubuntu', sans-serif;
+    font-size: 13px;
+}
+QTabWidget::pane {
+    border: 1px solid #1e2433;
+    border-radius: 8px;
+    background: #0f1117;
+}
+QTabBar::tab {
+    background: #1a1f2e;
+    color: #8892a4;
+    padding: 10px 20px;
+    margin-right: 2px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    font-weight: 500;
+}
+QTabBar::tab:selected {
+    background: #0f1117;
+    color: #4a9eff;
+    border-bottom: 2px solid #4a9eff;
+}
+QTabBar::tab:hover:!selected {
+    background: #1e2433;
+    color: #c8d3e0;
+}
+QGroupBox {
+    border: 1px solid #1e2433;
+    border-radius: 8px;
+    margin-top: 14px;
+    padding: 12px 10px 10px 10px;
+    font-weight: 600;
+    color: #8892a4;
+    font-size: 11px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 6px;
+    left: 10px;
+}
+QComboBox {
+    background: #1a1f2e;
+    border: 1px solid #2a3448;
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: #e2e8f0;
+    min-height: 20px;
+}
+QComboBox:focus { border-color: #4a9eff; }
+QComboBox::drop-down { border: none; width: 24px; }
+QComboBox::down-arrow { image: none; width: 0; }
+QComboBox QAbstractItemView {
+    background: #1a1f2e;
+    border: 1px solid #2a3448;
+    selection-background-color: #4a9eff;
+    color: #e2e8f0;
+}
+QCheckBox { spacing: 8px; color: #c8d3e0; }
+QCheckBox::indicator {
+    width: 18px; height: 18px;
+    border: 1px solid #2a3448;
+    border-radius: 4px;
+    background: #1a1f2e;
+}
+QCheckBox::indicator:checked {
+    background: #4a9eff;
+    border-color: #4a9eff;
+    image: none;
+}
+QCheckBox::indicator:checked:after { content: ""; }
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #2a3448;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #4a9eff;
+    width: 16px; height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+QSlider::sub-page:horizontal { background: #4a9eff; border-radius: 2px; }
+QTextEdit {
+    background: #1a1f2e;
+    border: 1px solid #2a3448;
+    border-radius: 6px;
+    padding: 6px;
+    color: #e2e8f0;
+}
+QTextEdit:focus { border-color: #4a9eff; }
+QPushButton {
+    background: #1a1f2e;
+    border: 1px solid #2a3448;
+    border-radius: 6px;
+    padding: 8px 16px;
+    color: #c8d3e0;
+    font-weight: 500;
+}
+QPushButton:hover { background: #242b3d; border-color: #4a9eff; color: #e2e8f0; }
+QPushButton:pressed { background: #4a9eff; color: #fff; }
+QPushButton#btn_save {
+    background: #4a9eff;
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    padding: 10px 28px;
+    font-size: 14px;
+}
+QPushButton#btn_save:hover { background: #6aafff; }
+QPushButton#btn_cancel { color: #8892a4; }
+QLabel#hint {
+    color: #4a5568;
+    font-size: 11px;
+    padding-left: 2px;
+}
+QLabel#section_head {
+    color: #e2e8f0;
+    font-weight: 600;
+    font-size: 13px;
+}
+QFrame#hotkey_pill {
+    background: #1a1f2e;
+    border: 1px solid #2a3448;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+QPushButton#btn_record {
+    background: transparent;
+    border: 1px solid #4a9eff;
+    color: #4a9eff;
+    border-radius: 6px;
+    padding: 6px 14px;
+}
+QPushButton#btn_record:checked {
+    background: #4a9eff22;
+    color: #6aafff;
+}
+QScrollArea { border: none; }
+"""
+
+
+def _hint(text):
+    lbl = QLabel(text)
+    lbl.setObjectName("hint")
+    lbl.setWordWrap(True)
+    return lbl
+
+
+def _section(title):
+    box = QGroupBox(title)
+    box.setLayout(QVBoxLayout())
+    box.layout().setSpacing(8)
+    box.layout().setContentsMargins(12, 18, 12, 12)
+    return box
+
 
 class SettingsWindow(QWidget):
     settings_saved = pyqtSignal()
@@ -12,339 +181,451 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.config = config
         self.inference_engine = inference_engine
-        self.setWindowTitle("Whisper Wayland Settings")
-        self.setMinimumWidth(400)
-        self.setLayout(QVBoxLayout())
-        
-        # Set Window Icon
-        import os
+        self.recorded_keys = set()
+        self.recorded_toggle_keys = set()
+        self.active_recording_mode = None
+
+        self.setWindowTitle("Whisper Wayland — Settings")
+        self.setMinimumWidth(520)
+        self.setMinimumHeight(580)
+        self.setStyleSheet(QSS)
+
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         icon_path = os.path.join(base_dir, "assets", "app_icon.png")
         if os.path.exists(icon_path):
-            from PyQt6.QtGui import QIcon
             self.setWindowIcon(QIcon(icon_path))
-        
-   
-        # Model Selection
-        self.layout().addWidget(QLabel("Whisper Model:"))
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        # ── Header ────────────────────────────────────────────────────────
+        header = QLabel("⚙  Settings")
+        header.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        header.setStyleSheet("color: #e2e8f0; padding-bottom: 4px;")
+        root.addWidget(header)
+
+        if inference_engine:
+            status = QLabel(
+                f"  Running: {config.get('model_size')} · "
+                f"{inference_engine.actual_device.upper()} · "
+                f"{inference_engine.actual_compute_type}"
+            )
+        else:
+            status = QLabel("  Engine not connected")
+        status.setObjectName("hint")
+        root.addWidget(status)
+
+        # ── Tabs ──────────────────────────────────────────────────────────
+        tabs = QTabWidget()
+        tabs.addTab(self._tab_general(), "🎙  General")
+        tabs.addTab(self._tab_audio(), "🔊  Audio")
+        tabs.addTab(self._tab_hotkeys(), "⌨  Hotkeys")
+        tabs.addTab(self._tab_dictation(), "✨  Dictation")
+        root.addWidget(tabs)
+
+        # ── Footer buttons ────────────────────────────────────────────────
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        self.check_btn = QPushButton("🔍  System Check")
+        self.check_btn.clicked.connect(self.run_system_check)
+        footer.addWidget(self.check_btn)
+        footer.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("btn_cancel")
+        cancel_btn.clicked.connect(self.close)
+
+        save_btn = QPushButton("Save Settings")
+        save_btn.setObjectName("btn_save")
+        save_btn.clicked.connect(self.save_settings)
+
+        footer.addWidget(cancel_btn)
+        footer.addWidget(save_btn)
+        root.addLayout(footer)
+
+    # ── Tab: General ──────────────────────────────────────────────────────
+    def _tab_general(self):
+        w = self._scrollable()
+        lay = w.layout()
+
+        # Model
+        model_box = _section("Whisper Model")
+        model_box.layout().addWidget(_hint(
+            "Larger models are more accurate but slower. 'base' works well for most users."
+        ))
         self.model_combo = QComboBox()
         self.model_combo.addItems(["tiny", "base", "small", "medium", "large-v3"])
         self.model_combo.setCurrentText(self.config.get("model_size", "base"))
-        self.layout().addWidget(self.model_combo)
-        
-        # Audio Device Selection
-        self.layout().addWidget(QLabel("Audio Input Device:"))
-        self.device_combo = QComboBox()
-        self.populate_audio_devices()
-        self.layout().addWidget(self.device_combo)
+        model_box.layout().addWidget(self.model_combo)
+        lay.addWidget(model_box)
 
-        # Inference Mode
-        self.layout().addWidget(QLabel("Inference Real-Time Mode:"))
-        self.inference_mode_combo = QComboBox()
-        self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
-        self.inference_mode_combo.setCurrentText(self.config.get("inference_mode", "Balanced"))
-        self.layout().addWidget(self.inference_mode_combo)
-        
-        # Inference Device Selection
-        self.layout().addWidget(QLabel("Inference Device:"))
+        # Device
+        device_box = _section("Processing Device")
+        device_box.layout().addWidget(_hint(
+            "Use 'auto' to let the app choose. Select 'cuda' if you have an NVIDIA GPU for faster transcription."
+        ))
+        h = QHBoxLayout()
+        h.setSpacing(8)
         self.device_type_combo = QComboBox()
         self.device_type_combo.addItems(["auto", "cuda", "cpu"])
         self.device_type_combo.setCurrentText(self.config.get("device", "auto"))
-        self.layout().addWidget(self.device_type_combo)
+        self.inference_mode_combo = QComboBox()
+        self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
+        self.inference_mode_combo.setCurrentText(self.config.get("inference_mode", "Balanced"))
+        h.addWidget(QLabel("Hardware:"))
+        h.addWidget(self.device_type_combo, 1)
+        h.addWidget(QLabel("Real-time:"))
+        h.addWidget(self.inference_mode_combo, 1)
+        device_box.layout().addLayout(h)
+        device_box.layout().addWidget(_hint(
+            "'Aggressive' real-time mode transcribes more often while you speak (uses more CPU)."
+        ))
+        lay.addWidget(device_box)
 
-        # Status Label
-        if self.inference_engine:
-            status_text = f"Active: {self.config.get('model_size')} on {self.inference_engine.actual_device} ({self.inference_engine.actual_compute_type})"
-        else:
-            status_text = "Status: Engine not connected"
-            
-        self.status_label = QLabel(status_text)
-        self.status_label.setStyleSheet("color: #666; font-style: italic; margin-bottom: 10px;")
-        self.layout().addWidget(self.status_label)
+        lay.addStretch()
+        return w
 
-        # Keyboard Device Selection (evdev)
-        self.layout().addWidget(QLabel("Keyboard Event Device (evdev):"))
-        self.kbd_combo = QComboBox()
-        self.populate_keyboard_devices()
-        self.layout().addWidget(self.kbd_combo)
-        
-        # Overlay Toggle
-        self.overlay_checkbox = QCheckBox("Display Real-Time Overlay")
-        self.overlay_checkbox.setChecked(self.config.get("show_overlay", True))
-        self.layout().addWidget(self.overlay_checkbox)
+    # ── Tab: Audio ────────────────────────────────────────────────────────
+    def _tab_audio(self):
+        w = self._scrollable()
+        lay = w.layout()
 
-        # Microphone Boost (Gain)
-        self.layout().addWidget(QLabel("Microphone Boost (Software Gain):"))
-        gain_layout = QHBoxLayout()
+        mic_box = _section("Microphone")
+        mic_box.layout().addWidget(_hint("Select the microphone you want to use for dictation."))
+        self.device_combo = QComboBox()
+        self.populate_audio_devices()
+        mic_box.layout().addWidget(self.device_combo)
+        lay.addWidget(mic_box)
+
+        gain_box = _section("Microphone Boost")
+        gain_box.layout().addWidget(_hint(
+            "Increase if Whisper can't hear you clearly. 1.0× = no boost."
+        ))
+        gain_row = QHBoxLayout()
         self.gain_slider = QSlider(Qt.Orientation.Horizontal)
-        self.gain_slider.setRange(5, 50) # 0.5x to 5.0x
-        # Value in config is float, e.g. 1.0. Slider uses ints.
+        self.gain_slider.setRange(5, 50)
         current_gain = self.config.get("mic_gain", 1.0)
         self.gain_slider.setValue(int(current_gain * 10))
-        
-        self.gain_label = QLabel(f"{current_gain:.1f}x")
-        self.gain_slider.valueChanged.connect(lambda v: self.gain_label.setText(f"{v/10.0:.1f}x"))
-        
-        gain_layout.addWidget(self.gain_slider)
-        gain_layout.addWidget(self.gain_label)
-        self.layout().addLayout(gain_layout)
-        
-        # Filler Word Removal
-        self.filler_checkbox = QCheckBox("Remove filler words (um, uh, hmm, er, ah)")
-        self.filler_checkbox.setChecked(self.config.get("remove_fillers", True))
-        self.layout().addWidget(self.filler_checkbox)
+        self.gain_label = QLabel(f"{current_gain:.1f}×")
+        self.gain_label.setMinimumWidth(38)
+        self.gain_slider.valueChanged.connect(
+            lambda v: self.gain_label.setText(f"{v / 10.0:.1f}×")
+        )
+        gain_row.addWidget(self.gain_slider)
+        gain_row.addWidget(self.gain_label)
+        gain_box.layout().addLayout(gain_row)
+        lay.addWidget(gain_box)
 
-        # Custom Vocabulary
-        self.layout().addWidget(QLabel("Custom Vocabulary (comma-separated words/phrases):"))
-        self.vocab_edit = QTextEdit()
-        self.vocab_edit.setPlaceholderText("e.g. PyQt6, Wayland, kubernetes, Josh Rufer")
-        self.vocab_edit.setFixedHeight(64)
-        vocab_list = self.config.get("custom_vocabulary", [])
-        self.vocab_edit.setPlainText(", ".join(vocab_list))
-        self.layout().addWidget(self.vocab_edit)
+        kbd_box = _section("Keyboard Device (Advanced)")
+        kbd_box.layout().addWidget(_hint(
+            "The evdev keyboard device used to detect your hotkeys. Usually auto-detected correctly."
+        ))
+        self.kbd_combo = QComboBox()
+        self.populate_keyboard_devices()
+        kbd_box.layout().addWidget(self.kbd_combo)
+        lay.addWidget(kbd_box)
 
-        # Hold Hotkey Selection
-        self.layout().addWidget(QLabel("Global 'Hold-to-Talk' Hotkey:"))
-        h_layout = QHBoxLayout()
-        self.hotkey_label = QLabel(", ".join(self.config.get("hotkey", ["KEY_LEFTMETA", "KEY_SPACE"])))
-        self.hotkey_label.setStyleSheet("font-weight: bold; border: 1px solid #ccc; padding: 5px;")
-        h_layout.addWidget(self.hotkey_label)
-        
+        lay.addStretch()
+        return w
+
+    # ── Tab: Hotkeys ──────────────────────────────────────────────────────
+    def _tab_hotkeys(self):
+        w = self._scrollable()
+        lay = w.layout()
+
+        hold_box = _section("Hold-to-Talk")
+        hold_box.layout().addWidget(_hint(
+            "Hold this key combination to record. Release to transcribe and type."
+        ))
+        hold_row = QHBoxLayout()
+        self.hotkey_label = QLabel(self._fmt_keys(self.config.get("hotkey", [])))
+        self.hotkey_label.setObjectName("hotkey_pill")
+        self.hotkey_label.setFrameShape(QFrame.Shape.StyledPanel)
+        self.hotkey_label.setStyleSheet(
+            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
+            "padding:7px 12px; color:#4a9eff; font-weight:600;"
+        )
         self.record_btn_hold = QPushButton("Record")
+        self.record_btn_hold.setObjectName("btn_record")
         self.record_btn_hold.setCheckable(True)
         self.record_btn_hold.clicked.connect(lambda: self.toggle_recording("hold"))
-        h_layout.addWidget(self.record_btn_hold)
-        self.layout().addLayout(h_layout)
+        hold_row.addWidget(self.hotkey_label, 1)
+        hold_row.addWidget(self.record_btn_hold)
+        hold_box.layout().addLayout(hold_row)
+        lay.addWidget(hold_box)
 
-        # Toggle Hotkey Selection
-        self.layout().addWidget(QLabel("Global 'Toggle-to-Talk' Hotkey:"))
-        t_layout = QHBoxLayout()
-        self.toggle_hotkey_label = QLabel(", ".join(self.config.get("toggle_hotkey", ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"])))
-        self.toggle_hotkey_label.setStyleSheet("font-weight: bold; border: 1px solid #ccc; padding: 5px;")
-        t_layout.addWidget(self.toggle_hotkey_label)
-        
+        toggle_box = _section("Toggle-to-Talk")
+        toggle_box.layout().addWidget(_hint(
+            "Tap once to start recording, tap again to stop. Great for long dictation."
+        ))
+        toggle_row = QHBoxLayout()
+        self.toggle_hotkey_label = QLabel(self._fmt_keys(self.config.get("toggle_hotkey", [])))
+        self.toggle_hotkey_label.setFrameShape(QFrame.Shape.StyledPanel)
+        self.toggle_hotkey_label.setStyleSheet(
+            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
+            "padding:7px 12px; color:#4a9eff; font-weight:600;"
+        )
         self.record_btn_toggle = QPushButton("Record")
+        self.record_btn_toggle.setObjectName("btn_record")
         self.record_btn_toggle.setCheckable(True)
         self.record_btn_toggle.clicked.connect(lambda: self.toggle_recording("toggle"))
-        t_layout.addWidget(self.record_btn_toggle)
-        self.layout().addLayout(t_layout)
-        
-        # Recording state
-        self.recorded_keys = set()
-        self.recorded_toggle_keys = set()
-        self.active_recording_mode = None # "hold" or "toggle"
-        
-        # System Check
-        self.layout().addWidget(QLabel("System Troubleshooting:"))
-        self.check_btn = QPushButton("Run Component & Permission Check")
-        self.check_btn.setStyleSheet("background-color: #f0f0f0; margin-top: 10px;")
-        self.check_btn.clicked.connect(self.run_system_check)
-        self.layout().addWidget(self.check_btn)
-        
-        # Save/Cancel
-        buttons = QHBoxLayout()
-        save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self.save_settings)
-        buttons.addWidget(save_btn)
-        
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.close)
-        buttons.addWidget(cancel_btn)
-        self.layout().addLayout(buttons)
+        toggle_row.addWidget(self.toggle_hotkey_label, 1)
+        toggle_row.addWidget(self.record_btn_toggle)
+        toggle_box.layout().addLayout(toggle_row)
+        lay.addWidget(toggle_box)
 
-    def run_system_check(self):
-        import shutil
-        import os
-        import stat
-        import grp
-        
-        report = []
-        all_ok = True
-        
-        # 1. uinput
-        uinput_path = "/dev/uinput"
-        if os.path.exists(uinput_path):
-            if os.access(uinput_path, os.W_OK):
-                report.append("✅ /dev/uinput: Writable")
-            else:
-                report.append("❌ /dev/uinput: Permission denied")
-                all_ok = False
-        else:
-            report.append("❌ /dev/uinput: Device not found")
-            all_ok = False
-            
-        # 2. input group
-        try:
-            current_user = os.getlogin()
-            user_groups = [grp.getgrgid(g).gr_name for g in os.getgroups()]
-            if "input" in user_groups:
-                report.append("✅ Group Membership: User in 'input' group")
-            else:
-                report.append("❌ Group Membership: User NOT in 'input' group")
-                all_ok = False
-        except Exception:
-            report.append("⚠️ Group Membership: Could not verify")
-            
-        # 3. wl-clipboard
-        if shutil.which("wl-copy"):
-            report.append("✅ wl-clipboard: Installed (wl-copy found)")
-        else:
-            report.append("❌ wl-clipboard: Not found (Required for Wayland injection)")
-            all_ok = False
-            
-        # 4. nvidia libs (check if we found them in inference engine)
-        if self.inference_engine and self.inference_engine.actual_device == "cuda":
-            report.append("✅ GPU Acceleration (CUDA): Active")
-        elif self.config.get("device") == "cuda":
-            report.append("⚠️ GPU Acceleration: Selected (Require restart to verify)")
+        lay.addStretch()
+        return w
 
-        status_msg = "\n".join(report)
-        if all_ok:
-            QMessageBox.information(self, "System Check", f"System integration looks correct!\n\n{status_msg}")
-        else:
-            fix_msg = "\n\nSuggested Fix for permissions:\nsudo usermod -aG input $USER\n(Note: You must log out and back in for this to take effect)"
-            QMessageBox.warning(self, "System Check", f"Issues detected:\n\n{status_msg}{fix_msg}")
+    # ── Tab: Dictation ────────────────────────────────────────────────────
+    def _tab_dictation(self):
+        w = self._scrollable()
+        lay = w.layout()
 
+        cleanup_box = _section("Text Cleanup")
+        self.filler_checkbox = QCheckBox("Remove filler words  (um, uh, hmm, er, ah)")
+        self.filler_checkbox.setChecked(self.config.get("remove_fillers", True))
+        self.spoken_punct_checkbox = QCheckBox(
+            'Spoken punctuation  — say "period", "comma", "new line", etc.'
+        )
+        self.spoken_punct_checkbox.setChecked(self.config.get("spoken_punctuation", True))
+        self.auto_list_checkbox = QCheckBox(
+            'Auto-format lists  — "1. Apples 2. Bananas" becomes a real list'
+        )
+        self.auto_list_checkbox.setChecked(self.config.get("auto_format_lists", True))
+        for cb in (self.filler_checkbox, self.spoken_punct_checkbox, self.auto_list_checkbox):
+            cleanup_box.layout().addWidget(cb)
+        lay.addWidget(cleanup_box)
+
+        recording_box = _section("Recording Modes")
+        self.quiet_mode_checkbox = QCheckBox(
+            "Quiet / whisper mode  — lower VAD sensitivity + boost for soft speech"
+        )
+        self.quiet_mode_checkbox.setChecked(self.config.get("quiet_mode", False))
+        self.overlay_checkbox = QCheckBox("Show real-time waveform overlay while recording")
+        self.overlay_checkbox.setChecked(self.config.get("show_overlay", True))
+        self.notification_checkbox = QCheckBox(
+            "Desktop notification after each transcription  (requires notify-send)"
+        )
+        self.notification_checkbox.setChecked(self.config.get("show_notification", False))
+        for cb in (self.quiet_mode_checkbox, self.overlay_checkbox, self.notification_checkbox):
+            recording_box.layout().addWidget(cb)
+        lay.addWidget(recording_box)
+
+        vocab_box = _section("Custom Vocabulary")
+        vocab_box.layout().addWidget(_hint(
+            "Add words or phrases Whisper should recognise, comma-separated. "
+            "Use for names, jargon, product names, etc."
+        ))
+        self.vocab_edit = QTextEdit()
+        self.vocab_edit.setPlaceholderText("e.g. PyQt6, Wayland, kubernetes, Josh Rufer")
+        self.vocab_edit.setFixedHeight(68)
+        vocab_list = self.config.get("custom_vocabulary", [])
+        self.vocab_edit.setPlainText(", ".join(vocab_list))
+        vocab_box.layout().addWidget(self.vocab_edit)
+        lay.addWidget(vocab_box)
+
+        lay.addStretch()
+        return w
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+    def _scrollable(self):
+        """Returns a QWidget with a scroll area wrapping a vbox layout."""
+        container = QWidget()
+        inner_lay = QVBoxLayout(container)
+        inner_lay.setContentsMargins(8, 8, 8, 8)
+        inner_lay.setSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(container)
+
+        # We return a wrapper that holds the scroll area
+        wrapper = QWidget()
+        wl = QVBoxLayout(wrapper)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.addWidget(scroll)
+        # Expose inner layout directly for convenience
+        wrapper.layout = lambda: inner_lay
+        return wrapper
+
+    def _fmt_keys(self, keys):
+        """Turn ['KEY_LEFTMETA', 'KEY_SPACE'] → 'Super + Space'."""
+        nice = {
+            "KEY_LEFTMETA": "Super", "KEY_RIGHTMETA": "Super",
+            "KEY_LEFTCTRL": "Ctrl", "KEY_RIGHTCTRL": "Ctrl",
+            "KEY_LEFTALT": "Alt", "KEY_RIGHTALT": "Alt",
+            "KEY_LEFTSHIFT": "Shift", "KEY_RIGHTSHIFT": "Shift",
+            "KEY_SPACE": "Space", "KEY_ENTER": "Enter",
+        }
+        parts = []
+        for k in keys:
+            parts.append(nice.get(k, k.replace("KEY_", "").title()))
+        return "  +  ".join(parts) if parts else "(not set)"
 
     def populate_audio_devices(self):
         p = pyaudio.PyAudio()
         current_index = self.config.get("input_device_index")
-        
-        found_current = False
         for i in range(p.get_device_count()):
             info = p.get_device_info_by_index(i)
-            if info.get('maxInputChannels') > 0:
-                name = info.get('name')
-                self.device_combo.addItem(f"{i}: {name}", i)
+            if info.get("maxInputChannels", 0) > 0:
+                name = info.get("name", f"Device {i}")
+                self.device_combo.addItem(f"{name}", i)
                 if current_index == i:
                     self.device_combo.setCurrentIndex(self.device_combo.count() - 1)
-                    found_current = True
-        
         p.terminate()
 
     def populate_keyboard_devices(self):
         current_path = self.config.get("evdev_device")
         devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-        
-        # Sort so keyboards are at the top
-        devices.sort(key=lambda d: (ecodes.EV_KEY in d.capabilities() and ecodes.KEY_A in d.capabilities().get(ecodes.EV_KEY, [])), reverse=True)
-        
+        devices.sort(
+            key=lambda d: (
+                ecodes.EV_KEY in d.capabilities()
+                and ecodes.KEY_A in d.capabilities().get(ecodes.EV_KEY, [])
+            ),
+            reverse=True,
+        )
         for dev in devices:
             if ecodes.EV_KEY in dev.capabilities():
-                self.kbd_combo.addItem(f"{dev.name} ({dev.path})", dev.path)
+                self.kbd_combo.addItem(f"{dev.name}  ({dev.path})", dev.path)
                 if current_path == dev.path:
                     self.kbd_combo.setCurrentIndex(self.kbd_combo.count() - 1)
 
+    # ── Hotkey recording ──────────────────────────────────────────────────
     def toggle_recording(self, mode):
         btn = self.record_btn_hold if mode == "hold" else self.record_btn_toggle
-        
+
         if btn.isChecked():
-            # If the other one was recording, stop it
-            if self.active_recording_mode and self.active_recording_mode != mode:
-                (self.record_btn_hold if self.active_recording_mode == "hold" else self.record_btn_toggle).setChecked(False)
-            
+            other_btn = self.record_btn_toggle if mode == "hold" else self.record_btn_hold
+            if other_btn.isChecked():
+                other_btn.setChecked(False)
+
             self.active_recording_mode = mode
+            label = self.hotkey_label if mode == "hold" else self.toggle_hotkey_label
+            label.setText("Press keys…")
             if mode == "hold":
                 self.recorded_keys = set()
-                self.hotkey_label.setText("Press... (Wait 1s after release)")
             else:
                 self.recorded_toggle_keys = set()
-                self.toggle_hotkey_label.setText("Press... (Wait 1s after release)")
-            
-            btn.setText("Stop")
+            btn.setText("Done")
             self.grabKeyboard()
         else:
             self.stop_recording()
 
     def stop_recording(self):
         self.active_recording_mode = None
-        self.record_btn_hold.setChecked(False)
-        self.record_btn_hold.setText("Record")
-        self.record_btn_toggle.setChecked(False)
-        self.record_btn_toggle.setText("Record")
+        for btn in (self.record_btn_hold, self.record_btn_toggle):
+            btn.setChecked(False)
+            btn.setText("Record")
         self.releaseKeyboard()
-        
         if not self.recorded_keys:
-            self.hotkey_label.setText(", ".join(self.config.get("hotkey")))
+            self.hotkey_label.setText(self._fmt_keys(self.config.get("hotkey", [])))
         if not self.recorded_toggle_keys:
-            self.toggle_hotkey_label.setText(", ".join(self.config.get("toggle_hotkey")))
+            self.toggle_hotkey_label.setText(self._fmt_keys(self.config.get("toggle_hotkey", [])))
 
     def keyPressEvent(self, event):
-        if self.active_recording_mode:
-            key = event.key()
-            mapping = {
-                Qt.Key.Key_Meta: "KEY_LEFTMETA",
-                Qt.Key.Key_Alt: "KEY_LEFTALT",
-                Qt.Key.Key_Control: "KEY_LEFTCTRL",
-                Qt.Key.Key_Shift: "KEY_LEFTSHIFT",
-                Qt.Key.Key_Space: "KEY_SPACE",
-                Qt.Key.Key_Enter: "KEY_ENTER",
-                Qt.Key.Key_Return: "KEY_ENTER",
-            }
-            
-            if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
-                key_name = f"KEY_{chr(key)}"
-            else:
-                key_name = mapping.get(key)
-                if not key_name:
-                    key_name = f"KEY_{event.text().upper()}" if event.text() else None
-            
-            if key_name:
-                if self.active_recording_mode == "hold":
-                    self.recorded_keys.add(key_name)
-                    self.hotkey_label.setText(", ".join(sorted(list(self.recorded_keys))))
-                else:
-                    self.recorded_toggle_keys.add(key_name)
-                    self.toggle_hotkey_label.setText(", ".join(sorted(list(self.recorded_toggle_keys))))
+        if not self.active_recording_mode:
+            return super().keyPressEvent(event)
+
+        key = event.key()
+        mapping = {
+            Qt.Key.Key_Meta: "KEY_LEFTMETA",
+            Qt.Key.Key_Alt: "KEY_LEFTALT",
+            Qt.Key.Key_Control: "KEY_LEFTCTRL",
+            Qt.Key.Key_Shift: "KEY_LEFTSHIFT",
+            Qt.Key.Key_Space: "KEY_SPACE",
+            Qt.Key.Key_Enter: "KEY_ENTER",
+            Qt.Key.Key_Return: "KEY_ENTER",
+        }
+
+        if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+            key_name = f"KEY_{chr(key)}"
         else:
-            super().keyPressEvent(event)
+            key_name = mapping.get(key)
+            if not key_name:
+                key_name = f"KEY_{event.text().upper()}" if event.text() else None
 
+        if key_name:
+            if self.active_recording_mode == "hold":
+                self.recorded_keys.add(key_name)
+                self.hotkey_label.setText(self._fmt_keys(sorted(self.recorded_keys)))
+            else:
+                self.recorded_toggle_keys.add(key_name)
+                self.toggle_hotkey_label.setText(self._fmt_keys(sorted(self.recorded_toggle_keys)))
+
+    # ── System check ──────────────────────────────────────────────────────
+    def run_system_check(self):
+        import shutil, grp
+        report = []
+        ok = True
+
+        if os.path.exists("/dev/uinput"):
+            if os.access("/dev/uinput", os.W_OK):
+                report.append("✅  /dev/uinput: Writable")
+            else:
+                report.append("❌  /dev/uinput: Permission denied"); ok = False
+        else:
+            report.append("❌  /dev/uinput: Not found"); ok = False
+
+        try:
+            groups = [grp.getgrgid(g).gr_name for g in os.getgroups()]
+            if "input" in groups:
+                report.append("✅  User is in 'input' group")
+            else:
+                report.append("❌  User NOT in 'input' group"); ok = False
+        except Exception:
+            report.append("⚠️  Could not verify group membership")
+
+        if shutil.which("wl-copy"):
+            report.append("✅  wl-clipboard: installed")
+        else:
+            report.append("❌  wl-clipboard: not found"); ok = False
+
+        if self.inference_engine and self.inference_engine.actual_device == "cuda":
+            report.append("✅  GPU (CUDA): active")
+
+        msg = "\n".join(report)
+        if ok:
+            QMessageBox.information(self, "System Check", f"Everything looks good!\n\n{msg}")
+        else:
+            fix = "\n\nTo fix permissions:\n  sudo usermod -aG input,uinput $USER\n(Log out and back in after running this)"
+            QMessageBox.warning(self, "System Check", f"Issues found:\n\n{msg}{fix}")
+
+    # ── Save ──────────────────────────────────────────────────────────────
     def save_settings(self):
+        # General
         self.config.set("model_size", self.model_combo.currentText())
-        
-        # Audio device
-        device_index = self.device_combo.currentData()
-        self.config.set("input_device_index", device_index)
-
-        # Keyboard device
-        kbd_path = self.kbd_combo.currentData()
-        self.config.set("evdev_device", kbd_path)
-        
-        # Hotkeys
-        if self.recorded_keys:
-            self.config.set("hotkey", sorted(list(self.recorded_keys)))
-        if self.recorded_toggle_keys:
-            self.config.set("toggle_hotkey", sorted(list(self.recorded_toggle_keys)))
-        
-        # Inference Mode
         self.config.set("inference_mode", self.inference_mode_combo.currentText())
-        
-        # Gain
-        self.config.set("mic_gain", self.gain_slider.value() / 10.0)
-        
-        # Overlay
-        self.config.set("show_overlay", self.overlay_checkbox.isChecked())
-
-        # Filler removal
-        self.config.set("remove_fillers", self.filler_checkbox.isChecked())
-
-        # Custom vocabulary — split on commas, strip whitespace, drop empties
-        raw = self.vocab_edit.toPlainText()
-        vocab = [w.strip() for w in raw.split(",") if w.strip()]
-        self.config.set("custom_vocabulary", vocab)
-        
-        # Inference Device & Auto-Compute
         new_device = self.device_type_combo.currentText()
         self.config.set("device", new_device)
-        
-        if new_device == "cpu":
-            self.config.set("compute_type", "int8")
-        elif new_device == "cuda":
-            self.config.set("compute_type", "float16")
-        else: # auto
-            self.config.set("compute_type", "default")
-        
+        self.config.set("compute_type",
+            "int8" if new_device == "cpu" else
+            "float16" if new_device == "cuda" else "default"
+        )
+        # Audio
+        self.config.set("input_device_index", self.device_combo.currentData())
+        self.config.set("evdev_device", self.kbd_combo.currentData())
+        self.config.set("mic_gain", self.gain_slider.value() / 10.0)
+        # Hotkeys
+        if self.recorded_keys:
+            self.config.set("hotkey", sorted(self.recorded_keys))
+        if self.recorded_toggle_keys:
+            self.config.set("toggle_hotkey", sorted(self.recorded_toggle_keys))
+        # Dictation
+        self.config.set("remove_fillers", self.filler_checkbox.isChecked())
+        self.config.set("spoken_punctuation", self.spoken_punct_checkbox.isChecked())
+        self.config.set("auto_format_lists", self.auto_list_checkbox.isChecked())
+        self.config.set("quiet_mode", self.quiet_mode_checkbox.isChecked())
+        self.config.set("show_overlay", self.overlay_checkbox.isChecked())
+        self.config.set("show_notification", self.notification_checkbox.isChecked())
+        raw = self.vocab_edit.toPlainText()
+        self.config.set("custom_vocabulary", [w.strip() for w in raw.split(",") if w.strip()])
+
         self.config.save()
         self.settings_saved.emit()
-        QMessageBox.information(self, "Settings", "Settings saved! A restart is required to apply changes to the model.")
+        QMessageBox.information(
+            self, "Saved",
+            "Settings saved.\nA restart is required to apply model or device changes."
+        )
         self.close()

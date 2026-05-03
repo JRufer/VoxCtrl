@@ -52,7 +52,14 @@ def main():
     recorder.visualizer_callback = waveform.update_audio
     
     inference = InferenceEngine(config, audio_queue, text_queue, realtime_text_queue)
-    injector = TextInjector(config, text_queue)
+
+    def on_word_count_update(total_words):
+        """P0.6: keep tray tooltip fresh with session word count."""
+        lang = inference.last_language
+        lang_str = f" [{lang.upper()}]" if lang else ""
+        tray.setToolTip(f"Whisper Wayland{lang_str} — {total_words} words this session")
+
+    injector = TextInjector(config, text_queue, word_count_callback=on_word_count_update)
 
     def on_press():
         print("\n[!] Triggered: Recording...")

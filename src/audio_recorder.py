@@ -88,10 +88,12 @@ class AudioRecorder(threading.Thread):
 
             if data:
                 try:
-                    # Apply Gain (Boost)
+                    # Apply Gain (Boost); double up for quiet/whisper mode (P0.4)
                     gain = self.config.get("mic_gain", 1.0)
+                    if self.config.get("quiet_mode", False):
+                        gain = min(gain * 2.5, 10.0)  # cap at 10x to avoid clipping
                     audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32)
-                    
+
                     if gain != 1.0:
                         audio_data *= gain
                         # Clip and convert back to int16 to avoid overflow
