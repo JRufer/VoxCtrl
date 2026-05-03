@@ -42,6 +42,24 @@ class TextInjector(threading.Thread):
                     break
         return env
 
+    # Modifier keysyms wtype understands for explicit release
+    _WTYPE_MODIFIERS = ['ctrl', 'super', 'alt', 'shift']
+
+    def _release_modifiers_wayland(self, env):
+        """
+        Send explicit modifier key-up events via wtype before injecting text.
+        Prevents stuck-Ctrl bugs: the compositor sees the physical modifier held
+        while virtual keyboard events arrive, and forwards them as e.g. Ctrl+H.
+        """
+        if not shutil.which('wtype'):
+            return
+        # Build: wtype -m ctrl -m super -m alt -m shift
+        cmd = ['wtype']
+        for mod in self._WTYPE_MODIFIERS:
+            cmd += ['-m', mod]
+        subprocess.run(cmd, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def inject_text(self, text):
         if not text:
             return
@@ -52,8 +70,13 @@ class TextInjector(threading.Thread):
         is_x11 = 'DISPLAY' in env
         injected = False
 
-        # --- Wayland: wtype types directly, no clipboard needed ---
+        # Short pause so the hotkey's physical key-up events propagate to the
+        # compositor before we send virtual keyboard events on top of them.
+        time.sleep(0.12)
+
+        # --- Wayland: release modifiers first, then type ---
         if is_wayland and shutil.which('wtype'):
+            self._release_modifiers_wayland(env)
             result = subprocess.run(
                 ['wtype', '--', text], env=env,
                 stderr=subprocess.DEVNULL
@@ -99,10 +122,21 @@ class TextInjector(threading.Thread):
             if copied:
                 time.sleep(0.05)
                 if is_wayland and shutil.which('ydotool'):
+                    # Release stuck modifiers (keycodes: 29=Ctrl, 125=Super, 56=Alt)
+                    # before sending Ctrl+V so the compositor doesn't see doubled modifiers.
+                    for kc in ['29:0', '125:0', '56:0']:
+                        subprocess.run(
+                            ['ydotool', 'key', kc], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
                     subprocess.run(['ydotool', 'key', 'ctrl+v'], env=env, stderr=subprocess.DEVNULL)
                 elif is_x11 and shutil.which('xdotool'):
-                    subprocess.run(['xdotool', 'key', 'ctrl+v'], env=env, stderr=subprocess.DEVNULL)
+                    subprocess.run(
+                        ['xdotool', 'key', '--clearmodifiers', 'ctrl+v'],
+                        env=env, stderr=subprocess.DEVNULL,
+                    )
                 injected = True
+
 
         if injected:
             # P0.5: desktop notification
