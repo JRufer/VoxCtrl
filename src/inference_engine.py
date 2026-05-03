@@ -1,4 +1,5 @@
 from faster_whisper import WhisperModel
+from llm_postprocessor import LLMPostprocessor
 import numpy as np
 import threading
 import queue
@@ -42,6 +43,37 @@ _PUNCT_MAP = [
 # Numbered list detector: two or more "N. text" items
 _LIST_ITEM_RE = re.compile(r'(?:^|\s)(\d+)\.\s+(.+?)(?=\s+\d+\.|$)', re.DOTALL)
 
+# Code-mode spoken construct map (applied in order, longest first)
+_CODE_MAP = [
+    (re.compile(r'\bcamel case\b',      re.IGNORECASE), ''),          # join next word without space
+    (re.compile(r'\bsnake case\b',       re.IGNORECASE), ''),          # join next word with _
+    (re.compile(r'\bunderscore\b',       re.IGNORECASE), '_'),
+    (re.compile(r'\bdouble underscore\b',re.IGNORECASE), '__'),
+    (re.compile(r'\bdot\b',             re.IGNORECASE), '.'),
+    (re.compile(r'\bslash\b',           re.IGNORECASE), '/'),
+    (re.compile(r'\bbackslash\b',       re.IGNORECASE), '\\\\'),
+    (re.compile(r'\bdash\b',            re.IGNORECASE), '-'),
+    (re.compile(r'\bequals\b',          re.IGNORECASE), '='),
+    (re.compile(r'\bcolon\b',           re.IGNORECASE), ':'),
+    (re.compile(r'\bsemicolon\b',       re.IGNORECASE), ';'),
+    (re.compile(r'\bopen paren\b',      re.IGNORECASE), '('),
+    (re.compile(r'\bclose paren\b',     re.IGNORECASE), ')'),
+    (re.compile(r'\bopen bracket\b',    re.IGNORECASE), '['),
+    (re.compile(r'\bclose bracket\b',   re.IGNORECASE), ']'),
+    (re.compile(r'\bopen brace\b',      re.IGNORECASE), '{'),
+    (re.compile(r'\bclose brace\b',     re.IGNORECASE), '}'),
+    (re.compile(r'\bnew line\b',         re.IGNORECASE), '\n'),
+    (re.compile(r'\btab\b',             re.IGNORECASE), '\t'),
+    (re.compile(r'\bspace\b',           re.IGNORECASE), ' '),
+    (re.compile(r'\bgreater than\b',    re.IGNORECASE), '>'),
+    (re.compile(r'\bless than\b',       re.IGNORECASE), '<'),
+    (re.compile(r'\bampersand\b',       re.IGNORECASE), '&'),
+    (re.compile(r'\bpipe\b',            re.IGNORECASE), '|'),
+    (re.compile(r'\bat sign\b',         re.IGNORECASE), '@'),
+    (re.compile(r'\bhash\b',            re.IGNORECASE), '#'),
+    (re.compile(r'\bstar\b',            re.IGNORECASE), '*'),
+]
+
 class InferenceEngine(threading.Thread):
     def __init__(self, config, audio_queue, text_queue, realtime_text_queue):
         super().__init__(daemon=True)
@@ -55,13 +87,21 @@ class InferenceEngine(threading.Thread):
         self._buffer_lock = threading.Lock()
         self.actual_device = "Unknown"
         self.actual_compute_type = "Unknown"
-        
+
+        # P2.1: LLM post-processor (probe happens lazily on first use)
+        self.llm = LLMPostprocessor(config)
+
         # Setup CUDA environment for pip-installed libraries
         self._setup_cuda_env()
-        
+
         # Load model with robust fallback
         self.model = self._load_model()
         print("Model loaded.")
+
+        # Kick off Ollama probe in background so it doesn't delay startup
+        threading.Thread(
+            target=self.llm.probe, daemon=True, name="ollama-probe"
+        ).start()
 
     def _setup_cuda_env(self):
         """
@@ -160,9 +200,7 @@ class InferenceEngine(threading.Thread):
     def _apply_spoken_punctuation(self, text):
         """Replace spoken punctuation words with their symbols."""
         for pattern, symbol in _PUNCT_MAP:
-            # Strip surrounding whitespace after replacement to keep text clean
             text = pattern.sub(lambda m: symbol, text)
-        # Collapse extra spaces that may have been left around inserted symbols
         text = re.sub(r' +', ' ', text).strip()
         return text
 
@@ -173,17 +211,54 @@ class InferenceEngine(threading.Thread):
             return text
         return '\n'.join(f"{num}. {content.strip()}" for num, content in items)
 
+    def _apply_snippets(self, text):
+        """P1.1: Replace snippet trigger phrases with their expanded text.
+
+        Triggers are sorted longest-first so "my full name" won't be
+        partially matched by a shorter "my name" trigger.
+        """
+        snippets = self.config.get("snippets", {})
+        if not snippets:
+            return text
+        for trigger in sorted(snippets, key=len, reverse=True):
+            expansion = snippets[trigger]
+            pattern = re.compile(re.escape(trigger.strip()), re.IGNORECASE)
+            text = pattern.sub(lambda _: expansion, text)
+        return text
+
+    def _apply_code_mode(self, text):
+        """P1.3: Developer code-syntax mode.
+
+        Skips all normal text cleanup and applies code-oriented spoken
+        constructs instead (underscores, dots, parens, etc.).
+        """
+        # No sentence capitalisation, no filler removal
+        for pattern, symbol in _CODE_MAP:
+            text = pattern.sub(symbol, text)
+        # Collapse runs of spaces but preserve intentional newlines/tabs
+        text = re.sub(r'[ \t]+', ' ', text).strip()
+        return text
+
     def _postprocess(self, text):
-        if self.config.get("remove_fillers", True):
-            text = _FILLER_RE.sub('', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            # Re-capitalize first letter lost after stripping a leading filler
-            if text:
-                text = text[0].upper() + text[1:]
-        if self.config.get("spoken_punctuation", True):
-            text = self._apply_spoken_punctuation(text)
-        if self.config.get("auto_format_lists", True):
-            text = self._apply_list_formatting(text)
+        mode = self.config.get("dictation_mode", "normal")
+
+        if mode == "code":
+            # Code mode: skip filler/list/punct passes; apply code constructs
+            text = self._apply_code_mode(text)
+        else:
+            # Normal mode
+            if self.config.get("remove_fillers", True):
+                text = _FILLER_RE.sub('', text)
+                text = re.sub(r'\s+', ' ', text).strip()
+                if text:
+                    text = text[0].upper() + text[1:]
+            if self.config.get("spoken_punctuation", True):
+                text = self._apply_spoken_punctuation(text)
+            if self.config.get("auto_format_lists", True):
+                text = self._apply_list_formatting(text)
+
+        # Snippets run in both modes
+        text = self._apply_snippets(text)
         return text
 
     def set_recording(self, recording):
@@ -237,13 +312,18 @@ class InferenceEngine(threading.Thread):
                 full_text += segment.text
 
             full_text = self._postprocess(full_text.strip())
+
+            # P2.1: LLM pass — only on final output, never on incremental
+            # (keeps real-time display snappy; falls back silently if Ollama is down)
+            if full_text and not incremental:
+                full_text = self.llm.process(full_text) or full_text
+
             if full_text:
                 if incremental:
                     self.realtime_text_queue.put(full_text)
                 else:
                     self.text_queue.put(full_text)
             elif not incremental:
-                # If we stop recording and there's nothing, maybe clear the UI
                 self.realtime_text_queue.put("")
 
         except Exception as e:

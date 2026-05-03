@@ -13,6 +13,7 @@ from text_injector import TextInjector
 from gui.tray_icon import WhisperTrayIcon
 from gui.settings_window import SettingsWindow
 from gui.waveform_overlay import WaveformOverlay
+from gui.history_window import HistoryWindow
 
 @contextlib.contextmanager
 def ignore_stderr():
@@ -50,16 +51,28 @@ def main():
         recorder = AudioRecorder(config, audio_queue)
     
     recorder.visualizer_callback = waveform.update_audio
-    
+
     inference = InferenceEngine(config, audio_queue, text_queue, realtime_text_queue)
 
-    def on_word_count_update(total_words):
-        """P0.6: keep tray tooltip fresh with session word count."""
+    def on_injection(total_words, text):
+        """Called by TextInjector after each successful injection."""
+        # P0.6: tray tooltip
         lang = inference.last_language
         lang_str = f" [{lang.upper()}]" if lang else ""
-        tray.setToolTip(f"Whisper Wayland{lang_str} — {total_words} words this session")
+        tray.setToolTip(f"Whisper Wayland{lang_str} \u2014 {total_words} words this session")
+        # P1.2: history panel (runs on injector thread; Qt will queue-connect safely)
+        from PyQt6.QtCore import QMetaObject, Qt as _Qt
+        QMetaObject.invokeMethod(
+            history_window, "add_entry",
+            _Qt.ConnectionType.QueuedConnection,
+            *[], # no args via invokeMethod for slots with args — use lambda timer instead
+        )
+        # Simpler: store pending and use a QTimer shot from the GUI thread
+        history_window._pending_text = text
+        from PyQt6.QtCore import QTimer as _QTimer
+        _QTimer.singleShot(0, lambda: history_window.add_entry(history_window._pending_text))
 
-    injector = TextInjector(config, text_queue, word_count_callback=on_word_count_update)
+    injector = TextInjector(config, text_queue, word_count_callback=on_injection)
 
     def on_press():
         print("\n[!] Triggered: Recording...")
@@ -92,8 +105,9 @@ def main():
     state.recording_stopped.connect(hide_recording_ui, Qt.ConnectionType.QueuedConnection)
 
     # UI
+    history_window = HistoryWindow(config)
     settings_window = SettingsWindow(config, inference)
-    tray = WhisperTrayIcon(state)
+    tray = WhisperTrayIcon(state, history_window)
     tray.settings_action.triggered.connect(settings_window.show)
     settings_window.settings_saved.connect(listener.update_hotkey)
     settings_window.settings_saved.connect(listener.update_device)

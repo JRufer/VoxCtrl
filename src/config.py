@@ -17,10 +17,17 @@ DEFAULT_CONFIG = {
     "remove_fillers": True,
     "custom_vocabulary": [],
     # P0 features
-    "spoken_punctuation": True,   # Replace "period", "comma", etc. with symbols
-    "auto_format_lists": True,    # Reformat "1. X 2. Y" → newline-separated list
-    "quiet_mode": False,          # Lower VAD threshold + raise gain for whispering
-    "show_notification": False,   # notify-send popup after each transcription
+    "spoken_punctuation": True,
+    "auto_format_lists": True,
+    "quiet_mode": False,
+    "show_notification": False,
+    # P1 features
+    "snippets": {},             # {"trigger phrase": "expanded text"}
+    "dictation_mode": "normal", # "normal" | "code"
+    # P2.1 Ollama LLM post-processing
+    "ollama_enabled": False,    # Master switch — safe default: off
+    "ollama_model": "llama3.2:1b",  # Fast small model; user can change
+    "ollama_mode": "clean",     # "clean" | "formal" | "casual" | "bullet" | "concise"
 }
 
 CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"

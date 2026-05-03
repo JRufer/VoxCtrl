@@ -141,10 +141,10 @@ class TextInjector(threading.Thread):
         if injected:
             # P0.5: desktop notification
             self._send_notification(text)
-            # P0.6: session word count
+            # P0.6 + P1.2: word count + history (callback receives total_words, text)
             self._session_words += len(text.split())
             if self.word_count_callback:
-                self.word_count_callback(self._session_words)
+                self.word_count_callback(self._session_words, text)
         else:
             print("All injection methods failed.")
 

@@ -4,30 +4,35 @@ from PyQt6.QtCore import QObject
 import os
 
 class WhisperTrayIcon(QSystemTrayIcon):
-    def __init__(self, app_state):
+    def __init__(self, app_state, history_window=None):
         super().__init__()
         self.app_state = app_state
-        
-        # Resolve absolute paths to assets
-        # __file__ is /.../src/gui/tray_icon.py
-        # assets is /.../assets/
+        self.history_window = history_window
+
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         assets_dir = os.path.join(base_dir, "assets")
-        
+
         self.icon_on = QIcon(os.path.join(assets_dir, "record_on.png"))
         self.icon_off = QIcon(os.path.join(assets_dir, "record_off.png"))
-        
+
         self.set_idle_icon()
         self.setToolTip("Whisper Wayland")
-        
+
         self.menu = QMenu()
-        self.settings_action = QAction("Settings")
+
+        self.settings_action = QAction("⚙  Settings")
+        self.menu.addAction(self.settings_action)
+
+        if history_window is not None:
+            self.history_action = QAction("📋  History")
+            self.history_action.triggered.connect(history_window.show)
+            self.menu.addAction(self.history_action)
+
+        self.menu.addSeparator()
         self.quit_action = QAction("Quit")
         self.quit_action.triggered.connect(QApplication.instance().quit)
-        
-        self.menu.addAction(self.settings_action)
-        self.menu.addSeparator()
         self.menu.addAction(self.quit_action)
+
         self.setContextMenu(self.menu)
 
         self.app_state.recording_started.connect(self.set_recording_icon)
@@ -48,3 +53,4 @@ class WhisperTrayIcon(QSystemTrayIcon):
             pixmap = QPixmap(64, 64)
             pixmap.fill(QColor("red"))
             self.setIcon(QIcon(pixmap))
+

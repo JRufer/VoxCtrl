@@ -5,7 +5,8 @@ from evdev import ecodes
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QMessageBox, QSlider, QCheckBox, QTextEdit,
-    QTabWidget, QGroupBox, QSizePolicy, QFrame, QScrollArea
+    QTabWidget, QGroupBox, QSizePolicy, QFrame, QScrollArea,
+    QLineEdit,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QIcon, QFont
@@ -222,6 +223,8 @@ class SettingsWindow(QWidget):
         tabs.addTab(self._tab_audio(), "🔊  Audio")
         tabs.addTab(self._tab_hotkeys(), "⌨  Hotkeys")
         tabs.addTab(self._tab_dictation(), "✨  Dictation")
+        tabs.addTab(self._tab_snippets(), "📎  Snippets")
+        tabs.addTab(self._tab_ai(), "🤖  AI")
         root.addWidget(tabs)
 
         # ── Footer buttons ────────────────────────────────────────────────
@@ -409,8 +412,19 @@ class SettingsWindow(QWidget):
             "Desktop notification after each transcription  (requires notify-send)"
         )
         self.notification_checkbox.setChecked(self.config.get("show_notification", False))
-        for cb in (self.quiet_mode_checkbox, self.overlay_checkbox, self.notification_checkbox):
+
+        self.code_mode_checkbox = QCheckBox(
+            "💻  Code / developer mode  — disables normal formatting; speaks underscores, dots, parens"
+        )
+        self.code_mode_checkbox.setChecked(
+            self.config.get("dictation_mode", "normal") == "code"
+        )
+        for cb in (self.quiet_mode_checkbox, self.overlay_checkbox,
+                   self.notification_checkbox, self.code_mode_checkbox):
             recording_box.layout().addWidget(cb)
+        recording_box.layout().addWidget(_hint(
+            "Code mode example: say \"get underscore user dot name\" → get_user.name"
+        ))
         lay.addWidget(recording_box)
 
         vocab_box = _section("Custom Vocabulary")
@@ -429,7 +443,245 @@ class SettingsWindow(QWidget):
         lay.addStretch()
         return w
 
+    # ── Tab: Snippets ─────────────────────────────────────────────────────
+    def _tab_snippets(self):
+        w = self._scrollable()
+        lay = w.layout()
+
+        info_box = _section("Voice Shortcuts")
+        info_box.layout().addWidget(_hint(
+            "Define trigger phrases that expand to full text when spoken.\n"
+            "Example: say \"my email\" → inserts your full email address.\n"
+            "Triggers are case-insensitive and matched after transcription."
+        ))
+        lay.addWidget(info_box)
+
+        # Snippet rows container
+        self._snippet_rows = []
+        self._snippets_container = QWidget()
+        self._snippets_layout = QVBoxLayout(self._snippets_container)
+        self._snippets_layout.setContentsMargins(0, 0, 0, 0)
+        self._snippets_layout.setSpacing(6)
+
+        # Header row
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Trigger phrase"), 1)
+        header.addWidget(QLabel("Expands to"), 2)
+        header.addWidget(QLabel(""), 0)  # spacer for delete button column
+        self._snippets_layout.addLayout(header)
+
+        # Pre-populate from config
+        saved = self.config.get("snippets", {})
+        for trigger, expansion in saved.items():
+            self._add_snippet_row(trigger, expansion)
+
+        lay.addWidget(self._snippets_container)
+
+        add_btn = QPushButton("＋  Add Snippet")
+        add_btn.clicked.connect(lambda: self._add_snippet_row("", ""))
+        lay.addWidget(add_btn)
+
+        lay.addStretch()
+        return w
+
+    def _add_snippet_row(self, trigger="", expansion=""):
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        trigger_edit = QLineEdit(trigger)
+        trigger_edit.setPlaceholderText("e.g. my email")
+        trigger_edit.setStyleSheet(
+            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
+            "padding:6px 8px; color:#e2e8f0;"
+        )
+        expansion_edit = QLineEdit(expansion)
+        expansion_edit.setPlaceholderText("e.g. john.doe@example.com")
+        expansion_edit.setStyleSheet(
+            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
+            "padding:6px 8px; color:#e2e8f0;"
+        )
+
+        del_btn = QPushButton("✕")
+        del_btn.setFixedWidth(30)
+        del_btn.setStyleSheet(
+            "QPushButton { background:transparent; border:none; color:#4a5568; font-size:14px; }"
+            "QPushButton:hover { color:#f87171; }"
+        )
+
+        row_layout.addWidget(trigger_edit, 1)
+        row_layout.addWidget(expansion_edit, 2)
+        row_layout.addWidget(del_btn)
+
+        row_data = {"widget": row_widget, "trigger": trigger_edit, "expansion": expansion_edit}
+        self._snippet_rows.append(row_data)
+        self._snippets_layout.addWidget(row_widget)
+
+        def remove():
+            self._snippet_rows.remove(row_data)
+            self._snippets_layout.removeWidget(row_widget)
+            row_widget.deleteLater()
+        del_btn.clicked.connect(remove)
+
+    # ── Tab: AI (Ollama) ──────────────────────────────────────────────────
+    def _tab_ai(self):
+        from llm_postprocessor import LLMPostprocessor, MODE_LABELS
+        w = self._scrollable()
+        lay = w.layout()
+
+        # ── Status card ───────────────────────────────────────────────────
+        status_box = _section("Ollama Status")
+
+        status_row = QHBoxLayout()
+        self._ollama_status_label = QLabel("⏳  Checking…")
+        self._ollama_status_label.setStyleSheet("font-size: 13px; background: transparent; border: none;")
+        status_row.addWidget(self._ollama_status_label, 1)
+
+        recheck_btn = QPushButton("Re-check")
+        recheck_btn.clicked.connect(self._recheck_ollama)
+        status_row.addWidget(recheck_btn)
+        status_box.layout().addLayout(status_row)
+
+        self._ollama_models_label = QLabel("")
+        self._ollama_models_label.setObjectName("hint")
+        self._ollama_models_label.setWordWrap(True)
+        status_box.layout().addWidget(self._ollama_models_label)
+
+        status_box.layout().addWidget(_hint(
+            "Ollama provides free, fully offline AI post-processing. "
+            "Install from https://ollama.com — no account needed.\n"
+            "Recommended model: ollama pull llama3.2:1b  (fast, ~800 MB)"
+        ))
+        lay.addWidget(status_box)
+
+        # ── Enable toggle ─────────────────────────────────────────────────
+        enable_box = _section("Enable AI Post-Processing")
+        self.ollama_enabled_cb = QCheckBox(
+            "Send transcriptions through Ollama after Whisper finishes"
+        )
+        self.ollama_enabled_cb.setChecked(self.config.get("ollama_enabled", False))
+        self.ollama_enabled_cb.toggled.connect(self._on_ollama_toggle)
+        enable_box.layout().addWidget(self.ollama_enabled_cb)
+        enable_box.layout().addWidget(_hint(
+            "When enabled, the Whisper transcription is sent to Ollama for a "
+            "second pass before being typed into your app. If Ollama is "
+            "unavailable, the raw Whisper output is used — no errors."
+        ))
+        lay.addWidget(enable_box)
+
+        # ── Model & Mode ──────────────────────────────────────────────────
+        model_box = _section("Model & Mode")
+
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("Model:"))
+        self.ollama_model_combo = QComboBox()
+        self.ollama_model_combo.setEditable(True)
+        self.ollama_model_combo.addItem(self.config.get("ollama_model", "llama3.2:1b"))
+        model_row.addWidget(self.ollama_model_combo, 1)
+        model_box.layout().addLayout(model_row)
+        model_box.layout().addWidget(_hint(
+            "Type any model name or select from the list after clicking Re-check."
+        ))
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Mode:"))
+        self.ollama_mode_combo = QComboBox()
+        current_mode = self.config.get("ollama_mode", "clean")
+        for key, label in MODE_LABELS.items():
+            if key == "off":
+                continue  # "off" is handled by the master toggle
+            self.ollama_mode_combo.addItem(label, key)
+            if key == current_mode:
+                self.ollama_mode_combo.setCurrentIndex(self.ollama_mode_combo.count() - 1)
+        mode_row.addWidget(self.ollama_mode_combo, 1)
+        model_box.layout().addLayout(mode_row)
+        model_box.layout().addWidget(_hint(
+            "Fix grammar — minimal cleanup, great for professional writing\n"
+            "Formal / Casual — rewrite in a different tone\n"
+            "Bullet points — convert spoken thoughts to a list\n"
+            "Concise — shorten without losing meaning"
+        ))
+        lay.addWidget(model_box)
+
+        # Enable/disable controls based on current toggle state
+        self._on_ollama_toggle(self.ollama_enabled_cb.isChecked())
+        self._update_ollama_status()
+
+        lay.addStretch()
+        return w
+
+    def _on_ollama_toggle(self, enabled: bool):
+        """Grey out model/mode controls when Ollama is disabled."""
+        if hasattr(self, "ollama_model_combo"):
+            self.ollama_model_combo.setEnabled(enabled)
+        if hasattr(self, "ollama_mode_combo"):
+            self.ollama_mode_combo.setEnabled(enabled)
+
+    def _update_ollama_status(self):
+        """Refresh the status label from the engine's LLM probe result."""
+        if not hasattr(self, "_ollama_status_label"):
+            return
+        if self.inference_engine and hasattr(self.inference_engine, "llm"):
+            llm = self.inference_engine.llm
+            if llm._available is None:
+                self._ollama_status_label.setText("⏳  Not yet checked")
+                self._ollama_models_label.setText("")
+            elif llm.available:
+                models = llm.available_models
+                self._ollama_status_label.setText(
+                    "✅  Ollama is running"
+                )
+                self._ollama_status_label.setStyleSheet(
+                    "color: #4ade80; font-size: 13px; background: transparent; border: none;"
+                )
+                if models:
+                    # Populate model combo with detected models
+                    current = self.ollama_model_combo.currentText()
+                    self.ollama_model_combo.clear()
+                    for m in models:
+                        self.ollama_model_combo.addItem(m, m)
+                    # Restore user's selection if still present
+                    idx = self.ollama_model_combo.findText(current)
+                    if idx >= 0:
+                        self.ollama_model_combo.setCurrentIndex(idx)
+                    self._ollama_models_label.setText(
+                        f"Installed models: {', '.join(models)}"
+                    )
+                else:
+                    self._ollama_models_label.setText(
+                        "No models installed. Run: ollama pull llama3.2:1b"
+                    )
+            else:
+                self._ollama_status_label.setText("❌  Ollama not found")
+                self._ollama_status_label.setStyleSheet(
+                    "color: #f87171; font-size: 13px; background: transparent; border: none;"
+                )
+                self._ollama_models_label.setText(
+                    "Install Ollama from https://ollama.com to enable AI post-processing."
+                )
+        else:
+            self._ollama_status_label.setText("⚠️  Engine not connected")
+            self._ollama_models_label.setText("")
+
+    def _recheck_ollama(self):
+        """Force a fresh Ollama probe and update the status label."""
+        import threading
+        self._ollama_status_label.setText("⏳  Checking…")
+        self._ollama_status_label.setStyleSheet(
+            "color: #e2e8f0; font-size: 13px; background: transparent; border: none;"
+        )
+
+        def probe_and_update():
+            if self.inference_engine and hasattr(self.inference_engine, "llm"):
+                self.inference_engine.llm.refresh_probe()
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, self._update_ollama_status)
+
+        threading.Thread(target=probe_and_update, daemon=True).start()
+
     # ── Helpers ───────────────────────────────────────────────────────────
+
     def _scrollable(self):
         """Returns a QWidget with a scroll area wrapping a vbox layout."""
         container = QWidget()
@@ -619,8 +871,30 @@ class SettingsWindow(QWidget):
         self.config.set("quiet_mode", self.quiet_mode_checkbox.isChecked())
         self.config.set("show_overlay", self.overlay_checkbox.isChecked())
         self.config.set("show_notification", self.notification_checkbox.isChecked())
+        self.config.set(
+            "dictation_mode",
+            "code" if self.code_mode_checkbox.isChecked() else "normal"
+        )
         raw = self.vocab_edit.toPlainText()
         self.config.set("custom_vocabulary", [w.strip() for w in raw.split(",") if w.strip()])
+        # Snippets
+        snippets = {}
+        for row in self._snippet_rows:
+            trigger = row["trigger"].text().strip().lower()
+            expansion = row["expansion"].text().strip()
+            if trigger and expansion:
+                snippets[trigger] = expansion
+        self.config.set("snippets", snippets)
+        # AI / Ollama
+        if hasattr(self, "ollama_enabled_cb"):
+            ollama_on = self.ollama_enabled_cb.isChecked()
+            self.config.set("ollama_enabled", ollama_on)
+            self.config.set("ollama_model", self.ollama_model_combo.currentText().strip())
+            mode_data = self.ollama_mode_combo.currentData()
+            self.config.set("ollama_mode", mode_data or "clean")
+            # Apply live to running engine without restart
+            if self.inference_engine and hasattr(self.inference_engine, "llm"):
+                self.inference_engine.llm.config = self.config
 
         self.config.save()
         self.settings_saved.emit()
