@@ -232,14 +232,16 @@ class InputListener(threading.Thread):
                         if not b_codes:          # skip if no known scancodes
                             continue
                         is_match = b_codes.issubset(pressed_snapshot)
-                        # Suppress: don't fire HOLD if a more-specific binding also matches
+                        # Suppress HOLD if any other binding (any gesture) uses a
+                        # superset of these keys and is also currently fully pressed.
+                        # This stops Super+Space HOLD firing during Ctrl+Super+Space TOGGLE.
                         if is_match:
                             for other in self._bindings:
-                                if other.id == b.id or other.gesture != GestureType.HOLD:
+                                if other.id == b.id:
                                     continue
                                 other_codes = self._binding_key_scancodes(other)
-                                if (other_codes and b_codes.issubset(other_codes)
-                                        and len(other_codes) > len(b_codes)
+                                if (other_codes
+                                        and b_codes < other_codes          # strict superset
                                         and other_codes.issubset(pressed_snapshot)):
                                     is_match = False   # shadowed by a longer combo
                                     break

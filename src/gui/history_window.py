@@ -188,19 +188,17 @@ class HistoryWindow(QWidget):
         if not text.strip():
             return
 
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts = datetime.now().strftime("%a %b %d · %H:%M:%S")
         entry = HistoryEntry(ts, text)
         self._entries.append(entry)
 
-        # Insert before the trailing stretch (last item)
-        self.cards_layout.insertWidget(self.cards_layout.count() - 1, entry)
+        # Insert at position 0 so newest entries appear at the top
+        self.cards_layout.insertWidget(0, entry)
         self._update_count()
         self._filter(self.search_box.text())
 
-        # Scroll to bottom
-        QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
-            self._scroll.verticalScrollBar().maximum()
-        ))
+        # Scroll to top so the new entry is immediately visible
+        QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(0))
 
         if self.persist_cb.isChecked():
             self._persist(ts, text)

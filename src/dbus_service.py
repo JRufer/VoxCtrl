@@ -66,6 +66,9 @@ class _DBusServiceStub:
     def set_word_count(self, _n: int):
         pass
 
+    def notify_text(self, _text: str):
+        pass
+
 
 # ── Real implementation ───────────────────────────────────────────────────
 if _HAS_DBUS:

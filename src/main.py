@@ -39,6 +39,8 @@ class AppState(QObject):
     recording_stopped = pyqtSignal()
     text_emitted = pyqtSignal(str)
     text_updated = pyqtSignal(str)
+    # Emitted from injector thread → connected to main-thread slots
+    text_injected = pyqtSignal(int, str)  # (total_words, text)
 
 def ensure_single_instance():
     lock_file = os.path.join(os.path.expanduser("~"), ".local", "share", "whisper-wayland", "app.pid")
@@ -118,19 +120,10 @@ def main():
 
         inference = InferenceEngine(config, audio_queue, text_queue, realtime_text_queue)
 
+
         def on_injection(total_words, text):
-            """Called by TextInjector after each successful injection."""
-            # P0.6: tray tooltip
-            lang = inference.last_language
-            lang_str = f" [{lang.upper()}]" if lang else ""
-            tray.setToolTip(f"Whisper Wayland{lang_str} — {total_words} words this session")
-            # P1.2: history panel (thread-safe via QTimer)
-            history_window._pending_text = text
-            from PyQt6.QtCore import QTimer as _QTimer
-            _QTimer.singleShot(0, lambda: history_window.add_entry(history_window._pending_text))
-            # P2.3: DBus signal + word count
-            dbus_svc.set_word_count(total_words)
-            dbus_svc.notify_text(text)
+            """Called by TextInjector (background thread) — emit signal to cross to main thread."""
+            state.text_injected.emit(total_words, text)
 
         injector = TextInjector(config, text_queue, word_count_callback=on_injection, router=router)
 
@@ -143,7 +136,6 @@ def main():
 
         def on_press(target_id: str = 'default'):
             if recorder.recording:
-                # Already recording; ignore redundant triggers from overlapping hotkeys
                 return
             print(f"\n[!] Triggered: Recording → target={target_id!r}")
             post_processing, initial_prompt = _get_target_info(target_id)
@@ -163,26 +155,18 @@ def main():
             inference.set_recording(False)
 
         def on_toggle():
-            """P2.3: called by DBus ToggleRecording() from an external tool."""
+            """Called by DBus ToggleRecording() from an external tool."""
             from PyQt6.QtCore import QTimer as _QTimer
             if recorder.recording:
                 _QTimer.singleShot(0, on_release)
             else:
                 _QTimer.singleShot(0, on_press)
 
-        # P2.3: DBus service (no-op stub if dbus-python not installed)
         dbus_svc = DBusService(
             on_start=on_press,
             on_stop=on_release,
             on_toggle=on_toggle,
         )
-
-        # Restore idle status after injection completes
-        _orig_on_injection = on_injection
-        def _on_injection_with_idle(total_words, text):
-            _orig_on_injection(total_words, text)
-            dbus_svc.set_status("idle")
-        injector.word_count_callback = _on_injection_with_idle
 
         listener = InputListener(config, on_press, on_release)
 
@@ -203,6 +187,21 @@ def main():
                                          overlay_manager=overlay_manager)
         settings_window.router = router
         tray = WhisperTrayIcon(state, history_window)
+
+        # Connect background-thread injection signal to main-thread UI slots.
+        # Qt QueuedConnection ensures these run on the main thread even when
+        # text_injected is emitted from the TextInjector background thread.
+        def _on_text_injected(total_words, text):
+            history_window.add_entry(text)
+            lang = inference.last_language
+            lang_str = f" [{lang.upper()}]" if lang else ""
+            tray.setToolTip(f"Whisper Wayland{lang_str} — {total_words} words this session")
+            dbus_svc.set_status("idle")
+            dbus_svc.set_word_count(total_words)
+            dbus_svc.notify_text(text)
+
+        state.text_injected.connect(_on_text_injected, Qt.ConnectionType.QueuedConnection)
+
         tray.settings_action.triggered.connect(settings_window.show)
         settings_window.settings_saved.connect(listener.update_hotkey)
         settings_window.settings_saved.connect(listener.update_device)
