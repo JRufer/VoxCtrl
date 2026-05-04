@@ -30,6 +30,8 @@ DEFAULT_CONFIG = {
     "ollama_mode": "clean",
     # P2.2 Noise suppression
     "noise_suppression": False,  # Requires: pip install noisereduce
+    # Overlay UI
+    "overlay_style": "waveform",  # built-in: "waveform" | "pulse" | custom stem name
 }
 
 CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"
