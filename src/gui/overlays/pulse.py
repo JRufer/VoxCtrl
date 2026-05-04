@@ -4,8 +4,8 @@ VERSION      = "1.0"
 
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QApplication
-from PyQt6.QtCore import Qt, QTimer, QMetaObject
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
+from PyQt6.QtCore import Qt, QTimer, QMetaObject, QRectF
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QFontMetrics
 
 from gui.overlays.base import OverlayUIBase
 
@@ -18,6 +18,7 @@ class OverlayUI(OverlayUIBase):
         super().__init__()
         self._amplitude = 0.0
         self._smooth_amp = 0.0
+        self._routing_label: str = ""
 
         self.setWindowFlags(
             Qt.WindowType.ToolTip |
@@ -75,7 +76,23 @@ class OverlayUI(OverlayUIBase):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(cx - inner_r, cy - inner_r, inner_r * 2, inner_r * 2)
 
-    def show_mode(self):
+        if self._routing_label:
+            badge_text = self._routing_label
+            badge_font = QFont("Segoe UI", 8, QFont.Weight.Medium)
+            painter.setFont(badge_font)
+            fm = QFontMetrics(badge_font)
+            badge_w = fm.horizontalAdvance(badge_text) + 16
+            badge_h = 18
+            max_r = base_r + 20 + 3 * 7  # outermost glow ring radius
+            badge_rect = QRectF(cx - badge_w / 2, cy - max_r - badge_h - 6, badge_w, badge_h)
+            painter.setBrush(QBrush(QColor(12, 15, 25, 230)))
+            painter.setPen(QPen(QColor(74, 158, 255, 200), 1))
+            painter.drawRoundedRect(badge_rect, 4, 4)
+            painter.setPen(QPen(QColor(160, 200, 255, 220)))
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
+
+    def show_mode(self, label: str = ""):
+        self._routing_label = label
         screen = QApplication.primaryScreen()
         if screen:
             geom = screen.geometry()
