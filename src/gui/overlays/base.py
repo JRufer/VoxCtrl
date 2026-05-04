@@ -67,8 +67,8 @@ class OverlayUIBase(QWidget):
         """Called from the audio thread with float32 PCM samples (~1024 per call, ±32768 range)."""
         raise NotImplementedError
 
-    def show_mode(self):
-        """Expand to full screen and become visible."""
+    def show_mode(self, label: str = ""):
+        """Expand to full screen and become visible.  label is the routing target name."""
         raise NotImplementedError
 
     def hide_mode(self):

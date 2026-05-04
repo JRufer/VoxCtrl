@@ -171,8 +171,10 @@ def main():
         listener = InputListener(config, on_press, on_release)
 
         # UI Toggles
-        def show_recording_ui():
-            overlay_proxy.show_mode()
+        def show_recording_ui(target_id: str = ""):
+            tgt = router.get_target(target_id)
+            label = tgt.label if tgt else ""
+            overlay_proxy.show_mode(label)
 
         def hide_recording_ui():
             overlay_proxy.hide_mode()

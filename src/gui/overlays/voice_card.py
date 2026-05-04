@@ -47,6 +47,8 @@ class OverlayUI(OverlayUIBase):
         self._n_bars = wf_w // (_BAR_W + _BAR_GAP)
         self._amplitudes: deque = deque([0.0] * self._n_bars, maxlen=self._n_bars)
 
+        self._routing_label: str = ""
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update)
         self._timer.start(30)
@@ -59,7 +61,8 @@ class OverlayUI(OverlayUIBase):
         rms = float(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
         self._amplitudes.append(min(1.0, rms / 8192.0))
 
-    def show_mode(self):
+    def show_mode(self, label: str = ""):
+        self._routing_label = label
         screen = QApplication.primaryScreen()
         if screen:
             geom = screen.geometry()
@@ -96,8 +99,8 @@ class OverlayUI(OverlayUIBase):
         painter.setPen(QPen(QColor(130, 145, 170, 200)))
         painter.drawText(int(card_x) + 14, int(card_y) + 22, "Voice Activity")
 
-        # ── App badge (top-right) ────────────────────────────────────────
-        badge_text = "whisper / Wayland"
+        # ── Routing badge (top-right) ────────────────────────────────────
+        badge_text = self._routing_label or "whisper / Wayland"
         badge_font = QFont("Segoe UI", 9, QFont.Weight.Medium)
         painter.setFont(badge_font)
         fm = QFontMetrics(badge_font)

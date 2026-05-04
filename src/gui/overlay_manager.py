@@ -78,8 +78,9 @@ class OverlayUI(QWidget):
         # Thread-safe repaint request:
         QMetaObject.invokeMethod(self, "update", Qt.ConnectionType.QueuedConnection)
 
-    def show_mode(self):
-        """Called when recording starts.  Expand to full screen."""
+    def show_mode(self, label: str = ""):
+        """Called when recording starts.  label is the routing target name (e.g. "Focused Window")."""
+        self._routing_label = label
         screen = QApplication.primaryScreen()
         if screen:
             g = screen.geometry()
@@ -136,10 +137,10 @@ class OverlayProxy:
             except Exception:
                 pass
 
-    def show_mode(self):
+    def show_mode(self, label: str = ""):
         if self._overlay is not None:
             try:
-                self._overlay.show_mode()
+                self._overlay.show_mode(label)
             except Exception:
                 pass
 

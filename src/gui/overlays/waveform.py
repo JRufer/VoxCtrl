@@ -5,8 +5,8 @@ VERSION      = "1.0"
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QMetaObject, QRect
-from PyQt6.QtGui import QColor, QSurfaceFormat, QPainter, QBrush, QPen
+from PyQt6.QtCore import Qt, QMetaObject, QRect, QRectF
+from PyQt6.QtGui import QColor, QSurfaceFormat, QPainter, QBrush, QPen, QFont, QFontMetrics
 from OpenGL.GL import *
 from OpenGL.GL import shaders
 
@@ -121,6 +121,8 @@ class OverlayUI(OverlayUIBase):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setStyleSheet("border: 1px solid transparent;")
 
+        self._routing_label: str = ""
+
         self.gl_widget = _WaveformGLWidget()
         self.gl_widget.setFixedSize(70, 70)
         self.gl_widget.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop)
@@ -144,14 +146,30 @@ class OverlayUI(OverlayUIBase):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         box_width, box_height = 70, 70
-        x = (self.width() - box_width) // 2
+        cx = self.width() // 2
+        x = cx - box_width // 2
         y = self.height() - box_height - 100
         box_rect = QRect(x, y, box_width, box_height).adjusted(1, 1, -1, -1)
         painter.setBrush(QBrush(QColor(0, 0, 0, 230)))
         painter.setPen(QPen(QColor(68, 68, 68), 1))
         painter.drawRoundedRect(box_rect, 15, 15)
 
-    def show_mode(self):
+        if self._routing_label:
+            badge_text = self._routing_label
+            badge_font = QFont("Segoe UI", 8, QFont.Weight.Medium)
+            painter.setFont(badge_font)
+            fm = QFontMetrics(badge_font)
+            badge_w = fm.horizontalAdvance(badge_text) + 16
+            badge_h = 18
+            badge_rect = QRectF(cx - badge_w / 2, y - badge_h - 4, badge_w, badge_h)
+            painter.setBrush(QBrush(QColor(12, 15, 25, 230)))
+            painter.setPen(QPen(QColor(55, 190, 155, 200), 1))
+            painter.drawRoundedRect(badge_rect, 4, 4)
+            painter.setPen(QPen(QColor(165, 215, 200, 220)))
+            painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
+
+    def show_mode(self, label: str = ""):
+        self._routing_label = label
         from PyQt6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
