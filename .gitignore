@@ -10,7 +10,11 @@ venv/
 
 # AppImage build artifacts
 AppDir/
+.AppDir/
 *.AppImage
+appimagetool
+AppRun
+*.zsync
 
 # Model cache
 .cache/
