@@ -7,7 +7,7 @@ from evdev import ecodes
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QMessageBox, QSlider, QCheckBox, QTextEdit,
-    QTabWidget, QGroupBox, QSizePolicy, QFrame, QScrollArea,
+    QStackedWidget, QGroupBox, QSizePolicy, QFrame, QScrollArea,
     QLineEdit, QProgressBar, QTableWidget, QHeaderView, QTableWidgetItem
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QTimer
@@ -21,28 +21,30 @@ QWidget {
     font-family: 'Segoe UI', 'Inter', 'Ubuntu', sans-serif;
     font-size: 13px;
 }
-QTabWidget::pane {
-    border: 1px solid #1e2433;
-    border-radius: 8px;
-    background: #0f1117;
-}
-QTabBar::tab {
-    background: #1a1f2e;
+QPushButton#nav_btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 14px;
     color: #8892a4;
-    padding: 10px 20px;
-    margin-right: 2px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
     font-weight: 500;
+    text-align: left;
 }
-QTabBar::tab:selected {
-    background: #0f1117;
-    color: #4a9eff;
-    border-bottom: 2px solid #4a9eff;
-}
-QTabBar::tab:hover:!selected {
-    background: #1e2433;
+QPushButton#nav_btn:hover {
+    background: #1a1f2e;
     color: #c8d3e0;
+    border: none;
+}
+QPushButton#nav_btn:checked {
+    background: #1a1f2e;
+    color: #4a9eff;
+    border-left: 2px solid #4a9eff;
+    border-radius: 0px 6px 6px 0px;
+    padding-left: 12px;
+}
+QFrame#nav_panel {
+    background: #0a0d14;
+    border-right: 1px solid #1e2433;
 }
 QGroupBox {
     border: 1px solid #1e2433;
@@ -280,16 +282,49 @@ class SettingsWindow(QWidget):
         status.setObjectName("hint")
         root.addWidget(status)
 
-        # ── Tabs ──────────────────────────────────────────────────────────
-        tabs = QTabWidget()
-        tabs.addTab(self._tab_general(), "🎙  General")
-        tabs.addTab(self._tab_engine(), "⚡  Engine")
-        tabs.addTab(self._tab_audio(), "🔊  Audio")
-        tabs.addTab(self._tab_hotkeys(), "⌨  Hotkeys")
-        tabs.addTab(self._tab_dictation(), "✨  Dictation")
-        tabs.addTab(self._tab_snippets(), "📎  Snippets")
-        tabs.addTab(self._tab_ai(), "🤖  AI")
-        root.addWidget(tabs)
+        # ── Sidebar nav + content stack ───────────────────────────────────
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        body.setContentsMargins(0, 0, 0, 0)
+
+        # Left sidebar
+        nav_panel = QFrame()
+        nav_panel.setObjectName("nav_panel")
+        nav_panel.setFixedWidth(130)
+        nav_layout = QVBoxLayout(nav_panel)
+        nav_layout.setContentsMargins(0, 8, 0, 8)
+        nav_layout.setSpacing(2)
+
+        # Content stack (right side)
+        self._stack = QStackedWidget()
+
+        _nav_items = [
+            ("🎙", "General",   self._tab_general),
+            ("⚡", "Engine",    self._tab_engine),
+            ("🔊", "Audio",     self._tab_audio),
+            ("⌨", "Hotkeys",   self._tab_hotkeys),
+            ("✨", "Dictation", self._tab_dictation),
+            ("📎", "Snippets",  self._tab_snippets),
+            ("🤖", "AI",        self._tab_ai),
+        ]
+
+        self._nav_buttons = []
+        for i, (icon, label, builder) in enumerate(_nav_items):
+            self._stack.addWidget(builder())
+            btn = QPushButton(f"{icon}  {label}")
+            btn.setObjectName("nav_btn")
+            btn.setCheckable(True)
+            btn.setFlat(True)
+            btn.clicked.connect(lambda _, idx=i: self._switch_nav(idx))
+            nav_layout.addWidget(btn)
+            self._nav_buttons.append(btn)
+
+        nav_layout.addStretch()
+        self._nav_buttons[0].setChecked(True)
+
+        body.addWidget(nav_panel)
+        body.addWidget(self._stack, 1)
+        root.addLayout(body)
 
         # ── Footer buttons ────────────────────────────────────────────────
         footer = QHBoxLayout()
@@ -337,6 +372,11 @@ class SettingsWindow(QWidget):
                 # Peak scaling for visibility
                 scaled = min(1.0, level * 5.0) 
                 self.vu_meter.set_level(scaled)
+
+    def _switch_nav(self, idx: int):
+        self._stack.setCurrentIndex(idx)
+        for i, btn in enumerate(self._nav_buttons):
+            btn.setChecked(i == idx)
 
     # ── Tab: General ──────────────────────────────────────────────────────
     def _tab_general(self):
