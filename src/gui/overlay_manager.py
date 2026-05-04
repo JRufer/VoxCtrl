@@ -19,7 +19,7 @@ _BUILTIN_DIR = Path(__file__).parent / "overlays"
 _USER_DIR    = Path.home() / ".config" / "whisper-wayland" / "overlays"
 
 # Names of built-in overlay modules, in the order they appear in Settings.
-_BUILTIN_NAMES = ["waveform", "pulse"]
+_BUILTIN_NAMES = ["waveform", "pulse", "voice_card"]
 
 # Template written to the user overlay directory on first open so users have a
 # ready-made starting point.
