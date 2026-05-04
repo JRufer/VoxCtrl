@@ -30,7 +30,7 @@ A native, on-device voice-to-text tool for Linux with first-class Wayland suppor
 
 ### System & UI
 - **Transcription history** — persistent, searchable panel with one-click copy
-- **Swappable recording overlays** — Waveform, Pulse Circle, Voice Card, or drop in your own
+- **Swappable recording overlays** — Waveform, Pulse Circle, Voice Card, or drop in your own; each displays a **routing indicator badge** showing exactly which output target is active while you record
 - **Noise suppression** — optional `noisereduce` filter
 - **DBus interface** — control from Waybar, scripts, or Rofi
 - **Settings UI** — tabbed PyQt6 dialog covering all features
@@ -307,7 +307,21 @@ The visual overlay shown while recording is fully swappable. Three styles ship o
 
 Switch styles in **Settings → Appearance → Recording Overlay**. Changes take effect immediately — no restart needed.
 
-Build your own overlay by dropping a single Python file into `~/.config/whisper-wayland/overlays/`. Click **"Open Overlays Folder"** in Settings to go there directly. A ready-to-edit template (`_template.py`) is created automatically the first time you open the folder.
+### Routing Indicator Badge
+
+Every overlay displays a **routing indicator badge** while recording — a small label showing the human-readable name of the active output target (e.g. `Focused Window`, `Hermes Agent`, `Voice Journal`). This gives you an unambiguous, at-a-glance confirmation of where your speech is being sent before you say a word.
+
+- **Voice Card** — badge appears in the top-right corner of the card
+- **Waveform** — badge appears centered above the waveform box
+- **Pulse Circle** — badge appears centered above the pulse ring
+
+The badge text comes directly from the `label` field of the active `OutputTarget` in `targets.toml`. When you use multiple hotkeys to route to different destinations, the badge changes with each activation so you always know which route is live.
+
+Custom overlays receive the routing label through the `label` parameter of `show_mode(label)` and can use it however they like — or ignore it.
+
+### Building Custom Overlays
+
+Drop a single Python file into `~/.config/whisper-wayland/overlays/`. Click **"Open Overlays Folder"** in Settings to go there directly. A ready-to-edit template (`_template.py`) is created automatically the first time you open the folder.
 
 Full specification and examples: **[docs/overlays.md](docs/overlays.md)**
 
