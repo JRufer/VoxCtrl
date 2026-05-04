@@ -1,18 +1,23 @@
 #!/bin/bash
 # AppRun entry point for Whisper Wayland AppImage
 
-# Determine the directory of the AppImage
 HERE="$(dirname "$(readlink -f "${0}")")"
 
-# Export library paths for bundled CUDA and Python libs
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-export PYTHONPATH="${HERE}/usr/share/whisper-wayland:${PYTHONPATH}"
+# Define bundled paths
+USR_DIR="${HERE}/usr"
+# We use a wildcard or glob to find the python version if possible, 
+# but for now we'll stick to a placeholder or detect it in the script.
+PYTHON_VERSION=$(ls "${USR_DIR}/lib" | grep -E "^python3\.[0-9]+$" | head -n 1)
 
-# Ensure we use the bundled python interpreter
-export PYTHONHOME="${HERE}/usr"
+# Export library paths
+export LD_LIBRARY_PATH="${USR_DIR}/lib:${USR_DIR}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
-# For Wayland apps, some compositors need these
-export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS}"
+# Setup Python environment
+export PYTHONPATH="${USR_DIR}/share/whisper-wayland:${USR_DIR}/lib/${PYTHON_VERSION}/site-packages:${PYTHONPATH}"
+export PYTHONHOME="${USR_DIR}"
 
-# Launch the main application
-exec "${HERE}/usr/bin/python3" "${HERE}/usr/share/whisper-wayland/src/main.py" "$@"
+# Wayland / Desktop integration
+export XDG_DATA_DIRS="${USR_DIR}/share:${XDG_DATA_DIRS}"
+
+# Launch
+exec "${USR_DIR}/bin/python3" "${USR_DIR}/share/whisper-wayland/src/main.py" "$@"
