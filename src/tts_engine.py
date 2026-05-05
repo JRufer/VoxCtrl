@@ -392,11 +392,16 @@ class TTSEngine:
         aplay.wait()
         piper.wait()
 
+        piper_err = (piper.stderr.read() if piper.stderr else b"").decode(errors="replace").strip()
+        aplay_err = (aplay.stderr.read() if aplay.stderr else b"").decode(errors="replace").strip()
         if verbose:
-            piper_err = (piper.stderr.read() if piper.stderr else b"").decode(errors="replace").strip()
-            aplay_err = (aplay.stderr.read() if aplay.stderr else b"").decode(errors="replace").strip()
             print(f"[TTS test] piper exit={piper.returncode}  stderr: {piper_err or '(none)'}")
             print(f"[TTS test] aplay  exit={aplay.returncode}  stderr: {aplay_err or '(none)'}")
+
+        # exit 127 = shared library / binary not executable; fall back rather than silently fail
+        if piper.returncode == 127:
+            print("[TTS] piper failed to start (missing shared lib?); falling back to espeak-ng")
+            self._speak_espeak(text, verbose=verbose)
 
     def _speak_espeak(self, text: str, verbose: bool = False):
         stderr_dest = subprocess.PIPE if verbose else subprocess.DEVNULL
