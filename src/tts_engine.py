@@ -29,33 +29,19 @@ from typing import Callable, Optional
 
 GITHUB_RELEASE_BASE = "https://github.com/rhasspy/piper/releases/download/v0.0.2/"
 
+# ♀ = female voice   ♂ = male voice
 VOICE_CATALOG: dict = {
-    "en-us-lessac-medium": {
-        "display": "Lessac — US English, Medium  (~55 MB)",
-        "lang": "en-US",
-        "quality": "medium",
-        "tarball": "voice-en-us-lessac-medium.tar.gz",
-        "onnx_name": "en-us-lessac-medium.onnx",
-        "sample_rate": 16000,
-    },
-    "en-us-ryan-medium": {
-        "display": "Ryan — US English, Medium  (~55 MB)",
-        "lang": "en-US",
-        "quality": "medium",
-        "tarball": "voice-en-us-ryan-medium.tar.gz",
-        "onnx_name": "en-us-ryan-medium.onnx",
-        "sample_rate": 22050,
-    },
-    "en-us-ryan-high": {
-        "display": "Ryan — US English, High  (~100 MB)",
+    # ── Female voices ─────────────────────────────────────────────────────────
+    "en-us-libritts-high": {
+        "display": "LibriTTS ♀ — US English, High  (~115 MB)",
         "lang": "en-US",
         "quality": "high",
-        "tarball": "voice-en-us-ryan-high.tar.gz",
-        "onnx_name": "en-us-ryan-high.onnx",
+        "tarball": "voice-en-us-libritts-high.tar.gz",
+        "onnx_name": "en-us-libritts-high.onnx",
         "sample_rate": 22050,
     },
     "en-us-amy-low": {
-        "display": "Amy — US English, Low  (~55 MB)",
+        "display": "Amy ♀ — US English, Low  (~5 MB)",
         "lang": "en-US",
         "quality": "low",
         "tarball": "voice-en-us-amy-low.tar.gz",
@@ -63,15 +49,64 @@ VOICE_CATALOG: dict = {
         "sample_rate": 16000,
     },
     "en-us-kathleen-low": {
-        "display": "Kathleen — US English, Low  (~55 MB)",
+        "display": "Kathleen ♀ — US English, Low  (~5 MB)",
         "lang": "en-US",
         "quality": "low",
         "tarball": "voice-en-us-kathleen-low.tar.gz",
         "onnx_name": "en-us-kathleen-low.onnx",
         "sample_rate": 16000,
     },
+    "en-gb-southern_english_female-low": {
+        "display": "Southern English ♀ — GB English, Low  (~5 MB)",
+        "lang": "en-GB",
+        "quality": "low",
+        "tarball": "voice-en-gb-southern_english_female-low.tar.gz",
+        "onnx_name": "en-gb-southern_english_female-low.onnx",
+        "sample_rate": 16000,
+    },
+    # ── Male voices ───────────────────────────────────────────────────────────
+    "en-us-ryan-high": {
+        "display": "Ryan ♂ — US English, High  (~100 MB)",
+        "lang": "en-US",
+        "quality": "high",
+        "tarball": "voice-en-us-ryan-high.tar.gz",
+        "onnx_name": "en-us-ryan-high.onnx",
+        "sample_rate": 22050,
+    },
+    "en-us-ryan-medium": {
+        "display": "Ryan ♂ — US English, Medium  (~55 MB)",
+        "lang": "en-US",
+        "quality": "medium",
+        "tarball": "voice-en-us-ryan-medium.tar.gz",
+        "onnx_name": "en-us-ryan-medium.onnx",
+        "sample_rate": 22050,
+    },
+    "en-us-ryan-low": {
+        "display": "Ryan ♂ — US English, Low  (~5 MB)",
+        "lang": "en-US",
+        "quality": "low",
+        "tarball": "voice-en-us-ryan-low.tar.gz",
+        "onnx_name": "en-us-ryan-low.onnx",
+        "sample_rate": 16000,
+    },
+    "en-us-lessac-medium": {
+        "display": "Lessac ♂ — US English, Medium  (~55 MB)",
+        "lang": "en-US",
+        "quality": "medium",
+        "tarball": "voice-en-us-lessac-medium.tar.gz",
+        "onnx_name": "en-us-lessac-medium.onnx",
+        "sample_rate": 16000,
+    },
+    "en-us-lessac-low": {
+        "display": "Lessac ♂ — US English, Low  (~5 MB)",
+        "lang": "en-US",
+        "quality": "low",
+        "tarball": "voice-en-us-lessac-low.tar.gz",
+        "onnx_name": "en-us-lessac-low.onnx",
+        "sample_rate": 16000,
+    },
     "en-us-danny-low": {
-        "display": "Danny — US English, Low  (~55 MB)",
+        "display": "Danny ♂ — US English, Low  (~5 MB)",
         "lang": "en-US",
         "quality": "low",
         "tarball": "voice-en-us-danny-low.tar.gz",
@@ -79,20 +114,12 @@ VOICE_CATALOG: dict = {
         "sample_rate": 16000,
     },
     "en-gb-alan-low": {
-        "display": "Alan — GB English, Low  (~55 MB)",
+        "display": "Alan ♂ — GB English, Low  (~5 MB)",
         "lang": "en-GB",
         "quality": "low",
         "tarball": "voice-en-gb-alan-low.tar.gz",
         "onnx_name": "en-gb-alan-low.onnx",
         "sample_rate": 16000,
-    },
-    "en-us-libritts-high": {
-        "display": "LibriTTS — US English, High  (~115 MB)",
-        "lang": "en-US",
-        "quality": "high",
-        "tarball": "voice-en-us-libritts-high.tar.gz",
-        "onnx_name": "en-us-libritts-high.onnx",
-        "sample_rate": 22050,
     },
 }
 
@@ -157,10 +184,14 @@ def download_voice(
     VOICES_DIR.mkdir(parents=True, exist_ok=True)
     url = GITHUB_RELEASE_BASE + info["tarball"]
 
-    # Stream the tarball, reporting progress
+    # Stream the tarball, reporting progress.
+    # GitHub redirects to a CDN; the CDN returns Content-Length on the final
+    # response.  Call progress_cb unconditionally so the UI can switch to an
+    # indeterminate spinner when total is unknown.
     req = urllib.request.Request(url, headers={"User-Agent": "whisper-wayland/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
-        total = int(resp.headers.get("Content-Length", 0))
+        raw_len = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+        total = int(raw_len) if raw_len and raw_len.strip().isdigit() else 0
         downloaded = 0
         chunks = []
         while True:
@@ -169,7 +200,7 @@ def download_voice(
                 break
             chunks.append(chunk)
             downloaded += len(chunk)
-            if progress_cb and total:
+            if progress_cb:
                 progress_cb(downloaded, total)
 
     raw = b"".join(chunks)

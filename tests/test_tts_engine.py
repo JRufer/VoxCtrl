@@ -75,14 +75,23 @@ class TestVoiceCatalog(unittest.TestCase):
                 f"Voice {vid!r} URL does not use expected base: {expected_url}",
             )
 
-    def test_onnx_names_use_dash_format(self):
-        """Tarball filenames use dashes, not underscores (e.g. en-us-lessac-medium.onnx)."""
+    def test_onnx_names_use_dash_locale_format(self):
+        """Locale portion (lang-region) must use dashes not underscores.
+
+        Some voice names legitimately contain underscores (e.g.
+        en-gb-southern_english_female-low.onnx); the restriction only applies
+        to the lang-region prefix (must NOT be en_US-... style).
+        """
         for vid, info in VOICE_CATALOG.items():
             onnx = info["onnx_name"]
-            self.assertFalse(
-                "_" in onnx,
-                f"Voice {vid!r} onnx_name {onnx!r} should use dashes not underscores",
-            )
+            parts = onnx.split("-", 2)  # lang, region, rest
+            self.assertGreaterEqual(len(parts), 2,
+                f"Voice {vid!r} onnx_name {onnx!r} has unexpected format")
+            # lang and region parts must not contain underscores
+            self.assertNotIn("_", parts[0],
+                f"Voice {vid!r} lang part {parts[0]!r} uses underscore")
+            self.assertNotIn("_", parts[1],
+                f"Voice {vid!r} region part {parts[1]!r} uses underscore")
 
     def test_sample_rates_are_valid(self):
         for vid, info in VOICE_CATALOG.items():

@@ -1829,30 +1829,56 @@ class SettingsWindow(QWidget):
         self._tts_progress.setVisible(True)
 
         def _do():
-            from PyQt6.QtCore import QTimer
+            from PyQt6.QtCore import QMetaObject, Qt
             try:
                 def _prog(done, total):
-                    pct = int(done * 100 / total) if total > 0 else 0
-                    QTimer.singleShot(0, lambda: self._tts_progress.setValue(pct))
+                    if total > 0:
+                        pct = int(done * 100 / total)
+                        # Switch to determinate mode if currently indeterminate
+                        QMetaObject.invokeMethod(
+                            self._tts_progress, "setRange",
+                            Qt.ConnectionType.QueuedConnection,
+                            0, 100,
+                        )
+                        QMetaObject.invokeMethod(
+                            self._tts_progress, "setValue",
+                            Qt.ConnectionType.QueuedConnection,
+                            pct,
+                        )
+                    else:
+                        # No Content-Length — show busy/indeterminate bar
+                        QMetaObject.invokeMethod(
+                            self._tts_progress, "setRange",
+                            Qt.ConnectionType.QueuedConnection,
+                            0, 0,
+                        )
 
                 download_voice(vid, progress_cb=_prog)
+
+                from PyQt6.QtCore import QTimer as _QT
 
                 def _ok():
                     self._tts_model_status.setText("✅  Download complete.")
                     self._tts_model_status.setStyleSheet("color:#4ade80; background:transparent; border:none;")
+                    self._tts_progress.setRange(0, 100)
+                    self._tts_progress.setValue(100)
                     self._tts_progress.setVisible(False)
                     self._tts_test_btn.setEnabled(True)
                     self._tts_download_btn.setEnabled(False)
-                    # Refresh combo labels
                     self._refresh_tts_voice_labels()
-                QTimer.singleShot(0, _ok)
+
+                _QT.singleShot(0, _ok)
             except Exception as e:
+                from PyQt6.QtCore import QTimer as _QT
+
                 def _err():
                     self._tts_model_status.setText(f"❌  Download failed: {e}")
                     self._tts_model_status.setStyleSheet("color:#f87171; background:transparent; border:none;")
+                    self._tts_progress.setRange(0, 100)
                     self._tts_progress.setVisible(False)
                     self._tts_download_btn.setEnabled(True)
-                QTimer.singleShot(0, _err)
+
+                _QT.singleShot(0, _err)
 
         _threading.Thread(target=_do, daemon=True).start()
 
