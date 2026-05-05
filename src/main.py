@@ -105,10 +105,19 @@ def main():
 
         # Initialize overlay manager and load the user-selected overlay
         overlay_manager = OverlayManager()
-        _initial_style  = config.get("overlay_style", "waveform")
+        _initial_style  = config.get("overlay_style", "voice_card")
         _active_overlay = overlay_manager.load(_initial_style)
         overlay_proxy   = OverlayProxy(_active_overlay)
         _active_style   = [_initial_style]   # mutable cell for the closure below
+
+        def _update_overlay():
+            new_style = config.get("overlay_style", "voice_card")
+            if new_style != _active_style[0]:
+                print(f"[Main] Swapping overlay style: {_active_style[0]} -> {new_style}")
+                new_overlay = overlay_manager.load(new_style)
+                if new_overlay:
+                    overlay_proxy.swap(new_overlay)
+                    _active_style[0] = new_style
 
         # P3.1: Routing system
         router = OutputTargetRouter(load_targets())
@@ -208,6 +217,7 @@ def main():
         settings_window.settings_saved.connect(listener.update_hotkey)
         settings_window.settings_saved.connect(listener.update_device)
         settings_window.settings_saved.connect(lambda: _reload_routing(router))
+        settings_window.settings_saved.connect(_update_overlay)
 
         # Fallback: If tray is not available, show settings so the app isn't "invisible"
         if not tray.isSystemTrayAvailable():

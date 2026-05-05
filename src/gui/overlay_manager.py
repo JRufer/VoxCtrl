@@ -222,10 +222,10 @@ class OverlayManager:
         }
 
     def load(self, overlay_id: str):
-        """Instantiate and return an overlay widget.  Falls back to 'waveform' on error."""
+        """Instantiate and return an overlay widget.  Falls back to 'voice_card' on error."""
         if overlay_id not in self._registry:
-            print(f"[OverlayManager] Unknown overlay '{overlay_id}', falling back to 'waveform'")
-            overlay_id = "waveform"
+            print(f"[OverlayManager] Unknown overlay '{overlay_id}', falling back to 'voice_card'")
+            overlay_id = "voice_card"
 
         if overlay_id not in self._registry:
             return None

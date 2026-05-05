@@ -31,7 +31,7 @@ DEFAULT_CONFIG = {
     # P2.2 Noise suppression
     "noise_suppression": False,  # Requires: pip install noisereduce
     # Overlay UI
-    "overlay_style": "waveform",  # built-in: "waveform" | "pulse" | custom stem name
+    "overlay_style": "voice_card",  # built-in: "waveform" | "pulse" | "voice_card" | custom stem name
     # Multi-backend engine selection
     "backend_engine": "auto",           # 'auto' | 'faster-whisper' | 'whisper-cpp'
     "whisper_cpp_binary": "whisper-cli",

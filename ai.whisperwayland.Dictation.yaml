@@ -40,7 +40,10 @@ modules:
       - mkdir -p /app/share/whisper-wayland
       - cp -r src /app/share/whisper-wayland/
       - cp -r assets /app/share/whisper-wayland/
-      - install -D whisper-wayland.sh /app/bin/whisper-wayland
+      - echo '#!/bin/sh' > /app/bin/whisper-wayland
+      - echo 'export PYTHONPATH=/app/share/whisper-wayland/src:$PYTHONPATH' >> /app/bin/whisper-wayland
+      - echo 'exec python3 /app/share/whisper-wayland/src/main.py "$@"' >> /app/bin/whisper-wayland
+      - chmod +x /app/bin/whisper-wayland
       - install -D whisper-wayland.desktop /app/share/applications/ai.whisperwayland.Dictation.desktop
     sources:
       - type: dir

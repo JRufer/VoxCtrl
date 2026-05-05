@@ -647,7 +647,8 @@ class SettingsWindow(QWidget):
         url = cpp.get_model_url(model_size)
 
         from backends.whisper_cpp_backend import GGUF_MAP
-        filename = GGUF_MAP.get(model_size, f"ggml-{model_size}.bin")
+        candidates = GGUF_MAP.get(model_size, [f"ggml-{model_size}.bin"])
+        filename = candidates[0] if isinstance(candidates, list) else candidates
         dest = os.path.join(model_dir, filename)
 
         if not hasattr(self, "_cpp_download_btn"):
@@ -1175,11 +1176,11 @@ class SettingsWindow(QWidget):
 
     def _populate_overlay_styles(self):
         self.overlay_style_combo.clear()
-        current = self.config.get("overlay_style", "waveform")
+        current = self.config.get("overlay_style", "voice_card")
         if self.overlay_manager:
             overlays = self.overlay_manager.available()
         else:
-            overlays = {"waveform": {"display_name": "Waveform", "description": "", "builtin": True}}
+            overlays = {"voice_card": {"display_name": "Voice Card", "description": "", "builtin": True}}
         for oid, info in overlays.items():
             label = info["display_name"]
             if not info.get("builtin", True):
