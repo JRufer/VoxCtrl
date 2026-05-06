@@ -16,8 +16,15 @@ import importlib.util
 import multiprocessing.connection
 import multiprocessing.shared_memory
 import subprocess as _subprocess
-import numpy as np
 from pathlib import Path
+
+# Lazy numpy — only needed inside OverlaySubprocessProxy.update_audio/_start
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    np = None
+    _HAS_NUMPY = False
 
 _BUILTIN_DIR = Path(__file__).parent / "overlays"
 _USER_DIR    = Path.home() / ".config" / "whisper-wayland" / "overlays"
@@ -292,7 +299,10 @@ class OverlaySubprocessProxy:
         except Exception:
             pass
         self._shm    = multiprocessing.shared_memory.SharedMemory(create=True, size=_AUDIO_BYTES, name=shm_name)
-        self._shm_buf = np.frombuffer(self._shm.buf, dtype=np.float32)
+        if _HAS_NUMPY:
+            self._shm_buf = np.frombuffer(self._shm.buf, dtype=np.float32)
+        else:
+            self._shm_buf = None
 
         # One-directional pipe: parent writes, child reads
         parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
@@ -346,7 +356,7 @@ class OverlaySubprocessProxy:
 
     # ── Public interface ──────────────────────────────────────────────────────
 
-    def update_audio(self, data: np.ndarray) -> None:
+    def update_audio(self, data) -> None:
         if self._shm_buf is None:
             return
         try:
