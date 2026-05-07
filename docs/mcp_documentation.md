@@ -1,12 +1,12 @@
-# Whisper-Wayland MCP Server
+# VoxCtl MCP Server
 
-Whisper-Wayland ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
+VoxCtl ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
 
 ---
 
 ## Overview
 
-When the MCP server is enabled, Whisper-Wayland listens on a Unix domain socket and presents three tools:
+When the MCP server is enabled, VoxCtl listens on a Unix domain socket and presents three tools:
 
 | Tool | What it does |
 |---|---|
@@ -18,7 +18,7 @@ This lets an AI agent have a full voice conversation:
 
 ```
 Agent → transcribe_voice()  → user speaks → transcript returned
-Agent → speak_text("…")     → Whisper-Wayland speaks the response aloud
+Agent → speak_text("…")     → VoxCtl speaks the response aloud
 Agent → transcribe_voice()  → next turn …
 ```
 
@@ -45,7 +45,7 @@ sudo pacman -S espeak-ng
 Voice models are downloaded from inside the app. Go to **Settings → Voice Output**, select a voice from the picker, and click **⬇ Download**. Models are stored in:
 
 ```
-~/.local/share/whisper-wayland/voices/
+~/.local/share/voxctl/voices/
 ```
 
 ---
@@ -57,7 +57,7 @@ Voice models are downloaded from inside the app. Go to **Settings → Voice Outp
 1. Open **Settings → Voice Output**
 2. Scroll to the **MCP Server** section
 3. Toggle **"Enable MCP Server"**
-4. Note the socket path shown (default: `/tmp/whisper-wayland-mcp.sock`)
+4. Note the socket path shown (default: `/tmp/voxctl-mcp.sock`)
 5. Optionally click **"Register in Claude Desktop"** to auto-configure Claude Desktop
 
 ### Via config.json
@@ -78,7 +78,7 @@ The server starts automatically when the app launches if `mcp_server_enabled` is
 The server listens on a **Unix domain socket**:
 
 ```
-/tmp/whisper-wayland-mcp.sock
+/tmp/voxctl-mcp.sock
 ```
 
 Each connection gets its own daemon thread. The protocol is newline-delimited JSON-RPC 2.0: one JSON object per line, terminated with `\n`.
@@ -96,7 +96,7 @@ Standard MCP / JSON-RPC 2.0. Every request must include `"jsonrpc": "2.0"`.
 ← {"jsonrpc":"2.0","id":1,"result":{
      "protocolVersion":"2024-11-05",
      "capabilities":{"tools":{}},
-     "serverInfo":{"name":"whisper-wayland","version":"1.0.0"}
+     "serverInfo":{"name":"voxctl","version":"1.0.0"}
    }}
 ```
 
@@ -169,7 +169,7 @@ Opens the microphone and returns a transcript when speech ends.
 
 - While recording, the recording overlay is always shown (regardless of `show_overlay` config) — the user always has a visual indicator that the mic is live.
 - The microphone is released automatically once VAD detects silence or `timeout_seconds` elapses.
-- Whisper-Wayland's full post-processing pipeline is applied before the transcript is returned.
+- VoxCtl's full post-processing pipeline is applied before the transcript is returned.
 
 ---
 
@@ -291,9 +291,9 @@ Add the following to `~/.config/claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "whisper-wayland": {
+    "voxctl": {
       "command": "socat",
-      "args": ["STDIO", "UNIX-CONNECT:/tmp/whisper-wayland-mcp.sock"]
+      "args": ["STDIO", "UNIX-CONNECT:/tmp/voxctl-mcp.sock"]
     }
   }
 }
@@ -301,7 +301,7 @@ Add the following to `~/.config/claude/claude_desktop_config.json`:
 
 Restart Claude Desktop. The tools `transcribe_voice`, `speak_text`, and `get_status` appear automatically in the tool picker.
 
-> **Note:** Whisper-Wayland must already be running before Claude Desktop connects.
+> **Note:** VoxCtl must already be running before Claude Desktop connects.
 
 ---
 
@@ -311,7 +311,7 @@ Restart Claude Desktop. The tools `transcribe_voice`, `speak_text`, and `get_sta
 import socket
 import json
 
-SOCK = "/tmp/whisper-wayland-mcp.sock"
+SOCK = "/tmp/voxctl-mcp.sock"
 
 def rpc(sock, method, params=None, rpc_id=1):
     req = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params or {}}
@@ -349,7 +349,7 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
 ```bash
 # One-shot: list tools
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | socat - UNIX-CONNECT:/tmp/whisper-wayland-mcp.sock \
+  | socat - UNIX-CONNECT:/tmp/voxctl-mcp.sock \
   | head -1 | python3 -m json.tool
 ```
 
@@ -357,7 +357,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 
 ## Response Loopback (FIFO pipe)
 
-For agents that generate responses to a named FIFO, Whisper-Wayland can read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
+For agents that generate responses to a named FIFO, VoxCtl can read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
 
 ### How it works
 
@@ -392,13 +392,13 @@ while true; do
 done
 ```
 
-Each line written to `response_pipe` is treated as a separate TTS utterance. Empty lines are ignored. The listener re-opens the FIFO on EOF so the agent can restart without restarting Whisper-Wayland.
+Each line written to `response_pipe` is treated as a separate TTS utterance. Empty lines are ignored. The listener re-opens the FIFO on EOF so the agent can restart without restarting VoxCtl.
 
 ---
 
 ## TTS Configuration
 
-All TTS settings live in `~/.config/whisper-wayland/config.json` and in **Settings → Voice Output**.
+All TTS settings live in `~/.config/voxctl/config.json` and in **Settings → Voice Output**.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -432,7 +432,7 @@ Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download
 ### Socket path
 
 ```
-/tmp/whisper-wayland-mcp.sock
+/tmp/voxctl-mcp.sock
 ```
 
 ### Threading model
@@ -450,7 +450,7 @@ Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download
 3. Blocking on a `queue.Queue.get(timeout=timeout+5)`.
 4. The main app's `_on_text_injected` callback puts every transcription result into this queue.
 
-This means only one `transcribe_voice` call can be in flight at a time per Whisper-Wayland instance. Concurrent calls from multiple clients will queue at the recording controller.
+This means only one `transcribe_voice` call can be in flight at a time per VoxCtl instance. Concurrent calls from multiple clients will queue at the recording controller.
 
 ---
 
@@ -458,16 +458,16 @@ This means only one `transcribe_voice` call can be in flight at a time per Whisp
 
 **Socket does not exist**
 
-Whisper-Wayland is not running, or the MCP server is disabled. Enable it in **Settings → Voice Output** or set `"mcp_server_enabled": true` in `config.json` and restart.
+VoxCtl is not running, or the MCP server is disabled. Enable it in **Settings → Voice Output** or set `"mcp_server_enabled": true` in `config.json` and restart.
 
 **`socat` connection refused**
 
-The socket exists but the server is not listening yet. Wait a moment after Whisper-Wayland starts, or check the app's console output for errors.
+The socket exists but the server is not listening yet. Wait a moment after VoxCtl starts, or check the app's console output for errors.
 
 **TTS plays but no audio**
 
 - Check that `aplay` is installed (`which aplay`).
-- Verify the voice model is downloaded: models live in `~/.local/share/whisper-wayland/voices/`.
+- Verify the voice model is downloaded: models live in `~/.local/share/voxctl/voices/`.
 - Try `tts_engine = "espeak"` as a fallback.
 
 **`transcribe_voice` returns `(no speech detected)`**
@@ -479,5 +479,5 @@ The socket exists but the server is not listening yet. Wait a moment after Whisp
 **Claude Desktop does not see the tools**
 
 - Restart Claude Desktop after editing `claude_desktop_config.json`.
-- Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/whisper-wayland-mcp.sock` connects successfully from a terminal.
-- Check that `whisper-wayland-mcp.sock` exists (`ls -la /tmp/*.sock`).
+- Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctl-mcp.sock` connects successfully from a terminal.
+- Check that `voxctl-mcp.sock` exists (`ls -la /tmp/*.sock`).

@@ -2,7 +2,7 @@
 Discovers, loads, and manages swappable recording overlay UIs.
 
 Built-in overlays live in  src/gui/overlays/*.py
-User overlays live in      ~/.config/whisper-wayland/overlays/*.py
+User overlays live in      ~/.config/voxctl/overlays/*.py
 
 Each overlay file must expose:
     DISPLAY_NAME : str        – human-readable name shown in Settings
@@ -16,7 +16,7 @@ import importlib.util
 from pathlib import Path
 
 _BUILTIN_DIR = Path(__file__).parent / "overlays"
-_USER_DIR    = Path.home() / ".config" / "whisper-wayland" / "overlays"
+_USER_DIR    = Path.home() / ".config" / "voxctl" / "overlays"
 
 # Names of built-in overlay modules, in the order they appear in Settings.
 _BUILTIN_NAMES = ["waveform", "pulse", "voice_card"]
@@ -24,8 +24,8 @@ _BUILTIN_NAMES = ["waveform", "pulse", "voice_card"]
 # Template written to the user overlay directory on first open so users have a
 # ready-made starting point.
 _TEMPLATE_CONTENT = '''\
-# Custom overlay template for Whisper-Wayland
-# Place this file (or a copy) in:  ~/.config/whisper-wayland/overlays/
+# Custom overlay template for VoxCtl
+# Place this file (or a copy) in:  ~/.config/voxctl/overlays/
 #
 # Required:
 #   DISPLAY_NAME   – name shown in the Settings overlay picker

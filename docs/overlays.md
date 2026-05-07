@@ -1,6 +1,6 @@
 # Overlay UI Guide
 
-Whisper Wayland displays a visual overlay while the microphone is active. The overlay system is fully swappable: you can choose from the built-in styles or create your own by dropping a single Python file into a special folder.
+VoxCtl displays a visual overlay while the microphone is active. The overlay system is fully swappable: you can choose from the built-in styles or create your own by dropping a single Python file into a special folder.
 
 ---
 
@@ -51,7 +51,7 @@ The overlay switches instantly — no restart is required. Custom overlays you a
 Place a `.py` file in:
 
 ```
-~/.config/whisper-wayland/overlays/
+~/.config/voxctl/overlays/
 ```
 
 Click **"Open Overlays Folder"** in Settings to open this directory in your file manager. On first open, a `_template.py` starter file is written there for you.
@@ -142,7 +142,7 @@ self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 This is the same file written to `_template.py` when you first open the overlays folder. Copy it, rename it (without a leading `_`), and customise freely.
 
 ```python
-# Save as  ~/.config/whisper-wayland/overlays/my_overlay.py
+# Save as  ~/.config/voxctl/overlays/my_overlay.py
 # Then select "My Custom Overlay" in Settings → Dictation → Overlay Appearance.
 
 DISPLAY_NAME = "My Custom Overlay"
@@ -285,7 +285,7 @@ Inheriting from `OverlayUIBase` is optional — plain `QWidget` works just as we
 At startup (and again after each Settings save), `OverlayManager` scans:
 
 1. `src/gui/overlays/` — built-in overlays, always available
-2. `~/.config/whisper-wayland/overlays/` — your custom overlays
+2. `~/.config/voxctl/overlays/` — your custom overlays
 
 For each `.py` file (excluding `_`-prefixed files), it imports the module and looks for:
 - `DISPLAY_NAME` string

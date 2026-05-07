@@ -1,5 +1,5 @@
 """
-First-run permissions setup dialog for Whisper-Wayland.
+First-run permissions setup dialog for VoxCtl.
 
 Global hotkeys require read access to /dev/input/event* which is gated behind
 the 'input' group on most Linux systems. This module detects missing permissions
@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent / 'scripts'
-_UDEV_RULE_PATH = Path('/etc/udev/rules.d/99-whisper-wayland.rules')
+_UDEV_RULE_PATH = Path('/etc/udev/rules.d/99-voxctl.rules')
 
 
 # ── Permission detection ──────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ class PermissionsSetupDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Whisper-Wayland — Hotkey Setup")
+        self.setWindowTitle("VoxCtl — Hotkey Setup")
         self.setStyleSheet(_QSS)
         self.setMinimumWidth(520)
         self.setModal(False)
@@ -210,7 +210,7 @@ class PermissionsSetupDialog(QDialog):
         else:
             body_text = (
                 "To capture keyboard shortcuts globally (while other windows are focused), "
-                "Whisper-Wayland needs read access to <code>/dev/input/event*</code>.<br><br>"
+                "VoxCtl needs read access to <code>/dev/input/event*</code>.<br><br>"
                 "This is gated behind the <code>input</code> system group. "
                 "Click <b>Set Up Permissions</b> and you will be prompted for your "
                 "administrator password — this only needs to happen once."

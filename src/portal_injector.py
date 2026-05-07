@@ -32,7 +32,7 @@ class PortalInjector:
             self.iface = dbus.Interface(self.portal, "org.freedesktop.portal.RemoteDesktop")
             
             # 1. Create Session
-            options = {"session_handle_token": "whisper_wayland_session"}
+            options = {"session_handle_token": "voxctl_session"}
             request_path = self.iface.CreateSession(options)
             
             # Note: In a production app we'd wait for the 'Response' signal here.
@@ -40,7 +40,7 @@ class PortalInjector:
             # We'll use a slightly hacky approach: try to proceed and catch errors if not ready.
             # The session path is predictable if we use a token.
             sender_name = self.bus.get_unique_name().replace(".", "_").replace(":", "_")
-            self.session_path = f"/org/freedesktop/portal/desktop/session/{sender_name}/whisper_wayland_session"
+            self.session_path = f"/org/freedesktop/portal/desktop/session/{sender_name}/voxctl_session"
             
             # 2. Select Devices (KEYBOARD = 1)
             self.iface.SelectDevices(self.session_path, {"types": dbus.UInt32(1)})

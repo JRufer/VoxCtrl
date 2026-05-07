@@ -1,4 +1,4 @@
-"""Tests for WhisperMCPServer — JSON-RPC dispatch and tool execution."""
+"""Tests for VoxCtlMCPServer — JSON-RPC dispatch and tool execution."""
 import json
 import os
 import socket
@@ -11,13 +11,13 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from mcp_server import WhisperMCPServer, SOCKET_PATH
+from mcp_server import VoxCtlMCPServer, SOCKET_PATH
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_server(on_record=None, on_speak=None, get_status=None):
-    return WhisperMCPServer(
+    return VoxCtlMCPServer(
         on_record=on_record or (lambda t: "transcribed text"),
         on_speak=on_speak or (lambda txt: None),
         get_status=get_status or (lambda: {"recording": False, "speaking": False}),
@@ -40,7 +40,7 @@ class TestMCPDispatch(unittest.TestCase):
         self.assertEqual(resp["id"], 1)
         result = resp["result"]
         self.assertIn("protocolVersion", result)
-        self.assertEqual(result["serverInfo"]["name"], "whisper-wayland")
+        self.assertEqual(result["serverInfo"]["name"], "voxctl")
 
     def test_tools_list_returns_three_tools(self):
         req = _rpc("tools/list")
@@ -190,13 +190,13 @@ class TestWriteClaudeDesktopConfig(unittest.TestCase):
             with patch("mcp_server.SOCKET_PATH", "/tmp/test.sock"), \
                  patch("os.path.expanduser", side_effect=lambda p: p.replace("~", tmp)), \
                  patch("os.path.exists", return_value=False):
-                result = WhisperMCPServer.write_claude_desktop_config()
+                result = VoxCtlMCPServer.write_claude_desktop_config()
 
             # Read back what was written
             with open(result) as f:
                 cfg = json.load(f)
 
-            entry = cfg["mcpServers"]["whisper-wayland"]
+            entry = cfg["mcpServers"]["voxctl"]
             self.assertEqual(entry["command"], "socat")
             self.assertIn("STDIO", entry["args"])
 

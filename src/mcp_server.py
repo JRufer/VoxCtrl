@@ -1,10 +1,10 @@
 """
-Whisper-Wayland MCP Server
+VoxCtl MCP Server
 
 Exposes the app as an MCP (Model Context Protocol) tool server so AI clients
 (Claude Desktop, custom agents) can trigger voice recording and TTS playback.
 
-Transport: Unix domain socket at /tmp/whisper-wayland-mcp.sock
+Transport: Unix domain socket at /tmp/voxctl-mcp.sock
 Protocol:  JSON-RPC 2.0 (MCP spec)
 
 Tools exposed:
@@ -15,9 +15,9 @@ Tools exposed:
 Claude Desktop integration — add to ~/claude_desktop_config.json:
   {
     "mcpServers": {
-      "whisper-wayland": {
+      "voxctl": {
         "command": "socat",
-        "args": ["STDIO", "UNIX-CONNECT:/tmp/whisper-wayland-mcp.sock"]
+        "args": ["STDIO", "UNIX-CONNECT:/tmp/voxctl-mcp.sock"]
       }
     }
   }
@@ -31,7 +31,7 @@ import threading
 import time
 from typing import Callable, Optional
 
-SOCKET_PATH = "/tmp/whisper-wayland-mcp.sock"
+SOCKET_PATH = "/tmp/voxctl-mcp.sock"
 
 _TOOL_LIST = {
     "tools": [
@@ -168,7 +168,7 @@ _TOOL_LIST = {
                 "Returns the current state of the voice interface as a JSON object.\n"
                 "\n"
                 "HOW IT WORKS:\n"
-                "  Queries the running Whisper-Wayland app for its live recording and TTS state. "
+                "  Queries the running VoxCtl app for its live recording and TTS state. "
                 "This is a lightweight, non-blocking call that returns immediately.\n"
                 "\n"
                 "WHEN TO USE:\n"
@@ -209,7 +209,7 @@ _TOOL_LIST = {
 }
 
 
-class WhisperMCPServer:
+class VoxCtlMCPServer:
     """
     In-process MCP server backed by a Unix domain socket.
 
@@ -346,7 +346,7 @@ class WhisperMCPServer:
             return {
                 "protocolVersion": "2024-11-05",
                 "serverInfo": {
-                    "name": "whisper-wayland",
+                    "name": "voxctl",
                     "version": "1.0.0",
                 },
                 "capabilities": {"tools": {}},
@@ -414,7 +414,7 @@ class WhisperMCPServer:
             cfg = {}
 
         cfg.setdefault("mcpServers", {})
-        cfg["mcpServers"]["whisper-wayland"] = {
+        cfg["mcpServers"]["voxctl"] = {
             "command": "socat",
             "args": ["STDIO", f"UNIX-CONNECT:{SOCKET_PATH}"],
         }

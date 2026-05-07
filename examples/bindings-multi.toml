@@ -3,7 +3,7 @@
 ## Maps keyboard gestures to output targets.  Combine with targets-multi.toml
 ## for a complete setup.
 ##
-## Copy to ~/.config/whisper-wayland/bindings.toml
+## Copy to ~/.config/voxctl/bindings.toml
 
 format_version = "1.1"
 

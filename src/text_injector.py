@@ -40,7 +40,7 @@ class TextInjector(threading.Thread):
         preview = (text[:60] + "…") if len(text) > 60 else text
         subprocess.Popen(
             ["notify-send", "-t", "3000", "-i", "audio-input-microphone",
-             "Whisper Wayland", preview],
+             "VoxCtl", preview],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

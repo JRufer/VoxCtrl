@@ -3,7 +3,7 @@ from PyQt6.QtGui import QIcon, QAction, QColor, QPixmap
 from PyQt6.QtCore import QObject
 import os
 
-class WhisperTrayIcon(QSystemTrayIcon):
+class VoxCtlTrayIcon(QSystemTrayIcon):
     def __init__(self, app_state, history_window=None):
         super().__init__()
         self.app_state = app_state
@@ -17,7 +17,7 @@ class WhisperTrayIcon(QSystemTrayIcon):
         self.icon_off = QIcon(os.path.join(assets_dir, "record_off.png"))
 
         self.set_idle_icon()
-        self.setToolTip("Whisper Wayland")
+        self.setToolTip("VoxCtl")
 
         self.menu = QMenu()
 

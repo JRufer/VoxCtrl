@@ -1,4 +1,4 @@
-"""Load and save targets.toml and bindings.toml under ~/.config/whisper-wayland/."""
+"""Load and save targets.toml and bindings.toml under ~/.config/voxctl/."""
 import os
 import shutil
 import tomllib
@@ -9,7 +9,7 @@ from routing.models import (
     DeliveryType, GestureType, HotkeyBinding, OutputTarget, TargetProcessingConfig,
 )
 
-CONFIG_DIR = Path('~/.config/whisper-wayland').expanduser()
+CONFIG_DIR = Path('~/.config/voxctl').expanduser()
 _FORMAT_VERSION = "1.1"
 _KEEP_BACKUPS = 20
 

@@ -37,7 +37,7 @@ class InputListener(threading.Thread):
         # Lock for pressed_keys set (shared between reader and deadline timers)
         self._keys_lock = threading.Lock()
 
-    _VIRTUAL_DEVICE_NAMES = ("whisper-wayland", "passthrough", "uinput", "virtual")
+    _VIRTUAL_DEVICE_NAMES = ("voxctl", "passthrough", "uinput", "virtual")
 
     def _is_virtual(self, dev):
         return any(kw in dev.name.lower() for kw in self._VIRTUAL_DEVICE_NAMES)

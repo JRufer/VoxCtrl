@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
     "atspi_auto_code_mode": True,       # auto-switch to code mode for terminal/IDE widgets
 }
 
-CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"
+CONFIG_PATH = Path.home() / ".config" / "voxctl" / "config.json"
 
 class Config:
     def __init__(self):

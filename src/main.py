@@ -16,11 +16,11 @@ from text_injector import TextInjector
 from dbus_service import DBusService
 from tts_engine import TTSEngine
 from tts_responder import ResponseListener
-from mcp_server import WhisperMCPServer
+from mcp_server import VoxCtlMCPServer
 from routing.loader import load_targets, load_bindings
 from routing.router import OutputTargetRouter
 from config_validator import validate_all, ConfigValidationError
-from gui.tray_icon import WhisperTrayIcon
+from gui.tray_icon import VoxCtlTrayIcon
 from gui.settings_window import SettingsWindow
 from gui.history_window import HistoryWindow
 from gui.overlay_manager import OverlayManager, OverlayProxy
@@ -54,7 +54,7 @@ class AppState(QObject):
     text_injected = pyqtSignal(int, str)  # (total_words, text)
 
 def ensure_single_instance():
-    lock_file = os.path.join(os.path.expanduser("~"), ".local", "share", "whisper-wayland", "app.pid")
+    lock_file = os.path.join(os.path.expanduser("~"), ".local", "share", "voxctl", "app.pid")
     if os.path.exists(lock_file):
         try:
             with open(lock_file, "r") as f:
@@ -95,7 +95,7 @@ def ensure_single_instance():
 
 def main():
     try:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] Whisper-Wayland starting up...")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] VoxCtl starting up...")
         ensure_single_instance()
         app = QApplication(sys.argv)
         app.setQuitOnLastWindowClosed(False)
@@ -255,7 +255,7 @@ def main():
                 "speaking": tts_engine.is_speaking,
             }
 
-        mcp_server = WhisperMCPServer(
+        mcp_server = VoxCtlMCPServer(
             on_record=_mcp_on_record,
             on_speak=_mcp_on_speak,
             get_status=_mcp_get_status,
@@ -284,7 +284,7 @@ def main():
         settings_window = SettingsWindow(config, inference, recorder,
                                          overlay_manager=overlay_manager)
         settings_window.router = router
-        tray = WhisperTrayIcon(state, history_window)
+        tray = VoxCtlTrayIcon(state, history_window)
 
         # Connect background-thread injection signal to main-thread UI slots.
         # Qt QueuedConnection ensures these run on the main thread even when
@@ -293,7 +293,7 @@ def main():
             history_window.add_entry(text)
             lang = inference.last_language
             lang_str = f" [{lang.upper()}]" if lang else ""
-            tray.setToolTip(f"Whisper Wayland{lang_str} — {total_words} words this session")
+            tray.setToolTip(f"VoxCtl{lang_str} — {total_words} words this session")
             dbus_svc.set_status("idle")
             dbus_svc.set_word_count(total_words)
             dbus_svc.notify_text(text)
@@ -365,7 +365,7 @@ def _reload_routing(router: OutputTargetRouter, start_response_listeners=None) -
         print(f"[Main] Could not reload routing targets: {e}")
 
 
-def _apply_mcp_toggle(mcp_server: WhisperMCPServer, config) -> None:
+def _apply_mcp_toggle(mcp_server: VoxCtlMCPServer, config) -> None:
     """Start or stop the MCP server based on the current config."""
     enabled = config.get("mcp_server_enabled", False)
     if enabled:

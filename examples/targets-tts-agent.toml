@@ -5,7 +5,7 @@
 ##
 ## Requires: tts_enabled = true in config.json
 ##
-## Copy to ~/.config/whisper-wayland/targets.toml (or merge with existing)
+## Copy to ~/.config/voxctl/targets.toml (or merge with existing)
 
 format_version = "1.1"
 
@@ -20,7 +20,7 @@ file_timestamp = true
 
 # ── Hermes conversational agent via FIFO ─────────────────────────────────────
 # The agent reads from /tmp/hermes.in and writes responses to /tmp/hermes.out.
-# Whisper Wayland speaks the response aloud.
+# VoxCtl speaks the response aloud.
 [[target]]
 id = "hermes"
 label = "Hermes Agent"
@@ -64,12 +64,12 @@ processing = {remove_fillers = true, spoken_punctuation = true, ollama_enabled =
 
 # ── Local Ollama chat — send prompt, speak response ──────────────────────────
 # Use an external ollama-chat bridge script that writes responses to the FIFO.
-# Example bridge: https://github.com/whisper-wayland/ollama-bridge
+# Example bridge: https://github.com/voxctl/ollama-bridge
 [[target]]
 id = "ollama_chat"
 label = "Ollama Chat"
 delivery = "exec"
-command = "whisper-wayland-ollama-bridge --model llama3.2:3b --response-pipe /tmp/ollama_chat.out {TEXT}"
+command = "voxctl-ollama-bridge --model llama3.2:3b --response-pipe /tmp/ollama_chat.out {TEXT}"
 response_pipe = "/tmp/ollama_chat.out"
 tts_engine = "piper"
 tts_voice = "en-us-lessac-medium"

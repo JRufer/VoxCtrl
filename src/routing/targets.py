@@ -257,7 +257,7 @@ class DbusTarget:
         try:
             import dbus
             bus = dbus.SessionBus()
-            signal_name = self.config.dbus_signal or "ai.whisperwayland.Routing.TextRouted"
+            signal_name = self.config.dbus_signal or "ai.voxctl.Routing.TextRouted"
             parts = signal_name.rsplit('.', 1)
             iface = parts[0] if len(parts) == 2 else signal_name
             obj_path = '/' + iface.replace('.', '/')

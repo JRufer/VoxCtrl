@@ -2,7 +2,7 @@
 Base class for all recording overlay UIs.
 
 To create a custom overlay, place a .py file in:
-    ~/.config/whisper-wayland/overlays/
+    ~/.config/voxctl/overlays/
 
 Your file must:
   1. Set DISPLAY_NAME = "Your Overlay Name"  (module-level string)
