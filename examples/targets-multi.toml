@@ -3,7 +3,7 @@
 ## Demonstrates all delivery types and the per-target processing config.
 ## Each target can independently override preprocessing and postprocessing.
 ##
-## Copy to ~/.config/whisper-wayland/targets.toml
+## Copy to ~/.config/voxctl/targets.toml
 
 format_version = "1.1"
 

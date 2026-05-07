@@ -1,12 +1,12 @@
 """
 P2.3 — DBus Control Interface
 
-Exposes Whisper Wayland as a DBus service so external tools (Waybar, KDE
+Exposes VoxCtl as a DBus service so external tools (Waybar, KDE
 widgets, shell scripts, rofi menus) can control dictation programmatically.
 
-Service:   ai.whisperwayland.Dictation
-Object:    /ai/whisperwayland/Dictation
-Interface: ai.whisperwayland.Dictation
+Service:   ai.voxctl.Dictation
+Object:    /ai/voxctl/Dictation
+Interface: ai.voxctl.Dictation
 
 Methods (all callable via dbus-send or qdbus):
   StartRecording()   → void
@@ -17,11 +17,11 @@ Methods (all callable via dbus-send or qdbus):
 
 Example shell usage:
   dbus-send --session --type=method_call \\
-    --dest=ai.whisperwayland.Dictation \\
-    /ai/whisperwayland/Dictation \\
-    ai.whisperwayland.Dictation.ToggleRecording
+    --dest=ai.voxctl.Dictation \\
+    /ai/voxctl/Dictation \\
+    ai.voxctl.Dictation.ToggleRecording
 
-  qdbus ai.whisperwayland.Dictation /ai/whisperwayland/Dictation GetStatus
+  qdbus ai.voxctl.Dictation /ai/voxctl/Dictation GetStatus
 
 Graceful degradation:
   - If dbus-python or pygobject is not installed, DBusService is a no-op stub.
@@ -40,9 +40,9 @@ try:
 except ImportError:
     _HAS_DBUS = False
 
-SERVICE_NAME = "ai.whisperwayland.Dictation"
-OBJECT_PATH  = "/ai/whisperwayland/Dictation"
-INTERFACE    = "ai.whisperwayland.Dictation"
+SERVICE_NAME = "ai.voxctl.Dictation"
+OBJECT_PATH  = "/ai/voxctl/Dictation"
+INTERFACE    = "ai.voxctl.Dictation"
 
 
 # ── Stub used when dbus-python is not installed ───────────────────────────

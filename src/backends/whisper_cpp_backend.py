@@ -26,7 +26,7 @@ GGUF_MAP: dict[str, list[str]] = {
 GGUF_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 
 DEFAULT_MODEL_DIR = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "whisper-wayland", "models"
+    os.path.expanduser("~"), ".local", "share", "voxctl", "models"
 )
 
 

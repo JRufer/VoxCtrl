@@ -278,7 +278,7 @@ class SettingsWindow(QWidget):
         except Exception:
             self._routing_bindings = []
 
-        self.setWindowTitle("Whisper Wayland — Settings")
+        self.setWindowTitle("VoxCtl — Settings")
         self.setMinimumWidth(520)
         self.setMinimumHeight(580)
         self.setStyleSheet(QSS)
@@ -634,7 +634,7 @@ class SettingsWindow(QWidget):
         import os
 
         model_dir = self.config.get("whisper_cpp_model_dir", "") or os.path.join(
-            os.path.expanduser("~"), ".local", "share", "whisper-wayland", "models"
+            os.path.expanduser("~"), ".local", "share", "voxctl", "models"
         )
         cpp = WhisperCppBackend(model_dir=model_dir)
         downloaded = cpp.list_downloaded_models()
@@ -658,7 +658,7 @@ class SettingsWindow(QWidget):
 
         model_size = self.cpp_model_combo.currentText()
         model_dir = self.config.get("whisper_cpp_model_dir", "") or os.path.join(
-            os.path.expanduser("~"), ".local", "share", "whisper-wayland", "models"
+            os.path.expanduser("~"), ".local", "share", "voxctl", "models"
         )
         cpp = WhisperCppBackend(model_dir=model_dir)
         url = cpp.get_model_url(model_size)
@@ -791,7 +791,7 @@ class SettingsWindow(QWidget):
         lay.addWidget(_hint(
             "Create hotkey bindings and assign them to output targets.  "
             "Each binding can use a different gesture and be independently enabled or disabled.  "
-            "Bindings are saved to ~/.config/whisper-wayland/bindings.toml."
+            "Bindings are saved to ~/.config/voxctl/bindings.toml."
         ))
 
         # ── Gesture guide ─────────────────────────────────────────────────
@@ -1263,7 +1263,7 @@ class SettingsWindow(QWidget):
             folder = self.overlay_manager.ensure_user_dir()
         else:
             from pathlib import Path
-            folder = Path.home() / ".config" / "whisper-wayland" / "overlays"
+            folder = Path.home() / ".config" / "voxctl" / "overlays"
             folder.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.Popen(["xdg-open", str(folder)])
@@ -1491,7 +1491,7 @@ class SettingsWindow(QWidget):
         except Exception:
             perm_rows.append(("⚠️", "'input' group", "Could not verify group membership"))
 
-        xdg_cfg = os.path.expanduser("~/.config/whisper-wayland")
+        xdg_cfg = os.path.expanduser("~/.config/voxctl")
         if os.path.isdir(xdg_cfg):
             perm_rows.append(("✅", "Config directory", f"{xdg_cfg}"))
         else:
@@ -2006,7 +2006,7 @@ class SettingsWindow(QWidget):
         # ── MCP Server ────────────────────────────────────────────────────────
         mcp_box = _section("MCP Server (AI Tool Integration)")
         mcp_box.layout().addWidget(_hint(
-            "Exposes Whisper-Wayland as an MCP tool so AI clients (Claude Desktop, "
+            "Exposes VoxCtl as an MCP tool so AI clients (Claude Desktop, "
             "custom agents) can trigger voice recording and TTS directly."
         ))
 
@@ -2277,8 +2277,8 @@ class SettingsWindow(QWidget):
 
     def _mcp_register_claude_desktop(self):
         try:
-            from mcp_server import WhisperMCPServer
-            path = WhisperMCPServer.write_claude_desktop_config()
+            from mcp_server import VoxCtlMCPServer
+            path = VoxCtlMCPServer.write_claude_desktop_config()
             QMessageBox.information(
                 self, "Claude Desktop Registered",
                 f"MCP entry written to:\n{path}\n\n"
@@ -2305,7 +2305,7 @@ class SettingsWindow(QWidget):
             "Define output targets that receive transcribed text.  "
             "Each target controls where text goes and how it is processed.  "
             "Hotkey bindings are managed in the Hotkeys tab.  "
-            "Changes are saved to ~/.config/whisper-wayland/targets.toml."
+            "Changes are saved to ~/.config/voxctl/targets.toml."
         ))
 
         # ── Targets panel (full width) ─────────────────────────────────────

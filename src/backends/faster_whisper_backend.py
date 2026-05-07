@@ -44,7 +44,7 @@ class FasterWhisperBackend:
         self._device = str(device)
         self._compute_type = str(compute_type)
 
-        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper-wayland")
+        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "voxctl")
         self._model = WhisperModel(
             model_size,
             device=device,

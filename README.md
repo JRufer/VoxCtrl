@@ -1,4 +1,4 @@
-# Whisper-Wayland
+# VoxCtl
 
 A native, on-device voice-to-text tool for Linux with first-class Wayland support (and X11 compatibility). Uses OpenAI's Whisper model for fast, private, offline transcription — and acts as a programmable **voice input broker** that routes speech to any destination: a focused window, a terminal agent, a file, a socket, or a shell command.
 
@@ -21,7 +21,7 @@ A native, on-device voice-to-text tool for Linux with first-class Wayland suppor
 - **Per-target hotkey bindings** — map any gesture (hold, toggle, double-tap) to any target
 - **Delivery types**: `inject` (focused window), `clipboard`, `exec` (shell command), `pipe` (named FIFO), `socket` (TCP/Unix), `file` (append), `dbus` (signal)
 - **Per-target post-processing** — independently control snippets, Ollama rewriting, and filler removal per target
-- **TOML config files** — `targets.toml` and `bindings.toml` under `~/.config/whisper-wayland/`
+- **TOML config files** — `targets.toml` and `bindings.toml` under `~/.config/voxctl/`
 
 ### Text Processing
 - **Voice snippets** — define triggers like "my email" that expand to full text
@@ -31,7 +31,7 @@ A native, on-device voice-to-text tool for Linux with first-class Wayland suppor
 ### Voice Output (TTS)
 - **Neural TTS with Piper** — high-quality, on-device speech synthesis; `espeak-ng` used automatically as fallback
 - **Voice picker** — choose from 8 curated Piper voices directly in Settings; each shows download status at a glance
-- **One-click model download** — progress bar in-app; models stored in `~/.local/share/whisper-wayland/voices/`
+- **One-click model download** — progress bar in-app; models stored in `~/.local/share/voxctl/voices/`
 - **Test button** — play a sample of any voice before committing to it
 - **TTS stop key** — configurable global hotkey (default: `Escape`) interrupts playback from any window
 - **Response overlay** — optional teal overlay displayed while TTS plays, distinct from the recording overlay
@@ -93,8 +93,8 @@ sudo pacman -S socat
 ### 2. Clone and set up the virtual environment
 
 ```bash
-git clone https://github.com/jrufer/whisper-wayland.git
-cd whisper-wayland
+git clone https://github.com/jrufer/voxctr.git
+cd voxctr
 
 python -m venv venv
 source venv/bin/activate        # bash/zsh
@@ -122,7 +122,7 @@ pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 ### 3. Launch
 
 ```bash
-./whisper-wayland.sh
+./voxctl.sh
 ```
 
 The app starts in the system tray. If your compositor doesn't support system trays, the Settings window opens directly.
@@ -177,14 +177,14 @@ sudo install build/bin/whisper-cli /usr/local/bin/
 Models are managed from **Settings → Engine → whisper.cpp Settings** with a one-click download button. To download manually:
 
 ```bash
-mkdir -p ~/.local/share/whisper-wayland/models/
+mkdir -p ~/.local/share/voxctl/models/
 
 # Recommended — large-v3, Q5_K_M (~1.1 GB):
-wget -P ~/.local/share/whisper-wayland/models/ \
+wget -P ~/.local/share/voxctl/models/ \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_k_m.bin
 
 # Smaller option for CPU-only use — base (~57 MB):
-wget -P ~/.local/share/whisper-wayland/models/ \
+wget -P ~/.local/share/voxctl/models/ \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
 ```
 
@@ -203,7 +203,7 @@ GGML_VULKAN=1 pip install git+https://github.com/abdeladim-s/pywhispercpp
 
 ## AT-SPI2 Accessibility Integration
 
-AT-SPI2 (Assistive Technology Service Provider Interface) is the standard Linux accessibility bus. When the optional `pyatspi` library is installed, Whisper-Wayland gains three capabilities that work transparently alongside the existing injection chain.
+AT-SPI2 (Assistive Technology Service Provider Interface) is the standard Linux accessibility bus. When the optional `pyatspi` library is installed, VoxCtl gains three capabilities that work transparently alongside the existing injection chain.
 
 ### Installation
 
@@ -227,7 +227,7 @@ The app falls back automatically to `wtype` → portal → `xdotool` → clipboa
 
 #### 2. Context-aware transcription
 
-When you press your recording hotkey, Whisper-Wayland reads up to 300 characters of text immediately before the cursor in the focused widget and passes it to Whisper as an `initial_prompt`. This primes the model with your document's vocabulary, spelling, and sentence style, reducing errors on specialised terminology and proper nouns without any manual prompt configuration.
+When you press your recording hotkey, VoxCtl reads up to 300 characters of text immediately before the cursor in the focused widget and passes it to Whisper as an `initial_prompt`. This primes the model with your document's vocabulary, spelling, and sentence style, reducing errors on specialised terminology and proper nouns without any manual prompt configuration.
 
 #### 3. Auto code mode
 
@@ -235,7 +235,7 @@ When the focused widget is a terminal or IDE text area (AT-SPI2 role `terminal` 
 
 ### Configuration
 
-All three behaviours are individually switchable in `~/.config/whisper-wayland/config.json`:
+All three behaviours are individually switchable in `~/.config/voxctl/config.json`:
 
 ```json
 {
@@ -292,7 +292,7 @@ mkfifo /tmp/hermes.in
 cat /tmp/hermes.in | hermes
 ```
 
-`~/.config/whisper-wayland/targets.toml`:
+`~/.config/voxctl/targets.toml`:
 
 ```toml
 format_version = "1.0"
@@ -313,7 +313,7 @@ post_processing = "strip_fillers"
 append_newline = true
 ```
 
-`~/.config/whisper-wayland/bindings.toml`:
+`~/.config/voxctl/bindings.toml`:
 
 ```toml
 format_version = "1.0"
@@ -376,7 +376,7 @@ Use `{TEXT}` as a placeholder in `exec` commands. It is substituted as a literal
 ### Config file locations
 
 ```
-~/.config/whisper-wayland/
+~/.config/voxctl/
 ├── config.json          # Global settings (managed by Settings UI)
 ├── targets.toml         # Output target definitions
 ├── bindings.toml        # Hotkey → target bindings
@@ -411,7 +411,7 @@ Custom overlays receive the routing label through the `label` parameter of `show
 
 ### Building Custom Overlays
 
-Drop a single Python file into `~/.config/whisper-wayland/overlays/`. Click **"Open Overlays Folder"** in Settings to go there directly. A ready-to-edit template (`_template.py`) is created automatically the first time you open the folder.
+Drop a single Python file into `~/.config/voxctl/overlays/`. Click **"Open Overlays Folder"** in Settings to go there directly. A ready-to-edit template (`_template.py`) is created automatically the first time you open the folder.
 
 Full specification and examples: **[docs/overlays.md](docs/overlays.md)**
 
@@ -419,7 +419,7 @@ Full specification and examples: **[docs/overlays.md](docs/overlays.md)**
 
 ## Voice Output (TTS)
 
-Whisper-Wayland can speak responses aloud using [Piper](https://github.com/rhasspy/piper), an on-device neural TTS engine.
+VoxCtl can speak responses aloud using [Piper](https://github.com/rhasspy/piper), an on-device neural TTS engine.
 
 ### Setup
 
@@ -444,7 +444,7 @@ Whisper-Wayland can speak responses aloud using [Piper](https://github.com/rhass
 | Danny | US English | Low | ~5 MB |
 | Alan | GB English | Low | ~5 MB |
 
-Models are downloaded from GitHub releases and stored in `~/.local/share/whisper-wayland/voices/`. Download once, use offline forever.
+Models are downloaded from GitHub releases and stored in `~/.local/share/voxctl/voices/`. Download once, use offline forever.
 
 ### TTS stop key
 
@@ -458,7 +458,7 @@ When enabled, a teal floating overlay appears while TTS plays — distinct from 
 
 ## MCP Server
 
-Whisper-Wayland can act as a **voice I/O gateway for AI agents** via its built-in MCP server. Enable it in **Settings → Voice Output → MCP Server**.
+VoxCtl can act as a **voice I/O gateway for AI agents** via its built-in MCP server. Enable it in **Settings → Voice Output → MCP Server**.
 
 ```json
 {
@@ -479,7 +479,7 @@ Full setup guide, protocol reference, and integration examples: **[docs/mcp_docu
 
 ## Ollama AI Post-Processing
 
-Whisper-Wayland can post-process transcriptions through a local [Ollama](https://ollama.com) model.
+VoxCtl can post-process transcriptions through a local [Ollama](https://ollama.com) model.
 
 | Model | RAM | Best for |
 |---|---|---|
@@ -501,13 +501,13 @@ Per-target override: set `post_processing = "none"` on agent targets to skip Oll
 
 Control the app from external scripts, Waybar, or Rofi.
 
-**Service**: `ai.whisperwayland.Dictation`
+**Service**: `ai.voxctl.Dictation`
 
 | Action | Command |
 |---|---|
-| Toggle recording | `dbus-send --session --type=method_call --dest=ai.whisperwayland.Dictation /ai/whisperwayland/Dictation ai.whisperwayland.Dictation.ToggleRecording` |
-| Get status | `qdbus ai.whisperwayland.Dictation /ai/whisperwayland/Dictation GetStatus` |
-| Get word count | `qdbus ai.whisperwayland.Dictation /ai/whisperwayland/Dictation GetWordCount` |
+| Toggle recording | `dbus-send --session --type=method_call --dest=ai.voxctl.Dictation /ai/voxctl/Dictation ai.voxctl.Dictation.ToggleRecording` |
+| Get status | `qdbus ai.voxctl.Dictation /ai/voxctl/Dictation GetStatus` |
+| Get word count | `qdbus ai.voxctl.Dictation /ai/voxctl/Dictation GetWordCount` |
 
 ---
 

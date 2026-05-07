@@ -1,10 +1,10 @@
 #!/bin/bash
-# Whisper-Wayland AppImage Installer
+# VoxCtl AppImage Installer
 
 set -e
 
-APP_NAME="Whisper-Wayland"
-APPIMAGE_FILE="Whisper-Wayland-x86_64.AppImage"
+APP_NAME="VoxCtl"
+APPIMAGE_FILE="VoxCtl-x86_64.AppImage"
 BIN_DIR="$HOME/.local/bin"
 DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
@@ -27,23 +27,23 @@ mkdir -p "$ICON_DIR"
 
 # 1. Install the AppImage
 echo "[*] Copying AppImage to $BIN_DIR..."
-cp "$APPIMAGE_FILE" "$BIN_DIR/whisper-wayland"
-chmod +x "$BIN_DIR/whisper-wayland"
+cp "$APPIMAGE_FILE" "$BIN_DIR/voxctl"
+chmod +x "$BIN_DIR/voxctl"
 
 # 2. Install the icon
 echo "[*] Installing icon..."
 if [ -f "assets/app_icon.png" ]; then
-    cp assets/app_icon.png "$ICON_DIR/whisper-wayland.png"
+    cp assets/app_icon.png "$ICON_DIR/voxctl.png"
 fi
 
 # 3. Create the desktop entry
 echo "[*] Creating desktop entry..."
-cat > "$DESKTOP_DIR/whisper-wayland.desktop" <<EOF
+cat > "$DESKTOP_DIR/voxctl.desktop" <<EOF
 [Desktop Entry]
-Name=Whisper Wayland
+Name=VoxCtl
 Comment=Native, on-device voice-to-text pipeline
-Exec=$BIN_DIR/whisper-wayland
-Icon=whisper-wayland
+Exec=$BIN_DIR/voxctl
+Icon=voxctl
 Terminal=false
 Type=Application
 Categories=Utility;Audio;

@@ -2,7 +2,7 @@
 P1.2 — Transcription History Panel
 
 Shows a timestamped, searchable log of every transcription this session.
-Optionally persists to ~/.local/share/whisper-wayland/history.jsonl.
+Optionally persists to ~/.local/share/voxctl/history.jsonl.
 """
 import json
 import os
@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QIcon, QFont, QClipboard
 
-HISTORY_PATH = Path.home() / ".local" / "share" / "whisper-wayland" / "history.jsonl"
+HISTORY_PATH = Path.home() / ".local" / "share" / "voxctl" / "history.jsonl"
 
 QSS = """
 QWidget {
@@ -123,7 +123,7 @@ class HistoryWindow(QWidget):
         self.config = config
         self._entries: list[HistoryEntry] = []
 
-        self.setWindowTitle("Whisper Wayland — History")
+        self.setWindowTitle("VoxCtl — History")
         self.setMinimumWidth(540)
         self.setMinimumHeight(500)
         self.setStyleSheet(QSS)

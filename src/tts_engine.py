@@ -124,7 +124,7 @@ VOICE_CATALOG: dict = {
 }
 
 DEFAULT_VOICE = "en-us-lessac-medium"
-VOICES_DIR = Path.home() / ".local" / "share" / "whisper-wayland" / "piper-voices"
+VOICES_DIR = Path.home() / ".local" / "share" / "voxctl" / "piper-voices"
 SAMPLE_TEXT = "Hello! This is how I sound. I am ready to be your voice assistant."
 
 
@@ -188,7 +188,7 @@ def download_voice(
     # GitHub redirects to a CDN; the CDN returns Content-Length on the final
     # response.  Call progress_cb unconditionally so the UI can switch to an
     # indeterminate spinner when total is unknown.
-    req = urllib.request.Request(url, headers={"User-Agent": "whisper-wayland/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "voxctl/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         raw_len = resp.headers.get("Content-Length") or resp.headers.get("content-length")
         total = int(raw_len) if raw_len and raw_len.strip().isdigit() else 0

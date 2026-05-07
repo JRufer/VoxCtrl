@@ -1,11 +1,11 @@
 #!/bin/bash
-# Whisper Wayland AppImage Build Script
+# VoxCtl AppImage Build Script
 # This script creates a portable AppImage bundling Python and dependencies.
 
 # Exit on error
 set -e
 
-APP_NAME="Whisper-Wayland"
+APP_NAME="VoxCtl"
 APP_DIR="AppDir"
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 
@@ -14,25 +14,25 @@ echo "Building AppImage for ${APP_NAME} (Python ${PYTHON_VERSION})..."
 # 1. Clean and Setup Structure
 rm -rf ${APP_DIR} *.AppImage
 mkdir -p ${APP_DIR}/usr/bin
-mkdir -p ${APP_DIR}/usr/share/whisper-wayland
+mkdir -p ${APP_DIR}/usr/share/voxctl
 mkdir -p ${APP_DIR}/usr/share/metainfo
 mkdir -p ${APP_DIR}/usr/share/applications
 mkdir -p ${APP_DIR}/usr/share/icons/hicolor/256x256/apps
 
 # 2. Copy Application Files
 echo "[*] Copying application source and assets..."
-cp -r src/ ${APP_DIR}/usr/share/whisper-wayland/
-cp -r assets/ ${APP_DIR}/usr/share/whisper-wayland/
-cp whisper-wayland.desktop ${APP_DIR}/usr/share/applications/
+cp -r src/ ${APP_DIR}/usr/share/voxctl/
+cp -r assets/ ${APP_DIR}/usr/share/voxctl/
+cp voxctl.desktop ${APP_DIR}/usr/share/applications/
 
 # Update desktop file for AppImage
-sed -i "s|^Exec=.*|Exec=whisper-wayland|" ${APP_DIR}/usr/share/applications/whisper-wayland.desktop
-sed -i "s|^Icon=.*|Icon=whisper-wayland|" ${APP_DIR}/usr/share/applications/whisper-wayland.desktop
+sed -i "s|^Exec=.*|Exec=voxctl|" ${APP_DIR}/usr/share/applications/voxctl.desktop
+sed -i "s|^Icon=.*|Icon=voxctl|" ${APP_DIR}/usr/share/applications/voxctl.desktop
 
 # Icons
-cp assets/app_icon.png ${APP_DIR}/usr/share/icons/hicolor/256x256/apps/whisper-wayland.png
-cp assets/app_icon.png ${APP_DIR}/whisper-wayland.png
-ln -sf usr/share/applications/whisper-wayland.desktop ${APP_DIR}/whisper-wayland.desktop
+cp assets/app_icon.png ${APP_DIR}/usr/share/icons/hicolor/256x256/apps/voxctl.png
+cp assets/app_icon.png ${APP_DIR}/voxctl.png
+ln -sf usr/share/applications/voxctl.desktop ${APP_DIR}/voxctl.desktop
 
 # 3. Install Dependencies using a virtualenv
 echo "[*] Creating virtual environment inside AppDir..."
@@ -57,8 +57,8 @@ export LD_LIBRARY_PATH="\${USR_DIR}/lib:\${USR_DIR}/lib/x86_64-linux-gnu:\${LD_L
 export XDG_DATA_DIRS="\${USR_DIR}/share:\${XDG_DATA_DIRS}"
 
 # Launch using the bundled venv's python
-export PYTHONPATH="\${USR_DIR}/share/whisper-wayland:\${PYTHONPATH}"
-exec "\${VENV_DIR}/bin/python3" "\${USR_DIR}/share/whisper-wayland/src/main.py" "\$@"
+export PYTHONPATH="\${USR_DIR}/share/voxctl:\${PYTHONPATH}"
+exec "\${VENV_DIR}/bin/python3" "\${USR_DIR}/share/voxctl/src/main.py" "\$@"
 EOF
 chmod +x ${APP_DIR}/AppRun
 

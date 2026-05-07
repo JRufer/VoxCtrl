@@ -1,5 +1,5 @@
 """
-Startup configuration validator for Whisper-Wayland.
+Startup configuration validator for VoxCtl.
 
 Validates config.json, targets.toml, and bindings.toml on startup.
 Logs problems clearly and raises ConfigValidationError if any fatal

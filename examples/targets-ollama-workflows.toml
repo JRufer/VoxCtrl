@@ -4,7 +4,7 @@
 ## models, modes, and custom prompts.  Requires: global ollama_enabled = true
 ## in config.json and Ollama running at http://localhost:11434.
 ##
-## Copy to ~/.config/whisper-wayland/targets.toml (or merge with an existing file)
+## Copy to ~/.config/voxctl/targets.toml (or merge with an existing file)
 
 format_version = "1.1"
 

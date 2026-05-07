@@ -153,7 +153,7 @@ class TestUdevRuleExists:
 
     def test_returns_false_when_file_absent(self):
         with tempfile.TemporaryDirectory() as d:
-            absent = Path(d) / "99-whisper-wayland.rules"
+            absent = Path(d) / "99-voxctl.rules"
             with mock.patch.object(sd, "_UDEV_RULE_PATH", absent):
                 assert sd.udev_rule_exists() is False
 

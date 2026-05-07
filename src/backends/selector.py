@@ -177,7 +177,7 @@ def select_backend(config) -> object:
         log.info("Backend: forced to whisper-cpp")
         cpp_binary = config.get("whisper_cpp_binary", "whisper-cli")
         cpp_model_dir = config.get("whisper_cpp_model_dir") or os.path.join(
-            os.path.expanduser("~"), ".local", "share", "whisper-wayland", "models"
+            os.path.expanduser("~"), ".local", "share", "voxctl", "models"
         )
         backend = WhisperCppBackend(binary_path=cpp_binary, model_dir=cpp_model_dir)
         if config.get("whisper_cpp_threads"):
@@ -190,7 +190,7 @@ def select_backend(config) -> object:
 
     cpp_binary = config.get("whisper_cpp_binary", "whisper-cli")
     cpp_model_dir = config.get("whisper_cpp_model_dir") or os.path.join(
-        os.path.expanduser("~"), ".local", "share", "whisper-wayland", "models"
+        os.path.expanduser("~"), ".local", "share", "voxctl", "models"
     )
 
     def make_cpp():
