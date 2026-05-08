@@ -5,7 +5,8 @@
 #
 # What IS bundled:
 #   All packages from requirements.txt (PyQt6, faster-whisper, onnxruntime, PyAudio
-#   Python wrapper, dbus-python, evdev, noisereduce, scipy, numpy, and 50+ more).
+#   Python wrapper, dbus-python, evdev, noisereduce, scipy, numpy, websockets, mcp,
+#   pyatspi, and 50+ more).
 #
 # What is NOT bundled (must be present on the host — installed by install.sh):
 #   • libportaudio2  — PyAudio's C extension links to this at runtime
@@ -17,8 +18,8 @@
 #   • alsa-utils     — provides aplay for TTS audio output
 #   • piper          — neural TTS binary (installed to /opt/piper by install.sh)
 #   • espeak-ng      — TTS fallback binary
-#   • socat          — optional MCP/Claude Desktop bridge
-#   • python3-pyatspi / python-atspi  — optional AT-SPI2 system package
+#   • socat          — optional MCP/Claude Desktop bridge (stdio transport)
+#   • AT-SPI2 daemon — pyatspi is bundled, but the host AT-SPI registry must be running
 
 set -e
 

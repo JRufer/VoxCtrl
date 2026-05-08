@@ -185,25 +185,14 @@ else
     fi
 fi
 
-# pyatspi — AT-SPI2 Python bindings for direct text insertion and context-aware transcription.
-# This is a system package; it cannot be bundled in the AppImage because it depends on
-# session-level AT-SPI dbus services that must run on the host.
-PYATSPI_PKG=$(_resolve_pkg "python3-pyatspi" "python-atspi" "python3-pyatspi" "python3-pyatspi")
+# pyatspi — bundled inside the AppImage venv. AT-SPI2 features (direct text insertion,
+# context-aware transcription) work automatically as long as the host AT-SPI registry
+# daemon is running (it is started automatically by most desktop environments).
 if python3 -c "import pyatspi" 2>/dev/null; then
-    ok "pyatspi available (AT-SPI2 context-aware transcription enabled)"
+    ok "pyatspi available on system Python (AT-SPI2 context-aware transcription enabled)"
 else
-    echo ""
-    echo "    pyatspi enables:"
-    echo "      • Direct text insertion (no keystrokes needed — works in most apps)"
-    echo "      • Context-aware transcription (reads the focused field to adapt output)"
-    echo "      • Code/prose mode auto-switching"
-    read -rp "  Install $PYATSPI_PKG for AT-SPI2 accessibility? [y/N] " yn
-    if [[ "$yn" =~ ^[Yy]$ ]]; then
-        _pkg_install "$PYATSPI_PKG" && ok "$PYATSPI_PKG installed" \
-            || warn "$PYATSPI_PKG install failed — AT-SPI2 features will be disabled."
-    else
-        warn "$PYATSPI_PKG skipped — AT-SPI2 context-aware transcription will be disabled."
-    fi
+    info "pyatspi not found on system Python — that's OK, it's bundled inside the AppImage."
+    info "AT-SPI2 features will work as long as your desktop session runs the AT-SPI registry."
 fi
 
 # ──────────────────────────────────────────────────────
@@ -340,7 +329,8 @@ command -v piper &>/dev/null && echo "    TTS        →  piper (neural) + espea
 echo ""
 echo "  What the AppImage bundles (no extra pip install needed):"
 echo "    • All Python packages: PyQt6, faster-whisper, onnxruntime, PyAudio,"
-echo "      dbus-python, evdev, noisereduce, scipy, numpy, and 50+ more"
+echo "      dbus-python, evdev, noisereduce, scipy, numpy, websockets, mcp,"
+echo "      pyatspi, and 50+ more"
 echo ""
 echo "  What must be on the host (installed above):"
 echo "    • libportaudio2  — audio capture C library"

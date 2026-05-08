@@ -7,7 +7,10 @@ arch=('any')
 url="https://github.com/jrufer/voxctl"
 license=('MIT')
 depends=('python' 'python-pyqt6' 'python-evdev' 'portaudio' 'wl-clipboard')
-optdepends=('python-faster-whisper: for the transcription engine')
+optdepends=('python-faster-whisper: for the transcription engine'
+            'python-websockets: for WebSocket delivery support'
+            'python-mcp: for MCP server feature'
+            'python-atspi: for AT-SPI2 focus tracking and direct text insertion')
 source=("voxctl.desktop" "99-voxctl.rules")
 sha256sums=('SKIP' 'SKIP')
 
