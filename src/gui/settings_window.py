@@ -358,11 +358,11 @@ class SettingsWindow(QWidget):
             ("⚡", "Engine",    self._tab_engine),
             ("🔊", "Audio",     self._tab_audio),
             ("⌨", "Hotkeys",   self._tab_hotkeys),
+            ("🔀", "Routing",   self._tab_routing),
             ("✨", "Dictation", self._tab_dictation),
             ("🎨", "Appearance", self._tab_appearance),
             ("📎", "Snippets",  self._tab_snippets),
             ("🤖", "AI",        self._tab_ai),
-            ("🔀", "Routing",   self._tab_routing),
             ("🔈", "Voice Out", self._tab_voice_output),
         ]
 
@@ -1040,11 +1040,11 @@ class SettingsWindow(QWidget):
         self._snippets_layout.setContentsMargins(0, 0, 0, 0)
         self._snippets_layout.setSpacing(6)
 
-        # Header row
+        # Column labels
         header = QHBoxLayout()
-        header.addWidget(QLabel("Trigger phrase"), 1)
-        header.addWidget(QLabel("Expands to"), 2)
-        header.addWidget(QLabel(""), 0)  # spacer for delete button column
+        lbl_trigger = QLabel("Trigger phrase → Expansion")
+        lbl_trigger.setObjectName("hint")
+        header.addWidget(lbl_trigger, 1)
         self._snippets_layout.addLayout(header)
 
         # Pre-populate from config
@@ -1062,23 +1062,25 @@ class SettingsWindow(QWidget):
         return w
 
     def _add_snippet_row(self, trigger="", expansion=""):
+        field_style = (
+            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
+            "padding:6px 8px; color:#e2e8f0;"
+        )
+
         row_widget = QWidget()
-        row_layout = QHBoxLayout(row_widget)
+        row_layout = QVBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
+        row_layout.setSpacing(4)
+
+        # Top row: trigger field + delete button
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
 
         trigger_edit = QLineEdit(trigger)
-        trigger_edit.setPlaceholderText("e.g. my email")
-        trigger_edit.setStyleSheet(
-            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
-            "padding:6px 8px; color:#e2e8f0;"
-        )
-        expansion_edit = QLineEdit(expansion)
-        expansion_edit.setPlaceholderText("e.g. john.doe@example.com")
-        expansion_edit.setStyleSheet(
-            "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
-            "padding:6px 8px; color:#e2e8f0;"
-        )
+        trigger_edit.setPlaceholderText("trigger phrase (e.g. my email)")
+        trigger_edit.setStyleSheet(field_style)
 
         del_btn = QPushButton("✕")
         del_btn.setFixedWidth(30)
@@ -1087,9 +1089,18 @@ class SettingsWindow(QWidget):
             "QPushButton:hover { color:#f87171; }"
         )
 
-        row_layout.addWidget(trigger_edit, 1)
-        row_layout.addWidget(expansion_edit, 2)
-        row_layout.addWidget(del_btn)
+        top_layout.addWidget(trigger_edit, 1)
+        top_layout.addWidget(del_btn)
+
+        # Expansion text area (multi-line)
+        expansion_edit = QTextEdit()
+        expansion_edit.setPlaceholderText("expansion text (e.g. john.doe@example.com)")
+        expansion_edit.setPlainText(expansion)
+        expansion_edit.setFixedHeight(80)
+        expansion_edit.setStyleSheet(field_style)
+
+        row_layout.addWidget(top_widget)
+        row_layout.addWidget(expansion_edit)
 
         row_data = {"widget": row_widget, "trigger": trigger_edit, "expansion": expansion_edit}
         self._snippet_rows.append(row_data)
@@ -1579,8 +1590,12 @@ class SettingsWindow(QWidget):
                 "    Required for whisper-cpp backend\n"
                 "    Build from: https://github.com/ggerganov/whisper.cpp"))
 
+        backend_engine = self.config.get("backend_engine", "auto") if hasattr(self, 'config') else "auto"
         if self.inference_engine and getattr(self.inference_engine, 'actual_device', None) == "cuda":
             asr_rows.append(("✅", "GPU / CUDA", "Active — using GPU acceleration"))
+        elif backend_engine == "whisper-cpp":
+            asr_rows.append(("ℹ️", "GPU / CUDA",
+                "whisper-cpp uses its own Vulkan/CUDA path — torch is not required"))
         else:
             try:
                 import torch
@@ -1592,7 +1607,8 @@ class SettingsWindow(QWidget):
                         "Not available — running on CPU (install CUDA + torch with CUDA support)"))
             except ImportError:
                 asr_rows.append(("ℹ️", "GPU / CUDA",
-                    "torch not installed — GPU detection unavailable\n    pip install torch"))
+                    "torch not installed — GPU detection unavailable\n"
+                    "    pip install torch  (only needed for GPU-accelerated faster-whisper)"))
 
         sections.append(("ASR Backends", asr_rows))
 
@@ -1656,7 +1672,8 @@ class SettingsWindow(QWidget):
         except ImportError:
             opt_rows.append(("ℹ️", "pyatspi",
                 "Not installed — focused-window context for transcription unavailable\n"
-                "    pip install pyatspi  or  sudo pacman -S python-pyatspi"))
+                "    System package (not pip): sudo pacman -S python-pyatspi\n"
+                "    or: sudo apt install python3-pyatspi"))
 
         try:
             import sounddevice  # noqa: F401
@@ -1671,14 +1688,9 @@ class SettingsWindow(QWidget):
             opt_rows.append(("✅", "mcp", "Installed — MCP server available"))
         except ImportError:
             opt_rows.append(("ℹ️", "mcp",
-                "Not installed — MCP server feature unavailable\n    pip install mcp"))
-
-        try:
-            import websockets  # noqa: F401
-            opt_rows.append(("✅", "websockets", "Installed — WebSocket targets available"))
-        except ImportError:
-            opt_rows.append(("ℹ️", "websockets",
-                "Not installed — WebSocket delivery unavailable\n    pip install websockets"))
+                "Not installed — MCP server feature unavailable\n"
+                "    This should be bundled in the AppImage; try rebuilding with:\n"
+                "    bash scripts/build_appimage.sh"))
 
         sections.append(("Optional Python Packages", opt_rows))
 
@@ -1858,7 +1870,7 @@ class SettingsWindow(QWidget):
         snippets = {}
         for row in self._snippet_rows:
             trigger = row["trigger"].text().strip().lower()
-            expansion = row["expansion"].text().strip()
+            expansion = row["expansion"].toPlainText().strip()
             if trigger and expansion:
                 snippets[trigger] = expansion
         self.config.set("snippets", snippets)
@@ -2768,13 +2780,16 @@ class _TargetEditorDialog(QDialog):
             lbl.setVisible(show_dbus)
 
     def _accept(self):
-        from routing.models import OutputTarget, TargetProcessingConfig
+        from routing.models import OutputTarget, TargetProcessingConfig, DeliveryType as _DT
         target_id = self._id_edit.text().strip()
         if not target_id:
             QMessageBox.warning(self, "Validation", "ID is required.")
             return
         label = self._label_edit.text().strip() or target_id
         delivery = self._delivery_combo.currentData()
+        if delivery == _DT.FILE and not self._file_path_edit.text().strip():
+            QMessageBox.warning(self, "Validation", "File path is required for file delivery.")
+            return
 
         # Build TargetProcessingConfig from UI
         processing = TargetProcessingConfig(
