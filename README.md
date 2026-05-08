@@ -2,7 +2,7 @@
 
 A native, on-device voice-to-text tool for Linux with first-class Wayland support (and X11 compatibility). Uses OpenAI's Whisper model for fast, private, offline transcription — and acts as a programmable **voice input broker** that routes speech to any destination: a focused window, a terminal agent, a file, a socket, or a shell command.
 
-![Banner](assets/banner.png)
+![App Icon](assets/app_icon.png)
 
 ---
 
@@ -56,6 +56,9 @@ A native, on-device voice-to-text tool for Linux with first-class Wayland suppor
 - **Noise suppression** — optional `noisereduce` filter (included in `requirements.txt`)
 - **DBus interface** — control from Waybar, scripts, or Rofi
 - **Settings UI** — tabbed PyQt6 dialog covering all features
+
+  ![Settings UI](assets/settings.png)
+
 - **Keybind conflict detection** — inline warnings in Settings → Hotkeys flag exact duplicates, subset collisions, double-tap/combo overlaps, and bare single-key bindings
 - **Config validation** — startup validator catches malformed `config.json`, `targets.toml`, and `bindings.toml` with clear error messages
 
