@@ -99,7 +99,8 @@ The installer takes care of everything:
 - Downloads and installs the Piper neural TTS engine to `/opt/piper`
 - Creates udev rules and adds you to the `input`/`uinput` groups so global hotkeys work
 - Installs the AppImage to `~/.local/bin/voxctl` with a desktop entry and icon
-- Prompts once for two optional extras: `socat` (Claude Desktop / MCP bridge) and `python3-pyatspi` (AT-SPI2 accessibility — see section below)
+- Prompts once for one optional extra: `socat` (Claude Desktop / MCP bridge stdio transport)
+- `pyatspi`, `mcp`, and `websockets` are bundled inside the AppImage — no manual install needed
 - Detects your GPU and advises which transcription backend will be selected
 
 **Step 3 — Log out and back in** (required for the group permission changes to take effect), then launch:
@@ -170,7 +171,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> `requirements.txt` includes noise suppression (`noisereduce`) and D-Bus support (`dbus-python`) by default.
+> `requirements.txt` includes noise suppression (`noisereduce`), D-Bus support (`dbus-python`), WebSocket delivery (`websockets`), MCP server support (`mcp`), and AT-SPI2 accessibility (`pyatspi`) by default.
 
 #### 4. Optional: NVIDIA GPU acceleration
 
@@ -266,9 +267,9 @@ AT-SPI2 (Assistive Technology Service Provider Interface) is the standard Linux 
 
 ### Installation
 
-**AppImage users:** `install.sh` prompts you to install AT-SPI2 during setup — no manual steps needed.
+**AppImage users:** `pyatspi` is bundled inside the AppImage — no manual steps needed. AT-SPI2 features are available automatically as long as your desktop session runs the AT-SPI registry daemon (started automatically by GNOME, KDE, and most other environments).
 
-**Source users:**
+**Source users:** `pyatspi` is included in `requirements.txt` and installed automatically with `pip install -r requirements.txt`. If you prefer the system package:
 
 ```bash
 # Arch Linux
