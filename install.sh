@@ -241,7 +241,27 @@ if [ -f "assets/app_icon.png" ]; then
     ok "Icon installed"
 fi
 
-cat > "$DESKTOP_DIR/voxctl.desktop" <<EOF
+# Check for an existing voxctl.desktop in common locations (system-wide or user).
+# If found, update only the Exec= line in-place to avoid creating a duplicate
+# app menu entry alongside one left by a previous install or package manager.
+EXISTING_DESKTOP=""
+for candidate in \
+    "$HOME/.local/share/applications/voxctl.desktop" \
+    "/usr/local/share/applications/voxctl.desktop" \
+    "/usr/share/applications/voxctl.desktop"; do
+    if [ -f "$candidate" ]; then
+        EXISTING_DESKTOP="$candidate"
+        break
+    fi
+done
+
+if [ -n "$EXISTING_DESKTOP" ]; then
+    info "Existing desktop entry found at $EXISTING_DESKTOP — updating Exec= line..."
+    sed -i "s|^Exec=.*|Exec=$BIN_DIR/voxctl|" "$EXISTING_DESKTOP"
+    ok "Desktop entry updated in-place (no duplicate created)"
+    UPDATED_DESKTOP_DIR="$(dirname "$EXISTING_DESKTOP")"
+else
+    cat > "$DESKTOP_DIR/voxctl.desktop" <<EOF
 [Desktop Entry]
 Name=VoxCtl
 Comment=Native, on-device voice-to-text pipeline
@@ -253,9 +273,11 @@ Categories=Utility;AudioVideo;
 StartupNotify=false
 Keywords=whisper;voice;dictation;wayland;
 EOF
-ok "Desktop entry created"
+    ok "Desktop entry created at $DESKTOP_DIR/voxctl.desktop"
+    UPDATED_DESKTOP_DIR="$DESKTOP_DIR"
+fi
 
-command -v update-desktop-database &>/dev/null && update-desktop-database "$DESKTOP_DIR" || true
+command -v update-desktop-database &>/dev/null && update-desktop-database "$UPDATED_DESKTOP_DIR" || true
 
 # ──────────────────────────────────────────────────────
 # 7. Piper TTS engine

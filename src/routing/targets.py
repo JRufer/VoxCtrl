@@ -244,8 +244,15 @@ class FileTarget:
             return TestResult(reachable=False, detail="No file_path configured")
         path = os.path.expanduser(self.config.file_path)
         parent = os.path.dirname(path) or '.'
+        if not os.path.isdir(parent):
+            # Try creating parent directories the same way deliver() would
+            try:
+                os.makedirs(parent, exist_ok=True)
+            except OSError as e:
+                return TestResult(reachable=False, detail=f"Cannot create directory {parent}: {e}")
         if os.access(parent, os.W_OK):
-            return TestResult(reachable=True, detail=f"Parent directory {parent} is writable")
+            exists_note = " (will be created on first delivery)" if not os.path.exists(path) else ""
+            return TestResult(reachable=True, detail=f"{path}{exists_note}")
         return TestResult(reachable=False, detail=f"Cannot write to {parent}")
 
 
