@@ -283,6 +283,10 @@ class SettingsWindow(QWidget):
     _tts_test_done_sig = pyqtSignal(str)        # status message (empty = success)
     _cpp_download_ok_sig = pyqtSignal(str)          # filename
     _cpp_download_err_sig = pyqtSignal(str)
+    _fw_download_ok_sig = pyqtSignal(str)           # model size
+    _fw_download_err_sig = pyqtSignal(str)
+    _cpp_progress_sig = pyqtSignal(int, int)        # done, total
+    _fw_progress_sig = pyqtSignal(int, int)         # done, total
 
     def __init__(self, config, inference_engine=None, audio_recorder=None, overlay_manager=None):
         super().__init__()
@@ -441,39 +445,12 @@ class SettingsWindow(QWidget):
         w = self._scrollable()
         lay = w.layout()
 
-        # Model
-        model_box = _section("Whisper Model")
-        model_box.layout().addWidget(_hint(
-            "Larger models are more accurate but slower. 'base' works well for most users."
+        # Moved to Engine tab
+        info_box = _section("General Settings")
+        info_box.layout().addWidget(_hint(
+            "Settings for Whisper models and processing devices have been moved to the Engine tab."
         ))
-        self.model_combo = QComboBox()
-        self.model_combo.addItems(["tiny", "base", "small", "medium", "large-v3"])
-        self.model_combo.setCurrentText(self.config.get("model_size", "base"))
-        model_box.layout().addWidget(self.model_combo)
-        lay.addWidget(model_box)
-
-        # Device
-        device_box = _section("Processing Device")
-        device_box.layout().addWidget(_hint(
-            "Use 'auto' to let the app choose. Select 'cuda' if you have an NVIDIA GPU for faster transcription."
-        ))
-        h = QHBoxLayout()
-        h.setSpacing(8)
-        self.device_type_combo = QComboBox()
-        self.device_type_combo.addItems(["auto", "cuda", "cpu"])
-        self.device_type_combo.setCurrentText(self.config.get("device", "auto"))
-        self.inference_mode_combo = QComboBox()
-        self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
-        self.inference_mode_combo.setCurrentText(self.config.get("inference_mode", "Balanced"))
-        h.addWidget(QLabel("Hardware:"))
-        h.addWidget(self.device_type_combo, 1)
-        h.addWidget(QLabel("Real-time:"))
-        h.addWidget(self.inference_mode_combo, 1)
-        device_box.layout().addLayout(h)
-        device_box.layout().addWidget(_hint(
-            "'Aggressive' real-time mode transcribes more often while you speak (uses more CPU)."
-        ))
-        lay.addWidget(device_box)
+        lay.addWidget(info_box)
 
         lay.addStretch()
         return w
@@ -493,7 +470,7 @@ class SettingsWindow(QWidget):
         ))
         self.engine_combo = QComboBox()
         self.engine_combo.addItems(["auto", "faster-whisper", "whisper-cpp"])
-        self.engine_combo.setCurrentText(self.config.get("backend_engine", "auto"))
+        self.engine_combo.setCurrentText(self.config.get("engine.backend", "auto"))
         self.engine_combo.currentTextChanged.connect(self._on_engine_changed)
         engine_box.layout().addWidget(self.engine_combo)
         lay.addWidget(engine_box)
@@ -515,6 +492,67 @@ class SettingsWindow(QWidget):
         hw_box.layout().addWidget(self._active_backend_label)
         lay.addWidget(hw_box)
 
+        # ── Faster-Whisper Settings ────────────────────────────────────────
+        self._fw_box = _section("Faster-Whisper Settings")
+        self._fw_box.layout().addWidget(_hint(
+            "Larger models are more accurate but slower. 'base' works well for most users."
+        ))
+        self.model_combo = QComboBox()
+        from backends.faster_whisper_backend import FasterWhisperBackend
+        downloaded_fw = FasterWhisperBackend.list_downloaded_models()
+        fw_sizes = ["tiny", "base", "small", "medium", "large-v3"]
+        cur_fw = self.config.get("engine.faster_whisper.model_size", "base")
+        for size in fw_sizes:
+            label = size + ("  ✅" if size in downloaded_fw else "  ⬇")
+            self.model_combo.addItem(label, size)
+            if size == cur_fw:
+                self.model_combo.setCurrentIndex(self.model_combo.count() - 1)
+        self.model_combo.currentIndexChanged.connect(self._update_fw_model_status)
+        self._fw_box.layout().addWidget(self.model_combo)
+
+        self._fw_box.layout().addWidget(_hint(
+            "Use 'auto' to let the app choose. Select 'cuda' if you have an NVIDIA GPU for faster transcription."
+        ))
+        h = QHBoxLayout()
+        h.setSpacing(8)
+        self.device_type_combo = QComboBox()
+        self.device_type_combo.addItems(["auto", "cuda", "cpu"])
+        self.device_type_combo.setCurrentText(self.config.get("engine.faster_whisper.device", "auto"))
+        self.inference_mode_combo = QComboBox()
+        self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
+        self.inference_mode_combo.setCurrentText(self.config.get("engine.inference_mode", "Balanced"))
+        h.addWidget(QLabel("Hardware:"))
+        h.addWidget(self.device_type_combo, 1)
+        h.addWidget(QLabel("Real-time:"))
+        h.addWidget(self.inference_mode_combo, 1)
+        self._fw_box.layout().addLayout(h)
+        self._fw_box.layout().addWidget(_hint(
+            "'Aggressive' real-time mode transcribes more often while you speak (uses more CPU)."
+        ))
+        
+        # Model download status
+        self._fw_model_status = QLabel("")
+        self._fw_model_status.setObjectName("hint")
+        self._fw_model_status.setWordWrap(True)
+        self._fw_box.layout().addWidget(self._fw_model_status)
+
+        self._fw_progress = QProgressBar()
+        self._fw_progress.setRange(0, 100)
+        self._fw_progress.setValue(0)
+        self._fw_progress.setVisible(False)
+        self._fw_progress.setStyleSheet(
+            "QProgressBar { background:#1a1f2e; border:1px solid #2a3448; border-radius:4px; height:8px; text-align:center; }"
+            "QProgressBar::chunk { background:#4a9eff; border-radius:4px; }"
+        )
+        self._fw_box.layout().addWidget(self._fw_progress)
+
+        # Download button
+        self._fw_download_btn = QPushButton("Download Selected Model")
+        self._fw_download_btn.clicked.connect(self._download_fw_model)
+        self._fw_box.layout().addWidget(self._fw_download_btn)
+
+        lay.addWidget(self._fw_box)
+
         # ── whisper.cpp settings ───────────────────────────────────────────
         self._cpp_box = _section("whisper.cpp Settings")
         self._cpp_box.layout().addWidget(_hint(
@@ -524,7 +562,7 @@ class SettingsWindow(QWidget):
         # Binary path
         bin_row = QHBoxLayout()
         bin_row.addWidget(QLabel("Binary:"))
-        self.cpp_binary_edit = QLineEdit(self.config.get("whisper_cpp_binary", "whisper-cli"))
+        self.cpp_binary_edit = QLineEdit(self.config.get("engine.whisper_cpp.binary", "whisper-cli"))
         self.cpp_binary_edit.setPlaceholderText("whisper-cli  (must be on $PATH or full path)")
         bin_row.addWidget(self.cpp_binary_edit, 1)
         self._cpp_box.layout().addLayout(bin_row)
@@ -533,11 +571,20 @@ class SettingsWindow(QWidget):
         cpp_model_row = QHBoxLayout()
         cpp_model_row.addWidget(QLabel("Model:"))
         self.cpp_model_combo = QComboBox()
-        from backends.whisper_cpp_backend import GGUF_MAP
-        self.cpp_model_combo.addItems(list(GGUF_MAP.keys()))
-        self.cpp_model_combo.setCurrentText(
-            self.config.get("whisper_cpp_model_size", "large-v3")
+        from backends.whisper_cpp_backend import GGUF_MAP, WhisperCppBackend
+        import os
+        model_dir = self.config.get("whisper_cpp_model_dir", "") or os.path.join(
+            os.path.expanduser("~"), ".local", "share", "voxctl", "models"
         )
+        cpp = WhisperCppBackend(model_dir=model_dir)
+        downloaded_cpp = cpp.list_downloaded_models()
+        cur_cpp = self.config.get("engine.whisper_cpp.model_size", "large-v3")
+        for size in GGUF_MAP.keys():
+            label = size + ("  ✅" if size in downloaded_cpp else "  ⬇")
+            self.cpp_model_combo.addItem(label, size)
+            if size == cur_cpp:
+                self.cpp_model_combo.setCurrentIndex(self.cpp_model_combo.count() - 1)
+        self.cpp_model_combo.currentIndexChanged.connect(self._update_cpp_model_status)
         cpp_model_row.addWidget(self.cpp_model_combo, 1)
         self._cpp_box.layout().addLayout(cpp_model_row)
 
@@ -547,7 +594,7 @@ class SettingsWindow(QWidget):
         self.cpp_device_combo = QComboBox()
         self.cpp_device_combo.addItems(["auto", "vulkan", "cuda", "cpu"])
         self.cpp_device_combo.setCurrentText(
-            self.config.get("whisper_cpp_device", "auto")
+            self.config.get("engine.whisper_cpp.device", "auto")
         )
         cpp_dev_row.addWidget(self.cpp_device_combo, 1)
         self._cpp_box.layout().addLayout(cpp_dev_row)
@@ -559,7 +606,7 @@ class SettingsWindow(QWidget):
         self.cpp_threads_spin = QSpinBox()
         self.cpp_threads_spin.setRange(0, 32)
         self.cpp_threads_spin.setSpecialValueText("Auto")
-        self.cpp_threads_spin.setValue(self.config.get("whisper_cpp_threads", 0))
+        self.cpp_threads_spin.setValue(self.config.get("engine.whisper_cpp.threads", 0))
         self.cpp_threads_spin.setStyleSheet(
             "background:#1a1f2e; border:1px solid #2a3448; border-radius:6px;"
             "padding:4px 8px; color:#e2e8f0;"
@@ -573,6 +620,16 @@ class SettingsWindow(QWidget):
         self._cpp_model_status.setObjectName("hint")
         self._cpp_model_status.setWordWrap(True)
         self._cpp_box.layout().addWidget(self._cpp_model_status)
+
+        self._cpp_progress = QProgressBar()
+        self._cpp_progress.setRange(0, 100)
+        self._cpp_progress.setValue(0)
+        self._cpp_progress.setVisible(False)
+        self._cpp_progress.setStyleSheet(
+            "QProgressBar { background:#1a1f2e; border:1px solid #2a3448; border-radius:4px; height:8px; text-align:center; }"
+            "QProgressBar::chunk { background:#4a9eff; border-radius:4px; }"
+        )
+        self._cpp_box.layout().addWidget(self._cpp_progress)
 
         # Download button
         self._cpp_download_btn = QPushButton("Download Selected Model")
@@ -601,17 +658,27 @@ class SettingsWindow(QWidget):
 
         # Populate hardware info asynchronously
         threading.Thread(target=self._probe_hardware_async, daemon=True).start()
-        # Show/hide cpp settings depending on current selection
+        # Show/hide settings depending on current selection
         self._on_engine_changed(self.engine_combo.currentText())
 
         return w
 
     def _on_engine_changed(self, engine: str):
-        show_cpp = engine in ("whisper-cpp", "auto")
+        if engine == "auto" and self.inference_engine:
+            resolved = getattr(self.inference_engine, "active_backend_name", "")
+            show_cpp = (resolved == "whisper-cpp")
+            show_fw = (resolved == "faster-whisper")
+        else:
+            show_cpp = engine == "whisper-cpp"
+            show_fw = engine == "faster-whisper"
+            
         if hasattr(self, "_cpp_box"):
             self._cpp_box.setVisible(show_cpp)
+        if hasattr(self, "_fw_box"):
+            self._fw_box.setVisible(show_fw)
 
     def _refresh_hardware(self):
+        import threading
         if hasattr(self, "_hw_label"):
             self._hw_label.setText("⏳  Probing…")
         threading.Thread(target=self._probe_hardware_async, daemon=True, name="hw-probe").start()
@@ -653,6 +720,11 @@ class SettingsWindow(QWidget):
         if hasattr(self, "_active_backend_label"):
             self._active_backend_label.setText(backend_text)
         self._update_cpp_model_status()
+        self._update_fw_model_status()
+        
+        # Update visibility if set to auto, now that we may have resolved the backend
+        if hasattr(self, "engine_combo") and self.engine_combo.currentText() == "auto":
+            self._on_engine_changed("auto")
 
     def _update_cpp_model_status(self):
         if not hasattr(self, "cpp_model_combo"):
@@ -665,17 +737,21 @@ class SettingsWindow(QWidget):
         )
         cpp = WhisperCppBackend(model_dir=model_dir)
         downloaded = cpp.list_downloaded_models()
-        selected = self.cpp_model_combo.currentText()
+        selected = self.cpp_model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
 
         if selected in downloaded:
             self._cpp_model_status.setText(f"✅  {selected} is downloaded and ready.")
             self._cpp_model_status.setStyleSheet("color: #4ade80; background: transparent; border: none;")
+            if hasattr(self, "_cpp_download_btn"):
+                self._cpp_download_btn.setEnabled(False)
         else:
             self._cpp_model_status.setText(
                 f"⚠  {selected} not found in {model_dir}.\n"
                 f"Click 'Download Selected Model' to fetch it."
             )
             self._cpp_model_status.setStyleSheet("color: #facc15; background: transparent; border: none;")
+            if hasattr(self, "_cpp_download_btn"):
+                self._cpp_download_btn.setEnabled(True)
 
     def _download_cpp_model(self):
         import threading
@@ -683,7 +759,7 @@ class SettingsWindow(QWidget):
         import os
         import urllib.request
 
-        model_size = self.cpp_model_combo.currentText()
+        model_size = self.cpp_model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
         model_dir = self.config.get("whisper_cpp_model_dir", "") or os.path.join(
             os.path.expanduser("~"), ".local", "share", "voxctl", "models"
         )
@@ -701,18 +777,32 @@ class SettingsWindow(QWidget):
         self._cpp_download_btn.setEnabled(False)
         self._cpp_model_status.setText(f"⏳  Downloading {filename}…")
         self._cpp_model_status.setStyleSheet("color: #e2e8f0; background: transparent; border: none;")
+        self._cpp_progress.setValue(0)
+        self._cpp_progress.setVisible(True)
 
         try:
             self._cpp_download_ok_sig.disconnect()
             self._cpp_download_err_sig.disconnect()
+            self._cpp_progress_sig.disconnect()
         except (RuntimeError, TypeError):
             pass
+
+        def _on_progress(done, total):
+            if total > 0:
+                self._cpp_progress.setRange(0, 100)
+                self._cpp_progress.setValue(int(done * 100 / total))
+            else:
+                self._cpp_progress.setRange(0, 0)
+
+        self._cpp_progress_sig.connect(_on_progress)
 
         self._cpp_download_ok_sig.connect(
             lambda fn: (
                 self._cpp_model_status.setText(f"✅  Downloaded {fn} successfully."),
                 self._cpp_model_status.setStyleSheet("color: #4ade80; background: transparent; border: none;"),
                 self._cpp_download_btn.setEnabled(True),
+                self._refresh_cpp_model_labels(),
+                self._cpp_progress.setVisible(False),
             )
         )
         self._cpp_download_err_sig.connect(
@@ -720,17 +810,122 @@ class SettingsWindow(QWidget):
                 self._cpp_model_status.setText(f"❌  Download failed: {msg}"),
                 self._cpp_model_status.setStyleSheet("color: #f87171; background: transparent; border: none;"),
                 self._cpp_download_btn.setEnabled(True),
+                self._cpp_progress.setVisible(False),
             )
         )
 
         def do_download():
             try:
                 os.makedirs(model_dir, exist_ok=True)
-                urllib.request.urlretrieve(url, dest)
+                def reporthook(count, block_size, total_size):
+                    self._cpp_progress_sig.emit(count * block_size, total_size)
+                urllib.request.urlretrieve(url, dest, reporthook=reporthook)
                 self._cpp_download_ok_sig.emit(filename)
             except Exception as e:
                 self._cpp_download_err_sig.emit(str(e))
 
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def _update_fw_model_status(self):
+        if not hasattr(self, "model_combo"):
+            return
+        from backends.faster_whisper_backend import FasterWhisperBackend
+        
+        downloaded = FasterWhisperBackend.list_downloaded_models()
+        selected = self.model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
+        
+        if selected in downloaded:
+            self._fw_model_status.setText(f"✅  {selected} is downloaded and ready.")
+            self._fw_model_status.setStyleSheet("color: #4ade80; background: transparent; border: none;")
+            if hasattr(self, "_fw_download_btn"):
+                self._fw_download_btn.setEnabled(False)
+        else:
+            self._fw_model_status.setText(
+                f"⚠  {selected} not found in cache.\n"
+                f"Click 'Download Selected Model' to fetch it."
+            )
+            self._fw_model_status.setStyleSheet("color: #facc15; background: transparent; border: none;")
+            if hasattr(self, "_fw_download_btn"):
+                self._fw_download_btn.setEnabled(True)
+
+    def _refresh_fw_model_labels(self):
+        from backends.faster_whisper_backend import FasterWhisperBackend
+        cur = self.model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        downloaded_fw = FasterWhisperBackend.list_downloaded_models()
+        fw_sizes = ["tiny", "base", "small", "medium", "large-v3"]
+        for size in fw_sizes:
+            label = size + ("  ✅" if size in downloaded_fw else "  ⬇")
+            self.model_combo.addItem(label, size)
+            if size == cur:
+                self.model_combo.setCurrentIndex(self.model_combo.count() - 1)
+        self.model_combo.blockSignals(False)
+
+    def _refresh_cpp_model_labels(self):
+        from backends.whisper_cpp_backend import GGUF_MAP, WhisperCppBackend
+        import os
+        cur = self.cpp_model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
+        self.cpp_model_combo.blockSignals(True)
+        self.cpp_model_combo.clear()
+        model_dir = self.config.get("whisper_cpp_model_dir", "") or os.path.join(
+            os.path.expanduser("~"), ".local", "share", "voxctl", "models"
+        )
+        cpp = WhisperCppBackend(model_dir=model_dir)
+        downloaded_cpp = cpp.list_downloaded_models()
+        for size in GGUF_MAP.keys():
+            label = size + ("  ✅" if size in downloaded_cpp else "  ⬇")
+            self.cpp_model_combo.addItem(label, size)
+            if size == cur:
+                self.cpp_model_combo.setCurrentIndex(self.cpp_model_combo.count() - 1)
+        self.cpp_model_combo.blockSignals(False)
+
+    def _download_fw_model(self):
+        import threading
+        from backends.faster_whisper_backend import FasterWhisperBackend
+        
+        model_size = self.model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip()
+        
+        if not hasattr(self, "_fw_download_btn"):
+            return
+            
+        self._fw_download_btn.setEnabled(False)
+        self._fw_model_status.setText(f"⏳  Downloading {model_size}…")
+        self._fw_model_status.setStyleSheet("color: #e2e8f0; background: transparent; border: none;")
+        self._fw_progress.setRange(0, 0) # Indeterminate
+        self._fw_progress.setVisible(True)
+        
+        try:
+            self._fw_download_ok_sig.disconnect()
+            self._fw_download_err_sig.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+            
+        self._fw_download_ok_sig.connect(
+            lambda ms: (
+                self._fw_model_status.setText(f"✅  Downloaded {ms} successfully."),
+                self._fw_model_status.setStyleSheet("color: #4ade80; background: transparent; border: none;"),
+                self._fw_download_btn.setEnabled(True),
+                self._refresh_fw_model_labels(),
+                self._fw_progress.setVisible(False),
+            )
+        )
+        self._fw_download_err_sig.connect(
+            lambda msg: (
+                self._fw_model_status.setText(f"❌  Download failed: {msg}"),
+                self._fw_model_status.setStyleSheet("color: #f87171; background: transparent; border: none;"),
+                self._fw_download_btn.setEnabled(True),
+                self._fw_progress.setVisible(False),
+            )
+        )
+        
+        def do_download():
+            try:
+                FasterWhisperBackend.download_model(model_size)
+                self._fw_download_ok_sig.emit(model_size)
+            except Exception as e:
+                self._fw_download_err_sig.emit(str(e))
+                
         threading.Thread(target=do_download, daemon=True).start()
 
     # ── Tab: Audio ────────────────────────────────────────────────────────
@@ -1004,6 +1199,19 @@ class SettingsWindow(QWidget):
         self._on_overlay_selected()
         lay.addWidget(overlay_box)
 
+        # ── Response Overlay ──────────────────────────────────────────────────
+        resp_overlay_box = _section("Response Overlay")
+        self.tts_overlay_cb = QCheckBox(
+            "Show overlay while AI is speaking a TTS response"
+        )
+        self.tts_overlay_cb.setChecked(self.config.get("tts_response_overlay", True))
+        resp_overlay_box.layout().addWidget(self.tts_overlay_cb)
+        resp_overlay_box.layout().addWidget(_hint(
+            "A teal card (distinct from the pink recording overlay) will appear at the "
+            "bottom of the screen showing the text being spoken."
+        ))
+        lay.addWidget(resp_overlay_box)
+
         vocab_box = _section("Custom Vocabulary")
         vocab_box.layout().addWidget(_hint(
             "Add words or phrases Whisper should recognise, comma-separated. "
@@ -1195,6 +1403,43 @@ class SettingsWindow(QWidget):
         # Enable/disable controls based on current toggle state
         self._on_ollama_toggle(self.ollama_enabled_cb.isChecked())
         self._update_ollama_status()
+
+        # ── MCP Server ────────────────────────────────────────────────────────
+        mcp_box = _section("MCP Server (AI Tool Integration)")
+        mcp_box.layout().addWidget(_hint(
+            "Exposes VoxCtl as an MCP tool so AI clients (Claude Desktop, "
+            "custom agents) can trigger voice recording and TTS directly."
+        ))
+
+        self.mcp_enabled_cb = QCheckBox("Enable MCP server")
+        self.mcp_enabled_cb.setChecked(self.config.get("mcp_server_enabled", False))
+        self.mcp_enabled_cb.toggled.connect(self._on_mcp_toggle)
+        mcp_box.layout().addWidget(self.mcp_enabled_cb)
+
+        from mcp_server import SOCKET_PATH as _MCP_SOCK
+        sock_label = QLabel(f"Socket:  {_MCP_SOCK}")
+        sock_label.setStyleSheet(
+            "font-family: monospace; color:#4a9eff; background:transparent; border:none; font-size:11px;"
+        )
+        mcp_box.layout().addWidget(sock_label)
+
+        self._mcp_status_label = QLabel("")
+        self._mcp_status_label.setObjectName("hint")
+        self._mcp_status_label.setWordWrap(True)
+        mcp_box.layout().addWidget(self._mcp_status_label)
+
+        mcp_btn_row = QHBoxLayout()
+        self._mcp_claude_btn = QPushButton("Register in Claude Desktop")
+        self._mcp_claude_btn.clicked.connect(self._mcp_register_claude_desktop)
+        mcp_btn_row.addWidget(self._mcp_claude_btn)
+        mcp_btn_row.addStretch()
+        mcp_box.layout().addLayout(mcp_btn_row)
+
+        mcp_box.layout().addWidget(_hint(
+            "Claude Desktop connection requires socat:  sudo pacman -S socat  (or apt install socat)\n"
+            "Tools exposed:  transcribe_voice · speak_text · get_status"
+        ))
+        lay.addWidget(mcp_box)
 
         lay.addStretch()
         return w
@@ -1817,38 +2062,42 @@ class SettingsWindow(QWidget):
     def save_settings(self):
         # Track if restart-required settings changed
         restart_keys = [
-            "model_size", "device", "inference_mode", "input_device_index",
-            "backend_engine", "whisper_cpp_model_size", "whisper_cpp_device",
+            "engine.faster_whisper.model_size", "engine.faster_whisper.device", "engine.inference_mode", "audio.input_device_index",
+            "engine.backend", "engine.whisper_cpp.model_size", "engine.whisper_cpp.device",
         ]
         old_vals = {k: self.config.get(k) for k in restart_keys}
 
         # Engine
         if hasattr(self, "engine_combo"):
-            self.config.set("backend_engine", self.engine_combo.currentText())
+            self.config.set("engine.backend", self.engine_combo.currentText())
         if hasattr(self, "cpp_binary_edit"):
-            self.config.set("whisper_cpp_binary", self.cpp_binary_edit.text().strip() or "whisper-cli")
+            self.config.set("engine.whisper_cpp.binary", self.cpp_binary_edit.text().strip() or "whisper-cli")
         if hasattr(self, "cpp_model_combo"):
-            self.config.set("whisper_cpp_model_size", self.cpp_model_combo.currentText())
+            self.config.set("engine.whisper_cpp.model_size", self.cpp_model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip())
         if hasattr(self, "cpp_device_combo"):
-            self.config.set("whisper_cpp_device", self.cpp_device_combo.currentText())
+            self.config.set("engine.whisper_cpp.device", self.cpp_device_combo.currentText())
         if hasattr(self, "cpp_threads_spin"):
-            self.config.set("whisper_cpp_threads", self.cpp_threads_spin.value())
+            self.config.set("engine.whisper_cpp.threads", self.cpp_threads_spin.value())
 
-        # General
-        self.config.set("model_size", self.model_combo.currentText())
-        self.config.set("inference_mode", self.inference_mode_combo.currentText())
-        new_device = self.device_type_combo.currentText()
-        self.config.set("device", new_device)
-        self.config.set("compute_type",
-            "int8" if new_device == "cpu" else
-            "float16" if new_device == "cuda" else "default"
-        )
+        # Faster-Whisper (moved from General)
+        if hasattr(self, "model_combo"):
+            self.config.set("engine.faster_whisper.model_size", self.model_combo.currentText().replace("  ✅", "").replace("  ⬇", "").strip())
+        if hasattr(self, "inference_mode_combo"):
+            self.config.set("engine.inference_mode", self.inference_mode_combo.currentText())
+        if hasattr(self, "device_type_combo"):
+            new_device = self.device_type_combo.currentText()
+            self.config.set("engine.faster_whisper.device", new_device)
+            self.config.set("engine.faster_whisper.compute_type",
+                "int8" if new_device == "cpu" else
+                "float16" if new_device == "cuda" else "default"
+            )
         # Audio
-        self.config.set("input_device_index", self.device_combo.currentData())
-        self.config.set("evdev_device", self.kbd_combo.currentData())
+        self.config.set("audio.input_device_index", self.device_combo.currentData())
+        self.config.set("audio.evdev_device", self.kbd_combo.currentData())
         self.config.set("mic_gain", self.gain_slider.value() / 10.0)
         if hasattr(self, "noise_suppression_cb"):
-            self.config.set("noise_suppression", self.noise_suppression_cb.isChecked())
+            self.config.set("audio.noise_suppression", self.noise_suppression_cb.isChecked())
+
 
         # Hotkeys: bindings are now managed exclusively through bindings.toml
         # via the Hotkeys tab CRUD UI.  Keep legacy config.json keys in sync
@@ -2051,55 +2300,9 @@ class SettingsWindow(QWidget):
         stop_box.layout().addLayout(stop_row)
         lay.addWidget(stop_box)
 
-        # ── Response Overlay ──────────────────────────────────────────────────
-        overlay_box = _section("Response Overlay")
-        self.tts_overlay_cb = QCheckBox(
-            "Show overlay while AI is speaking a TTS response"
-        )
-        self.tts_overlay_cb.setChecked(self.config.get("tts_response_overlay", True))
-        overlay_box.layout().addWidget(self.tts_overlay_cb)
-        overlay_box.layout().addWidget(_hint(
-            "A teal card (distinct from the pink recording overlay) will appear at the "
-            "bottom of the screen showing the text being spoken."
-        ))
-        lay.addWidget(overlay_box)
 
-        # ── MCP Server ────────────────────────────────────────────────────────
-        mcp_box = _section("MCP Server (AI Tool Integration)")
-        mcp_box.layout().addWidget(_hint(
-            "Exposes VoxCtl as an MCP tool so AI clients (Claude Desktop, "
-            "custom agents) can trigger voice recording and TTS directly."
-        ))
 
-        self.mcp_enabled_cb = QCheckBox("Enable MCP server")
-        self.mcp_enabled_cb.setChecked(self.config.get("mcp_server_enabled", False))
-        self.mcp_enabled_cb.toggled.connect(self._on_mcp_toggle)
-        mcp_box.layout().addWidget(self.mcp_enabled_cb)
 
-        from mcp_server import SOCKET_PATH as _MCP_SOCK
-        sock_label = QLabel(f"Socket:  {_MCP_SOCK}")
-        sock_label.setStyleSheet(
-            "font-family: monospace; color:#4a9eff; background:transparent; border:none; font-size:11px;"
-        )
-        mcp_box.layout().addWidget(sock_label)
-
-        self._mcp_status_label = QLabel("")
-        self._mcp_status_label.setObjectName("hint")
-        self._mcp_status_label.setWordWrap(True)
-        mcp_box.layout().addWidget(self._mcp_status_label)
-
-        mcp_btn_row = QHBoxLayout()
-        self._mcp_claude_btn = QPushButton("Register in Claude Desktop")
-        self._mcp_claude_btn.clicked.connect(self._mcp_register_claude_desktop)
-        mcp_btn_row.addWidget(self._mcp_claude_btn)
-        mcp_btn_row.addStretch()
-        mcp_box.layout().addLayout(mcp_btn_row)
-
-        mcp_box.layout().addWidget(_hint(
-            "Claude Desktop connection requires socat:  sudo pacman -S socat  (or apt install socat)\n"
-            "Tools exposed:  transcribe_voice · speak_text · get_status"
-        ))
-        lay.addWidget(mcp_box)
 
         self._on_tts_toggle(self.tts_enabled_cb.isChecked())
         self._on_mcp_toggle(self.mcp_enabled_cb.isChecked())

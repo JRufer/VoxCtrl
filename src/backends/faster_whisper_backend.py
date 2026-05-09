@@ -13,6 +13,35 @@ class FasterWhisperBackend:
         self._device: str | None = None
         self._compute_type: str | None = None
 
+    @staticmethod
+    def list_downloaded_models() -> list[str]:
+        import os
+        import glob
+        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "voxctl")
+        if not os.path.exists(cache_dir):
+            return []
+        
+        # Faster-whisper uses huggingface_hub which creates folders like:
+        # models--Systran--faster-whisper-tiny
+        pattern = os.path.join(cache_dir, "models--Systran--faster-whisper-*")
+        folders = glob.glob(pattern)
+        
+        downloaded = []
+        for f in folders:
+            basename = os.path.basename(f)
+            size = basename.replace("models--Systran--faster-whisper-", "")
+            if size in ["tiny", "base", "small", "medium", "large-v3"]:
+                downloaded.append(size)
+        return downloaded
+
+    @staticmethod
+    def download_model(model_size: str) -> str:
+        import os
+        from faster_whisper import download_model
+        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "voxctl")
+        os.makedirs(cache_dir, exist_ok=True)
+        return download_model(model_size, output_dir=cache_dir)
+
     @property
     def is_available(self) -> bool:
         try:
@@ -20,6 +49,7 @@ class FasterWhisperBackend:
             return True
         except ImportError:
             return False
+
 
     @property
     def capabilities(self) -> BackendCapabilities:

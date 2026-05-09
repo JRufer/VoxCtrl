@@ -85,76 +85,76 @@ def validate_global_config(config) -> tuple[list, list]:
     """
     errors: list = []
     warnings: list = []
-    cfg = config.config  # raw dict
 
     # model_size
-    ms = cfg.get("model_size", "base")
-    _check(_is_str(ms, "model_size", errors) and ms in _VALID_MODEL_SIZES,
-           f"  model_size: {ms!r} is not a valid Whisper model size. "
+    ms = config.get("engine.faster_whisper.model_size", "base")
+    _check(_is_str(ms, "engine.faster_whisper.model_size", errors) and ms in _VALID_MODEL_SIZES,
+           f"  engine.faster_whisper.model_size: {ms!r} is not a valid Whisper model size. "
            f"Valid: {sorted(_VALID_MODEL_SIZES)}", False, errors, warnings)
 
     # device
-    device = cfg.get("device", "auto")
-    _check(_is_str(device, "device", errors) and device in _VALID_DEVICES,
-           f"  device: {device!r} is not valid. Valid: {sorted(_VALID_DEVICES)}",
+    device = config.get("engine.faster_whisper.device", "auto")
+    _check(_is_str(device, "engine.faster_whisper.device", errors) and device in _VALID_DEVICES,
+           f"  engine.faster_whisper.device: {device!r} is not valid. Valid: {sorted(_VALID_DEVICES)}",
            True, errors, warnings)
 
     # inference_mode
-    mode = cfg.get("inference_mode", "Balanced")
+    mode = config.get("engine.inference_mode", "Balanced")
     _check(isinstance(mode, str) and mode in _VALID_INFERENCE_MODES,
-           f"  inference_mode: {mode!r} is not valid. Valid: {sorted(_VALID_INFERENCE_MODES)}",
+           f"  engine.inference_mode: {mode!r} is not valid. Valid: {sorted(_VALID_INFERENCE_MODES)}",
            False, errors, warnings)
 
     # backend_engine
-    backend = cfg.get("backend_engine", "auto")
+    backend = config.get("engine.backend", "auto")
     _check(isinstance(backend, str) and backend in _VALID_BACKENDS,
-           f"  backend_engine: {backend!r} is not valid. Valid: {sorted(_VALID_BACKENDS)}",
+           f"  engine.backend: {backend!r} is not valid. Valid: {sorted(_VALID_BACKENDS)}",
            True, errors, warnings)
 
     # dictation_mode
-    dm = cfg.get("dictation_mode", "normal")
+    dm = config.get("dictation_mode", "normal")
     _check(isinstance(dm, str) and dm in _VALID_DICTATION_MODES,
            f"  dictation_mode: {dm!r} is not valid. Valid: {sorted(_VALID_DICTATION_MODES)}",
            False, errors, warnings)
 
     # Ollama
-    if cfg.get("ollama_enabled", False):
-        om = cfg.get("ollama_mode", "clean")
+    if config.get("ollama.enabled", False):
+        om = config.get("ollama.mode", "clean")
         _check(isinstance(om, str) and om in _VALID_OLLAMA_MODES,
-               f"  ollama_mode: {om!r} is not valid. Valid: {sorted(_VALID_OLLAMA_MODES)}",
+               f"  ollama.mode: {om!r} is not valid. Valid: {sorted(_VALID_OLLAMA_MODES)}",
                False, errors, warnings)
 
     # TTS
-    if cfg.get("tts_enabled", False):
-        tts_eng = cfg.get("tts_engine", "piper")
+    if config.get("tts.enabled", False):
+        tts_eng = config.get("tts.engine", "piper")
         _check(isinstance(tts_eng, str) and tts_eng in _VALID_TTS_ENGINES,
-               f"  tts_engine: {tts_eng!r} is not valid. Valid: {sorted(_VALID_TTS_ENGINES)}",
+               f"  tts.engine: {tts_eng!r} is not valid. Valid: {sorted(_VALID_TTS_ENGINES)}",
                True, errors, warnings)
 
     # snippets: must be dict of str→str
-    snippets = cfg.get("snippets", {})
+    snippets = config.get("features.snippets", {})
     if not isinstance(snippets, dict):
-        errors.append(f"  snippets: expected dict, got {type(snippets).__name__!r}")
+        errors.append(f"  features.snippets: expected dict, got {type(snippets).__name__!r}")
     else:
         for k, v in snippets.items():
             if not isinstance(k, str) or not isinstance(v, str):
-                warnings.append(f"  snippets: key {k!r} or value {v!r} is not a string")
+                warnings.append(f"  features.snippets: key {k!r} or value {v!r} is not a string")
 
     # custom_vocabulary: must be list of str
-    vocab = cfg.get("custom_vocabulary", [])
+    vocab = config.get("features.custom_vocabulary", [])
     if not isinstance(vocab, list):
-        warnings.append(f"  custom_vocabulary: expected list, got {type(vocab).__name__!r}")
+        warnings.append(f"  features.custom_vocabulary: expected list, got {type(vocab).__name__!r}")
 
     # numeric ranges
-    vad_threshold = cfg.get("vad_threshold", 0.5)
+    vad_threshold = config.get("audio.vad_threshold", 0.5)
     if not isinstance(vad_threshold, (int, float)) or not (0.0 <= vad_threshold <= 1.0):
-        warnings.append(f"  vad_threshold: {vad_threshold!r} should be a float between 0 and 1")
+        warnings.append(f"  audio.vad_threshold: {vad_threshold!r} should be a float between 0 and 1")
 
-    gain = cfg.get("mic_gain", 1.0)
+    gain = config.get("mic_gain", 1.0)
     if isinstance(gain, (int, float)) and not (0.5 <= gain <= 10.0):
         warnings.append(f"  mic_gain: {gain!r} is outside the expected range [0.5, 10.0]")
 
     return errors, warnings
+
 
 
 def validate_targets(targets: list) -> tuple[list, list]:
