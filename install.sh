@@ -207,18 +207,27 @@ fi
 # 4. GPU detection and transcription backend guidance
 # ──────────────────────────────────────────────────────
 step "GPU / transcription backend"
+
+# Moonshine is the recommended default: faster + more accurate than Whisper,
+# works on any hardware.  It is bundled in the AppImage via requirements.txt.
+if python3 -c "import moonshine_voice" 2>/dev/null; then
+    ok "moonshine-voice available — Moonshine backend active (fastest, most accurate)."
+    info "Moonshine Medium beats Whisper Large-v3 accuracy at 1/6 the parameters."
+else
+    warn "moonshine-voice not found in Python path — will fall back to Whisper backends."
+    info "To enable Moonshine: pip install moonshine-voice"
+fi
+
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-    ok "NVIDIA GPU detected — faster-whisper (CUDA) backend active automatically."
+    ok "NVIDIA GPU detected — faster-whisper (CUDA) available as fallback backend."
     info "Ensure NVIDIA drivers are current for best performance."
 elif command -v vulkaninfo &>/dev/null && vulkaninfo 2>/dev/null | grep -qi "GPU id"; then
-    warn "AMD/Intel GPU with Vulkan detected."
-    info "For GPU-accelerated transcription install whisper-cpp with Vulkan support:"
+    info "AMD/Intel GPU with Vulkan detected."
+    info "For Vulkan-accelerated Whisper fallback, install whisper-cpp:"
     echo "         Arch:  yay -S whisper-cpp-vulkan"
     echo "         Other: build from source with -DGGML_VULKAN=ON"
-    info "The app will use CPU transcription until whisper-cpp is available."
 else
-    info "No discrete GPU detected — CPU transcription will be used."
-    info "Recommended model size for CPU: 'base' or 'small' (good balance of speed/accuracy)."
+    info "No discrete GPU detected — Moonshine or faster-whisper CPU will be used."
 fi
 
 # ──────────────────────────────────────────────────────
@@ -358,8 +367,8 @@ echo "    Icon       →  $ICON_DIR/voxctl.png"
 command -v piper &>/dev/null && echo "    TTS        →  piper (neural) + espeak-ng (fallback)"
 echo ""
 echo "  What the AppImage bundles (no extra pip install needed):"
-echo "    • All Python packages: PyQt6, faster-whisper, onnxruntime, PyAudio,"
-echo "      dbus-python, evdev, noisereduce, scipy, numpy, websockets, mcp,"
+echo "    • All Python packages: PyQt6, moonshine-voice, faster-whisper, onnxruntime,"
+echo "      PyAudio, dbus-python, evdev, noisereduce, scipy, numpy, websockets, mcp,"
 echo "      and 50+ more"
 echo "  Note: python3-pyatspi is a system package (installed above if selected);"
 echo "        the AppImage reads it from the host site-packages at runtime."
@@ -380,9 +389,9 @@ echo "    2. Run: voxctl"
 echo "       (or launch from your application menu)"
 echo ""
 echo "  On first launch VoxCtl will:"
-echo "    • Let you choose a Whisper model size"
-echo "    • Download the model (~140 MB for 'base', ~2.9 GB for 'large-v3')"
+echo "    • Download the Moonshine model automatically (~270 MB for 'medium')"
 echo "    • Let you configure hotkeys, output targets, and TTS voice"
+echo "    • (Whisper model only downloaded if you switch to faster-whisper or whisper-cpp)"
 echo ""
 echo "  TTS voice models are downloaded on demand from Settings → TTS."
 echo ""
