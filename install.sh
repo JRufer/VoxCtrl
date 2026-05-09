@@ -250,27 +250,26 @@ if [ -f "assets/app_icon.png" ]; then
     ok "Icon installed"
 fi
 
-# Check for an existing voxctl.desktop in common locations (system-wide or user).
-# If found, update only the Exec= line in-place to avoid creating a duplicate
-# app menu entry alongside one left by a previous install or package manager.
-EXISTING_DESKTOP=""
-for candidate in \
-    "$HOME/.local/share/applications/voxctl.desktop" \
-    "/usr/local/share/applications/voxctl.desktop" \
-    "/usr/share/applications/voxctl.desktop"; do
+# Remove every existing voxctl.desktop from all known locations so that
+# re-running install.sh never accumulates duplicate app launcher entries.
+DESKTOP_CANDIDATES=(
+    "$HOME/.local/share/applications/voxctl.desktop"
+    "/usr/local/share/applications/voxctl.desktop"
+    "/usr/share/applications/voxctl.desktop"
+)
+for candidate in "${DESKTOP_CANDIDATES[@]}"; do
     if [ -f "$candidate" ]; then
-        EXISTING_DESKTOP="$candidate"
-        break
+        if [ -w "$candidate" ]; then
+            rm -f "$candidate"
+            info "Removed old desktop entry: $candidate"
+        else
+            sudo rm -f "$candidate"
+            info "Removed old desktop entry (sudo): $candidate"
+        fi
     fi
 done
 
-if [ -n "$EXISTING_DESKTOP" ]; then
-    info "Existing desktop entry found at $EXISTING_DESKTOP — updating Exec= line..."
-    sed -i "s|^Exec=.*|Exec=$BIN_DIR/voxctl|" "$EXISTING_DESKTOP"
-    ok "Desktop entry updated in-place (no duplicate created)"
-    UPDATED_DESKTOP_DIR="$(dirname "$EXISTING_DESKTOP")"
-else
-    cat > "$DESKTOP_DIR/voxctl.desktop" <<EOF
+cat > "$DESKTOP_DIR/voxctl.desktop" <<EOF
 [Desktop Entry]
 Name=VoxCtl
 Comment=Native, on-device voice-to-text pipeline
@@ -280,11 +279,10 @@ Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;
 StartupNotify=false
-Keywords=whisper;voice;dictation;wayland;
+Keywords=moonshine;whisper;voice;dictation;wayland;
 EOF
-    ok "Desktop entry created at $DESKTOP_DIR/voxctl.desktop"
-    UPDATED_DESKTOP_DIR="$DESKTOP_DIR"
-fi
+ok "Desktop entry created at $DESKTOP_DIR/voxctl.desktop"
+UPDATED_DESKTOP_DIR="$DESKTOP_DIR"
 
 command -v update-desktop-database &>/dev/null && update-desktop-database "$UPDATED_DESKTOP_DIR" || true
 

@@ -171,11 +171,17 @@ def select_backend(config) -> object:
     engine = config.get("backend_engine", "auto")
 
     if engine == "moonshine":
-        log.info("Backend: forced to moonshine")
         b = MoonshineBackend()
-        lang = config.get("moonshine_language", "en") or "en"
-        b.configure_language(lang)
-        return b
+        if b.is_available:
+            lang = config.get("moonshine_language", "en") or "en"
+            b.configure_language(lang)
+            log.info("Backend: forced to moonshine")
+            return b
+        log.warning(
+            "Backend 'moonshine' selected but moonshine-voice is not installed. "
+            "Install with: pip install moonshine-voice  "
+            "Falling back to auto-detection."
+        )
 
     if engine == "faster-whisper":
         log.info("Backend: forced to faster-whisper")
