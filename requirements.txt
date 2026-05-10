@@ -45,7 +45,7 @@ python-dateutil==2.9.0.post0
 PyYAML==6.0.3
 rich==14.3.3
 scipy==1.17.1
-setuptools==82.0.1
+setuptools<82
 shellingham==1.5.4
 six==1.17.0
 sounddevice==0.5.5
