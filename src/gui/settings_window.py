@@ -3,6 +3,7 @@ import pyaudio
 import evdev
 import shutil
 import grp
+import threading
 from evdev import ecodes
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
@@ -457,7 +458,6 @@ class SettingsWindow(QWidget):
 
     # ── Tab: Engine ───────────────────────────────────────────────────────
     def _tab_engine(self):
-        import threading
         w = self._scrollable()
         lay = w.layout()
 
@@ -678,7 +678,6 @@ class SettingsWindow(QWidget):
             self._fw_box.setVisible(show_fw)
 
     def _refresh_hardware(self):
-        import threading
         if hasattr(self, "_hw_label"):
             self._hw_label.setText("⏳  Probing…")
         threading.Thread(target=self._probe_hardware_async, daemon=True, name="hw-probe").start()
