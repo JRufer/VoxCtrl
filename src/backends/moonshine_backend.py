@@ -170,7 +170,7 @@ class MoonshineBackend:
         self._transcriber.add_audio(audio.tolist(), sample_rate=16000)
         transcript = self._transcriber.update_transcription()
         text = " ".join(
-            line.text for line in transcript if getattr(line, "text", "")
+            line.text for line in transcript.lines if getattr(line, "text", "")
         ).strip()
         if text != self._partial_text:
             self._partial_text = text
@@ -186,7 +186,7 @@ class MoonshineBackend:
         transcript = self._transcriber.update_transcription()
         inference_ms = int((time.monotonic_ns() - t0) / 1e6)
         text = " ".join(
-            line.text for line in transcript if getattr(line, "text", "")
+            line.text for line in transcript.lines if getattr(line, "text", "")
         ).strip()
         duration_ms = int(self._stream_samples / 16)  # 16 000 Hz → ms
         self._partial_text = ""
@@ -219,7 +219,7 @@ class MoonshineBackend:
         )
         inference_ms = int((time.monotonic_ns() - t0) / 1e6)
 
-        text = " ".join(line.text for line in transcript if getattr(line, "text", "")).strip()
+        text = " ".join(line.text for line in transcript.lines if getattr(line, "text", "")).strip()
 
         return TranscriptionResult(
             text=text,

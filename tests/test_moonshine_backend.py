@@ -226,6 +226,10 @@ class TestMoonshineBackendStructure:
 
 # ── Streaming interface structural tests ───────────────────────────────────
 
+class FakeTranscript:
+    def __init__(self, lines):
+        self.lines = lines
+
 class TestMoonshineBackendStreaming:
     def test_start_stream_raises_without_model(self):
         b = MoonshineBackend()
@@ -253,8 +257,8 @@ class TestMoonshineBackendStreaming:
             def start(self): pass
             def stop(self): pass
             def add_audio(self, *a, **k): pass
-            def update_transcription(self): return []
-            def transcribe_without_streaming(self, *a, **k): return []
+            def update_transcription(self): return FakeTranscript([])
+            def transcribe_without_streaming(self, *a, **k): return FakeTranscript([])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -267,7 +271,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def add_audio(self, audio, sample_rate): pass
-            def update_transcription(self): return []
+            def update_transcription(self): return FakeTranscript([])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -280,7 +284,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def add_audio(self, audio, sample_rate): pass
-            def update_transcription(self): return []
+            def update_transcription(self): return FakeTranscript([])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -297,7 +301,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def add_audio(self, audio, sample_rate): pass
-            def update_transcription(self): return [FakeLine()]
+            def update_transcription(self): return FakeTranscript([FakeLine()])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -315,7 +319,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def add_audio(self, audio, sample_rate): pass
-            def update_transcription(self): return [FakeLine()]
+            def update_transcription(self): return FakeTranscript([FakeLine()])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -334,7 +338,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def stop(self): pass
-            def update_transcription(self): return [FakeLine()]
+            def update_transcription(self): return FakeTranscript([FakeLine()])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()
@@ -352,7 +356,7 @@ class TestMoonshineBackendStreaming:
 
         class FakeTranscriber:
             def stop(self): pass
-            def update_transcription(self): return []
+            def update_transcription(self): return FakeTranscript([])
             def close(self): pass
 
         b._transcriber = FakeTranscriber()

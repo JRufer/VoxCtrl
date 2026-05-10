@@ -359,7 +359,7 @@ command -v piper &>/dev/null && echo "    TTS        →  piper (neural) + espea
 echo ""
 echo "  What the AppImage bundles (no extra pip install needed):"
 echo "    • All Python packages: PyQt6, faster-whisper, onnxruntime, PyAudio,"
-echo "      dbus-python, evdev, noisereduce, scipy, numpy, websockets, mcp,"
+echo "      dbus-python, evdev, noisereduce, moonshine-voice, scipy, numpy, websockets, mcp,"
 echo "      and 50+ more"
 echo "  Note: python3-pyatspi is a system package (installed above if selected);"
 echo "        the AppImage reads it from the host site-packages at runtime."
