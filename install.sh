@@ -438,6 +438,12 @@ step "Piper TTS engine"
 PIPER_DIR="$INSTALL_DIR/piper"
 
 _install_piper_local() {
+    if $DEV_MODE; then
+        warn "Dev mode: skipping piper download from GitHub."
+        warn "Please ensure piper is available on your system PATH or at $PIPER_DIR/piper"
+        return 1
+    fi
+
     local tmp_dir tarball
     tmp_dir=$(mktemp -d)
 
