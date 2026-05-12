@@ -489,7 +489,7 @@ export PATH="\$VOXCTL_DIR/piper:\$PATH"
 export LD_LIBRARY_PATH="\$VOXCTL_DIR/piper:\$LD_LIBRARY_PATH"
 # Expose host system site-packages so pyatspi (system-only package) is found
 SYS_SITE=\$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || true)
-[ -n "\$SYS_SITE" ] && export PYTHONPATH="\$PYTHONPATH:\$SYS_SITE"
+[ -n "\$SYS_SITE" ] && export VOXCTL_SYS_SITE="\$SYS_SITE"
 exec "\$VOXCTL_DIR/.venv/bin/python3" "\$VOXCTL_DIR/src/main.py" "\$@"
 LAUNCHER
 chmod +x "$BIN_DIR/voxctl"

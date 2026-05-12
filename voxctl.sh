@@ -8,7 +8,7 @@ export LD_LIBRARY_PATH="$DIR/piper:$LD_LIBRARY_PATH"
 # Expose host system site-packages so pyatspi (system-only package) is found
 SYS_SITE=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || true)
 if [ -n "$SYS_SITE" ]; then
-    export PYTHONPATH="$PYTHONPATH:$SYS_SITE"
+    export VOXCTL_SYS_SITE="$SYS_SITE"
 fi
 
 if [ -f "$DIR/.venv/bin/python3" ]; then

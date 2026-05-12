@@ -6,6 +6,10 @@ import contextlib
 import signal
 import time
 from datetime import datetime
+
+if os.environ.get("VOXCTL_SYS_SITE"):
+    sys.path.append(os.environ["VOXCTL_SYS_SITE"])
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import pyqtSignal, QObject, QTimer
 from config import Config
@@ -26,6 +30,7 @@ from gui.history_window import HistoryWindow
 from gui.overlay_manager import OverlayManager, OverlayProxy
 from gui.setup_dialog import needs_setup, PermissionsSetupDialog
 from gui.overlays.tts_response import TTSResponseOverlay
+
 
 try:
     import atspi_context
@@ -93,8 +98,16 @@ def ensure_single_instance():
     except Exception as e:
         print(f"[Main] Warning: Could not write PID file: {e}")
 
+def qt_message_handler(mode, context, message):
+    if "GetApplicationBusAddress" in message:
+        return
+    print(message, file=sys.stderr)
+
 def main():
     try:
+        from PyQt6.QtCore import qInstallMessageHandler
+        qInstallMessageHandler(qt_message_handler)
+
         print(f"[{datetime.now().strftime('%H:%M:%S')}] VoxCtl starting up...")
         ensure_single_instance()
         app = QApplication(sys.argv)
