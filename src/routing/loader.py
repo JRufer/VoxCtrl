@@ -158,6 +158,13 @@ def _parse_target(d: dict) -> OutputTarget:
         file_prefix=d.get('file_prefix', ''),
         file_timestamp=d.get('file_timestamp', True),
         dbus_signal=d.get('dbus_signal'),
+        http_url=d.get('http_url'),
+        http_method=d.get('http_method', 'POST'),
+        http_headers=d.get('http_headers'),
+        http_json_template=d.get('http_json_template'),
+        webhook_url=d.get('webhook_url'),
+        webhook_secret=d.get('webhook_secret'),
+        webhook_json_template=d.get('webhook_json_template'),
         # Keep post_processing for informational/compat purposes
         post_processing=d.get('post_processing', 'default'),
         processing=processing,
@@ -211,6 +218,20 @@ def _serialize_target(t: OutputTarget) -> dict:
         d['file_prefix'] = t.file_prefix
     if t.dbus_signal is not None:
         d['dbus_signal'] = t.dbus_signal
+    if t.http_url is not None:
+        d['http_url'] = t.http_url
+    if t.http_method != 'POST':
+        d['http_method'] = t.http_method
+    if t.http_headers is not None:
+        d['http_headers'] = t.http_headers
+    if t.http_json_template is not None:
+        d['http_json_template'] = t.http_json_template
+    if t.webhook_url is not None:
+        d['webhook_url'] = t.webhook_url
+    if t.webhook_secret is not None:
+        d['webhook_secret'] = t.webhook_secret
+    if t.webhook_json_template is not None:
+        d['webhook_json_template'] = t.webhook_json_template
     if t.initial_prompt is not None:
         d['initial_prompt'] = t.initial_prompt
     if t.response_pipe is not None:

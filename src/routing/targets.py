@@ -4,6 +4,10 @@ import shutil
 import socket
 import stat
 import subprocess
+import json
+import urllib.request
+import urllib.error
+from copy import deepcopy
 
 from routing.models import DeliveryResult, DeliveryType, OutputTarget, TestResult
 
@@ -283,6 +287,142 @@ class DbusTarget:
             return TestResult(reachable=False, detail="dbus-python not installed")
 
 
+class HttpTarget:
+    def __init__(self, config: OutputTarget):
+        self.config = config
+
+    def deliver(self, text: str) -> DeliveryResult:
+        if not self.config.http_url:
+            return DeliveryResult(success=False, error="No http_url configured")
+        
+        # Prepare the payload for Hermes Agent (OpenAI API format)
+        payload = {
+            "model": "hermes-agent",
+            "messages": [{"role": "user", "content": text}]
+        }
+
+        # Alternatively, if using a template from config:
+        if self.config.http_json_template:
+            payload = deepcopy(self.config.http_json_template)
+            
+            def replace_text(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(v, str) and "{TEXT}" in v:
+                            obj[k] = v.replace("{TEXT}", text)
+                        else:
+                            replace_text(v)
+                elif isinstance(obj, list):
+                    for i, v in enumerate(obj):
+                        if isinstance(v, str) and "{TEXT}" in v:
+                            obj[i] = v.replace("{TEXT}", text)
+                        else:
+                            replace_text(v)
+            
+            replace_text(payload)
+
+        data = json.dumps(payload).encode('utf-8')
+        headers = self.config.http_headers or {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer your-secret-key"
+        }
+
+        req = urllib.request.Request(
+            self.config.http_url, 
+            data=data, 
+            headers=headers, 
+            method=self.config.http_method
+        )
+        
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as response:
+                if response.status in (200, 201):
+                    return DeliveryResult(success=True, delivered_text=text)
+                return DeliveryResult(success=False, error=f"HTTP {response.status}")
+        except urllib.error.HTTPError as e:
+            return DeliveryResult(success=False, error=f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            return DeliveryResult(success=False, error=str(e))
+
+    def test(self) -> TestResult:
+        if not self.config.http_url:
+            return TestResult(reachable=False, detail="No http_url configured")
+        return TestResult(reachable=True, detail="HTTP Target configured")
+
+
+class WebhookTarget:
+    def __init__(self, config: OutputTarget):
+        self.config = config
+
+    def deliver(self, text: str) -> DeliveryResult:
+        if not self.config.webhook_url:
+            return DeliveryResult(success=False, error="No webhook_url configured")
+        if not self.config.webhook_secret:
+            return DeliveryResult(success=False, error="No webhook_secret configured")
+        
+        # Prepare payload
+        if self.config.webhook_json_template:
+            payload = deepcopy(self.config.webhook_json_template)
+            
+            def replace_text(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(v, str) and "{TEXT}" in v:
+                            obj[k] = v.replace("{TEXT}", text)
+                        else:
+                            replace_text(v)
+                elif isinstance(obj, list):
+                    for i, v in enumerate(obj):
+                        if isinstance(v, str) and "{TEXT}" in v:
+                            obj[i] = v.replace("{TEXT}", text)
+                        else:
+                            replace_text(v)
+            
+            replace_text(payload)
+        else:
+            payload = {"text": text}
+
+        data = json.dumps(payload).encode('utf-8')
+
+        # Calculate HMAC SHA256 signature
+        import hmac
+        import hashlib
+        signature = hmac.new(
+            self.config.webhook_secret.encode('utf-8'),
+            msg=data,
+            digestmod=hashlib.sha256
+        ).hexdigest()
+
+        headers = {
+            "Content-Type": "application/json",
+            "X-Webhook-Signature": signature
+        }
+
+        req = urllib.request.Request(
+            self.config.webhook_url, 
+            data=data, 
+            headers=headers, 
+            method="POST"
+        )
+        
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as response:
+                if response.status in (200, 201):
+                    return DeliveryResult(success=True, delivered_text=text)
+                return DeliveryResult(success=False, error=f"HTTP {response.status}")
+        except urllib.error.HTTPError as e:
+            return DeliveryResult(success=False, error=f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            return DeliveryResult(success=False, error=str(e))
+
+    def test(self) -> TestResult:
+        if not self.config.webhook_url:
+            return TestResult(reachable=False, detail="No webhook_url configured")
+        if not self.config.webhook_secret:
+            return TestResult(reachable=False, detail="No webhook_secret configured")
+        return TestResult(reachable=True, detail="Webhook Target configured")
+
+
 def build_target(config: OutputTarget):
     """Return the appropriate target implementation for a config."""
     mapping = {
@@ -293,6 +433,8 @@ def build_target(config: OutputTarget):
         DeliveryType.SOCKET:    SocketTarget,
         DeliveryType.FILE:      FileTarget,
         DeliveryType.DBUS:      DbusTarget,
+        DeliveryType.HTTP:      HttpTarget,
+        DeliveryType.WEBHOOK:   WebhookTarget,
     }
     cls = mapping.get(config.delivery)
     if cls is None:

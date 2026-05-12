@@ -30,6 +30,8 @@ class DeliveryType(str, Enum):
     SOCKET    = "socket"
     FILE      = "file"
     DBUS      = "dbus"
+    HTTP      = "http"
+    WEBHOOK   = "webhook"
 
 
 # ── Optional features that have global on/off master switches ─────────────────
@@ -152,6 +154,13 @@ class OutputTarget:
     file_prefix: str = ""
     file_timestamp: bool = True
     dbus_signal: Optional[str] = None
+    http_url: Optional[str] = None
+    http_method: str = "POST"
+    http_headers: Optional[dict] = None
+    http_json_template: Optional[dict] = None
+    webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    webhook_json_template: Optional[dict] = None
     # Legacy postprocessing mode string (used if processing.has_any() is False)
     post_processing: str = "default"
     send_on_release: bool = True

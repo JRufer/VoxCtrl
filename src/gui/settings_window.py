@@ -3091,6 +3091,44 @@ class _TargetEditorDialog(QDialog):
         self._dbus_signal_edit = QLineEdit(tgt.dbus_signal or "" if tgt else "")
         self._dbus_signal_edit.setPlaceholderText("com.example.App.TextReady")
 
+        self._http_url_edit = QLineEdit(tgt.http_url or "" if tgt else "")
+        self._http_url_edit.setPlaceholderText("http://localhost:8642/v1/chat/completions")
+        
+        self._http_method_combo = QComboBox()
+        self._http_method_combo.addItems(["POST", "GET", "PUT", "PATCH"])
+        if tgt and tgt.http_method:
+            idx = self._http_method_combo.findText(tgt.http_method.upper())
+            if idx >= 0:
+                self._http_method_combo.setCurrentIndex(idx)
+        
+        self._http_headers_edit = QLineEdit()
+        self._http_headers_edit.setPlaceholderText('{"Authorization": "Bearer key"} (JSON)')
+        if tgt and tgt.http_headers:
+            import json
+            self._http_headers_edit.setText(json.dumps(tgt.http_headers))
+            
+        self._http_json_template_edit = QTextEdit()
+        self._http_json_template_edit.setPlaceholderText('{"messages": [{"role": "user", "content": "{TEXT}"}]} (JSON)')
+        self._http_json_template_edit.setMinimumHeight(120)
+        self._http_json_template_edit.setMaximumHeight(200)
+        if tgt and tgt.http_json_template:
+            import json
+            self._http_json_template_edit.setPlainText(json.dumps(tgt.http_json_template, indent=2))
+
+        self._webhook_url_edit = QLineEdit(tgt.webhook_url or "" if tgt else "")
+        self._webhook_url_edit.setPlaceholderText("http://localhost:8644/webhooks/my-route")
+
+        self._webhook_secret_edit = QLineEdit(tgt.webhook_secret or "" if tgt else "")
+        self._webhook_secret_edit.setPlaceholderText("your-secret-here")
+
+        self._webhook_json_template_edit = QTextEdit()
+        self._webhook_json_template_edit.setPlaceholderText('{"text": "{TEXT}"} (JSON)')
+        self._webhook_json_template_edit.setMinimumHeight(120)
+        self._webhook_json_template_edit.setMaximumHeight(200)
+        if tgt and tgt.webhook_json_template:
+            import json
+            self._webhook_json_template_edit.setPlainText(json.dumps(tgt.webhook_json_template, indent=2))
+
         df_lay.addRow("Command {TEXT}:", self._command_edit)
         df_lay.addRow("Pipe path:", self._pipe_path_edit)
         df_lay.addRow("Socket host:", self._socket_host_edit)
@@ -3100,6 +3138,13 @@ class _TargetEditorDialog(QDialog):
         df_lay.addRow("File prefix:", self._file_prefix_edit)
         df_lay.addRow("", self._file_ts_cb)
         df_lay.addRow("DBus signal:", self._dbus_signal_edit)
+        df_lay.addRow("HTTP URL:", self._http_url_edit)
+        df_lay.addRow("HTTP Method:", self._http_method_combo)
+        df_lay.addRow("HTTP Headers:", self._http_headers_edit)
+        df_lay.addRow("HTTP JSON:", self._http_json_template_edit)
+        df_lay.addRow("Webhook URL:", self._webhook_url_edit)
+        df_lay.addRow("Webhook Secret:", self._webhook_secret_edit)
+        df_lay.addRow("Webhook JSON:", self._webhook_json_template_edit)
         lay.addWidget(self._delivery_group)
 
         # ── Preprocessing ──────────────────────────────────────────────────
@@ -3221,6 +3266,8 @@ class _TargetEditorDialog(QDialog):
         show_socket = dt in (DeliveryType.SOCKET,)
         show_file = dt == DeliveryType.FILE
         show_dbus = dt == DeliveryType.DBUS
+        show_http = dt == DeliveryType.HTTP
+        show_webhook = dt == DeliveryType.WEBHOOK
 
         self._command_edit.setVisible(show_command)
         lbl = self._df_lay.labelForField(self._command_edit)
@@ -3256,6 +3303,29 @@ class _TargetEditorDialog(QDialog):
         if lbl:
             lbl.setVisible(show_dbus)
 
+        self._http_url_edit.setVisible(show_http)
+        lbl = self._df_lay.labelForField(self._http_url_edit)
+        if lbl: lbl.setVisible(show_http)
+        self._http_method_combo.setVisible(show_http)
+        lbl = self._df_lay.labelForField(self._http_method_combo)
+        if lbl: lbl.setVisible(show_http)
+        self._http_headers_edit.setVisible(show_http)
+        lbl = self._df_lay.labelForField(self._http_headers_edit)
+        if lbl: lbl.setVisible(show_http)
+        self._http_json_template_edit.setVisible(show_http)
+        lbl = self._df_lay.labelForField(self._http_json_template_edit)
+        if lbl: lbl.setVisible(show_http)
+
+        self._webhook_url_edit.setVisible(show_webhook)
+        lbl = self._df_lay.labelForField(self._webhook_url_edit)
+        if lbl: lbl.setVisible(show_webhook)
+        self._webhook_secret_edit.setVisible(show_webhook)
+        lbl = self._df_lay.labelForField(self._webhook_secret_edit)
+        if lbl: lbl.setVisible(show_webhook)
+        self._webhook_json_template_edit.setVisible(show_webhook)
+        lbl = self._df_lay.labelForField(self._webhook_json_template_edit)
+        if lbl: lbl.setVisible(show_webhook)
+
     def _accept(self):
         from routing.models import OutputTarget, TargetProcessingConfig, DeliveryType as _DT
         target_id = self._id_edit.text().strip()
@@ -3267,6 +3337,42 @@ class _TargetEditorDialog(QDialog):
         if delivery == _DT.FILE and not self._file_path_edit.text().strip():
             QMessageBox.warning(self, "Validation", "File path is required for file delivery.")
             return
+
+        if delivery == _DT.HTTP and not self._http_url_edit.text().strip():
+            QMessageBox.warning(self, "Validation", "HTTP URL is required for HTTP delivery.")
+            return
+
+        import json
+        http_headers = None
+        if self._http_headers_edit.text().strip():
+            try:
+                http_headers = json.loads(self._http_headers_edit.text().strip())
+            except Exception:
+                QMessageBox.warning(self, "Validation", "HTTP Headers must be valid JSON.")
+                return
+
+        http_json_template = None
+        if self._http_json_template_edit.toPlainText().strip():
+            try:
+                http_json_template = json.loads(self._http_json_template_edit.toPlainText().strip())
+            except Exception:
+                QMessageBox.warning(self, "Validation", "HTTP JSON template must be valid JSON.")
+                return
+
+        if delivery == _DT.WEBHOOK and not self._webhook_url_edit.text().strip():
+            QMessageBox.warning(self, "Validation", "Webhook URL is required for Webhook delivery.")
+            return
+        if delivery == _DT.WEBHOOK and not self._webhook_secret_edit.text().strip():
+            QMessageBox.warning(self, "Validation", "Webhook secret is required for Webhook delivery.")
+            return
+
+        webhook_json_template = None
+        if self._webhook_json_template_edit.toPlainText().strip():
+            try:
+                webhook_json_template = json.loads(self._webhook_json_template_edit.toPlainText().strip())
+            except Exception:
+                QMessageBox.warning(self, "Validation", "Webhook JSON template must be valid JSON.")
+                return
 
         # Build TargetProcessingConfig from UI
         processing = TargetProcessingConfig(
@@ -3300,6 +3406,13 @@ class _TargetEditorDialog(QDialog):
             file_prefix=self._file_prefix_edit.text(),
             file_timestamp=self._file_ts_cb.isChecked(),
             dbus_signal=self._dbus_signal_edit.text().strip() or None,
+            http_url=self._http_url_edit.text().strip() or None,
+            http_method=self._http_method_combo.currentText(),
+            http_headers=http_headers,
+            http_json_template=http_json_template,
+            webhook_url=self._webhook_url_edit.text().strip() or None,
+            webhook_secret=self._webhook_secret_edit.text().strip() or None,
+            webhook_json_template=webhook_json_template,
             processing=processing,
             append_newline=self._append_newline_cb.isChecked(),
             initial_prompt=self._initial_prompt_edit.text().strip() or None,
