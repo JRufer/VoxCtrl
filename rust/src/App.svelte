@@ -1,0 +1,25 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import Settings from "./lib/Settings/Settings.svelte";
+  import Overlay from "./lib/Overlay/Overlay.svelte";
+  import History from "./lib/History/History.svelte";
+
+  // Determine which view to render based on the URL path
+  const path = window.location.pathname;
+
+  function getView() {
+    if (path.startsWith("/overlay")) return "overlay";
+    if (path.startsWith("/history")) return "history";
+    return "settings";
+  }
+
+  const view = getView();
+</script>
+
+{#if view === "overlay"}
+  <Overlay />
+{:else if view === "history"}
+  <History />
+{:else}
+  <Settings />
+{/if}

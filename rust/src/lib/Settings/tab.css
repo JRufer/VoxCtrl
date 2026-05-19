@@ -1,0 +1,81 @@
+section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 600px;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.field-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+
+.field span {
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+}
+
+.field input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.field input[type="number"],
+.field input[type="text"],
+.field select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 13px;
+  min-width: 160px;
+}
+
+.field select {
+  min-width: 180px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.hint code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
