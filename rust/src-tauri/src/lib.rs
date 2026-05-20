@@ -225,6 +225,15 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state.clone())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let label = window.label();
+                if label == "settings" || label == "history" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .setup(move |app| {
             // ── System tray ───────────────────────────────────────────────────
             let record_on_icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/record_on.png"))
@@ -233,16 +242,37 @@ pub fn run() {
                 .expect("Failed to load record_off icon");
             let tray_icon = record_off_icon.clone();
 
+            let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
+            let history_i = tauri::menu::MenuItem::with_id(app, "history", "📋  History", true, None::<&str>)?;
+            let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
             let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtr", true, None::<&str>)?;
-            let menu = tauri::menu::Menu::with_items(app, &[&quit_i])?;
+            let menu = tauri::menu::Menu::with_items(
+                app,
+                &[&settings_i, &history_i, &separator, &quit_i],
+            )?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
                 .tooltip("VoxCtr")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
-                    if event.id().as_ref() == "quit" {
-                        app.exit(0);
+                    match event.id().as_ref() {
+                        "settings" => {
+                            if let Some(window) = app.get_webview_window("settings") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "history" => {
+                            if let Some(window) = app.get_webview_window("history") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -374,6 +404,42 @@ mod tests {
         assert_eq!(state.total_words(), 15);
         state.increment_words(10);
         assert_eq!(state.total_words(), 25);
+    }
+
+    #[tokio::test]
+    async fn test_history_entries() {
+        let config = Config::load();
+        let config = Arc::new(Mutex::new(config));
+        let router = Arc::new(Mutex::new(OutputTargetRouter::new(Vec::new())));
+        let (audio_tx, _) = crossbeam_channel::bounded(1);
+
+        let state = AppState {
+            config,
+            router,
+            recording: Arc::new(AtomicBool::new(false)),
+            speaking: Arc::new(AtomicBool::new(false)),
+            word_count: Arc::new(AtomicU32::new(0)),
+            last_text: Arc::new(Mutex::new(String::new())),
+            active_target: Arc::new(Mutex::new("default".to_string())),
+            history: Arc::new(Mutex::new(Vec::new())),
+            audio_tx,
+        };
+
+        {
+            let mut hist = state.history.lock().await;
+            hist.push(HistoryEntry {
+                text: "hello world".to_string(),
+                target_id: "default".to_string(),
+                timestamp: "2026-05-20T22:00:00Z".to_string(),
+                inference_ms: 120,
+            });
+        }
+
+        let hist = state.history.lock().await;
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].text, "hello world");
+        assert_eq!(hist[0].target_id, "default");
+        assert_eq!(hist[0].inference_ms, 120);
     }
 }
 
