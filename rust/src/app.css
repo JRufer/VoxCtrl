@@ -56,25 +56,30 @@ input, select, textarea {
 
 /* Global Select and Option styles to guarantee premium themeing & high contrast readability */
 select {
-  background: var(--bg) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 4px;
-  padding: 6px 10px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--surface2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m3 5 3 3 3-3'/></svg>") no-repeat right 12px center;
+  background-size: 10px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 36px 8px 12px;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 select:focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.2);
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.25);
 }
 
 select option {
-  background-color: var(--surface) !important;
-  color: var(--text) !important;
-  padding: 8px;
+  background-color: var(--bg);
+  color: var(--text);
+  padding: 8px 12px;
 }
 
 /* WebKitGTK specific option contrast fixes */

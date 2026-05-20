@@ -53,19 +53,59 @@ h3 {
 }
 
 .field input[type="number"],
-.field input[type="text"],
-.field select {
+.field input[type="text"] {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   color: var(--text);
-  padding: 4px 8px;
+  padding: 8px 12px;
   font-size: 13px;
   min-width: 160px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.field input[type="number"]:focus,
+.field input[type="text"]:focus {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
 }
 
 .field select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--surface2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m3 5 3 3 3-3'/></svg>") no-repeat right 12px center;
+  background-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 36px 8px 12px;
+  font-size: 13px;
   min-width: 180px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.field select:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(15, 52, 96, 0.85);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.field select:focus {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.25);
+  background-color: var(--surface2);
+}
+
+/* Force dark theme options to override native WebKitGTK popup styling on Linux */
+.field select option {
+  background-color: var(--bg) !important;
+  color: var(--text) !important;
+  padding: 10px 12px;
 }
 
 .hint {
