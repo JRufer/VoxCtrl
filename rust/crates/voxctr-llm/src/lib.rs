@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 use voxctr_config::{OllamaConfig, OllamaMode};
 

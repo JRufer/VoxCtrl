@@ -92,8 +92,8 @@
   </div>
 </section>
 
-<style src="./tab.css"></style>
 <style>
+  @import "./tab.css";
   .rt-table {
     width: 100%;
     border-collapse: collapse;

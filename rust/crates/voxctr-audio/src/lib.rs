@@ -9,11 +9,10 @@ use std::{
 use anyhow::{Context, Result};
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleFormat, SampleRate, StreamConfig,
+    SampleRate, StreamConfig,
 };
 use crossbeam_channel::Sender;
-use rubato::{FftFixedIn, Resampler};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use voxctr_config::AudioConfig;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -30,11 +29,11 @@ pub struct AudioRecorder {
 }
 
 impl AudioRecorder {
-    pub fn new(config: AudioConfig) -> Self {
+    pub fn new(config: AudioConfig, recording: Arc<AtomicBool>) -> Self {
         let gain = config.gain;
         Self {
             config,
-            recording: Arc::new(AtomicBool::new(false)),
+            recording,
             gain,
         }
     }
@@ -106,15 +105,11 @@ fn capture_loop(
     let hw_rate = hw_config.sample_rate.0;
     info!("Hardware sample rate: {hw_rate} Hz");
 
-    // Buffer for accumulating resampled audio
-    let acc = Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
-    let acc_inner = acc.clone();
     let tx_inner = tx.clone();
     let level_tx_inner = level_tx;
     let recording_inner = recording.clone();
 
     let needs_resample = hw_rate != TARGET_SAMPLE_RATE;
-    let resample_ratio = TARGET_SAMPLE_RATE as f64 / hw_rate as f64;
 
     // Build resampler (runs inside the callback context, sent via closure)
     let stream = device.build_input_stream(

@@ -1,8 +1,8 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-    time::Duration,
-};
+#[cfg(target_os = "windows")]
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{bounded, Receiver, Sender};

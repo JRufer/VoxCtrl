@@ -20,7 +20,6 @@ export interface EngineConfig {
 }
 
 export interface WhisperCppConfig {
-  binary: string;
   model_dir: string;
   model_size: string;
   device: string;
@@ -89,7 +88,6 @@ const defaultConfig: AppConfig = {
     backend: "auto",
     inference_mode: "Balanced",
     whisper_cpp: {
-      binary: "whisper-cli",
       model_dir: "",
       model_size: "large-v3",
       device: "auto",

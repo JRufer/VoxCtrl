@@ -7,13 +7,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, warn};
 
 pub const SOCKET_PATH: &str = "/tmp/voxctl-mcp.sock";

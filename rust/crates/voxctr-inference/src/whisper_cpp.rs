@@ -1,15 +1,13 @@
 use std::{
-    collections::HashMap,
-    io::{Cursor, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
 
 use anyhow::{bail, Context, Result};
-use tracing::{debug, info};
+use tracing::info;
 use voxctr_config::WhisperCppConfig;
 
-use crate::backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResult, WordTimestamp};
+use crate::backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResult};
 
 // ── GGUF model resolution ─────────────────────────────────────────────────────
 
@@ -37,8 +35,7 @@ pub struct WhisperCppBackend {
     model_path: Option<PathBuf>,
     loaded: bool,
 
-    /// whisper-rs in-process model (only when compiled with feature whisper-bundled)
-    #[cfg(feature = "whisper-bundled")]
+    /// whisper-rs in-process model
     inner: Option<whisper_rs::WhisperContext>,
 }
 
@@ -48,7 +45,6 @@ impl WhisperCppBackend {
             cfg,
             model_path: None,
             loaded: false,
-            #[cfg(feature = "whisper-bundled")]
             inner: None,
         }
     }
@@ -118,16 +114,15 @@ impl TranscriptionBackend for WhisperCppBackend {
         let path = self.resolve_model_path()?;
         info!("Loading whisper.cpp model: {}", path.display());
 
-        #[cfg(feature = "whisper-bundled")]
-        {
-            use whisper_rs::{WhisperContext, WhisperContextParameters};
-            let ctx = WhisperContext::new_with_params(
-                path.to_str().unwrap(),
-                WhisperContextParameters::default(),
-            )
-            .context("whisper-rs load")?;
-            self.inner = Some(ctx);
-        }
+        let mut params = whisper_rs::WhisperContextParameters::default();
+        params.use_gpu = self.cfg.device.to_lowercase() != "cpu";
+
+        let ctx = whisper_rs::WhisperContext::new_with_params(
+            path.to_str().unwrap(),
+            params,
+        )
+        .context("whisper-rs load")?;
+        self.inner = Some(ctx);
 
         self.model_path = Some(path);
         self.loaded = true;
@@ -139,19 +134,14 @@ impl TranscriptionBackend for WhisperCppBackend {
             bail!("Model not loaded");
         }
 
-        #[cfg(feature = "whisper-bundled")]
         if let Some(ctx) = &self.inner {
             return transcribe_bundled(ctx, req, self.threads());
         }
-
-        transcribe_subprocess(self, req)
+        bail!("Model context not initialized")
     }
 
     fn unload(&mut self) {
-        #[cfg(feature = "whisper-bundled")]
-        {
-            self.inner = None;
-        }
+        self.inner = None;
         self.loaded = false;
     }
 
@@ -160,112 +150,8 @@ impl TranscriptionBackend for WhisperCppBackend {
     }
 }
 
-// ── Subprocess path ───────────────────────────────────────────────────────────
-
-fn transcribe_subprocess(
-    backend: &WhisperCppBackend,
-    req: &TranscribeRequest,
-) -> Result<TranscriptionResult> {
-    let model_path = backend.model_path.as_ref().unwrap();
-
-    let wav = samples_to_wav(&req.audio);
-
-    let mut cmd = std::process::Command::new(&backend.cfg.binary);
-    cmd.arg("--model")
-        .arg(model_path)
-        .arg("--output-json")
-        .arg("--threads")
-        .arg(backend.threads().to_string())
-        .arg("--no-timestamps");
-
-    if let Some(lang) = &req.language {
-        cmd.arg("--language").arg(lang);
-    }
-    if let Some(prompt) = &req.initial_prompt {
-        cmd.arg("--prompt").arg(prompt);
-    }
-
-    // Device flags
-    match backend.cfg.device.as_str() {
-        "cuda" => { cmd.arg("--gpu").arg("cuda"); }
-        "vulkan" => { cmd.arg("--gpu").arg("vulkan"); }
-        _ => {}
-    }
-
-    cmd.arg("--file").arg("-");
-
-    let t0 = Instant::now();
-    let output = cmd
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .and_then(|mut child| {
-            child.stdin.as_mut().unwrap().write_all(&wav)?;
-            child.wait_with_output()
-        })
-        .context("whisper-cli subprocess")?;
-
-    let inference_ms = t0.elapsed().as_millis() as u32;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("whisper-cli failed: {stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if stdout.is_empty() {
-        return Ok(TranscriptionResult {
-            text: String::new(),
-            language: req.language.clone().unwrap_or_else(|| "en".into()),
-            language_probability: 1.0,
-            duration_ms: (req.audio.len() as u32) / 16,
-            inference_ms,
-            word_timestamps: None,
-        });
-    }
-
-    parse_cpp_json(&stdout, req, inference_ms)
-}
-
-fn parse_cpp_json(
-    json_str: &str,
-    req: &TranscribeRequest,
-    inference_ms: u32,
-) -> Result<TranscriptionResult> {
-    let data: serde_json::Value = serde_json::from_str(json_str)
-        .unwrap_or(serde_json::Value::Null);
-
-    let transcription = data["transcription"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|seg| seg["text"].as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
-                .trim()
-                .to_string()
-        })
-        .unwrap_or_else(|| json_str.trim().to_string());
-
-    let language = data["result"]["language"]
-        .as_str()
-        .unwrap_or(req.language.as_deref().unwrap_or("en"))
-        .to_string();
-
-    Ok(TranscriptionResult {
-        text: transcription,
-        language,
-        language_probability: 1.0,
-        duration_ms: (req.audio.len() as u32) / 16,
-        inference_ms,
-        word_timestamps: None,
-    })
-}
-
 // ── whisper-rs bundled path ───────────────────────────────────────────────────
 
-#[cfg(feature = "whisper-bundled")]
 fn transcribe_bundled(
     ctx: &whisper_rs::WhisperContext,
     req: &TranscribeRequest,
@@ -292,11 +178,13 @@ fn transcribe_bundled(
     state.full(params, &req.audio).context("whisper full")?;
     let inference_ms = t0.elapsed().as_millis() as u32;
 
-    let n = state.full_n_segments().context("n_segments")?;
+    let n = state.full_n_segments();
     let mut parts = Vec::new();
     for i in 0..n {
-        if let Ok(text) = state.full_get_segment_text(i) {
-            parts.push(text.trim().to_string());
+        if let Some(segment) = state.get_segment(i) {
+            if let Ok(text) = segment.to_str() {
+                parts.push(text.trim().to_string());
+            }
         }
     }
     let text = parts.join(" ");
@@ -312,35 +200,93 @@ fn transcribe_bundled(
     })
 }
 
-// ── WAV helpers ───────────────────────────────────────────────────────────────
-
-fn samples_to_wav(samples: &[f32]) -> Vec<u8> {
-    let pcm: Vec<i16> = samples
-        .iter()
-        .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
-        .collect();
-    let data_len = (pcm.len() * 2) as u32;
-    let mut buf = Vec::with_capacity(44 + data_len as usize);
-    buf.extend_from_slice(b"RIFF");
-    buf.extend_from_slice(&(36 + data_len).to_le_bytes());
-    buf.extend_from_slice(b"WAVEfmt ");
-    buf.extend_from_slice(&16u32.to_le_bytes());
-    buf.extend_from_slice(&1u16.to_le_bytes());  // PCM
-    buf.extend_from_slice(&1u16.to_le_bytes());  // mono
-    buf.extend_from_slice(&16000u32.to_le_bytes());
-    buf.extend_from_slice(&32000u32.to_le_bytes()); // byte rate
-    buf.extend_from_slice(&2u16.to_le_bytes());  // block align
-    buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    buf.extend_from_slice(b"data");
-    buf.extend_from_slice(&data_len.to_le_bytes());
-    for s in &pcm {
-        buf.extend_from_slice(&s.to_le_bytes());
-    }
-    buf
-}
-
 fn num_cpus() -> u32 {
     std::thread::available_parallelism()
         .map(|n| n.get() as u32)
         .unwrap_or(4)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use voxctr_config::WhisperCppConfig;
+
+    #[test]
+    fn test_new_backend() {
+        let cfg = WhisperCppConfig {
+            model_dir: "/tmp".to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 4,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        assert_eq!(backend.name(), "whisper-cpp");
+        assert!(!backend.is_loaded());
+    }
+
+    #[test]
+    fn test_threads_calculation() {
+        // Explicit threads count
+        let cfg = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 5,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        assert_eq!(backend.threads(), 5);
+
+        // Auto threads count (0)
+        let cfg_auto = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend_auto = WhisperCppBackend::new(cfg_auto);
+        assert!(backend_auto.threads() >= 1);
+    }
+
+    #[test]
+    fn test_resolve_model_path_absolute() {
+        let cfg = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "/tmp/nonexistent.bin".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        // Should bail because path does not exist
+        assert!(backend.resolve_model_path().is_err());
+    }
+
+    #[test]
+    fn test_resolve_model_path_unknown_size() {
+        let cfg = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "invalid_size".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        assert!(backend.resolve_model_path().is_err());
+    }
+
+    #[test]
+    fn test_transcribe_unloaded_error() {
+        let cfg = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        let req = crate::backend::TranscribeRequest {
+            audio: vec![0.0; 16000],
+            language: None,
+            initial_prompt: None,
+        };
+        assert!(backend.transcribe(&req).is_err());
+    }
+}
+

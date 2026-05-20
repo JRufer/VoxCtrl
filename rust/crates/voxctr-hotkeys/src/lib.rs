@@ -5,10 +5,7 @@ mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
 
-use std::sync::Arc;
-
-use tokio::sync::{mpsc, Mutex};
-use tracing::info;
+use tokio::sync::mpsc;
 use voxctr_routing::HotkeyBinding;
 
 pub use gestures::{GestureEvent, GestureKind};

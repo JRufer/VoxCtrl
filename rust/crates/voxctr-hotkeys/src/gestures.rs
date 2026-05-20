@@ -1,14 +1,10 @@
 use std::{
     collections::HashSet,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
-
-use voxctr_routing::{GestureType, HotkeyBinding};
+use voxctr_routing::HotkeyBinding;
 
 /// Event emitted when a gesture is fully recognized.
 #[derive(Debug, Clone)]
@@ -54,7 +50,7 @@ impl BindingState {
 // ── Double-tap state machine ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum DtState {
+pub enum DtState {
     Idle,
     FirstDown,
     FirstUp,
@@ -62,7 +58,7 @@ enum DtState {
 }
 
 pub struct DoubleTapMachine {
-    state: DtState,
+    pub state: DtState,
     deadline: Duration,
     last_up: Option<Instant>,
     cancel: Option<CancellationToken>,
@@ -100,17 +96,19 @@ impl DoubleTapMachine {
         }
     }
 
-    pub fn on_release(&mut self) {
+    pub fn on_release(&mut self) -> bool {
         match self.state {
             DtState::FirstDown => {
                 self.state = DtState::FirstUp;
                 self.last_up = Some(Instant::now());
                 self.arm_timer();
+                false
             }
             DtState::SecondDown => {
                 self.state = DtState::Idle;
+                true
             }
-            _ => {}
+            _ => false,
         }
     }
 

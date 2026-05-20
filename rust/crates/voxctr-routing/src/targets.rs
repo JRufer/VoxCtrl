@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use anyhow::Context;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpStream, UnixStream};
-use tracing::warn;
 
 use crate::models::{DeliveryResult, DeliveryType, OutputTarget, TestResult};
 
@@ -324,7 +321,7 @@ impl DeliveryTarget for FileTarget {
         };
         let path = shellexpand_tilde(path_str);
         let p = std::path::Path::new(&path);
-        let parent = p.parent().unwrap_or(std::path::Path::new("."));
+        let _parent = p.parent().unwrap_or(std::path::Path::new("."));
         TestResult {
             reachable: true,
             detail: format!(

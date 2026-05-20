@@ -20,8 +20,14 @@ pub struct AppState {
     /// Most recent transcription result (shown in history + overlay)
     pub last_text: Arc<Mutex<String>>,
 
+    /// Currently active dictation target ID
+    pub active_target: Arc<Mutex<String>>,
+
     /// Transcript history — most recent first
     pub history: Arc<Mutex<Vec<HistoryEntry>>>,
+
+    /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
+    pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -43,6 +49,9 @@ impl AppState {
 
     pub fn set_recording(&self, v: bool) {
         self.recording.store(v, Ordering::SeqCst);
+        if !v {
+            let _ = self.audio_tx.send(Vec::new());
+        }
     }
 
     pub fn set_speaking(&self, v: bool) {

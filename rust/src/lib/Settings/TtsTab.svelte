@@ -73,8 +73,8 @@
   </div>
 </section>
 
-<style src="./tab.css"></style>
 <style>
+  @import "./tab.css";
   .row { display: flex; gap: 8px; }
   .btn-preview {
     background: var(--surface2);

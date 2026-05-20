@@ -52,10 +52,6 @@
       </select>
     </label>
     <label class="field">
-      <span>whisper-cli binary path</span>
-      <input type="text" bind:value={cfg.engine.whisper_cpp.binary} onchange={markDirty} />
-    </label>
-    <label class="field">
       <span>Model directory (leave blank for default)</span>
       <input type="text" bind:value={cfg.engine.whisper_cpp.model_dir} onchange={markDirty} />
     </label>
@@ -83,4 +79,6 @@
   {/if}
 </section>
 
-<style src="./tab.css"></style>
+<style>
+  @import "./tab.css";
+</style>

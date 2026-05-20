@@ -2,18 +2,14 @@ pub mod backend;
 pub mod postprocess;
 pub mod whisper_cpp;
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::Arc;
 
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use voxctr_config::{AppConfig, BackendChoice};
 
-use backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResult};
+use backend::{TranscribeRequest, TranscriptionBackend};
 use postprocess::{run_pipeline, PostProcessConfig};
 use whisper_cpp::WhisperCppBackend;
 
@@ -157,20 +153,47 @@ fn auto_select(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
 }
 
 fn detect_nvidia() -> bool {
-    std::process::Command::new("nvidia-smi")
+    // 1. Try standard nvidia-smi command
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
         .arg("--query-gpu=name")
         .arg("--format=csv,noheader")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    {
+        if output.status.success() {
+            return true;
+        }
+    }
+
+    // 2. Check if Nvidia driver proc file exists (Linux proprietary driver)
+    if std::path::Path::new("/proc/driver/nvidia/version").exists() {
+        return true;
+    }
+
+    // 3. Check for Nvidia device nodes in /dev
+    if std::path::Path::new("/dev/nvidia0").exists() || std::path::Path::new("/dev/nvidiactl").exists() {
+        return true;
+    }
+
+    false
 }
 
 fn detect_vulkan() -> bool {
-    std::process::Command::new("vulkaninfo")
+    // 1. Try vulkaninfo
+    if let Ok(output) = std::process::Command::new("vulkaninfo")
         .arg("--summary")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    {
+        if output.status.success() {
+            return true;
+        }
+    }
+
+    // 2. Check for Vulkan ICD loader configs
+    if std::path::Path::new("/usr/share/vulkan/icd.d").exists() || std::path::Path::new("/etc/vulkan/icd.d").exists() {
+        return true;
+    }
+
+    false
 }
 
 // ── Threaded worker ───────────────────────────────────────────────────────────
@@ -187,7 +210,7 @@ pub fn run_worker(
         .spawn(move || {
             let mut engine = InferenceEngine::new(config);
             if let Err(e) = engine.load() {
-                error!("Failed to load inference backend: {e}");
+                error!("Failed to load inference backend: {:?}", e);
                 return;
             }
             info!("Inference engine ready");
@@ -199,9 +222,34 @@ pub fn run_worker(
                             let _ = tx.send(output);
                         }
                     }
-                    Err(e) => error!("Inference error: {e}"),
+                    Err(e) => error!("Inference error: {:?}", e),
                 }
             }
         })
         .expect("failed to spawn inference thread");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_nvidia_does_not_panic() {
+        // Just verify execution compiles and runs
+        let _ = detect_nvidia();
+    }
+
+    #[test]
+    fn test_detect_vulkan_does_not_panic() {
+        // Just verify execution compiles and runs
+        let _ = detect_vulkan();
+    }
+
+    #[test]
+    fn test_auto_select_backend() {
+        let mut cfg = AppConfig::default();
+        cfg.engine.whisper_cpp.device = "auto".to_string();
+        let backend = auto_select(&cfg);
+        assert_eq!(backend.name(), "whisper-cpp");
+    }
 }

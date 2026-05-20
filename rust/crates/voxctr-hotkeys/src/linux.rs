@@ -1,11 +1,9 @@
 use std::{
     collections::HashSet,
-    path::PathBuf,
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use voxctr_routing::{GestureType, HotkeyBinding};
 
 use crate::{
@@ -18,23 +16,49 @@ pub fn start(
     tx: GestureSender,
     device_path: Option<String>,
 ) -> ListenerHandle {
-    std::thread::Builder::new()
-        .name("voxctr-evdev".into())
-        .spawn(move || run(bindings, tx, device_path))
-        .expect("failed to spawn evdev thread");
+    let rt_handle = tokio::runtime::Handle::try_current().ok();
+
+    if let Some(path) = device_path {
+        let b = bindings.clone();
+        let t = tx.clone();
+        let rt = rt_handle.clone();
+        std::thread::Builder::new()
+            .name("voxctr-evdev".into())
+            .spawn(move || {
+                let _guard = rt.as_ref().map(|h| h.enter());
+                run(b, t, Some(path))
+            })
+            .expect("failed to spawn evdev thread");
+    } else {
+        let candidates = find_all_keyboards();
+        if candidates.is_empty() {
+            warn!("No suitable keyboard evdev device found; hotkeys disabled");
+        } else {
+            for path in candidates {
+                let b = bindings.clone();
+                let t = tx.clone();
+                let p = Some(path);
+                let rt = rt_handle.clone();
+                std::thread::Builder::new()
+                    .name("voxctr-evdev".into())
+                    .spawn(move || {
+                        let _guard = rt.as_ref().map(|h| h.enter());
+                        run(b, t, p)
+                    })
+                    .expect("failed to spawn evdev thread");
+            }
+        }
+    }
+
     ListenerHandle {
         _inner: std::marker::PhantomData,
     }
 }
 
 fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<String>) {
-    let device = open_device(&device_path);
-    let mut device = match device {
+    let mut device = match open_device(&device_path) {
         Some(d) => d,
-        None => {
-            warn!("No suitable keyboard evdev device found; hotkeys disabled");
-            return;
-        }
+        None => return,
     };
 
     info!("evdev listener active on {}", device.name().unwrap_or("unknown"));
@@ -50,13 +74,21 @@ fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<Stri
                     if ev.event_type() != evdev::EventType::KEY {
                         continue;
                     }
-                    let key_name = format!("{:?}", ev.code());
+                    let mut key_name = match ev.kind() {
+                        evdev::InputEventKind::Key(key) => format!("{:?}", key),
+                        _ => format!("{:?}", ev.code()),
+                    };
+                    if key_name.starts_with("Key(") && key_name.ends_with(')') {
+                        key_name = key_name[4..key_name.len() - 1].to_string();
+                    }
                     let value = ev.value();
                     // value: 1 = press, 0 = release, 2 = repeat
                     if value == 1 {
+                        tracing::info!("Pressed key: {}", key_name);
                         pressed.insert(key_name.clone());
                         handle_press(&key_name, &mut states, &pressed, &tx);
                     } else if value == 0 {
+                        tracing::info!("Released key: {}", key_name);
                         handle_release(&key_name, &mut states, &pressed, &tx);
                         pressed.remove(&key_name);
                     }
@@ -95,7 +127,7 @@ fn handle_press(
             GestureType::Hold => {
                 if !s.hold_active {
                     s.hold_active = true;
-                    debug!(id = %s.binding.id, "hold start");
+                    info!("Binding {}: hold start", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -106,6 +138,7 @@ fn handle_press(
             GestureType::Toggle => {
                 if !s.toggle_on {
                     s.toggle_on = true;
+                    info!("Binding {}: toggle start", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -113,6 +146,7 @@ fn handle_press(
                     });
                 } else {
                     s.toggle_on = false;
+                    info!("Binding {}: toggle stop", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -121,7 +155,11 @@ fn handle_press(
                 }
             }
             GestureType::DoubleTap => {
-                if s.double_tap.on_press() {
+                let prev_state = format!("{:?}", s.double_tap.state);
+                let completed = s.double_tap.on_press();
+                info!("Binding {}: DoubleTap on_press - prev_state: {}, new_state: {:?}, completed: {}", s.binding.id, prev_state, s.double_tap.state, completed);
+                if completed {
+                    info!("Binding {}: DoubleTap start gesture triggered!", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -130,7 +168,7 @@ fn handle_press(
                 }
             }
             GestureType::Chord => {
-                // Chord fires immediately when all keys are down (no hold required)
+                info!("Binding {}: Chord triggered", s.binding.id);
                 let _ = tx.send(GestureEvent {
                     binding_id: s.binding.id.clone(),
                     target_id: s.binding.target_id.clone(),
@@ -144,7 +182,7 @@ fn handle_press(
 fn handle_release(
     key: &str,
     states: &mut Vec<BindingState>,
-    pressed: &HashSet<String>,
+    _pressed: &HashSet<String>,
     tx: &GestureSender,
 ) {
     for s in states.iter_mut() {
@@ -159,7 +197,7 @@ fn handle_release(
             GestureType::Hold => {
                 if s.hold_active {
                     s.hold_active = false;
-                    debug!(id = %s.binding.id, "hold stop");
+                    info!("Binding {}: hold stop", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -168,7 +206,17 @@ fn handle_release(
                 }
             }
             GestureType::DoubleTap => {
-                s.double_tap.on_release();
+                let prev_state = format!("{:?}", s.double_tap.state);
+                let completed = s.double_tap.on_release();
+                info!("Binding {}: DoubleTap on_release - prev_state: {}, new_state: {:?}, completed: {}", s.binding.id, prev_state, s.double_tap.state, completed);
+                if completed {
+                    info!("Binding {}: DoubleTap stop gesture triggered!", s.binding.id);
+                    let _ = tx.send(GestureEvent {
+                        binding_id: s.binding.id.clone(),
+                        target_id: s.binding.target_id.clone(),
+                        kind: GestureKind::Stop,
+                    });
+                }
             }
             _ => {}
         }
@@ -182,31 +230,33 @@ fn open_device(preferred: &Option<String>) -> Option<evdev::Device> {
         if let Ok(d) = evdev::Device::open(path) {
             return Some(d);
         }
-        warn!("Saved evdev device {path} not accessible; auto-detecting");
+        warn!("Saved evdev device {path} not accessible");
     }
+    None
+}
 
-    // Auto-detect: pick the first non-virtual keyboard that has typical keys
-    let mut candidates: Vec<(u32, evdev::Device)> = evdev::enumerate()
+fn find_all_keyboards() -> Vec<String> {
+    evdev::enumerate()
         .filter_map(|(path, dev)| {
             let name = dev.name().unwrap_or("").to_ascii_lowercase();
-            // Skip virtual devices (uinput, xtest, etc.)
+            // Skip virtual and passthrough devices (uinput, xtest, passthrough, etc.)
             if name.contains("virtual")
                 || name.contains("uinput")
                 || name.contains("xtest")
+                || name.contains("passthrough")
             {
                 return None;
             }
-            // Must have KEY capability
-            let has_keys = dev.supported_keys().is_some();
+            // Must have KEY capability and support standard keyboard keys like KEY_A
+            let has_keys = dev.supported_keys()
+                .map(|keys| keys.contains(evdev::Key::KEY_A))
+                .unwrap_or(false);
             if has_keys {
-                let score = if name.contains("keyboard") { 10 } else { 1 };
-                Some((score, dev))
+                tracing::info!("Found eligible keyboard: {} at {:?}", name, path);
+                Some(path.to_string_lossy().to_string())
             } else {
                 None
             }
         })
-        .collect();
-
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
-    candidates.into_iter().next().map(|(_, d)| d)
+        .collect()
 }

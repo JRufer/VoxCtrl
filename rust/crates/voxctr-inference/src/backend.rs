@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 /// A single transcribed segment or word.
 #[derive(Debug, Clone)]
 pub struct WordTimestamp {

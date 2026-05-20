@@ -17,8 +17,6 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhisperCppConfig {
-    /// Path to `whisper-cli` binary, or "whisper-cli" to search PATH.
-    pub binary: String,
     /// Directory containing GGUF model files. Empty = platform default.
     pub model_dir: String,
     /// Model size name: "tiny", "base", "small", "medium", "large-v3", etc.
@@ -32,7 +30,6 @@ pub struct WhisperCppConfig {
 impl Default for WhisperCppConfig {
     fn default() -> Self {
         Self {
-            binary: "whisper-cli".into(),
             model_dir: String::new(),
             model_size: "large-v3".into(),
             device: "auto".into(),
@@ -94,6 +91,10 @@ pub struct EngineConfig {
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 
+fn default_gain() -> f32 {
+    1.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     pub vad_threshold: f32,
@@ -104,6 +105,7 @@ pub struct AudioConfig {
     pub evdev_device: Option<String>,
     pub noise_suppression: bool,
     /// Linear gain multiplier applied before sending to inference (1.0 = unity)
+    #[serde(default = "default_gain")]
     pub gain: f32,
 }
 

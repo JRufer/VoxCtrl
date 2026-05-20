@@ -66,8 +66,8 @@
   </div>
 </section>
 
-<style src="./tab.css"></style>
 <style>
+  @import "./tab.css";
   .snippet-row {
     display: flex;
     align-items: center;

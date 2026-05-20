@@ -34,8 +34,8 @@
   </div>
 </section>
 
-<style src="./tab.css"></style>
 <style>
+  @import "./tab.css";
   .about-card {
     flex-direction: row !important;
     align-items: flex-start;

@@ -15,22 +15,13 @@ tracing = { workspace = true }
 crossbeam-channel = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
+whisper-rs = { version = "0.16", features = ["cuda"] }
 
 [features]
-default = ["whisper-subprocess"]
-
-# Call an external whisper-cli binary (no CMake required; easiest to set up)
-whisper-subprocess = []
-
-# Statically link whisper.cpp via whisper-rs (requires cmake + C++ toolchain)
-whisper-bundled = ["dep:whisper-rs"]
+default = []
 
 # Moonshine ONNX backend via onnxruntime
 moonshine = ["dep:ort", "dep:ndarray"]
-
-[dependencies.whisper-rs]
-version = "0.12"
-optional = true
 
 [dependencies.ort]
 version = "2.0.0-rc.12"
@@ -40,3 +31,4 @@ features = ["download-binaries"]
 [dependencies.ndarray]
 version = "0.16"
 optional = true
+

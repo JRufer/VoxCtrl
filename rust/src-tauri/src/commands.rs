@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{Manager, State};
 use tracing::info;
-use voxctr_config::{AppConfig, Config};
+use voxctr_config::AppConfig;
 use voxctr_routing::{HotkeyBinding, OutputTarget};
 
 use crate::state::{AppState, HistoryEntry};
@@ -72,7 +72,7 @@ pub async fn save_config(
 
 #[tauri::command]
 pub async fn get_targets(
-    state: State<'_, Arc<AppState>>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<OutputTarget>, String> {
     let dir = voxctr_routing::config_dir();
     voxctr_routing::load_targets(&dir).map_err(|e| e.to_string())
@@ -86,7 +86,7 @@ pub async fn save_targets(
     let dir = voxctr_routing::config_dir();
     voxctr_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
     // Hot-reload the router
-    let mut router = state.router.lock().await;
+    let router = state.router.lock().await;
     router.reload(targets).await;
     info!("Targets saved and router reloaded");
     Ok(())
@@ -94,7 +94,7 @@ pub async fn save_targets(
 
 #[tauri::command]
 pub async fn get_bindings(
-    state: State<'_, Arc<AppState>>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<HotkeyBinding>, String> {
     let dir = voxctr_routing::config_dir();
     voxctr_routing::load_bindings(&dir).map_err(|e| e.to_string())
@@ -102,7 +102,7 @@ pub async fn get_bindings(
 
 #[tauri::command]
 pub async fn save_bindings(
-    state: State<'_, Arc<AppState>>,
+    _state: State<'_, Arc<AppState>>,
     bindings: Vec<HotkeyBinding>,
 ) -> Result<(), String> {
     let dir = voxctr_routing::config_dir();
@@ -132,7 +132,7 @@ pub async fn clear_history(state: State<'_, Arc<AppState>>) -> Result<(), String
 
 #[tauri::command]
 pub async fn speak_text(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     text: String,
 ) -> Result<(), String> {
     // Retrieve TTS handle from app state extension

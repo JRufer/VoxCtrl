@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Inject text into the currently focused window using the best available
 /// method for the current platform and display server.

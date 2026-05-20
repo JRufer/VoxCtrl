@@ -76,4 +76,6 @@
   </div>
 </section>
 
-<style src="./tab.css"></style>
+<style>
+  @import "./tab.css";
+</style>
