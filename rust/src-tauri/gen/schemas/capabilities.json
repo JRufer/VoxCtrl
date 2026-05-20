@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability set for VoxCtr windows","local":true,"windows":["settings","overlay","history"],"permissions":["core:default","shell:allow-open","notification:default","fs:default","dialog:default"],"platforms":["linux","windows","macOS"]}}

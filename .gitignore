@@ -31,3 +31,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Rust
+/target/
+**/target/
+**/*.rs.bk
+
+# Node
+node_modules/

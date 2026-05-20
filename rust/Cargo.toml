@@ -1,0 +1,98 @@
+[workspace]
+members = [
+    "crates/voxctr-config",
+    "crates/voxctr-routing",
+    "crates/voxctr-hotkeys",
+    "crates/voxctr-audio",
+    "crates/voxctr-inference",
+    "crates/voxctr-tts",
+    "crates/voxctr-inject",
+    "crates/voxctr-dbus",
+    "crates/voxctr-mcp",
+    "crates/voxctr-llm",
+    "src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["VoxCtr Contributors"]
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Paths / dirs
+dirs = "5"
+
+# Audio
+cpal = "0.15"
+rubato = "0.15"
+
+# Regex / text processing
+regex = "1"
+
+# Clipboard
+arboard = "3"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# DBus (Linux only)
+zbus = { version = "4", features = ["tokio"] }
+
+# Desktop notifications
+notify-rust = "4"
+
+# Crypto (webhook HMAC)
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Archive / download helpers
+flate2 = "1"
+tar = "0.4"
+tempfile = "3"
+
+# Time / dates
+chrono = { version = "0.4", features = ["serde"] }
+
+# Channel utilities
+crossbeam-channel = "0.5"
+
+# Internal crates
+voxctr-config   = { path = "crates/voxctr-config" }
+voxctr-routing  = { path = "crates/voxctr-routing" }
+voxctr-hotkeys  = { path = "crates/voxctr-hotkeys" }
+voxctr-audio    = { path = "crates/voxctr-audio" }
+voxctr-inference = { path = "crates/voxctr-inference" }
+voxctr-tts      = { path = "crates/voxctr-tts" }
+voxctr-inject   = { path = "crates/voxctr-inject" }
+voxctr-dbus     = { path = "crates/voxctr-dbus" }
+voxctr-mcp      = { path = "crates/voxctr-mcp" }
+voxctr-llm      = { path = "crates/voxctr-llm" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"
+
+[profile.dev]
+opt-level = 1
