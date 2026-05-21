@@ -401,6 +401,8 @@ pub fn run() {
             list_audio_devices,
             check_voice_downloaded,
             download_voice,
+            check_model_downloaded,
+            download_model,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

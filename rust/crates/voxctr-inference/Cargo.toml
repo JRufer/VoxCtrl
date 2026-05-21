@@ -15,6 +15,7 @@ tracing = { workspace = true }
 crossbeam-channel = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
+reqwest = { workspace = true }
 whisper-rs = { version = "0.16", features = ["cuda"] }
 
 [features]

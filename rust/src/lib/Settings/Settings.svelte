@@ -97,16 +97,6 @@
       {/if}
     </div>
   </div>
-
-  <!-- Footer -->
-  <footer class="settings-footer">
-    {#if $configDirty}
-      <span class="unsaved">Unsaved changes</span>
-    {/if}
-    <button class="btn-save" onclick={handleSave} disabled={!$configDirty}>
-      Save
-    </button>
-  </footer>
 </div>
 
 <style>

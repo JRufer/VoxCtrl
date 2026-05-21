@@ -135,13 +135,22 @@ const defaultConfig: AppConfig = {
 export const config = writable<AppConfig>(defaultConfig);
 export const configDirty = writable(false);
 
+let isLoaded = false;
+let saveTimeout: any = null;
+
 export async function loadConfig() {
   try {
     const loaded = await invoke<AppConfig>("get_config");
     config.set(loaded);
     configDirty.set(false);
+    setTimeout(() => {
+      isLoaded = true;
+    }, 0);
   } catch (e) {
     console.error("loadConfig:", e);
+    setTimeout(() => {
+      isLoaded = true;
+    }, 0);
   }
 }
 
@@ -150,4 +159,19 @@ export async function saveConfig(cfg: AppConfig) {
   configDirty.set(false);
 }
 
+config.subscribe((cfg) => {
+  if (!isLoaded) return;
+  
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async () => {
+    try {
+      await saveConfig(cfg);
+      console.log("Config auto-saved successfully!");
+    } catch (e) {
+      console.error("Auto-saving config failed:", e);
+    }
+  }, 400);
+});
+
 loadConfig();
+

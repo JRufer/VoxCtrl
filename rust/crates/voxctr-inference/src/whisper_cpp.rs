@@ -206,6 +206,46 @@ fn num_cpus() -> u32 {
         .unwrap_or(4)
 }
 
+pub fn is_model_downloaded(size: &str) -> bool {
+    let candidates = match GGUF_MAP.iter().find(|(name, _)| *name == size) {
+        Some((_, files)) => *files,
+        None => return false,
+    };
+    let model_dir = WhisperCppBackend::default_model_dir();
+    candidates.iter().any(|filename| model_dir.join(filename).exists())
+}
+
+pub async fn download_model(size: &str) -> Result<()> {
+    let candidates = GGUF_MAP
+        .iter()
+        .find(|(name, _)| *name == size)
+        .map(|(_, files)| *files)
+        .ok_or_else(|| anyhow::anyhow!("Unknown model size '{size}'"))?;
+
+    let model_dir = WhisperCppBackend::default_model_dir();
+    tokio::fs::create_dir_all(&model_dir).await?;
+
+    let filename = candidates[0];
+    let path = model_dir.join(filename);
+
+    if path.exists() {
+        return Ok(());
+    }
+
+    let url = format!("{}{}", GGUF_BASE_URL, filename);
+    info!("Downloading Whisper model: {}", url);
+
+    let response = reqwest::get(&url).await?.error_for_status()?;
+    let bytes = response.bytes().await?;
+
+    tokio::fs::write(&path, bytes)
+        .await
+        .context("save model file")?;
+
+    info!("Whisper model downloaded successfully to: {}", path.display());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,12 +1,58 @@
 <script lang="ts">
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
 
   let { cfg = $bindable() }: { cfg: AppConfig } = $props();
   function markDirty() { configDirty.set(true); }
 
   const MODEL_SIZES = ["tiny","tiny.en","base","base.en","small","small.en",
     "medium","medium.en","large-v2","large-v3","large-v3-turbo"];
+
+  let downloadedMap = $state<Record<string, boolean>>({});
+  let checking = $state(false);
+  let downloading = $state(false);
+
+  async function checkAllModelsDownloaded() {
+    checking = true;
+    const newMap: Record<string, boolean> = {};
+    for (const m of MODEL_SIZES) {
+      try {
+        newMap[m] = await invoke<boolean>("check_model_downloaded", { modelSize: m });
+      } catch (e) {
+        console.error("Failed to check download status for model " + m, e);
+        newMap[m] = false;
+      }
+    }
+    downloadedMap = newMap;
+    checking = false;
+  }
+
+  async function triggerDownload(model: string) {
+    if (downloading) return;
+    downloading = true;
+    try {
+      await invoke("download_model", { modelSize: model });
+      downloadedMap[model] = true;
+    } catch (e) {
+      alert(`Failed to download model: ${e}`);
+    } finally {
+      downloading = false;
+    }
+  }
+
+  async function onModelChanged() {
+    markDirty();
+    const selected = cfg.engine.whisper_cpp.model_size;
+    if (!downloadedMap[selected]) {
+      await triggerDownload(selected);
+    }
+  }
+
+  onMount(() => {
+    checkAllModelsDownloaded();
+  });
 </script>
 
 <section>
@@ -36,12 +82,30 @@
     <h3>Whisper.cpp Settings</h3>
     <label class="field">
       <span>Model size</span>
-      <select bind:value={cfg.engine.whisper_cpp.model_size} onchange={markDirty}>
+      <select bind:value={cfg.engine.whisper_cpp.model_size} onchange={onModelChanged}>
         {#each MODEL_SIZES as s}
-          <option value={s}>{s}</option>
+          <option value={s}>{s}{downloadedMap[s] ? " ✔" : ""}</option>
         {/each}
       </select>
     </label>
+
+    <div class="model-status-container">
+      {#if checking}
+        <span class="status-checking">⏳ Checking local model files...</span>
+      {:else if downloading}
+        <span class="status-downloading">⏳ Downloading {cfg.engine.whisper_cpp.model_size} (GGUF format)...</span>
+      {:else if downloadedMap[cfg.engine.whisper_cpp.model_size]}
+        <span class="status-downloaded">✔ Model downloaded and ready</span>
+      {:else}
+        <div class="status-missing-wrapper">
+          <span class="status-missing">❌ Model file missing</span>
+          <button class="btn-download" onclick={() => triggerDownload(cfg.engine.whisper_cpp.model_size)}>
+            📥 Download Model
+          </button>
+        </div>
+      {/if}
+    </div>
+
     <label class="field">
       <span>Device</span>
       <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
@@ -81,4 +145,49 @@
 
 <style>
   @import "./tab.css";
+
+  .model-status-container {
+    display: flex;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 42px;
+    margin-bottom: 12px;
+  }
+  .status-downloaded {
+    color: #4caf50;
+    font-weight: 600;
+  }
+  .status-downloading {
+    color: var(--accent2);
+  }
+  .status-checking {
+    color: var(--text-muted);
+  }
+  .status-missing-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .status-missing {
+    color: #e57373;
+  }
+  .btn-download {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+  }
+  .btn-download:hover {
+    background: var(--accent2);
+  }
 </style>

@@ -181,6 +181,18 @@ pub async fn download_voice(voice_name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn check_model_downloaded(model_size: String) -> Result<bool, String> {
+    Ok(voxctr_inference::whisper_cpp::is_model_downloaded(&model_size))
+}
+
+#[tauri::command]
+pub async fn download_model(model_size: String) -> Result<(), String> {
+    voxctr_inference::whisper_cpp::download_model(&model_size)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ── Overlay window ────────────────────────────────────────────────────────────
 
 #[tauri::command]

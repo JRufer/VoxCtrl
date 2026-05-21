@@ -20,17 +20,21 @@
     bindings = await invoke<HotkeyBinding[]>("get_bindings");
   });
 
-  async function saveAll() {
-    saving = true;
+  async function persistTargets() {
     try {
       await invoke("save_targets", { targets });
-      await invoke("save_bindings", { bindings });
-      // Notify user via a tiny overlay banner or just log
-      console.log("Routing config saved successfully!");
+      console.log("Targets auto-saved successfully!");
     } catch (e) {
-      alert("Failed to save: " + e);
-    } finally {
-      saving = false;
+      console.error("Failed to save targets:", e);
+    }
+  }
+
+  async function persistBindings() {
+    try {
+      await invoke("save_bindings", { bindings });
+      console.log("Bindings auto-saved successfully!");
+    } catch (e) {
+      console.error("Failed to save bindings:", e);
     }
   }
 
@@ -73,7 +77,7 @@
     editingTarget = JSON.parse(JSON.stringify(tgt));
   }
 
-  function saveTargetModal() {
+  async function saveTargetModal() {
     if (!editingTarget) return;
     if (editingTarget.id.trim() === "") {
       alert("Target ID cannot be empty.");
@@ -89,9 +93,10 @@
       targets = targets.map(t => t.id === editingTarget!.id ? editingTarget! : t);
     }
     editingTarget = null;
+    await persistTargets();
   }
 
-  function deleteTarget(id: string) {
+  async function deleteTarget(id: string) {
     const usedBy = bindings.filter(b => b.target_id === id).map(b => b.label || b.id);
     if (usedBy.length > 0) {
       alert(`Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`);
@@ -99,6 +104,7 @@
     }
     if (confirm("Are you sure you want to delete this target?")) {
       targets = targets.filter(t => t.id !== id);
+      await persistTargets();
     }
   }
 
@@ -126,11 +132,12 @@
     editingBinding = JSON.parse(JSON.stringify(b));
   }
 
-  function toggleBindingDisabled(id: string) {
+  async function toggleBindingDisabled(id: string) {
     bindings = bindings.map(b => b.id === id ? { ...b, disabled: !b.disabled } : b);
+    await persistBindings();
   }
 
-  function saveBindingModal() {
+  async function saveBindingModal() {
     if (!editingBinding) return;
     if (editingBinding.id.trim() === "") {
       alert("Binding ID cannot be empty.");
@@ -151,11 +158,13 @@
     }
     editingBinding = null;
     isRecordingKeys = false;
+    await persistBindings();
   }
 
-  function deleteBinding(id: string) {
+  async function deleteBinding(id: string) {
     if (confirm("Are you sure you want to delete this hotkey binding?")) {
       bindings = bindings.filter(b => b.id !== id);
+      await persistBindings();
     }
   }
 
@@ -348,12 +357,6 @@
     </div>
   {/if}
 
-  <!-- Footer Actions -->
-  <div class="actions">
-    <button class="btn-save" onclick={saveAll} disabled={saving}>
-      {saving ? "Saving…" : "Save Routing Config"}
-    </button>
-  </div>
 </section>
 
 <!-- ========================================== -->
