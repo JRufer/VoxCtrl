@@ -83,8 +83,13 @@ class LLMPostprocessor:
         if self._available is not None:
             return self._available
         try:
-            req = urllib.request.Request(_TAGS_URL, method="GET")
-            with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:
+            endpoint = self.config.get("ollama_endpoint", "http://localhost:11434") if self.config else "http://localhost:11434"
+            tags_url = f"{endpoint}/api/tags"
+            timeout_secs = float(self.config.get("ollama_timeout_secs", 8)) if self.config else 8.0
+            probe_timeout = min(2.0, timeout_secs)
+
+            req = urllib.request.Request(tags_url, method="GET")
+            with urllib.request.urlopen(req, timeout=probe_timeout) as resp:
                 body = json.loads(resp.read().decode())
                 self._available_models = [
                     m.get("name", "") for m in body.get("models", [])
@@ -140,7 +145,12 @@ class LLMPostprocessor:
         if not effective.get("ollama_enabled", False):
             return text
 
-        model  = effective.get("ollama_model", self.config.get("ollama_model", "llama3.2:1b"))
+        model = effective.get("ollama_model")
+        if not model or not model.strip():
+            model = self.config.get("ollama_model", "llama3.2:1b")
+        if not model or not model.strip():
+            model = "llama3.2:1b"
+
         mode   = effective.get("ollama_mode",  self.config.get("ollama_mode", "clean"))
         custom = effective.get("ollama_prompt")  # None → use mode's built-in prompt
 
@@ -193,14 +203,18 @@ class LLMPostprocessor:
             },
         }).encode("utf-8")
 
+        endpoint = self.config.get("ollama_endpoint", "http://localhost:11434") if self.config else "http://localhost:11434"
+        generate_url = f"{endpoint}/api/generate"
+        generate_timeout = float(self.config.get("ollama_timeout_secs", 8)) if self.config else 8.0
+
         req = urllib.request.Request(
-            _GENERATE_URL,
+            generate_url,
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=_GENERATE_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=generate_timeout) as resp:
                 body = json.loads(resp.read().decode())
                 result = body.get("response", "").strip()
                 if result:

@@ -281,8 +281,7 @@ class InferenceEngine(threading.Thread):
                                   else bool(p.code_mode),
 
             # ── Ollama / LLM ────────────────────────────────────────────────
-            # global OFF → feature off; target can opt-in within global budget
-            "ollama_enabled": global_ollama and target_wants_ollama,
+            "ollama_enabled": target_wants_ollama,
             "ollama_model":   resolve("ollama_model", "ollama_model", "llama3.2:1b"),
             "ollama_mode":    resolve("ollama_mode", "ollama_mode", "clean"),
             "ollama_prompt":  p.ollama_prompt if p is not None else None,

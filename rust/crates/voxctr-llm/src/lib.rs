@@ -100,7 +100,11 @@ impl OllamaClient {
 
         let prompt = if self.config.mode == OllamaMode::Custom {
             if let Some(tmpl) = &self.config.custom_prompt {
-                tmpl.replace("{text}", text)
+                if tmpl.contains("{text}") {
+                    tmpl.replace("{text}", text)
+                } else {
+                    format!("{tmpl}\n\n{text}")
+                }
             } else {
                 return text.to_string();
             }
@@ -147,5 +151,21 @@ impl OllamaClient {
     /// Reset the availability cache (e.g., user changed endpoint in settings).
     pub fn reset_availability(&self) {
         *self.available.lock().unwrap() = None;
+    }
+
+    /// Retrieve the list of available local models from the Ollama instance.
+    pub async fn list_models(&self) -> Result<Vec<String>, String> {
+        let url = format!("{}/api/tags", self.config.endpoint);
+        let resp = self.http.get(&url).send().await.map_err(|e| e.to_string())?;
+        if resp.status().is_success() {
+            #[derive(serde::Deserialize)]
+            struct ModelItem { name: String }
+            #[derive(serde::Deserialize)]
+            struct TagsResponse { models: Vec<ModelItem> }
+            let tags = resp.json::<TagsResponse>().await.map_err(|e| e.to_string())?;
+            Ok(tags.models.into_iter().map(|m| m.name).collect())
+        } else {
+            Err(format!("HTTP error: {}", resp.status()))
+        }
     }
 }

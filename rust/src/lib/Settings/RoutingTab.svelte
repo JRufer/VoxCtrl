@@ -15,6 +15,13 @@
   let isEditingBindingNew = $state(false);
   let isRecordingKeys = $state(false);
 
+  // Flat edit states to ensure absolute Svelte 5 reactivity for target processing overrides
+  let editApplySnippets = $state(true);
+  let editOllamaEnabled = $state(false);
+  let editOllamaModel = $state("");
+  let editOllamaMode = $state("custom");
+  let editOllamaPrompt = $state("");
+
   onMount(async () => {
     targets = await invoke<OutputTarget[]>("get_targets");
     bindings = await invoke<HotkeyBinding[]>("get_bindings");
@@ -59,6 +66,12 @@
   // --- CRUD Output Targets ---
   function addNewTarget() {
     isEditingTargetNew = true;
+    editApplySnippets = true;
+    editOllamaEnabled = false;
+    editOllamaModel = "";
+    editOllamaMode = "custom";
+    editOllamaPrompt = "";
+
     editingTarget = {
       id: "new_target_" + Math.random().toString(36).substring(2, 6),
       label: "New Target",
@@ -70,7 +83,11 @@
       append_newline: true,
       tts_engine: "None",
       processing: {
-        apply_snippets: true
+        apply_snippets: true,
+        ollama_enabled: false,
+        ollama_model: "",
+        ollama_mode: "custom",
+        ollama_prompt: "",
       }
     };
   }
@@ -81,9 +98,14 @@
     if (!clone.processing) {
       clone.processing = {};
     }
-    if (clone.processing.apply_snippets === undefined) {
-      clone.processing.apply_snippets = true;
-    }
+    
+    // Load flat state values
+    editApplySnippets = clone.processing.apply_snippets !== false;
+    editOllamaEnabled = clone.processing.ollama_enabled === true;
+    editOllamaModel = clone.processing.ollama_model || "";
+    editOllamaMode = clone.processing.ollama_mode || "custom";
+    editOllamaPrompt = clone.processing.ollama_prompt || "";
+
     editingTarget = clone;
   }
 
@@ -93,6 +115,26 @@
       alert("Target ID cannot be empty.");
       return;
     }
+
+    // Force prompt template to have `{text}` if Ollama processing is enabled with custom mode
+    if (editOllamaEnabled) {
+      if (editOllamaMode === "custom") {
+        if (!editOllamaPrompt.includes("{text}")) {
+          alert("Ollama Configuration Error:\nYour custom prompt template MUST contain the '{text}' placeholder so Ollama knows where to insert the transcribed text.\n\nExample:\nwrite a hyku about {text}");
+          return;
+        }
+      }
+    }
+
+    // Commit flat states back to the target's processing config before saving
+    editingTarget.processing = {
+      apply_snippets: editApplySnippets,
+      ollama_enabled: editOllamaEnabled,
+      ollama_model: editOllamaModel,
+      ollama_mode: editOllamaMode,
+      ollama_prompt: editOllamaPrompt,
+    };
+
     if (isEditingTargetNew) {
       if (targets.some(t => t.id === editingTarget!.id)) {
         alert("Target with this ID already exists.");
@@ -422,9 +464,9 @@
               <input
                 type="text"
                 bind:value={editingTarget.command}
-                placeholder="e.g. xdg-open {TEXT}"
+                placeholder="e.g. xdg-open {'{TEXT}'}"
               />
-              <span class="hint">Use <code>{`{TEXT}`}</code> inside the command string as a placeholder.</span>
+              <span class="hint">Use <code>{"{TEXT}"}</code> inside the command string as a placeholder.</span>
             </label>
           </div>
         {/if}
@@ -531,11 +573,43 @@
             <input type="checkbox" bind:checked={editingTarget.send_on_release} />
             <span>Execute only on physical key release (Hold modes)</span>
           </label>
+
           {#if editingTarget.processing}
             <label class="checkbox-field">
-              <input type="checkbox" bind:checked={editingTarget.processing.apply_snippets} />
+              <input type="checkbox" bind:checked={editApplySnippets} />
               <span>Apply snippets to transcription text</span>
             </label>
+            <label class="checkbox-field mt-2">
+              <input type="checkbox" bind:checked={editOllamaEnabled} />
+              <span>Enable target-specific Ollama LLM post-processing</span>
+            </label>
+
+            {#if editOllamaEnabled}
+              <div class="ollama-target-settings pl-4 mt-2 ml-4">
+                <label class="field">
+                  <span>Model Override (leave empty for global default)</span>
+                  <input
+                    type="text"
+                    bind:value={editOllamaModel}
+                    placeholder="e.g. llama3.2:1b"
+                  />
+                </label>
+
+                <label class="field col mt-2">
+                  <span>Custom Prompt Template (<code>{"{text}"}</code> is required)</span>
+                  <textarea
+                    rows="3"
+                    bind:value={editOllamaPrompt}
+                    placeholder="e.g. write a haiku about {'{text}'}"
+                  ></textarea>
+                  {#if editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
+                    <span class="prompt-error-msg">
+                      ⚠️ Validation Error: Prompt template MUST contain the <code>{"{text}"}</code> placeholder.
+                    </span>
+                  {/if}
+                </label>
+              </div>
+            {/if}
           {/if}
 
           <label class="field mt-2">
@@ -1176,5 +1250,38 @@
   @keyframes fade-in {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
+  }
+
+  .ollama-target-settings {
+    border-left: 2px solid var(--accent);
+    padding-left: 14px;
+    margin-left: 10px;
+    margin-top: 10px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .prompt-error-msg {
+    color: #e57373;
+    font-size: 12px;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+  textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 8px;
+    font-size: 13px;
+    font-family: monospace;
+    resize: vertical;
+  }
+  .field.col {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 </style>

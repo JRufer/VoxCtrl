@@ -5,16 +5,18 @@
 
   let isReady = $derived($status.audio_ready !== false);
   let label = $derived(
-    recording ? (isReady ? "Listening…" : "Connecting Mic…") : speaking ? "Speaking…" : ""
+    $status.processing ? "Processing…" : recording ? (isReady ? "Listening…" : "Connecting Mic…") : speaking ? "Speaking…" : ""
   );
-  let color = $derived(recording ? (isReady ? "#e94560" : "#ff9100") : "#4fc3f7");
+  let color = $derived(
+    $status.processing ? "#00e5ff" : recording ? (isReady ? "#e94560" : "#ff9100") : "#4fc3f7"
+  );
 </script>
 
 <div class="voice-card-container">
   <div class="card" style="--dot-color: {color}">
-    <span class="dot" class:pulse={recording || speaking}></span>
+    <span class="dot" class:pulse={recording || speaking || $status.processing}></span>
     <span class="label">{label}</span>
-    {#if recording || speaking}
+    {#if recording || speaking || $status.processing}
       <span class="target-badge">
         <span class="target-icon">🎯</span>
         <span class="target-text">{$status.active_target_label || "Focused Window"}</span>

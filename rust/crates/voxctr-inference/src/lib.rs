@@ -178,6 +178,60 @@ impl InferenceEngine {
             processed = String::new();
         }
 
+        // ── Target-Specific Ollama Post-Processing ────────────────────────────
+        let target_wants_ollama = target
+            .and_then(|t| t.processing.ollama_enabled)
+            .unwrap_or(false);
+
+        if target_wants_ollama && !processed.is_empty() {
+            let mut ollama_cfg = app_config.ollama.clone();
+            ollama_cfg.enabled = true;
+
+            if let Some(ref t) = target {
+                if let Some(ref model) = t.processing.ollama_model {
+                    if !model.is_empty() {
+                        ollama_cfg.model = model.clone();
+                    }
+                }
+                if let Some(ref mode_str) = t.processing.ollama_mode {
+                    ollama_cfg.mode = match mode_str.as_str() {
+                        "clean" => voxctr_config::OllamaMode::Clean,
+                        "formal" => voxctr_config::OllamaMode::Formal,
+                        "casual" => voxctr_config::OllamaMode::Casual,
+                        "bullet" => voxctr_config::OllamaMode::Bullet,
+                        "concise" => voxctr_config::OllamaMode::Concise,
+                        "custom" => voxctr_config::OllamaMode::Custom,
+                        _ => voxctr_config::OllamaMode::Clean,
+                    };
+                }
+                if let Some(ref prompt) = t.processing.ollama_prompt {
+                    if !prompt.is_empty() {
+                        ollama_cfg.custom_prompt = Some(prompt.clone());
+                        ollama_cfg.mode = voxctr_config::OllamaMode::Custom;
+                    }
+                }
+            }
+
+            let client = voxctr_llm::OllamaClient::new(ollama_cfg);
+            let processed_res = match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    let c = client.clone();
+                    let text = processed.clone();
+                    std::thread::spawn(move || {
+                        handle.block_on(async { c.process(&text).await })
+                    }).join().unwrap_or(processed)
+                }
+                Err(_) => {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                        rt.block_on(async { client.process(&processed).await })
+                    } else {
+                        processed
+                    }
+                }
+            };
+            processed = processed_res;
+        }
+
         Ok(InferenceOutput {
             text: processed,
             target_id: req.target_id,
@@ -344,11 +398,18 @@ pub fn run_worker(
             while let Ok(req) = rx.recv() {
                 match engine.process(req) {
                     Ok(output) => {
-                        if !output.text.is_empty() {
-                            let _ = tx.send(output);
-                        }
+                        let _ = tx.send(output);
                     }
-                    Err(e) => error!("Inference error: {:?}", e),
+                    Err(e) => {
+                        error!("Inference error: {:?}", e);
+                        let _ = tx.send(InferenceOutput {
+                            text: "".to_string(),
+                            target_id: "".to_string(),
+                            raw_text: "".to_string(),
+                            inference_ms: 0,
+                            language: "".to_string(),
+                        });
+                    }
                 }
             }
         })

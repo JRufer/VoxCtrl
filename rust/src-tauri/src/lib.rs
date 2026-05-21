@@ -60,6 +60,7 @@ pub fn run() {
         config: config.clone(),
         router: router.clone(),
         recording: Arc::new(AtomicBool::new(false)),
+        processing: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
@@ -104,6 +105,7 @@ pub fn run() {
                             target_id: target_id.clone(),
                             context_text: None,
                         };
+                        state_for_audio.set_processing(true);
                         let _ = inference_tx.send(req);
                     }
                     was_recording = false;
@@ -155,10 +157,13 @@ pub fn run() {
     // ── Text delivery: inference → router → injection ─────────────────────────
     {
         let state = app_state.clone();
-        let show_notif = cfg_data.features.show_notification;
         let rt_handle = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
             while let Ok(output) = text_rx.recv() {
+                state.set_processing(false);
+                if output.text.trim().is_empty() {
+                    continue;
+                }
                 tracing::info!("Received transcription: \"{}\" for target '{}' (took {}ms)", output.text, output.target_id, output.inference_ms);
                 let words = output.text.split_whitespace().count() as u32;
                 state.increment_words(words);
@@ -175,6 +180,10 @@ pub fn run() {
                     *state_lt.last_text.lock().await = text_lt;
                 });
 
+                let show_notif = {
+                    let cfg_lock = state.config.blocking_lock();
+                    cfg_lock.data.features.show_notification
+                };
                 if show_notif {
                     voxctr_inject::show_notification("VoxCtr", &output.text);
                 }
@@ -265,6 +274,20 @@ pub fn run() {
                 .expect("Failed to load record_on icon");
             let record_off_icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/record_off.png"))
                 .expect("Failed to load record_off icon");
+            let processing_frames = [
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_1.png"))
+                    .expect("Failed to load processing_1 icon"),
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_2.png"))
+                    .expect("Failed to load processing_2 icon"),
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_3.png"))
+                    .expect("Failed to load processing_3 icon"),
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_4.png"))
+                    .expect("Failed to load processing_4 icon"),
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_5.png"))
+                    .expect("Failed to load processing_5 icon"),
+                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_6.png"))
+                    .expect("Failed to load processing_6 icon"),
+            ];
             let tray_icon = record_off_icon.clone();
 
             let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
@@ -324,37 +347,43 @@ pub fn run() {
             let state_for_ticker = app_state.clone();
             let handle = app.handle().clone();
             tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(200));
+                let mut interval = tokio::time::interval(Duration::from_millis(150)); // Faster 150ms interval for smooth spin!
                 let mut last_recording = false;
+                let mut was_animating = false;
+                let mut frame_idx = 0;
                 loop {
                     interval.tick().await;
                     let is_recording = state_for_ticker.is_recording();
+                    let is_processing = state_for_ticker.is_processing();
 
-                    if is_recording != last_recording {
-                        if let Some(tray) = handle.tray_by_id("main-tray") {
+                    if let Some(tray) = handle.tray_by_id("main-tray") {
+                        if is_processing {
+                            let icon = &processing_frames[frame_idx];
+                            let _ = tray.set_icon(Some(icon.clone()));
+                            frame_idx = (frame_idx + 1) % 6;
+                            was_animating = true;
+                        } else if was_animating || is_recording != last_recording {
                             let icon = if is_recording { &record_on_icon } else { &record_off_icon };
                             let _ = tray.set_icon(Some(icon.clone()));
+                            was_animating = false;
+                            last_recording = is_recording;
                         }
-
-                        // Toggle dynamic overlay window visibility based on show_overlay configuration
-                        if is_recording {
-                            let show_overlay = {
-                                let cfg = state_for_ticker.config.lock().await;
-                                cfg.data.ui.show_overlay
-                            };
-                            if show_overlay {
-                                if let Some(window) = handle.get_webview_window("overlay") {
-                                    let _ = window.show();
-                                }
-                            }
-                        } else {
-                            if let Some(window) = handle.get_webview_window("overlay") {
-                                let _ = window.hide();
-                            }
-                        }
-
-                        last_recording = is_recording;
                     }
+
+                    // Toggle dynamic overlay window visibility based on show_overlay configuration
+                    let should_show_overlay = (is_recording || is_processing) && {
+                        let cfg = state_for_ticker.config.lock().await;
+                        cfg.data.ui.show_overlay
+                    };
+
+                    if let Some(window) = handle.get_webview_window("overlay") {
+                        if should_show_overlay {
+                            let _ = window.show();
+                        } else {
+                            let _ = window.hide();
+                        }
+                    }
+                    last_recording = is_recording;
 
                     let active_target_id = state_for_ticker.active_target.lock().await.clone();
                     let target_label = {
@@ -373,6 +402,7 @@ pub fn run() {
 
                     let payload = serde_json::json!({
                         "recording": is_recording,
+                        "processing": is_processing,
                         "speaking": state_for_ticker.is_speaking(),
                         "audio_ready": state_for_ticker.is_audio_ready(),
                         "word_count": state_for_ticker.total_words(),
@@ -406,6 +436,7 @@ pub fn run() {
             download_voice,
             check_model_downloaded,
             download_model,
+            test_ollama,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

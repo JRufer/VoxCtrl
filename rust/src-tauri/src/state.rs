@@ -11,6 +11,8 @@ pub struct AppState {
 
     /// True while a hotkey hold/toggle is active (recording)
     pub recording: Arc<AtomicBool>,
+    /// True while speech transcription/Ollama post-processing is running
+    pub processing: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// True when dynamic stream has successfully opened and is active (Option A)
@@ -55,6 +57,14 @@ impl AppState {
 
     pub fn is_speaking(&self) -> bool {
         self.speaking.load(Ordering::SeqCst)
+    }
+
+    pub fn is_processing(&self) -> bool {
+        self.processing.load(Ordering::SeqCst)
+    }
+
+    pub fn set_processing(&self, v: bool) {
+        self.processing.store(v, Ordering::SeqCst);
     }
 
     pub fn is_audio_ready(&self) -> bool {

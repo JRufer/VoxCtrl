@@ -145,11 +145,21 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         _ => DeliveryType::Inject,
     };
 
+    let has_any_override = r.processing.noise_suppression.is_some()
+        || r.processing.quiet_mode.is_some()
+        || r.processing.atspi_context.is_some()
+        || r.processing.remove_fillers.is_some()
+        || r.processing.spoken_punctuation.is_some()
+        || r.processing.auto_format_lists.is_some()
+        || r.processing.apply_snippets.is_some()
+        || r.processing.code_mode.is_some()
+        || r.processing.ollama_enabled.is_some()
+        || r.processing.ollama_model.is_some()
+        || r.processing.ollama_mode.is_some()
+        || r.processing.ollama_prompt.is_some();
+
     // Migrate legacy post_processing string to processing overrides
-    let processing = if r.processing.noise_suppression.is_none()
-        && r.processing.remove_fillers.is_none()
-        && r.processing.spoken_punctuation.is_none()
-    {
+    let processing = if !has_any_override {
         migrate_legacy_pp(r.post_processing.as_deref().unwrap_or("default"))
     } else {
         TargetProcessingConfig {

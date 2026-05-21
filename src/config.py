@@ -50,7 +50,10 @@ DEFAULT_CONFIG = {
     "ollama": {
         "enabled": False,
         "model": "llama3.2:1b",
-        "mode": "clean"
+        "mode": "clean",
+        "endpoint": "http://localhost:11434",
+        "timeout_secs": 8,
+        "custom_prompt": None
     },
     "tts": {
         "enabled": False,
@@ -104,6 +107,9 @@ class Config:
         "ollama_enabled": "ollama.enabled",
         "ollama_model": "ollama.model",
         "ollama_mode": "ollama.mode",
+        "ollama_endpoint": "ollama.endpoint",
+        "ollama_timeout_secs": "ollama.timeout_secs",
+        "ollama_custom_prompt": "ollama.custom_prompt",
         "tts_enabled": "tts.enabled",
         "tts_engine": "tts.engine",
         "tts_voice": "tts.voice",

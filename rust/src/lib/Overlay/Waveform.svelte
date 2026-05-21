@@ -15,9 +15,11 @@
 
   let heights = $state(Array.from({ length: BAR_COUNT }, () => 2));
   let timer: ReturnType<typeof setInterval> | undefined;
+  let offset = 0;
 
   $effect(() => {
     if (recording && $status.audio_ready !== false) {
+      clearInterval(timer);
       timer = setInterval(() => {
         heights = Array.from({ length: BAR_COUNT }, (_, i) => {
           const env = envelope(i);
@@ -26,6 +28,17 @@
           return base + noise;
         });
       }, 60);
+    } else if ($status.processing) {
+      clearInterval(timer);
+      timer = setInterval(() => {
+        offset += 0.22;
+        heights = Array.from({ length: BAR_COUNT }, (_, i) => {
+          const env = envelope(i);
+          const base = 2 + env * 4;
+          const wave = Math.sin(i * 0.45 - offset) * env * 28;
+          return base + Math.abs(wave);
+        });
+      }, 30);
     } else {
       clearInterval(timer);
       heights = Array.from({ length: BAR_COUNT }, () => 2);
@@ -41,12 +54,28 @@
   <!-- Top info bar -->
   <div class="info-bar">
     <div class="info-left">
-      <span class="mic-dot" class:initializing={recording && !isReady}></span>
-      <span class="info-text">{recording && !isReady ? "CONNECTING..." : "MIC"}</span>
+      <span class="mic-dot" class:initializing={recording && !isReady} class:processing={$status.processing}></span>
+      <span class="info-text">
+        {#if $status.processing}
+          PROCESSING...
+        {:else if recording && !isReady}
+          CONNECTING...
+        {:else}
+          MIC
+        {/if}
+      </span>
       <span class="sep">·</span>
-      <span class="info-text">{recording && !isReady ? "preparing stream" : "voice overlay"}</span>
+      <span class="info-text">
+        {#if $status.processing}
+          thinking with AI
+        {:else if recording && !isReady}
+          preparing stream
+        {:else}
+          voice overlay
+        {/if}
+      </span>
     </div>
-    {#if recording}
+    {#if recording || $status.processing}
       <div class="target-pill" style="animation: pill-in 0.25s ease both;">
         <span class="arrow">→</span>
         <span class="pill-text">{targetLabel}</span>
@@ -65,11 +94,12 @@
         {@const env = envelope(i)}
         <div
           class="bar"
-          class:active={recording && isReady}
+          class:active={(recording && isReady) || $status.processing}
+          class:processing={$status.processing}
           style="
             height: {h}px;
-            --glow: {recording && isReady ? Math.round(env * 18) : 0}px;
-            --opacity: {recording && isReady ? (0.45 + env * 0.55) : 0.18};
+            --glow: {((recording && isReady) || $status.processing) ? Math.round(env * 18) : 0}px;
+            --opacity: {((recording && isReady) || $status.processing) ? (0.45 + env * 0.55) : 0.18};
           "
         ></div>
       {/each}
@@ -129,9 +159,20 @@
     animation: pulse-orange 0.6s ease-in-out infinite alternate;
   }
 
+  .mic-dot.processing {
+    background: #00e5ff;
+    box-shadow: 0 0 10px #00e5ff;
+    animation: pulse-cyan 0.7s ease-in-out infinite alternate;
+  }
+
   @keyframes pulse-orange {
     from { opacity: 0.4; transform: scale(0.95); }
     to { opacity: 1.0; transform: scale(1.25); }
+  }
+
+  @keyframes pulse-cyan {
+    from { opacity: 0.45; transform: scale(0.95); }
+    to { opacity: 1.0; transform: scale(1.3); }
   }
 
   .sep {
@@ -224,5 +265,12 @@
     box-shadow:
       0 0 var(--glow) rgba(0, 200, 240, 0.9),
       0 0 calc(var(--glow) * 2) rgba(0, 200, 240, 0.35);
+  }
+
+  .bar.processing {
+    background: linear-gradient(to bottom, #00e5ff, #7c4dff);
+    box-shadow:
+      0 0 var(--glow) rgba(124, 77, 255, 0.9),
+      0 0 calc(var(--glow) * 2) rgba(0, 229, 255, 0.35);
   }
 </style>

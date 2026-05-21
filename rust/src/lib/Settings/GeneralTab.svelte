@@ -11,12 +11,15 @@
   <h2>General</h2>
 
   <div class="field-group">
-    <h3>Overlay</h3>
+    <h3>Overlay & Feedback</h3>
     <label class="field">
       <span>Show overlay while recording</span>
       <input type="checkbox" bind:checked={cfg.ui.show_overlay} onchange={markDirty} />
     </label>
-
+    <label class="field">
+      <span>Show OS notifications on dictation</span>
+      <input type="checkbox" bind:checked={cfg.features.show_notification} onchange={markDirty} />
+    </label>
   </div>
 
 

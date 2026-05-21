@@ -6,15 +6,25 @@
 
 <div class="pulse-outer">
   <div class="pulse-row">
-    <div class="pulse-container" class:active={recording && isReady} class:initializing={recording && !isReady}>
+    <div class="pulse-container" class:active={recording && isReady} class:initializing={recording && !isReady} class:processing={$status.processing}>
       <div class="ring ring1"></div>
       <div class="ring ring2"></div>
       <div class="core"></div>
     </div>
-    {#if recording}
-      <span class="target-badge" style="border-color: {isReady ? 'rgba(79, 195, 247, 0.35)' : 'rgba(255, 145, 0, 0.35)'}; color: {isReady ? '#4fc3f7' : '#ff9100'};">
-        <span class="target-icon">{isReady ? "🎯" : "⏳"}</span>
-        <span class="target-text">{isReady ? ($status.active_target_label || "Focused Window") : "Connecting Mic..."}</span>
+    {#if recording || $status.processing}
+      {@const badgeColor = $status.processing ? '#00e5ff' : (isReady ? '#4fc3f7' : '#ff9100')}
+      {@const badgeBorder = $status.processing ? 'rgba(0, 229, 255, 0.35)' : (isReady ? 'rgba(79, 195, 247, 0.35)' : 'rgba(255, 145, 0, 0.35)')}
+      <span class="target-badge" style="border-color: {badgeBorder}; color: {badgeColor};">
+        <span class="target-icon">{$status.processing ? "🧠" : (isReady ? "🎯" : "⏳")}</span>
+        <span class="target-text">
+          {#if $status.processing}
+            Processing...
+          {:else if isReady}
+            {$status.active_target_label || "Focused Window"}
+          {:else}
+            Connecting Mic...
+          {/if}
+        </span>
       </span>
     {/if}
   </div>
@@ -107,6 +117,20 @@
   .initializing .core {
     background: #ff9100;
     box-shadow: 0 0 10px #ff9100;
+  }
+
+  .processing .ring {
+    border-color: #00e5ff;
+    animation: expand 2.2s ease-out infinite;
+  }
+
+  .processing .ring2 {
+    animation-delay: 1.1s !important;
+  }
+
+  .processing .core {
+    background: linear-gradient(to bottom right, #00e5ff, #7c4dff);
+    box-shadow: 0 0 12px #00e5ff;
   }
 
   @keyframes expand {

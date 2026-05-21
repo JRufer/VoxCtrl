@@ -28,6 +28,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
 
     Ok(StatusPayload {
         recording: state.is_recording(),
+        processing: state.is_processing(),
         speaking: state.is_speaking(),
         audio_ready: state.is_audio_ready(),
         word_count: state.total_words(),
@@ -39,6 +40,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
 #[derive(serde::Serialize)]
 pub struct StatusPayload {
     pub recording: bool,
+    pub processing: bool,
     pub speaking: bool,
     pub audio_ready: bool,
     pub word_count: u32,
@@ -232,3 +234,52 @@ pub struct AudioDeviceInfo {
     pub index: u32,
     pub name: String,
 }
+
+#[derive(serde::Serialize)]
+pub struct OllamaTestResult {
+    pub success: bool,
+    pub message: String,
+    pub models: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn test_ollama(
+    endpoint: String,
+    timeout_secs: u64,
+) -> Result<OllamaTestResult, String> {
+    use voxctr_config::{OllamaConfig, OllamaMode};
+    let cfg = OllamaConfig {
+        enabled: true,
+        endpoint: endpoint.clone(),
+        model: String::new(),
+        mode: OllamaMode::Clean,
+        custom_prompt: None,
+        timeout_secs,
+    };
+    let client = voxctr_llm::OllamaClient::new(cfg);
+    if client.is_available().await {
+        match client.list_models().await {
+            Ok(models) => {
+                Ok(OllamaTestResult {
+                    success: true,
+                    message: "Successfully connected to Ollama!".to_string(),
+                    models,
+                })
+            }
+            Err(e) => {
+                Ok(OllamaTestResult {
+                    success: true,
+                    message: format!("Successfully connected, but failed to fetch model list: {}", e),
+                    models: Vec::new(),
+                })
+            }
+        }
+    } else {
+        Ok(OllamaTestResult {
+            success: false,
+            message: format!("Failed to connect to Ollama at '{}'. Make sure Ollama is running.", endpoint),
+            models: Vec::new(),
+        })
+    }
+}
+

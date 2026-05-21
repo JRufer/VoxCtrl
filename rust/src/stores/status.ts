@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface AppStatus {
   recording: boolean;
+  processing: boolean;
   speaking: boolean;
   audio_ready?: boolean;
   word_count: number;
@@ -13,6 +14,7 @@ export interface AppStatus {
 
 export const status = writable<AppStatus>({
   recording: false,
+  processing: false,
   speaking: false,
   audio_ready: true,
   word_count: 0,

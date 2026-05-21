@@ -29,6 +29,29 @@ html, body, #app {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Bulletproof Transparency & Scrollbar Eradication for Transparent Overlay Window */
+html.overlay-window,
+body.overlay-window,
+body.overlay-window #app {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+}
+
+body.overlay-window * {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+body.overlay-window ::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
