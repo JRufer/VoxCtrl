@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 use voxctr_config::{AppConfig, BackendChoice};
 
 use backend::{TranscribeRequest, TranscriptionBackend};
-use postprocess::{run_pipeline, PostProcessConfig};
+use postprocess::{run_pipeline, PostProcessConfig, is_silence_hallucination};
 use whisper_cpp::WhisperCppBackend;
 
 // ── Audio chunk type (must match voxctr-audio) ────────────────────────────────
@@ -90,6 +90,35 @@ impl InferenceEngine {
             (*self.config).clone()
         };
 
+        // ── Noise Gate (VAD) ──────────────────────────────────────────────────
+        // Compute RMS energy of the entire audio request to implement a robust noise gate.
+        let rms = {
+            let sum_sq: f32 = req.audio.iter().map(|&s| s * s).sum();
+            (sum_sq / req.audio.len() as f32).sqrt()
+        };
+
+        // Map vad_threshold (0.0 - 1.0) to physical RMS threshold.
+        // Invert so that 1.0 represents MAXIMUM sensitivity (completely open gate / 0.0 RMS threshold).
+        // 0.0 represents MINIMUM sensitivity (highest gate / 0.006 RMS threshold).
+        // A default slider value of 0.5 maps to 0.003 RMS, which easily lets speech through while filtering silence.
+        let rms_threshold = (1.0 - app_config.audio.vad_threshold) * 0.006;
+
+        if rms < rms_threshold {
+            info!(
+                "Audio skipped by noise gate: RMS is {:.5} (threshold is {:.5}, vad_threshold={:.2})",
+                rms,
+                rms_threshold,
+                app_config.audio.vad_threshold
+            );
+            return Ok(InferenceOutput {
+                text: String::new(),
+                target_id: req.target_id,
+                raw_text: String::new(),
+                inference_ms: 0,
+                language: "en".into(),
+            });
+        }
+
         let dir = voxctr_routing::config_dir();
         let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
         let target = targets.iter().find(|t| t.id == req.target_id);
@@ -137,7 +166,17 @@ impl InferenceEngine {
         let raw_text = result.text.clone();
 
         let post_cfg = self.build_post_config_with_app_config(&req.target_id, &app_config);
-        let processed = run_pipeline(&raw_text, &post_cfg);
+        let mut processed = run_pipeline(&raw_text, &post_cfg);
+
+        // ── Silence Hallucination Filter ──────────────────────────────────────
+        // If Whisper returned a known silence hallucination (like "Thank you"), check if the audio energy
+        // was extremely low (e.g. below 0.003 RMS, which is absolute background room silence).
+        // This ensures the user can still say a genuine, spoken "Thank you" (which has much higher energy),
+        // while perfectly discarding silence-induced hallucinations when sensitivity is set high.
+        if !processed.is_empty() && is_silence_hallucination(&processed) && rms < 0.003 {
+            info!("Discarded silence hallucination '{}' (audio RMS: {:.5})", processed, rms);
+            processed = String::new();
+        }
 
         Ok(InferenceOutput {
             text: processed,

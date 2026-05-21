@@ -238,6 +238,15 @@ pub fn correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> String 
 
 // ── Full post-processing pipeline ─────────────────────────────────────────────
 
+pub fn is_silence_hallucination(text: &str) -> bool {
+    let cleaned = text
+        .trim()
+        .trim_end_matches(|c: char| c.is_ascii_punctuation())
+        .trim()
+        .to_lowercase();
+    cleaned == "thank you" || cleaned == "thanks for watching" || cleaned == "thank you for watching"
+}
+
 #[derive(Debug, Clone)]
 pub struct PostProcessConfig {
     pub remove_fillers: bool,
@@ -277,6 +286,20 @@ pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_silence_hallucinations() {
+        assert!(is_silence_hallucination("Thank you."));
+        assert!(is_silence_hallucination("Thank you!"));
+        assert!(is_silence_hallucination("thank you"));
+        assert!(is_silence_hallucination("Thanks for watching"));
+        assert!(is_silence_hallucination("Thank you for watching."));
+        
+        // These should NOT be matched as silence hallucinations
+        assert!(!is_silence_hallucination("Thank you for your help"));
+        assert!(!is_silence_hallucination("Thank you very much"));
+        assert!(!is_silence_hallucination("Hello world"));
+    }
 
     #[test]
     fn filler_removal() {
