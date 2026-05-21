@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { status } from "../../stores/status";
+
   let { recording = false, speaking = false } = $props();
 
   let label = $derived(
@@ -7,12 +9,26 @@
   let color = $derived(recording ? "#e94560" : "#4fc3f7");
 </script>
 
-<div class="card" style="--dot-color: {color}">
-  <span class="dot" class:pulse={recording || speaking}></span>
-  <span class="label">{label}</span>
+<div class="voice-card-container">
+  <div class="card" style="--dot-color: {color}">
+    <span class="dot" class:pulse={recording || speaking}></span>
+    <span class="label">{label}</span>
+    {#if recording || speaking}
+      <span class="target-badge">
+        <span class="target-icon">🎯</span>
+        <span class="target-text">{$status.active_target_label || "Focused Window"}</span>
+      </span>
+    {/if}
+  </div>
 </div>
 
 <style>
+  .voice-card-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
   .card {
     display: flex;
     align-items: center;
@@ -44,5 +60,39 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(1.3); }
+  }
+
+  .target-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(15, 34, 62, 0.92);
+    border: 1px solid rgba(79, 195, 247, 0.35);
+    border-radius: 6px;
+    padding: 2px 7px;
+    color: #4fc3f7;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    animation: slide-in 0.2s ease both;
+    flex-shrink: 0;
+  }
+
+  .target-icon {
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .target-text {
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateX(4px); }
+    to   { opacity: 1; transform: translateX(0); }
   }
 </style>

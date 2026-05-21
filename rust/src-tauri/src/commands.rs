@@ -11,10 +11,27 @@ use crate::state::{AppState, HistoryEntry};
 
 #[tauri::command]
 pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload, String> {
+    let active_target_id = state.active_target.lock().await.clone();
+    let target_label = {
+        let targets_guard = state.targets.lock().await;
+        targets_guard.iter()
+            .find(|t| t.id == active_target_id)
+            .map(|t| t.label.clone())
+            .unwrap_or_else(|| {
+                if active_target_id == "default" {
+                    "Focused Window".to_string()
+                } else {
+                    active_target_id.clone()
+                }
+            })
+    };
+
     Ok(StatusPayload {
         recording: state.is_recording(),
         speaking: state.is_speaking(),
         word_count: state.total_words(),
+        active_target_id,
+        active_target_label: target_label,
     })
 }
 
@@ -23,6 +40,8 @@ pub struct StatusPayload {
     pub recording: bool,
     pub speaking: bool,
     pub word_count: u32,
+    pub active_target_id: String,
+    pub active_target_label: String,
 }
 
 // ── Recording control ─────────────────────────────────────────────────────────
@@ -85,6 +104,10 @@ pub async fn save_targets(
 ) -> Result<(), String> {
     let dir = voxctr_routing::config_dir();
     voxctr_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
+    
+    // Update the in-memory targets cache
+    *state.targets.lock().await = targets.clone();
+
     // Hot-reload the router
     let router = state.router.lock().await;
     router.reload(targets).await;

@@ -23,6 +23,9 @@ pub struct AppState {
     /// Currently active dictation target ID
     pub active_target: Arc<Mutex<String>>,
 
+    /// Currently configured target definitions (in-memory cache for fast lookups)
+    pub targets: Arc<Mutex<Vec<voxctr_routing::OutputTarget>>>,
+
     /// Transcript history — most recent first
     pub history: Arc<Mutex<Vec<HistoryEntry>>>,
 

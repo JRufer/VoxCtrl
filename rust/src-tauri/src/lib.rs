@@ -63,6 +63,7 @@ pub fn run() {
         word_count: Arc::new(AtomicU32::new(0)),
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
+        targets: Arc::new(Mutex::new(targets.clone())),
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
     });
@@ -310,13 +311,48 @@ pub fn run() {
                             let icon = if is_recording { &record_on_icon } else { &record_off_icon };
                             let _ = tray.set_icon(Some(icon.clone()));
                         }
+
+                        // Toggle dynamic overlay window visibility based on show_overlay configuration
+                        if is_recording {
+                            let show_overlay = {
+                                let cfg = state_for_ticker.config.lock().await;
+                                cfg.data.ui.show_overlay
+                            };
+                            if show_overlay {
+                                if let Some(window) = handle.get_webview_window("overlay") {
+                                    let _ = window.show();
+                                }
+                            }
+                        } else {
+                            if let Some(window) = handle.get_webview_window("overlay") {
+                                let _ = window.hide();
+                            }
+                        }
+
                         last_recording = is_recording;
                     }
+
+                    let active_target_id = state_for_ticker.active_target.lock().await.clone();
+                    let target_label = {
+                        let targets_guard = state_for_ticker.targets.lock().await;
+                        targets_guard.iter()
+                            .find(|t| t.id == active_target_id)
+                            .map(|t| t.label.clone())
+                            .unwrap_or_else(|| {
+                                if active_target_id == "default" {
+                                    "Focused Window".to_string()
+                                } else {
+                                    active_target_id.clone()
+                                }
+                            })
+                    };
 
                     let payload = serde_json::json!({
                         "recording": is_recording,
                         "speaking": state_for_ticker.is_speaking(),
                         "word_count": state_for_ticker.total_words(),
+                        "active_target_id": active_target_id,
+                        "active_target_label": target_label,
                     });
                     let _ = handle.emit("status-tick", payload);
                 }
