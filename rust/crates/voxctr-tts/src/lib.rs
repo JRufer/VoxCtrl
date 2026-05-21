@@ -70,6 +70,7 @@ pub struct Utterance {
     pub source_label: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct TtsEngineHandle {
     tx: Sender<Option<Utterance>>,
 }

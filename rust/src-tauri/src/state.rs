@@ -31,6 +31,9 @@ pub struct AppState {
 
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
+
+    /// TTS playback engine handle
+    pub tts_handle: Arc<Mutex<Option<voxctr_tts::TtsEngineHandle>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tracing::error;
 use voxctr_config::Config;
 use voxctr_routing::{load_bindings, load_targets, config_dir, OutputTargetRouter};
+use voxctr_mcp::McpCallbacks;
 
 use crate::{
     commands::*,
@@ -66,6 +67,7 @@ pub fn run() {
         targets: Arc::new(Mutex::new(targets.clone())),
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
+        tts_handle: Arc::new(Mutex::new(None)),
     });
 
     {
@@ -118,6 +120,12 @@ pub fn run() {
         None
     };
 
+    let state_for_tts = app_state.clone();
+    tokio::spawn(async move {
+        let mut handle = state_for_tts.tts_handle.lock().await;
+        *handle = _tts_handle;
+    });
+
     // ── Hotkey listener ───────────────────────────────────────────────────────
     let (gesture_tx, mut gesture_rx) = voxctr_hotkeys::channel();
     let _listener = voxctr_hotkeys::start_listener(
@@ -157,9 +165,12 @@ pub fn run() {
                 let text = output.text.clone();
                 let target_id = output.target_id.clone();
                 let router = state.router.clone();
+                let state_lt = state.clone();
+                let text_lt = output.text.clone();
                 rt_handle.spawn(async move {
                     let r = router.lock().await;
                     r.deliver(&target_id, &text).await;
+                    *state_lt.last_text.lock().await = text_lt;
                 });
 
                 if show_notif {
@@ -215,6 +226,17 @@ pub fn run() {
         tokio::spawn(async move {
             if let Err(e) = voxctr_dbus::start_service(dbus_state, start_tx, stop_tx).await {
                 error!("DBus service error: {e}");
+            }
+        });
+    }
+
+    // ── MCP Server ────────────────────────────────────────────────────────────
+    if cfg_data.mcp.server_enabled {
+        let callbacks = app_state.clone();
+        tokio::spawn(async move {
+            tracing::info!("Starting MCP server...");
+            if let Err(e) = voxctr_mcp::run_server(callbacks).await {
+                tracing::error!("MCP server error: {:?}", e);
             }
         });
     }
@@ -382,6 +404,72 @@ pub fn run() {
         .expect("error running Tauri application");
 }
 
+impl McpCallbacks for AppState {
+    fn transcribe_voice(&self, timeout_secs: f64) -> impl std::future::Future<Output = anyhow::Result<String>> + Send {
+        async move {
+            use std::sync::atomic::Ordering;
+            use tokio::time::{sleep, Duration};
+
+            // 1. Clear last_text
+            {
+                let mut lt = self.last_text.lock().await;
+                lt.clear();
+            }
+
+            // 2. Start recording
+            self.set_recording(true);
+
+            // 3. Spawn a timer task to automatically stop recording after timeout_secs
+            let recording = self.recording.clone();
+            let audio_tx = self.audio_tx.clone();
+            tokio::spawn(async move {
+                sleep(Duration::from_secs_f64(timeout_secs)).await;
+                recording.store(false, Ordering::SeqCst);
+                let _ = audio_tx.send(Vec::new());
+            });
+
+            // 4. Wait until recording is set to false (either by the timer or manually/VAD if that's implemented)
+            while self.is_recording() {
+                sleep(Duration::from_millis(50)).await;
+            }
+
+            // 5. Wait a short time for inference to finish and populate last_text
+            let poll_limit = 60; // 60 * 50ms = 3.0 seconds maximum wait for inference
+            let mut text = String::new();
+            for _ in 0..poll_limit {
+                sleep(Duration::from_millis(50)).await;
+                let current = self.last_text.lock().await.clone();
+                if !current.is_empty() {
+                    text = current;
+                    break;
+                }
+            }
+
+            if text.is_empty() {
+                Ok("(no speech detected)".to_string())
+            } else {
+                Ok(text)
+            }
+        }
+    }
+
+    fn speak_text(&self, text: String) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
+        async move {
+            let handle = self.tts_handle.lock().await;
+            if let Some(ref tts) = *handle {
+                tts.speak(text);
+            }
+            Ok(())
+        }
+    }
+
+    fn get_status(&self) -> impl std::future::Future<Output = (bool, bool)> + Send {
+        async move {
+            (self.is_recording(), self.is_speaking())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,8 +495,10 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
+            tts_handle: Arc::new(Mutex::new(None)),
         };
 
         assert!(!state.is_recording());
@@ -432,8 +522,10 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
+            tts_handle: Arc::new(Mutex::new(None)),
         };
 
         state.increment_words(15);
@@ -457,8 +549,10 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
+            tts_handle: Arc::new(Mutex::new(None)),
         };
 
         {
