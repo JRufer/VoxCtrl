@@ -20,17 +20,22 @@ pub struct VoiceInfo {
 }
 
 pub static PIPER_VOICES: &[VoiceInfo] = &[
-    VoiceInfo { name: "en-us-lessac-medium",  quality: "medium",  sample_rate: 22050, filename: "en_US-lessac-medium.onnx" },
-    VoiceInfo { name: "en-us-lessac-high",    quality: "high",    sample_rate: 22050, filename: "en_US-lessac-high.onnx" },
-    VoiceInfo { name: "en-us-ryan-medium",    quality: "medium",  sample_rate: 22050, filename: "en_US-ryan-medium.onnx" },
-    VoiceInfo { name: "en-us-ryan-high",      quality: "high",    sample_rate: 22050, filename: "en_US-ryan-high.onnx" },
-    VoiceInfo { name: "en-gb-alan-medium",    quality: "medium",  sample_rate: 22050, filename: "en_GB-alan-medium.onnx" },
-    VoiceInfo { name: "en-gb-jenny-dioco-medium", quality: "medium", sample_rate: 22050, filename: "en_GB-jenny_dioco-medium.onnx" },
-    VoiceInfo { name: "de-thorsten-medium",   quality: "medium",  sample_rate: 22050, filename: "de_DE-thorsten-medium.onnx" },
-    VoiceInfo { name: "fr-upmc-medium",       quality: "medium",  sample_rate: 22050, filename: "fr_FR-upmc-medium.onnx" },
-    VoiceInfo { name: "es-carlfm-x-low",      quality: "x_low",   sample_rate: 16000, filename: "es_ES-carlfm-x_low.onnx" },
-    VoiceInfo { name: "it-riccardo-x-low",    quality: "x_low",   sample_rate: 16000, filename: "it_IT-riccardo-x_low.onnx" },
+    VoiceInfo { name: "en-us-libritts-high",   quality: "high",    sample_rate: 22050, filename: "en_US-libritts-high.onnx" },
+    VoiceInfo { name: "en-us-amy-low",         quality: "low",     sample_rate: 16000, filename: "en_US-amy-low.onnx" },
+    VoiceInfo { name: "en-us-kathleen-low",    quality: "low",     sample_rate: 16000, filename: "en_US-kathleen-low.onnx" },
+    VoiceInfo { name: "en-gb-southern_english_female-low", quality: "low", sample_rate: 16000, filename: "en_GB-southern_english_female-low.onnx" },
+    VoiceInfo { name: "en-us-ryan-high",       quality: "high",    sample_rate: 22050, filename: "en_US-ryan-high.onnx" },
+    VoiceInfo { name: "en-us-ryan-medium",     quality: "medium",  sample_rate: 22050, filename: "en_US-ryan-medium.onnx" },
+    VoiceInfo { name: "en-us-ryan-low",        quality: "low",     sample_rate: 16000, filename: "en_US-ryan-low.onnx" },
+    VoiceInfo { name: "en-us-lessac-medium",   quality: "medium",  sample_rate: 16000, filename: "en_US-lessac-medium.onnx" },
+    VoiceInfo { name: "en-us-lessac-low",      quality: "low",     sample_rate: 16000, filename: "en_US-lessac-low.onnx" },
+    VoiceInfo { name: "en-us-danny-low",       quality: "low",     sample_rate: 16000, filename: "en_US-danny-low.onnx" },
+    VoiceInfo { name: "en-gb-alan-low",        quality: "low",     sample_rate: 16000, filename: "en_GB-alan-low.onnx" },
 ];
+
+pub fn is_voice_downloaded(voice_name: &str) -> bool {
+    get_voice_path(voice_name).is_some()
+}
 
 pub fn piper_voices_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -142,14 +147,9 @@ impl TtsEngineWorker {
             .as_deref()
             .unwrap_or(&self.config.voice);
 
-        let voice_path = piper_voices_dir().join(
-            voice_name_to_filename(voice_name)
-                .unwrap_or_else(|| format!("{voice_name}.onnx")),
-        );
-
-        if !voice_path.exists() {
-            bail!("Piper voice not found: {}", voice_path.display());
-        }
+        let voice_path = get_voice_path(voice_name).ok_or_else(|| {
+            anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
+        })?;
 
         // piper reads from stdin, produces WAV on stdout; pipe to aplay/SoX
         let mut piper = std::process::Command::new(&binary)
@@ -268,33 +268,77 @@ fn sample_rate_for_voice(name: &str) -> u32 {
 // ── Voice download ────────────────────────────────────────────────────────────
 
 const PIPER_RELEASE_BASE: &str =
-    "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/";
+    "https://github.com/rhasspy/piper/releases/download/v0.0.2/";
+
+pub fn get_voice_path(voice_name: &str) -> Option<PathBuf> {
+    let filename = voice_name_to_filename(voice_name)
+        .unwrap_or_else(|| format!("{voice_name}.onnx"));
+
+    let voices_dir = piper_voices_dir();
+
+    // Check exact case
+    let path_onnx = voices_dir.join(&filename);
+    let path_json = voices_dir.join(format!("{filename}.json"));
+    if path_onnx.exists() && path_json.exists() {
+        return Some(path_onnx);
+    }
+
+    // Check lowercase version of exact filename
+    let filename_lower = filename.to_lowercase();
+    let path_onnx_lower = voices_dir.join(&filename_lower);
+    let path_json_lower = voices_dir.join(format!("{filename_lower}.json"));
+    if path_onnx_lower.exists() && path_json_lower.exists() {
+        return Some(path_onnx_lower);
+    }
+
+    // Check raw name lowercase fallback
+    let path_raw_lower = voices_dir.join(format!("{}.onnx", voice_name.to_lowercase()));
+    let path_raw_json_lower = voices_dir.join(format!("{}.onnx.json", voice_name.to_lowercase()));
+    if path_raw_lower.exists() && path_raw_json_lower.exists() {
+        return Some(path_raw_lower);
+    }
+
+    None
+}
 
 pub async fn download_voice(voice_name: &str) -> Result<()> {
-    let filename = voice_name_to_filename(voice_name)
-        .ok_or_else(|| anyhow::anyhow!("Unknown voice: {voice_name}"))?;
-
     let voices_dir = piper_voices_dir();
     tokio::fs::create_dir_all(&voices_dir).await?;
 
-    let dest = voices_dir.join(&filename);
-    if dest.exists() {
-        info!("Voice already downloaded: {}", dest.display());
+    if get_voice_path(voice_name).is_some() {
+        info!("Voice {} is already downloaded.", voice_name);
         return Ok(());
     }
 
-    let url = format!("{PIPER_RELEASE_BASE}{filename}");
-    info!("Downloading voice: {url}");
+    let tarball_url = format!("{PIPER_RELEASE_BASE}voice-{voice_name}.tar.gz");
+    info!("Downloading voice tarball: {tarball_url}");
 
-    let response = reqwest::get(&url).await?.error_for_status()?;
+    let response = reqwest::get(&tarball_url).await?.error_for_status()?;
     let bytes = response.bytes().await?;
 
-    // Write atomically via tempfile
-    let tmp = tempfile::NamedTempFile::new_in(&voices_dir)?;
-    tokio::fs::write(tmp.path(), &bytes).await?;
-    tmp.persist(&dest)?;
+    info!("Extracting voice files...");
+    let cursor = std::io::Cursor::new(bytes);
+    let tar = flate2::read::GzDecoder::new(cursor);
+    let mut archive = tar::Archive::new(tar);
 
-    info!("Voice downloaded: {}", dest.display());
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let file_name = match path.file_name() {
+            Some(name) => name.to_string_lossy().to_string(),
+            None => continue,
+        };
+
+        if file_name.ends_with(".onnx") || file_name.ends_with(".onnx.json") {
+            let dest_path = voices_dir.join(&file_name);
+            let mut temp_file = tempfile::NamedTempFile::new_in(&voices_dir)?;
+            std::io::copy(&mut entry, &mut temp_file)?;
+            temp_file.persist(&dest_path)?;
+            info!("Extracted: {}", dest_path.display());
+        }
+    }
+
+    info!("Voice files successfully downloaded and extracted.");
     Ok(())
 }
 

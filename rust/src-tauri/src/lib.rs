@@ -399,6 +399,8 @@ pub fn run() {
             show_overlay,
             hide_overlay,
             list_audio_devices,
+            check_voice_downloaded,
+            download_voice,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

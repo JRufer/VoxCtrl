@@ -151,17 +151,34 @@ pub async fn clear_history(state: State<'_, Arc<AppState>>) -> Result<(), String
     Ok(())
 }
 
-// ── TTS ───────────────────────────────────────────────────────────────────────
-
 #[tauri::command]
 pub async fn speak_text(
-    _app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
     text: String,
+    voice: Option<String>,
 ) -> Result<(), String> {
-    // Retrieve TTS handle from app state extension
     info!("TTS speak_text via command: {text}");
-    // Actual TTS invocation wired in lib.rs via app.state()
+    let handle = state.tts_handle.lock().await;
+    if let Some(ref tts) = *handle {
+        tts.speak_utterance(voxctr_tts::Utterance {
+            text,
+            voice,
+            source_label: None,
+        });
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn check_voice_downloaded(voice_name: String) -> Result<bool, String> {
+    Ok(voxctr_tts::is_voice_downloaded(&voice_name))
+}
+
+#[tauri::command]
+pub async fn download_voice(voice_name: String) -> Result<(), String> {
+    voxctr_tts::download_voice(&voice_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Overlay window ────────────────────────────────────────────────────────────
