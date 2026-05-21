@@ -16,29 +16,10 @@
       <span>Show overlay while recording</span>
       <input type="checkbox" bind:checked={cfg.ui.show_overlay} onchange={markDirty} />
     </label>
-    <label class="field">
-      <span>Overlay style</span>
-      <select bind:value={cfg.ui.overlay_style} onchange={markDirty}>
-        <option value="voice_card">Voice Card</option>
-        <option value="waveform">Waveform</option>
-        <option value="pulse">Pulse</option>
-        <option value="blue_wave">Blue Wave</option>
-        <option value="none">None</option>
-      </select>
-    </label>
+
   </div>
 
-  <div class="field-group">
-    <h3>Notifications</h3>
-    <label class="field">
-      <span>Show desktop notification after transcription</span>
-      <input type="checkbox" bind:checked={cfg.features.show_notification} onchange={markDirty} />
-    </label>
-    <label class="field">
-      <span>Quiet mode (suppress all notifications)</span>
-      <input type="checkbox" bind:checked={cfg.features.quiet_mode} onchange={markDirty} />
-    </label>
-  </div>
+
 
   <div class="field-group">
     <h3>MCP Server</h3>

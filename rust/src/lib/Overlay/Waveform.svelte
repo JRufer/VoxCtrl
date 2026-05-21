@@ -1,112 +1,216 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import { status } from "../../stores/status";
 
   let { recording = false } = $props();
 
-  let bars = 20;
-  let heights = $state(Array(bars).fill(4));
-  let timer: number;
+  // 48 bars — center-weighted amplitude envelope
+  const BAR_COUNT = 48;
+
+  // Gaussian envelope so bars are tallest in the centre and taper at the edges
+  function envelope(i: number): number {
+    const mid = (BAR_COUNT - 1) / 2;
+    const sigma = BAR_COUNT / 5;
+    return Math.exp(-((i - mid) ** 2) / (2 * sigma ** 2));
+  }
+
+  let heights = $state(Array.from({ length: BAR_COUNT }, () => 2));
+  let timer: ReturnType<typeof setInterval> | undefined;
 
   $effect(() => {
     if (recording) {
       timer = setInterval(() => {
-        heights = heights.map(() =>
-          recording ? 4 + Math.random() * 40 : 4
-        );
-      }, 80) as unknown as number;
+        heights = Array.from({ length: BAR_COUNT }, (_, i) => {
+          const env = envelope(i);
+          const base = 2 + env * 8;
+          const noise = Math.random() * env * 56;
+          return base + noise;
+        });
+      }, 60);
     } else {
       clearInterval(timer);
-      heights = Array(bars).fill(4);
+      heights = Array.from({ length: BAR_COUNT }, () => 2);
     }
     return () => clearInterval(timer);
   });
+
+  const targetLabel = $derived($status.active_target_label || "Focused Window");
 </script>
 
-<div class="waveform-container">
-  <div class="waveform-card">
+<div class="wave-widget">
+  <!-- Top info bar -->
+  <div class="info-bar">
+    <div class="info-left">
+      <span class="mic-dot"></span>
+      <span class="info-text">MIC</span>
+      <span class="sep">·</span>
+      <span class="info-text">voice overlay</span>
+    </div>
+    {#if recording}
+      <div class="target-pill" style="animation: pill-in 0.25s ease both;">
+        <span class="arrow">→</span>
+        <span class="pill-text">{targetLabel}</span>
+      </div>
+    {/if}
+  </div>
+
+  <!-- Waveform area -->
+  <div class="wave-stage">
+    <!-- Dotted centre axis -->
+    <div class="axis"></div>
+
+    <!-- Bars -->
     <div class="bars">
-      {#each heights as h}
+      {#each heights as h, i}
+        {@const env = envelope(i)}
         <div
           class="bar"
-          style="height: {h}px; opacity: {recording ? 0.7 + (h / 60) * 0.3 : 0.3}"
+          class:active={recording}
+          style="
+            height: {h}px;
+            --glow: {recording ? Math.round(env * 18) : 0}px;
+            --opacity: {recording ? (0.45 + env * 0.55) : 0.18};
+          "
         ></div>
       {/each}
     </div>
-    {#if recording}
-      <span class="target-badge">
-        <span class="target-icon">🎯</span>
-        <span class="target-text">{$status.active_target_label || "Focused Window"}</span>
-      </span>
-    {/if}
   </div>
 </div>
 
 <style>
-  .waveform-container {
+  .wave-widget {
+    width: 580px;
+    background: linear-gradient(160deg, #04111f 0%, #071828 100%);
+    border: 1px solid rgba(0, 180, 230, 0.18);
+    border-radius: 18px;
+    padding: 14px 20px 18px;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    gap: 10px;
+    box-shadow:
+      0 0 0 1px rgba(0, 200, 255, 0.06),
+      0 8px 40px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    pointer-events: none;
+    user-select: none;
   }
 
-  .waveform-card {
-    background: rgba(15, 15, 25, 0.88);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 16px;
-    padding: 16px 20px;
+  /* ── Info bar ────────────────────────────────── */
+  .info-bar {
     display: flex;
     align-items: center;
-    gap: 12px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    justify-content: space-between;
+    height: 18px;
   }
 
-  .bars {
+  .info-left {
     display: flex;
     align-items: center;
-    gap: 3px;
-    height: 48px;
-  }
-
-  .bar {
-    width: 3px;
-    background: var(--recording-color, #e94560);
-    border-radius: 2px;
-    transition: height 0.08s ease, opacity 0.08s ease;
-    min-height: 4px;
-  }
-
-  .target-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(15, 34, 62, 0.92);
-    border: 1px solid rgba(79, 195, 247, 0.35);
-    border-radius: 6px;
-    padding: 2px 7px;
-    color: #4fc3f7;
-    font-size: 9px;
-    font-weight: 700;
+    gap: 7px;
+    color: rgba(140, 200, 230, 0.65);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    animation: slide-in 0.2s ease both;
+  }
+
+  .mic-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #00e5c0;
+    box-shadow: 0 0 6px #00e5c0;
     flex-shrink: 0;
   }
 
-  .target-icon {
-    font-size: 10px;
-    line-height: 1;
+  .sep {
+    opacity: 0.4;
   }
 
-  .target-text {
-    max-width: 120px;
+  /* Target pill — top-right */
+  .target-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1.5px solid rgba(0, 195, 255, 0.55);
+    border-radius: 20px;
+    padding: 2px 11px 2px 9px;
+    color: #4dd9f7;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(0, 195, 255, 0.2);
+  }
+
+  .arrow {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+
+  .pill-text {
+    max-width: 140px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  @keyframes slide-in {
-    from { opacity: 0; transform: translateX(4px); }
+  @keyframes pill-in {
+    from { opacity: 0; transform: translateX(6px); }
     to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ── Wave stage ──────────────────────────────── */
+  .wave-stage {
+    position: relative;
+    height: 80px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Dotted horizontal axis line */
+  .axis {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: repeating-linear-gradient(
+      to right,
+      rgba(0, 180, 220, 0.35) 0px,
+      rgba(0, 180, 220, 0.35) 3px,
+      transparent 3px,
+      transparent 8px
+    );
+    pointer-events: none;
+  }
+
+  /* Bars */
+  .bars {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2.5px;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  .bar {
+    width: 3px;
+    border-radius: 2px;
+    background: #00c8f0;
+    opacity: var(--opacity, 0.18);
+    /* Symmetric bars — grow from centre */
+    transition: height 0.06s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.06s ease;
+    min-height: 2px;
+  }
+
+  .bar.active {
+    box-shadow:
+      0 0 var(--glow) rgba(0, 200, 240, 0.9),
+      0 0 calc(var(--glow) * 2) rgba(0, 200, 240, 0.35);
   }
 </style>

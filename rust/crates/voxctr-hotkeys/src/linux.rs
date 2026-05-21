@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use tracing::{info, warn};
+use tracing::warn;
 use voxctr_routing::{GestureType, HotkeyBinding};
 
 use crate::{
@@ -61,7 +61,8 @@ fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<Stri
         None => return,
     };
 
-    info!("evdev listener active on {}", device.name().unwrap_or("unknown"));
+
+
 
     let mut states: Vec<BindingState> =
         bindings.into_iter().map(BindingState::new).collect();
@@ -84,11 +85,9 @@ fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<Stri
                     let value = ev.value();
                     // value: 1 = press, 0 = release, 2 = repeat
                     if value == 1 {
-                        tracing::info!("Pressed key: {}", key_name);
                         pressed.insert(key_name.clone());
                         handle_press(&key_name, &mut states, &pressed, &tx);
                     } else if value == 0 {
-                        tracing::info!("Released key: {}", key_name);
                         handle_release(&key_name, &mut states, &pressed, &tx);
                         pressed.remove(&key_name);
                     }
@@ -127,7 +126,6 @@ fn handle_press(
             GestureType::Hold => {
                 if !s.hold_active {
                     s.hold_active = true;
-                    info!("Binding {}: hold start", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -138,7 +136,6 @@ fn handle_press(
             GestureType::Toggle => {
                 if !s.toggle_on {
                     s.toggle_on = true;
-                    info!("Binding {}: toggle start", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -146,7 +143,6 @@ fn handle_press(
                     });
                 } else {
                     s.toggle_on = false;
-                    info!("Binding {}: toggle stop", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -155,11 +151,8 @@ fn handle_press(
                 }
             }
             GestureType::DoubleTap => {
-                let prev_state = format!("{:?}", s.double_tap.state);
                 let completed = s.double_tap.on_press();
-                info!("Binding {}: DoubleTap on_press - prev_state: {}, new_state: {:?}, completed: {}", s.binding.id, prev_state, s.double_tap.state, completed);
                 if completed {
-                    info!("Binding {}: DoubleTap start gesture triggered!", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -168,7 +161,6 @@ fn handle_press(
                 }
             }
             GestureType::Chord => {
-                info!("Binding {}: Chord triggered", s.binding.id);
                 let _ = tx.send(GestureEvent {
                     binding_id: s.binding.id.clone(),
                     target_id: s.binding.target_id.clone(),
@@ -197,7 +189,6 @@ fn handle_release(
             GestureType::Hold => {
                 if s.hold_active {
                     s.hold_active = false;
-                    info!("Binding {}: hold stop", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
@@ -206,11 +197,8 @@ fn handle_release(
                 }
             }
             GestureType::DoubleTap => {
-                let prev_state = format!("{:?}", s.double_tap.state);
                 let completed = s.double_tap.on_release();
-                info!("Binding {}: DoubleTap on_release - prev_state: {}, new_state: {:?}, completed: {}", s.binding.id, prev_state, s.double_tap.state, completed);
                 if completed {
-                    info!("Binding {}: DoubleTap stop gesture triggered!", s.binding.id);
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         target_id: s.binding.target_id.clone(),
