@@ -23,6 +23,19 @@
     cfg.features.snippets = rest;
     markDirty();
   }
+
+  let customVocabString = $derived(
+    cfg.features.custom_vocabulary ? cfg.features.custom_vocabulary.join(", ") : ""
+  );
+
+  function onCustomVocabChange(e: Event) {
+    const target = e.target as HTMLTextAreaElement;
+    cfg.features.custom_vocabulary = target.value
+      .split(",")
+      .map(w => w.trim())
+      .filter(w => w.length > 0);
+    markDirty();
+  }
 </script>
 
 <section>
@@ -64,6 +77,17 @@
       <button class="btn-add" onclick={addSnippet}>Add</button>
     </div>
   </div>
+
+  <div class="field-group">
+    <h3>Custom Dictionary</h3>
+    <p class="hint">Provide a comma-separated list of words (e.g. names or jargon like "Waylin, Rufer, Enola, Kenz") that are hard to spell. The transcription process will correct these in the final text.</p>
+    <textarea 
+      class="custom-vocab-input"
+      placeholder="e.g. Waylin, Rufer, Enola, Kenz"
+      value={customVocabString}
+      oninput={onCustomVocabChange}
+    ></textarea>
+  </div>
 </section>
 
 <style>
@@ -97,5 +121,23 @@
     border-radius: 4px;
     padding: 4px 10px;
     font-size: 12px;
+  }
+  .custom-vocab-input {
+    width: 100%;
+    min-height: 80px;
+    background: var(--bg-input, #2e2e2e);
+    color: var(--text-color, #ffffff);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    margin-top: 8px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .custom-vocab-input:focus {
+    border-color: var(--accent);
   }
 </style>

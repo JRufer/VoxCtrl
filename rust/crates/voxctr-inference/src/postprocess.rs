@@ -148,6 +148,94 @@ pub fn apply_code_mode(text: &str) -> String {
     s
 }
 
+fn levenshtein_distance(s1: &str, s2: &str) -> usize {
+    let s1_chars: Vec<char> = s1.chars().collect();
+    let s2_chars: Vec<char> = s2.chars().collect();
+    let len1 = s1_chars.len();
+    let len2 = s2_chars.len();
+
+    let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
+
+    for i in 0..=len1 {
+        dp[i][0] = i;
+    }
+    for j in 0..=len2 {
+        dp[0][j] = j;
+    }
+
+    for i in 1..=len1 {
+        for j in 1..=len2 {
+            if s1_chars[i - 1] == s2_chars[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1];
+            } else {
+                dp[i][j] = 1 + std::cmp::min(
+                    dp[i - 1][j - 1], // substitution
+                    std::cmp::min(
+                        dp[i - 1][j], // deletion
+                        dp[i][j - 1], // insertion
+                    )
+                );
+            }
+        }
+    }
+
+    dp[len1][len2]
+}
+
+pub fn correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> String {
+    if custom_vocab.is_empty() {
+        return text.to_string();
+    }
+
+    let re_word = match Regex::new(r"[a-zA-Z0-9'\-]+") {
+        Ok(re) => re,
+        Err(_) => return text.to_string(),
+    };
+
+    let mut result = text.to_string();
+    result = re_word.replace_all(&result, |caps: &regex::Captures| {
+        let matched = caps.get(0).unwrap().as_str();
+        
+        let mut best_match: Option<&str> = None;
+        let mut best_dist = usize::MAX;
+        
+        let matched_lower = matched.to_lowercase();
+        
+        for vocab_word in custom_vocab {
+            let vocab_lower = vocab_word.to_lowercase();
+            let len = vocab_lower.chars().count();
+            
+            if matched_lower == vocab_lower {
+                best_match = Some(vocab_word.as_str());
+                break;
+            }
+            
+            let dist = levenshtein_distance(&matched_lower, &vocab_lower);
+            
+            let max_allowed = if len <= 3 {
+                0
+            } else if len == 4 {
+                1
+            } else {
+                2
+            };
+            
+            if dist <= max_allowed && dist < best_dist {
+                best_dist = dist;
+                best_match = Some(vocab_word.as_str());
+            }
+        }
+        
+        if let Some(replacement) = best_match {
+            replacement.to_string()
+        } else {
+            matched.to_string()
+        }
+    }).to_string();
+
+    result
+}
+
 // ── Full post-processing pipeline ─────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -158,6 +246,7 @@ pub struct PostProcessConfig {
     pub apply_snippets: bool,
     pub snippets: HashMap<String, String>,
     pub code_mode: bool,
+    pub custom_vocabulary: Vec<String>,
 }
 
 pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
@@ -174,6 +263,9 @@ pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
     }
     if cfg.apply_snippets {
         s = expand_snippets(&s, &cfg.snippets);
+    }
+    if !cfg.custom_vocabulary.is_empty() {
+        s = correct_custom_vocabulary(&s, &cfg.custom_vocabulary);
     }
     if cfg.code_mode {
         s = apply_code_mode(&s);
@@ -204,5 +296,29 @@ mod tests {
         snips.insert("addr".into(), "123 Main Street".into());
         let result = expand_snippets("Send to addr please", &snips);
         assert_eq!(result, "Send to 123 Main Street please");
+    }
+
+    #[test]
+    fn custom_vocab_correction() {
+        let vocab = vec![
+            "Waylin".to_string(),
+            "Rufer".to_string(),
+            "Enola".to_string(),
+            "Kenz".to_string(),
+        ];
+        
+        // Exact case-insensitive matches should capitalize correctly
+        assert_eq!(correct_custom_vocabulary("hello waylin", &vocab), "hello Waylin");
+        assert_eq!(correct_custom_vocabulary("RUFER is here", &vocab), "Rufer is here");
+        assert_eq!(correct_custom_vocabulary("kenz", &vocab), "Kenz");
+        
+        // Fuzzy matches (edit distance <= 2 for long words, <= 1 for mid-length)
+        assert_eq!(correct_custom_vocabulary("Hello Waylan!", &vocab), "Hello Waylin!");
+        assert_eq!(correct_custom_vocabulary("this is Enoll", &vocab), "this is Enola");
+        assert_eq!(correct_custom_vocabulary("my friend kens", &vocab), "my friend Kenz");
+        
+        // Short words and distant words should not trigger false positives
+        assert_eq!(correct_custom_vocabulary("in", &vocab), "in");
+        assert_eq!(correct_custom_vocabulary("hello world", &vocab), "hello world");
     }
 }

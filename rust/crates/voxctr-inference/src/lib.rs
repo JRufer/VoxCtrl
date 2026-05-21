@@ -79,17 +79,64 @@ impl InferenceEngine {
             Some(self.config.engine.moonshine.language.clone())
         };
 
+        // Fetch custom vocabulary from config and target-specific initial_prompt
+        let config_path = voxctr_config::Config::config_path();
+        let app_config = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<voxctr_config::AppConfig>(&s).ok())
+                .unwrap_or_else(|| (*self.config).clone())
+        } else {
+            (*self.config).clone()
+        };
+
+        let dir = voxctr_routing::config_dir();
+        let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
+        let target = targets.iter().find(|t| t.id == req.target_id);
+
+        let mut merged_prompt = String::new();
+
+        // 1. Target's initial prompt if defined
+        if let Some(target_prompt) = target.and_then(|t| t.initial_prompt.as_ref()) {
+            if !target_prompt.trim().is_empty() {
+                merged_prompt.push_str(target_prompt.trim());
+                merged_prompt.push_str(". ");
+            }
+        }
+
+        // 2. Custom vocabulary words from features config
+        if !app_config.features.custom_vocabulary.is_empty() {
+            // Append as: "Vocabulary: word1, word2, word3..."
+            merged_prompt.push_str("Vocabulary: ");
+            merged_prompt.push_str(&app_config.features.custom_vocabulary.join(", "));
+            merged_prompt.push_str(". ");
+        }
+
+        // 3. Fallback context text if available
+        if let Some(ref context) = req.context_text {
+            if !context.trim().is_empty() {
+                merged_prompt.push_str(context.trim());
+                merged_prompt.push_str(". ");
+            }
+        }
+
+        let initial_prompt = if merged_prompt.trim().is_empty() {
+            None
+        } else {
+            Some(merged_prompt.trim().to_string())
+        };
+
         let t_req = TranscribeRequest {
             audio: req.audio,
             language,
             word_timestamps: false,
-            initial_prompt: req.context_text,
+            initial_prompt,
         };
 
         let result = self.backend.transcribe(&t_req)?;
         let raw_text = result.text.clone();
 
-        let post_cfg = self.build_post_config(&req.target_id);
+        let post_cfg = self.build_post_config_with_app_config(&req.target_id, &app_config);
         let processed = run_pipeline(&raw_text, &post_cfg);
 
         Ok(InferenceOutput {
@@ -113,6 +160,10 @@ impl InferenceEngine {
             (*self.config).clone()
         };
 
+        self.build_post_config_with_app_config(target_id, &app_config)
+    }
+
+    fn build_post_config_with_app_config(&self, target_id: &str, app_config: &voxctr_config::AppConfig) -> PostProcessConfig {
         // Load routing targets from the routing directory
         let dir = voxctr_routing::config_dir();
         let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
@@ -143,8 +194,9 @@ impl InferenceEngine {
             spoken_punctuation,
             auto_format_lists,
             apply_snippets: apply_snippets && !app_config.features.snippets.is_empty(),
-            snippets: app_config.features.snippets,
+            snippets: app_config.features.snippets.clone(),
             code_mode,
+            custom_vocabulary: app_config.features.custom_vocabulary.clone(),
         }
     }
 }
