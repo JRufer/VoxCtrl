@@ -3,10 +3,11 @@
 
   let { recording = false, speaking = false } = $props();
 
+  let isReady = $derived($status.audio_ready !== false);
   let label = $derived(
-    recording ? "Listening…" : speaking ? "Speaking…" : ""
+    recording ? (isReady ? "Listening…" : "Connecting Mic…") : speaking ? "Speaking…" : ""
   );
-  let color = $derived(recording ? "#e94560" : "#4fc3f7");
+  let color = $derived(recording ? (isReady ? "#e94560" : "#ff9100") : "#4fc3f7");
 </script>
 
 <div class="voice-card-container">

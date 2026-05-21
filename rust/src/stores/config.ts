@@ -38,6 +38,7 @@ export interface AudioConfig {
   evdev_device: string | null;
   noise_suppression: boolean;
   gain: number;
+  dynamic_stream: boolean;
 }
 
 export interface UiConfig {
@@ -102,6 +103,7 @@ const defaultConfig: AppConfig = {
     evdev_device: null,
     noise_suppression: false,
     gain: 1.0,
+    dynamic_stream: true,
   },
   ui: { show_overlay: true, overlay_style: "voice_card" },
   features: {

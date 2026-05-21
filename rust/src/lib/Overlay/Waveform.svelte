@@ -17,7 +17,7 @@
   let timer: ReturnType<typeof setInterval> | undefined;
 
   $effect(() => {
-    if (recording) {
+    if (recording && $status.audio_ready !== false) {
       timer = setInterval(() => {
         heights = Array.from({ length: BAR_COUNT }, (_, i) => {
           const env = envelope(i);
@@ -34,16 +34,17 @@
   });
 
   const targetLabel = $derived($status.active_target_label || "Focused Window");
+  const isReady = $derived($status.audio_ready !== false);
 </script>
 
 <div class="wave-widget">
   <!-- Top info bar -->
   <div class="info-bar">
     <div class="info-left">
-      <span class="mic-dot"></span>
-      <span class="info-text">MIC</span>
+      <span class="mic-dot" class:initializing={recording && !isReady}></span>
+      <span class="info-text">{recording && !isReady ? "CONNECTING..." : "MIC"}</span>
       <span class="sep">·</span>
-      <span class="info-text">voice overlay</span>
+      <span class="info-text">{recording && !isReady ? "preparing stream" : "voice overlay"}</span>
     </div>
     {#if recording}
       <div class="target-pill" style="animation: pill-in 0.25s ease both;">
@@ -64,11 +65,11 @@
         {@const env = envelope(i)}
         <div
           class="bar"
-          class:active={recording}
+          class:active={recording && isReady}
           style="
             height: {h}px;
-            --glow: {recording ? Math.round(env * 18) : 0}px;
-            --opacity: {recording ? (0.45 + env * 0.55) : 0.18};
+            --glow: {recording && isReady ? Math.round(env * 18) : 0}px;
+            --opacity: {recording && isReady ? (0.45 + env * 0.55) : 0.18};
           "
         ></div>
       {/each}
@@ -120,6 +121,17 @@
     background: #00e5c0;
     box-shadow: 0 0 6px #00e5c0;
     flex-shrink: 0;
+  }
+
+  .mic-dot.initializing {
+    background: #ff9100;
+    box-shadow: 0 0 8px #ff9100;
+    animation: pulse-orange 0.6s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse-orange {
+    from { opacity: 0.4; transform: scale(0.95); }
+    to { opacity: 1.0; transform: scale(1.25); }
   }
 
   .sep {

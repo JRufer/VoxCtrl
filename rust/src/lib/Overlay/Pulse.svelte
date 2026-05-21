@@ -1,19 +1,20 @@
 <script lang="ts">
   import { status } from "../../stores/status";
   let { recording = false } = $props();
+  let isReady = $derived($status.audio_ready !== false);
 </script>
 
 <div class="pulse-outer">
   <div class="pulse-row">
-    <div class="pulse-container" class:active={recording}>
+    <div class="pulse-container" class:active={recording && isReady} class:initializing={recording && !isReady}>
       <div class="ring ring1"></div>
       <div class="ring ring2"></div>
       <div class="core"></div>
     </div>
     {#if recording}
-      <span class="target-badge">
-        <span class="target-icon">🎯</span>
-        <span class="target-text">{$status.active_target_label || "Focused Window"}</span>
+      <span class="target-badge" style="border-color: {isReady ? 'rgba(79, 195, 247, 0.35)' : 'rgba(255, 145, 0, 0.35)'}; color: {isReady ? '#4fc3f7' : '#ff9100'};">
+        <span class="target-icon">{isReady ? "🎯" : "⏳"}</span>
+        <span class="target-text">{isReady ? ($status.active_target_label || "Focused Window") : "Connecting Mic..."}</span>
       </span>
     {/if}
   </div>
@@ -86,8 +87,14 @@
     animation: expand 2s ease-out infinite;
   }
 
+  .initializing .ring {
+    border-color: #ff9100;
+    animation: expand 3.5s ease-in-out infinite;
+  }
+
   .ring1 { width: 100%; height: 100%; }
   .ring2 { width: 100%; height: 100%; animation-delay: 1s !important; }
+  .initializing .ring2 { animation-delay: 1.75s !important; }
 
   .core {
     width: 24px;
@@ -95,6 +102,11 @@
     border-radius: 50%;
     background: var(--recording-color, #e94560);
     transition: background 0.3s;
+  }
+
+  .initializing .core {
+    background: #ff9100;
+    box-shadow: 0 0 10px #ff9100;
   }
 
   @keyframes expand {

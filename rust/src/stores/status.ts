@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface AppStatus {
   recording: boolean;
   speaking: boolean;
+  audio_ready?: boolean;
   word_count: number;
   active_target_id?: string;
   active_target_label?: string;
@@ -13,6 +14,7 @@ export interface AppStatus {
 export const status = writable<AppStatus>({
   recording: false,
   speaking: false,
+  audio_ready: true,
   word_count: 0,
   active_target_id: "default",
   active_target_label: "Focused Window",

@@ -61,6 +61,8 @@ pub fn run() {
         router: router.clone(),
         recording: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
+        audio_ready: Arc::new(AtomicBool::new(false)),
+        dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
         word_count: Arc::new(AtomicU32::new(0)),
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
@@ -73,8 +75,8 @@ pub fn run() {
     {
         let audio_cfg = cfg_data.audio.clone();
         let recording_flag = app_state.recording.clone();
-        let recorder = voxctr_audio::AudioRecorder::new(audio_cfg, recording_flag);
-        let _ = recorder.run(audio_tx, None);
+        let recorder = voxctr_audio::AudioRecorder::new(audio_cfg, recording_flag, app_state.dynamic_stream.clone());
+        let _ = recorder.run(audio_tx, None, Some(app_state.audio_ready.clone()));
     }
 
     // Spawn a coordinator thread to accumulate audio chunks and trigger batch inference
@@ -372,6 +374,7 @@ pub fn run() {
                     let payload = serde_json::json!({
                         "recording": is_recording,
                         "speaking": state_for_ticker.is_speaking(),
+                        "audio_ready": state_for_ticker.is_audio_ready(),
                         "word_count": state_for_ticker.total_words(),
                         "active_target_id": active_target_id,
                         "active_target_label": target_label,
@@ -496,6 +499,8 @@ mod tests {
             router,
             recording: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
+            audio_ready: Arc::new(AtomicBool::new(false)),
+            dynamic_stream: Arc::new(AtomicBool::new(false)),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
@@ -523,6 +528,8 @@ mod tests {
             router,
             recording: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
+            audio_ready: Arc::new(AtomicBool::new(false)),
+            dynamic_stream: Arc::new(AtomicBool::new(false)),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
@@ -550,6 +557,8 @@ mod tests {
             router,
             recording: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
+            audio_ready: Arc::new(AtomicBool::new(false)),
+            dynamic_stream: Arc::new(AtomicBool::new(false)),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),

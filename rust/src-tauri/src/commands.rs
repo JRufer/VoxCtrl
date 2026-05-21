@@ -29,6 +29,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
     Ok(StatusPayload {
         recording: state.is_recording(),
         speaking: state.is_speaking(),
+        audio_ready: state.is_audio_ready(),
         word_count: state.total_words(),
         active_target_id,
         active_target_label: target_label,
@@ -39,6 +40,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
 pub struct StatusPayload {
     pub recording: bool,
     pub speaking: bool,
+    pub audio_ready: bool,
     pub word_count: u32,
     pub active_target_id: String,
     pub active_target_label: String,
@@ -80,6 +82,9 @@ pub async fn save_config(
     state: State<'_, Arc<AppState>>,
     new_config: AppConfig,
 ) -> Result<(), String> {
+    // Update live dynamic stream state in AppState
+    state.set_dynamic_stream(new_config.audio.dynamic_stream);
+
     let mut guard = state.config.lock().await;
     guard.data = new_config;
     guard.save().map_err(|e| e.to_string())?;

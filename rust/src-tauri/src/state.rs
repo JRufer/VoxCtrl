@@ -13,6 +13,10 @@ pub struct AppState {
     pub recording: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
+    /// True when dynamic stream has successfully opened and is active (Option A)
+    pub audio_ready: Arc<AtomicBool>,
+    /// Live sync atomic flag for dynamic stream preference
+    pub dynamic_stream: Arc<AtomicBool>,
 
     /// Total words injected this session
     pub word_count: Arc<std::sync::atomic::AtomicU32>,
@@ -51,6 +55,22 @@ impl AppState {
 
     pub fn is_speaking(&self) -> bool {
         self.speaking.load(Ordering::SeqCst)
+    }
+
+    pub fn is_audio_ready(&self) -> bool {
+        self.audio_ready.load(Ordering::SeqCst)
+    }
+
+    pub fn set_audio_ready(&self, v: bool) {
+        self.audio_ready.store(v, Ordering::SeqCst);
+    }
+
+    pub fn is_dynamic_stream(&self) -> bool {
+        self.dynamic_stream.load(Ordering::SeqCst)
+    }
+
+    pub fn set_dynamic_stream(&self, v: bool) {
+        self.dynamic_stream.store(v, Ordering::SeqCst);
     }
 
     pub fn set_recording(&self, v: bool) {

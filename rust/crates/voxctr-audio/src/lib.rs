@@ -24,16 +24,19 @@ pub struct AudioRecorder {
     config: AudioConfig,
     /// Currently recording (pushed to inference queue)
     recording: Arc<AtomicBool>,
+    /// Live sync dynamic stream preference
+    dynamic_stream: Arc<AtomicBool>,
     /// Gain applied to all samples
     gain: f32,
 }
 
 impl AudioRecorder {
-    pub fn new(config: AudioConfig, recording: Arc<AtomicBool>) -> Self {
+    pub fn new(config: AudioConfig, recording: Arc<AtomicBool>, dynamic_stream: Arc<AtomicBool>) -> Self {
         let gain = config.gain;
         Self {
             config,
             recording,
+            dynamic_stream,
             gain,
         }
     }
@@ -58,15 +61,17 @@ impl AudioRecorder {
         self,
         tx: Sender<AudioChunk>,
         level_tx: Option<Sender<f32>>,
+        audio_ready: Option<Arc<AtomicBool>>,
     ) -> Result<RecorderHandle> {
         let recording = self.recording.clone();
+        let dynamic_stream = self.dynamic_stream.clone();
         let cfg = self.config.clone();
         let gain = self.gain;
 
         let handle = std::thread::Builder::new()
             .name("voxctr-audio".into())
             .spawn(move || {
-                if let Err(e) = capture_loop(cfg, gain, recording, tx, level_tx) {
+                if let Err(e) = capture_loop(cfg, gain, recording, dynamic_stream, audio_ready, tx, level_tx) {
                     warn!("Audio capture error: {e}");
                 }
             })
@@ -80,72 +85,270 @@ pub struct RecorderHandle {
     _thread: std::thread::JoinHandle<()>,
 }
 
+// ── Device testing at startup ──────────────────────────────────────────────────
+
+pub fn test_and_detect_active_device(cfg: &AudioConfig) -> Result<cpal::Device> {
+    let host = cpal::default_host();
+    
+    // 1. Try the configured input device if it exists
+    if let Some(idx) = cfg.input_device_index {
+        if let Ok(mut devices) = host.input_devices() {
+            if let Some(device) = devices.nth(idx as usize) {
+                if let Ok(config) = negotiate_config(&device) {
+                    let test_stream = device.build_input_stream(
+                        &config,
+                        |_: &[f32], _| {},
+                        |_| {},
+                        None,
+                    );
+                    if test_stream.is_ok() {
+                        info!("Startup test: Configured device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
+                        return Ok(device);
+                    } else {
+                        warn!("Startup test: Configured device index {} failed test stream build.", idx);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Try default input device
+    if let Some(device) = host.default_input_device() {
+        if let Ok(config) = negotiate_config(&device) {
+            let test_stream = device.build_input_stream(
+                &config,
+                |_: &[f32], _| {},
+                |_| {},
+                None,
+            );
+            if test_stream.is_ok() {
+                info!("Startup test: Default input device ({}) is active and functional.", device.name().unwrap_or_default());
+                return Ok(device);
+            } else {
+                warn!("Startup test: Default input device failed test stream build.");
+            }
+        }
+    }
+
+    // 3. Fallback: search all available input devices for the first functional one
+    if let Ok(devices) = host.input_devices() {
+        for (idx, device) in devices.enumerate() {
+            if let Ok(config) = negotiate_config(&device) {
+                let test_stream = device.build_input_stream(
+                    &config,
+                    |_: &[f32], _| {},
+                    |_| {},
+                    None,
+                );
+                if test_stream.is_ok() {
+                    info!("Startup test: Fallback device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
+                    return Ok(device);
+                }
+            }
+        }
+    }
+
+    // 4. Default fallback
+    host.default_input_device().context("no active or functional input device found at startup")
+}
+
 // ── Capture loop ──────────────────────────────────────────────────────────────
 
+#[allow(unused_assignments, unused_variables)]
 fn capture_loop(
     cfg: AudioConfig,
     gain: f32,
     recording: Arc<AtomicBool>,
+    dynamic_stream: Arc<AtomicBool>,
+    audio_ready: Option<Arc<AtomicBool>>,
     tx: Sender<AudioChunk>,
     level_tx: Option<Sender<f32>>,
 ) -> Result<()> {
     let host = cpal::default_host();
 
-    let device = if let Some(idx) = cfg.input_device_index {
-        host.input_devices()?
-            .nth(idx as usize)
-            .context("device index out of range")?
-    } else {
-        host.default_input_device().context("no default input device")?
+    // Perform startup test to detect active device
+    let device = match test_and_detect_active_device(&cfg) {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("Startup audio device detection failed: {e}. Falling back to default.");
+            host.default_input_device().context("no default input device")?
+        }
     };
 
-    info!("Audio device: {}", device.name().unwrap_or_default());
+    info!("Using detected active audio device: {}", device.name().unwrap_or_default());
 
     let hw_config = negotiate_config(&device)?;
     let hw_rate = hw_config.sample_rate.0;
     info!("Hardware sample rate: {hw_rate} Hz");
 
-    let tx_inner = tx.clone();
-    let level_tx_inner = level_tx;
-    let recording_inner = recording.clone();
-
     let needs_resample = hw_rate != TARGET_SAMPLE_RATE;
 
-    // Build resampler (runs inside the callback context, sent via closure)
-    let stream = device.build_input_stream(
-        &hw_config,
-        move |data: &[f32], _| {
-            // Apply gain
-            let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+    let mut current_stream: Option<cpal::Stream> = None;
+    let mut was_recording = false;
+    let mut was_dynamic = dynamic_stream.load(Ordering::SeqCst);
 
-            // RMS level for VU meter
-            if let Some(ref ltx) = level_tx_inner {
-                let rms = rms(&gained);
-                let _ = ltx.send(rms);
+    // Initial setup based on current preference
+    if was_dynamic {
+        if let Some(ref ready) = audio_ready {
+            ready.store(false, Ordering::SeqCst);
+        }
+    } else {
+        info!("Startup: Opening always-on stream (Option B)...");
+        let tx_inner = tx.clone();
+        let level_tx_inner = level_tx.clone();
+        let recording_inner = recording.clone();
+        match device.build_input_stream(
+            &hw_config,
+            move |data: &[f32], _| {
+                let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                if let Some(ref ltx) = level_tx_inner {
+                    let rms = rms(&gained);
+                    let _ = ltx.send(rms);
+                }
+                if !recording_inner.load(Ordering::SeqCst) {
+                    return;
+                }
+                let resampled = if needs_resample {
+                    resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE)
+                } else {
+                    gained
+                };
+                let _ = tx_inner.send(resampled);
+            },
+            |e| warn!("Audio stream error: {e}"),
+            None,
+        ) {
+            Ok(stream) => {
+                if stream.play().is_ok() {
+                    current_stream = Some(stream);
+                    if let Some(ref ready) = audio_ready {
+                        ready.store(true, Ordering::SeqCst);
+                    }
+                    info!("Startup always-on stream successfully playing.");
+                }
             }
+            Err(e) => warn!("Failed to start always-on stream: {e}"),
+        }
+    }
 
-            if !recording_inner.load(Ordering::SeqCst) {
-                return;
-            }
-
-            // Resample to 16 kHz if needed
-            let resampled = if needs_resample {
-                resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE)
-            } else {
-                gained
-            };
-
-            let _ = tx_inner.send(resampled);
-        },
-        |e| warn!("Audio stream error: {e}"),
-        None,
-    )?;
-
-    stream.play()?;
-
-    // Keep the thread alive (stream is playing in background callbacks)
     loop {
-        std::thread::sleep(Duration::from_millis(100));
+        let is_recording = recording.load(Ordering::SeqCst);
+        let is_dynamic = dynamic_stream.load(Ordering::SeqCst);
+
+        // 1. Detect dynamic setting change at runtime (live hot-reload!)
+        if is_dynamic != was_dynamic {
+            info!("Dynamic stream preference changed at runtime to: {is_dynamic}");
+            if is_dynamic {
+                // Changed to dynamic: turn off always-on stream if not currently recording
+                if !is_recording {
+                    current_stream = None; // Closes device!
+                    if let Some(ref ready) = audio_ready {
+                        ready.store(false, Ordering::SeqCst);
+                    }
+                    was_recording = false;
+                }
+            } else {
+                // Changed to always-on: start always-on stream if it isn't already active
+                if current_stream.is_none() {
+                    let tx_inner = tx.clone();
+                    let level_tx_inner = level_tx.clone();
+                    let recording_inner = recording.clone();
+                    match device.build_input_stream(
+                        &hw_config,
+                        move |data: &[f32], _| {
+                            let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                            if let Some(ref ltx) = level_tx_inner {
+                                let rms = rms(&gained);
+                                let _ = ltx.send(rms);
+                            }
+                            if !recording_inner.load(Ordering::SeqCst) {
+                                return;
+                            }
+                            let resampled = if needs_resample {
+                                resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE)
+                            } else {
+                                gained
+                            };
+                            let _ = tx_inner.send(resampled);
+                        },
+                        |e| warn!("Audio stream error: {e}"),
+                        None,
+                    ) {
+                        Ok(stream) => {
+                            if stream.play().is_ok() {
+                                current_stream = Some(stream);
+                                if let Some(ref ready) = audio_ready {
+                                    ready.store(true, Ordering::SeqCst);
+                                }
+                                info!("Switched to always-on mode: stream successfully playing.");
+                            }
+                        }
+                        Err(e) => warn!("Failed to start always-on stream on toggle: {e}"),
+                    }
+                }
+            }
+            was_dynamic = is_dynamic;
+        }
+
+        // 2. Manage dynamic recording stream lifecycles
+        if is_dynamic {
+            if is_recording && !was_recording {
+                info!("Dynamic microphone stream starting (Option A)...");
+                let tx_inner = tx.clone();
+                let level_tx_inner = level_tx.clone();
+                let recording_inner = recording.clone();
+
+                match device.build_input_stream(
+                    &hw_config,
+                    move |data: &[f32], _| {
+                        let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                        if let Some(ref ltx) = level_tx_inner {
+                            let rms = rms(&gained);
+                            let _ = ltx.send(rms);
+                        }
+                        if !recording_inner.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        let resampled = if needs_resample {
+                            resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE)
+                        } else {
+                            gained
+                        };
+                        let _ = tx_inner.send(resampled);
+                    },
+                    |e| warn!("Audio stream error: {e}"),
+                    None,
+                ) {
+                    Ok(stream) => {
+                        if let Err(e) = stream.play() {
+                            warn!("Failed to play dynamic audio stream: {e}");
+                            recording.store(false, Ordering::SeqCst);
+                        } else {
+                            current_stream = Some(stream);
+                            if let Some(ref ready) = audio_ready {
+                                ready.store(true, Ordering::SeqCst);
+                            }
+                            info!("Dynamic microphone stream successfully playing (Option A).");
+                            was_recording = true;
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to build dynamic audio stream: {e}");
+                        recording.store(false, Ordering::SeqCst);
+                    }
+                }
+            } else if !is_recording && was_recording {
+                info!("Dynamic microphone stream stopping...");
+                if let Some(ref ready) = audio_ready {
+                    ready.store(false, Ordering::SeqCst);
+                }
+                current_stream = None; // Dropping closes the input device!
+                was_recording = false;
+                info!("Dynamic microphone stream stopped & device closed.");
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(30));
     }
 }
 

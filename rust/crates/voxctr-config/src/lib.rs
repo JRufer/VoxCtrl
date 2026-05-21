@@ -95,6 +95,10 @@ fn default_gain() -> f32 {
     1.0
 }
 
+fn default_dynamic_stream() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     pub vad_threshold: f32,
@@ -107,6 +111,8 @@ pub struct AudioConfig {
     /// Linear gain multiplier applied before sending to inference (1.0 = unity)
     #[serde(default = "default_gain")]
     pub gain: f32,
+    #[serde(default = "default_dynamic_stream")]
+    pub dynamic_stream: bool,
 }
 
 impl Default for AudioConfig {
@@ -118,6 +124,7 @@ impl Default for AudioConfig {
             evdev_device: None,
             noise_suppression: false,
             gain: 1.0,
+            dynamic_stream: true,
         }
     }
 }
