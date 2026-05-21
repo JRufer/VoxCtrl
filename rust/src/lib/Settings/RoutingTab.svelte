@@ -69,12 +69,22 @@
       send_on_release: false,
       append_newline: true,
       tts_engine: "None",
+      processing: {
+        apply_snippets: true
+      }
     };
   }
 
   function editTarget(tgt: OutputTarget) {
     isEditingTargetNew = false;
-    editingTarget = JSON.parse(JSON.stringify(tgt));
+    const clone = JSON.parse(JSON.stringify(tgt));
+    if (!clone.processing) {
+      clone.processing = {};
+    }
+    if (clone.processing.apply_snippets === undefined) {
+      clone.processing.apply_snippets = true;
+    }
+    editingTarget = clone;
   }
 
   async function saveTargetModal() {
@@ -521,6 +531,12 @@
             <input type="checkbox" bind:checked={editingTarget.send_on_release} />
             <span>Execute only on physical key release (Hold modes)</span>
           </label>
+          {#if editingTarget.processing}
+            <label class="checkbox-field">
+              <input type="checkbox" bind:checked={editingTarget.processing.apply_snippets} />
+              <span>Apply snippets to transcription text</span>
+            </label>
+          {/if}
 
           <label class="field mt-2">
             <span>System Prompt / Context (Optional)</span>

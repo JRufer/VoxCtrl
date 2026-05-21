@@ -101,15 +101,50 @@ impl InferenceEngine {
         })
     }
 
-    fn build_post_config(&self, _target_id: &str) -> PostProcessConfig {
-        // TODO: merge per-target overrides from routing config
+    fn build_post_config(&self, target_id: &str) -> PostProcessConfig {
+        // Load the config from the standard file path dynamically so edits are updated instantly
+        let config_path = voxctr_config::Config::config_path();
+        let app_config = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<voxctr_config::AppConfig>(&s).ok())
+                .unwrap_or_else(|| (*self.config).clone())
+        } else {
+            (*self.config).clone()
+        };
+
+        // Load routing targets from the routing directory
+        let dir = voxctr_routing::config_dir();
+        let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
+        let target = targets.iter().find(|t| t.id == target_id);
+
+        let remove_fillers = target
+            .and_then(|t| t.processing.remove_fillers)
+            .unwrap_or(app_config.features.remove_fillers);
+
+        let spoken_punctuation = target
+            .and_then(|t| t.processing.spoken_punctuation)
+            .unwrap_or(app_config.features.spoken_punctuation);
+
+        let auto_format_lists = target
+            .and_then(|t| t.processing.auto_format_lists)
+            .unwrap_or(app_config.features.auto_format_lists);
+
+        let apply_snippets = target
+            .and_then(|t| t.processing.apply_snippets)
+            .unwrap_or(true); // default to true
+
+        let code_mode = target
+            .and_then(|t| t.processing.code_mode)
+            .unwrap_or(false);
+
         PostProcessConfig {
-            remove_fillers: self.config.features.remove_fillers,
-            spoken_punctuation: self.config.features.spoken_punctuation,
-            auto_format_lists: self.config.features.auto_format_lists,
-            apply_snippets: !self.config.features.snippets.is_empty(),
-            snippets: self.config.features.snippets.clone(),
-            code_mode: false,
+            remove_fillers,
+            spoken_punctuation,
+            auto_format_lists,
+            apply_snippets: apply_snippets && !app_config.features.snippets.is_empty(),
+            snippets: app_config.features.snippets,
+            code_mode,
         }
     }
 }

@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-voxctr-config = { workspace = true }
+voxctr-config  = { workspace = true }
+voxctr-routing = { workspace = true }
 voxctr-llm    = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -6024,6 +6024,7 @@ dependencies = [
  "tracing",
  "voxctr-config",
  "voxctr-llm",
+ "voxctr-routing",
  "whisper-rs",
 ]
 
