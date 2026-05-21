@@ -6,6 +6,14 @@
   let targets = $state<OutputTarget[]>([]);
   let bindings = $state<HotkeyBinding[]>([]);
   let saving = $state(false);
+  let activeSection = $state<"targets" | "bindings">("targets");
+
+  // Modals state
+  let editingTarget = $state<OutputTarget | null>(null);
+  let isEditingTargetNew = $state(false);
+  let editingBinding = $state<HotkeyBinding | null>(null);
+  let isEditingBindingNew = $state(false);
+  let isRecordingKeys = $state(false);
 
   onMount(async () => {
     targets = await invoke<OutputTarget[]>("get_targets");
@@ -17,74 +25,330 @@
     try {
       await invoke("save_targets", { targets });
       await invoke("save_bindings", { bindings });
+      // Notify user via a tiny overlay banner or just log
+      console.log("Routing config saved successfully!");
+    } catch (e) {
+      alert("Failed to save: " + e);
     } finally {
       saving = false;
     }
   }
 
+  // --- Helpers ---
   function deliveryLabel(d: string) {
     const map: Record<string, string> = {
-      inject: "Inject", clipboard: "Clipboard", exec: "Exec",
-      pipe: "Pipe", socket: "Socket", file: "File",
-      dbus: "DBus", http: "HTTP", webhook: "Webhook",
+      inject: "Inject Text directly", clipboard: "Copy to Clipboard", exec: "Execute Command",
+      pipe: "Write to Named Pipe", socket: "Send to TCP/Unix Socket", file: "Append to File",
+      dbus: "Emit DBus Signal", http: "HTTP Request", webhook: "Send Webhook",
     };
     return map[d] ?? d;
   }
 
   function gestureLabel(g: string) {
     const map: Record<string, string> = {
-      hold: "Hold", toggle: "Toggle", double_tap: "Double-Tap", chord: "Chord",
+      hold: "Hold Keys to Talk", toggle: "Tap to Start / Stop",
+      double_tap: "Double-Tap to Record", chord: "Key Chord Combo",
     };
     return map[g] ?? g;
   }
+
+  // --- CRUD Output Targets ---
+  function addNewTarget() {
+    isEditingTargetNew = true;
+    editingTarget = {
+      id: "new_target_" + Math.random().toString(36).substring(2, 6),
+      label: "New Target",
+      delivery: "inject",
+      file_prefix: "- ",
+      file_timestamp: true,
+      http_method: "POST",
+      send_on_release: false,
+      append_newline: true,
+      tts_engine: "None",
+    };
+  }
+
+  function editTarget(tgt: OutputTarget) {
+    isEditingTargetNew = false;
+    editingTarget = JSON.parse(JSON.stringify(tgt));
+  }
+
+  function saveTargetModal() {
+    if (!editingTarget) return;
+    if (editingTarget.id.trim() === "") {
+      alert("Target ID cannot be empty.");
+      return;
+    }
+    if (isEditingTargetNew) {
+      if (targets.some(t => t.id === editingTarget!.id)) {
+        alert("Target with this ID already exists.");
+        return;
+      }
+      targets = [...targets, editingTarget];
+    } else {
+      targets = targets.map(t => t.id === editingTarget!.id ? editingTarget! : t);
+    }
+    editingTarget = null;
+  }
+
+  function deleteTarget(id: string) {
+    const usedBy = bindings.filter(b => b.target_id === id).map(b => b.label || b.id);
+    if (usedBy.length > 0) {
+      alert(`Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`);
+      return;
+    }
+    if (confirm("Are you sure you want to delete this target?")) {
+      targets = targets.filter(t => t.id !== id);
+    }
+  }
+
+  // --- CRUD Hotkey Bindings ---
+  function addNewBinding() {
+    if (targets.length === 0) {
+      alert("Please create at least one Output Target before making a hotkey binding.");
+      return;
+    }
+    isEditingBindingNew = true;
+    editingBinding = {
+      id: "binding_" + Math.random().toString(36).substring(2, 6),
+      label: "New Binding",
+      keys: ["KEY_LEFTMETA", "KEY_SPACE"],
+      gesture: "hold",
+      target_id: targets[0].id,
+      tap_ms: 300,
+      hold_threshold_ms: 500,
+      disabled: false,
+    };
+  }
+
+  function editBinding(b: HotkeyBinding) {
+    isEditingBindingNew = false;
+    editingBinding = JSON.parse(JSON.stringify(b));
+  }
+
+  function toggleBindingDisabled(id: string) {
+    bindings = bindings.map(b => b.id === id ? { ...b, disabled: !b.disabled } : b);
+  }
+
+  function saveBindingModal() {
+    if (!editingBinding) return;
+    if (editingBinding.id.trim() === "") {
+      alert("Binding ID cannot be empty.");
+      return;
+    }
+    if (editingBinding.keys.length === 0) {
+      alert("Please capture at least one hotkey before saving.");
+      return;
+    }
+    if (isEditingBindingNew) {
+      if (bindings.some(b => b.id === editingBinding!.id)) {
+        alert("Binding with this ID already exists.");
+        return;
+      }
+      bindings = [...bindings, editingBinding];
+    } else {
+      bindings = bindings.map(b => b.id === editingBinding!.id ? editingBinding! : b);
+    }
+    editingBinding = null;
+    isRecordingKeys = false;
+  }
+
+  function deleteBinding(id: string) {
+    if (confirm("Are you sure you want to delete this hotkey binding?")) {
+      bindings = bindings.filter(b => b.id !== id);
+    }
+  }
+
+  // --- Keyboard Event Capture / Recorder ---
+  function mapBrowserKeyToEvdev(key: string, code: string): string {
+    const codeUpper = code.toUpperCase();
+    if (key === "Control") return "KEY_LEFTCTRL";
+    if (key === "Alt") return "KEY_LEFTALT";
+    if (key === "Shift") return "KEY_LEFTSHIFT";
+    if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
+
+    if (codeUpper === "SPACE") return "KEY_SPACE";
+    if (codeUpper === "ENTER") return "KEY_ENTER";
+    if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
+    if (codeUpper === "TAB") return "KEY_TAB";
+    if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
+    if (codeUpper === "DELETE") return "KEY_DELETE";
+
+    if (codeUpper.startsWith("KEY")) return codeUpper;
+    if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
+    if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
+    if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
+
+    if (key.length === 1) return `KEY_${key.toUpperCase()}`;
+    return `KEY_${codeUpper}`;
+  }
+
+  let currentlyPressedKeys = $state<string[]>([]);
+
+  function handleRecordKeyDown(e: KeyboardEvent) {
+    if (!isRecordingKeys || !editingBinding) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const evdevKey = mapBrowserKeyToEvdev(e.key, e.code);
+    if (!currentlyPressedKeys.includes(evdevKey)) {
+      currentlyPressedKeys = [...currentlyPressedKeys, evdevKey];
+    }
+  }
+
+  function handleRecordKeyUp(e: KeyboardEvent) {
+    if (!isRecordingKeys || !editingBinding) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (currentlyPressedKeys.length > 0) {
+      editingBinding.keys = [...currentlyPressedKeys];
+    }
+    currentlyPressedKeys = [];
+    isRecordingKeys = false; // Finish capture on release
+  }
 </script>
 
-<section>
-  <h2>Routing</h2>
+<section class="routing-section">
+  <!-- Dynamic Subtab Navigation -->
+  <div class="sub-nav">
+    <button
+      class="sub-btn"
+      class:active={activeSection === "targets"}
+      onclick={() => activeSection = "targets"}
+    >
+      🎯 Output Targets ({targets.length})
+    </button>
+    <button
+      class="sub-btn"
+      class:active={activeSection === "bindings"}
+      onclick={() => activeSection = "bindings"}
+    >
+      ⌨ Hotkey Bindings ({bindings.length})
+    </button>
+  </div>
 
-  <div class="field-group">
-    <div class="table-header">
-      <h3>Output Targets</h3>
+  {#if activeSection === "targets"}
+    <!-- Output Targets Page -->
+    <div class="section-header">
+      <div>
+        <h3>Output Targets</h3>
+        <p class="description">Define routing destinations where transcribed text is typed, copied, piped, or sent over network sockets.</p>
+      </div>
+      <button class="btn-action primary" onclick={addNewTarget}>
+        ＋ Add New Target
+      </button>
     </div>
-    <table class="rt-table">
-      <thead>
-        <tr><th>ID</th><th>Label</th><th>Delivery</th><th>Newline</th></tr>
-      </thead>
-      <tbody>
-        {#each targets as t}
-          <tr>
-            <td><code>{t.id}</code></td>
-            <td>{t.label}</td>
-            <td><span class="badge">{deliveryLabel(t.delivery)}</span></td>
-            <td>{t.append_newline ? "✓" : ""}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    <p class="hint">Edit <code>~/.config/voxctl/targets.toml</code> directly for advanced configuration.</p>
-  </div>
 
-  <div class="field-group">
-    <h3>Hotkey Bindings</h3>
-    <table class="rt-table">
-      <thead>
-        <tr><th>ID</th><th>Keys</th><th>Gesture</th><th>Target</th><th>Enabled</th></tr>
-      </thead>
-      <tbody>
-        {#each bindings as b}
-          <tr>
-            <td><code>{b.id}</code></td>
-            <td><code>{b.keys.join(" + ")}</code></td>
-            <td>{gestureLabel(b.gesture)}</td>
-            <td>{b.target_id}</td>
-            <td>{b.disabled ? "✗" : "✓"}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    <p class="hint">Edit <code>~/.config/voxctl/bindings.toml</code> for advanced configuration.</p>
-  </div>
+    <div class="cards-grid">
+      {#each targets as t}
+        <div class="card glass">
+          <div class="card-header">
+            <h4>{t.label}</h4>
+            <span class="badge delivery">{t.delivery}</span>
+          </div>
+          <div class="card-body">
+            <div class="info-row">
+              <span class="info-label">ID:</span>
+              <code class="info-val">{t.id}</code>
+            </div>
+            {#if t.delivery === "exec"}
+              <div class="info-row">
+                <span class="info-label">Cmd:</span>
+                <span class="info-val line-clamp">{t.command}</span>
+              </div>
+            {/if}
+            {#if t.delivery === "file"}
+              <div class="info-row">
+                <span class="info-label">File:</span>
+                <span class="info-val line-clamp">{t.file_path}</span>
+              </div>
+            {/if}
+            {#if t.delivery === "socket"}
+              <div class="info-row">
+                <span class="info-label">Socket:</span>
+                <span class="info-val">{t.socket_host}:{t.socket_port}</span>
+              </div>
+            {/if}
+            {#if t.delivery === "http" || t.delivery === "webhook"}
+              <div class="info-row">
+                <span class="info-label">API:</span>
+                <span class="info-val line-clamp">{t.http_url || t.webhook_url}</span>
+              </div>
+            {/if}
+          </div>
+          <div class="card-actions">
+            <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
+            <button class="btn-action small danger" onclick={() => deleteTarget(t.id)}>Delete</button>
+          </div>
+        </div>
+      {:else}
+        <div class="empty-state">
+          <span class="empty-icon">🎯</span>
+          <p>No output targets defined. Create one to route your transcription output!</p>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <!-- Hotkey Bindings Page -->
+    <div class="section-header">
+      <div>
+        <h3>Hotkey Bindings</h3>
+        <p class="description">Bind physical keyboard combinations to your output targets. Each hotkey supports customizable triggers (double-taps, holding keys, etc.)</p>
+      </div>
+      <button class="btn-action primary" onclick={addNewBinding}>
+        ＋ Add New Binding
+      </button>
+    </div>
 
+    <div class="cards-grid">
+      {#each bindings as b}
+        <div class="card glass" class:disabled={b.disabled}>
+          <div class="card-header">
+            <h4>{b.label || b.id}</h4>
+            <span class="badge gesture">{b.gesture}</span>
+          </div>
+          <div class="card-body">
+            <div class="keys-display">
+              {#each b.keys as k}
+                <kbd>{k.replace("KEY_", "")}</kbd>
+              {/each}
+            </div>
+            <div class="info-row">
+              <span class="info-label">Target:</span>
+              <span class="info-val font-semibold">{b.target_id}</span>
+            </div>
+            {#if b.gesture === "hold"}
+              <div class="info-row">
+                <span class="info-label">Hold Timing:</span>
+                <span class="info-val">{b.hold_threshold_ms}ms</span>
+              </div>
+            {/if}
+            {#if b.gesture === "double_tap"}
+              <div class="info-row">
+                <span class="info-label">Tap Interval:</span>
+                <span class="info-val">{b.tap_ms}ms</span>
+              </div>
+            {/if}
+          </div>
+          <div class="card-actions">
+            <button class="btn-action small" onclick={() => toggleBindingDisabled(b.id)}>
+              {b.disabled ? "Enable" : "Disable"}
+            </button>
+            <button class="btn-action small" onclick={() => editBinding(b)}>Edit</button>
+            <button class="btn-action small danger" onclick={() => deleteBinding(b.id)}>Delete</button>
+          </div>
+        </div>
+      {:else}
+        <div class="empty-state">
+          <span class="empty-icon">⌨</span>
+          <p>No keyboard bindings defined. Create a binding to link a physical hotkey to a routing target!</p>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Footer Actions -->
   <div class="actions">
     <button class="btn-save" onclick={saveAll} disabled={saving}>
       {saving ? "Saving…" : "Save Routing Config"}
@@ -92,39 +356,806 @@
   </div>
 </section>
 
+<!-- ========================================== -->
+<!-- MODAL: Output Target Editor                -->
+<!-- ========================================== -->
+{#if editingTarget}
+  <div class="modal-backdrop">
+    <div class="modal glass animate-fade-in">
+      <div class="modal-header">
+        <h3>{isEditingTargetNew ? "Create Target" : "Edit Target"}</h3>
+        <button class="close-btn" onclick={() => editingTarget = null}>✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span>Target ID</span>
+          <input
+            type="text"
+            bind:value={editingTarget.id}
+            placeholder="e.g. obsidian_vault"
+            disabled={!isEditingTargetNew}
+          />
+        </label>
+
+        <label class="field">
+          <span>Display Label</span>
+          <input
+            type="text"
+            bind:value={editingTarget.label}
+            placeholder="e.g. Type directly into Obsidian"
+          />
+        </label>
+
+        <label class="field">
+          <span>Delivery System</span>
+          <select bind:value={editingTarget.delivery}>
+            <option value="inject">Inject Text Directly (Simulate keyboard)</option>
+            <option value="clipboard">Save to Clipboard</option>
+            <option value="exec">Execute Command</option>
+            <option value="file">Append to File</option>
+            <option value="socket">TCP / Unix Socket</option>
+            <option value="dbus">DBus Signal</option>
+            <option value="http">HTTP Custom Client</option>
+            <option value="webhook">Send Webhook Event</option>
+          </select>
+        </label>
+
+        <!-- Dynamic morphing options based on delivery type -->
+        {#if editingTarget.delivery === "exec"}
+          <div class="morph-section">
+            <h5>Shell Executor settings</h5>
+            <label class="field">
+              <span>Terminal Command</span>
+              <input
+                type="text"
+                bind:value={editingTarget.command}
+                placeholder="e.g. xdg-open {TEXT}"
+              />
+              <span class="hint">Use <code>{`{TEXT}`}</code> inside the command string as a placeholder.</span>
+            </label>
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "file"}
+          <div class="morph-section">
+            <h5>Local File writer settings</h5>
+            <label class="field">
+              <span>File Absolute Path</span>
+              <input
+                type="text"
+                bind:value={editingTarget.file_path}
+                placeholder="e.g. /home/user/notes.md"
+              />
+            </label>
+            <label class="field">
+              <span>Text Prefix</span>
+              <input
+                type="text"
+                bind:value={editingTarget.file_prefix}
+                placeholder="e.g. - "
+              />
+            </label>
+            <label class="checkbox-field">
+              <input type="checkbox" bind:checked={editingTarget.file_timestamp} />
+              <span>Prepend date & time timestamp</span>
+            </label>
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "socket"}
+          <div class="morph-section">
+            <h5>Network Socket settings</h5>
+            <label class="field">
+              <span>Socket Host (TCP)</span>
+              <input type="text" bind:value={editingTarget.socket_host} placeholder="localhost" />
+            </label>
+            <label class="field">
+              <span>Socket Port (TCP)</span>
+              <input type="number" bind:value={editingTarget.socket_port} placeholder="9000" />
+            </label>
+            <label class="field">
+              <span>Unix Socket Path (Optional fallback)</span>
+              <input type="text" bind:value={editingTarget.socket_unix} placeholder="/tmp/app.sock" />
+            </label>
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "dbus"}
+          <div class="morph-section">
+            <h5>Linux DBus emitter settings</h5>
+            <label class="field">
+              <span>Signal Method ID</span>
+              <input type="text" bind:value={editingTarget.dbus_signal} placeholder="com.voxctl.TextReady" />
+            </label>
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "http" || editingTarget.delivery === "webhook"}
+          <div class="morph-section">
+            <h5>API Endpoint Client settings</h5>
+            <label class="field">
+              <span>REST endpoint URL</span>
+              {#if editingTarget.delivery === 'http'}
+                <input
+                  type="text"
+                  bind:value={editingTarget.http_url}
+                  placeholder="https://api.example.com/transcribe"
+                />
+              {:else}
+                <input
+                  type="text"
+                  bind:value={editingTarget.webhook_url}
+                  placeholder="https://api.example.com/transcribe"
+                />
+              {/if}
+            </label>
+            {#if editingTarget.delivery === "http"}
+              <label class="field">
+                <span>Method</span>
+                <select bind:value={editingTarget.http_method}>
+                  <option value="POST">POST</option>
+                  <option value="GET">GET</option>
+                  <option value="PUT">PUT</option>
+                </select>
+              </label>
+            {:else}
+              <label class="field">
+                <span>Webhook Secret Token (HMAC)</span>
+                <input type="password" bind:value={editingTarget.webhook_secret} placeholder="Secret salt" />
+              </label>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- General Processing Toggles -->
+        <div class="processing-toggles">
+          <h5>Post-Processing & Output Tuning</h5>
+          <label class="checkbox-field">
+            <input type="checkbox" bind:checked={editingTarget.append_newline} />
+            <span>Automatically append newline after transcribing</span>
+          </label>
+          <label class="checkbox-field">
+            <input type="checkbox" bind:checked={editingTarget.send_on_release} />
+            <span>Execute only on physical key release (Hold modes)</span>
+          </label>
+
+          <label class="field mt-2">
+            <span>System Prompt / Context (Optional)</span>
+            <input
+              type="text"
+              bind:value={editingTarget.initial_prompt}
+              placeholder="e.g. Format code variables in camelCase"
+            />
+          </label>
+
+          <label class="field">
+            <span>Voice Response Engine</span>
+            <select bind:value={editingTarget.tts_engine}>
+              <option value="None">Disabled (Silent Output)</option>
+              <option value="Piper">Piper (Premium offline voice synthesis)</option>
+              <option value="Espeak">eSpeak (Lightweight synthesizer)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" onclick={() => editingTarget = null}>Cancel</button>
+        <button class="btn-action primary" onclick={saveTargetModal}>Done</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ========================================== -->
+<!-- MODAL: Hotkey Binding Editor               -->
+<!-- ========================================== -->
+{#if editingBinding}
+  <div class="modal-backdrop">
+    <div class="modal glass animate-fade-in">
+      <div class="modal-header">
+        <h3>{isEditingBindingNew ? "Create Hotkey Binding" : "Edit Hotkey Binding"}</h3>
+        <button class="close-btn" onclick={() => { editingBinding = null; isRecordingKeys = false; }}>✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span>Binding Identifier</span>
+          <input
+            type="text"
+            bind:value={editingBinding.id}
+            placeholder="e.g. dictation_shortcut"
+            disabled={!isEditingBindingNew}
+          />
+        </label>
+
+        <label class="field">
+          <span>Display Label</span>
+          <input
+            type="text"
+            bind:value={editingBinding.label}
+            placeholder="e.g. Global Speech to Text shortcut"
+          />
+        </label>
+
+        <label class="field">
+          <span>Assign to Output Target</span>
+          <select bind:value={editingBinding.target_id}>
+            {#each targets as t}
+              <option value={t.id}>{t.label} ({t.delivery})</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Input Gesture Style</span>
+          <select bind:value={editingBinding.gesture}>
+            <option value="hold">Hold keys to dictate (Release to transcribe)</option>
+            <option value="toggle">Tap once to start recording, tap again to finish</option>
+            <option value="double_tap">Double-tap hotkey to trigger recording</option>
+            <option value="chord">Chord combo (Held base keys + sub key)</option>
+          </select>
+        </label>
+
+        <!-- Timings dynamic displays -->
+        {#if editingBinding.gesture === "hold"}
+          <label class="field morph-section">
+            <span>Hold Threshold (ms)</span>
+            <input type="number" bind:value={editingBinding.hold_threshold_ms} placeholder="500" />
+            <span class="hint">Minimum duration to keep keys pressed to count as a 'hold'.</span>
+          </label>
+        {/if}
+
+        {#if editingBinding.gesture === "double_tap"}
+          <label class="field morph-section">
+            <span>Double-Tap Interval (ms)</span>
+            <input type="number" bind:value={editingBinding.tap_ms} placeholder="300" />
+            <span class="hint">Maximum millisecond window between key presses to count as a double-tap.</span>
+          </label>
+        {/if}
+
+        <!-- Premium Hotkey Recording Widget -->
+        <div class="recorder-section">
+          <h5>Hotkey Keybind Selection</h5>
+          <div
+            class="recorder-box"
+            class:recording={isRecordingKeys}
+            tabindex="0"
+            role="button"
+            aria-label="Hotkey recorder input"
+            onfocus={() => isRecordingKeys = true}
+            onblur={() => isRecordingKeys = false}
+            onkeydown={handleRecordKeyDown}
+            onkeyup={handleRecordKeyUp}
+          >
+            {#if isRecordingKeys}
+              <div class="pulse-container">
+                <span class="pulse-dot"></span>
+                <span class="recording-text">
+                  {currentlyPressedKeys.length > 0
+                    ? currentlyPressedKeys.join(" + ").replace(/KEY_/g, "")
+                    : "Press your physical shortcut combination now..."}
+                </span>
+              </div>
+            {:else}
+              <span class="instruction-text">
+                {#if editingBinding.keys.length > 0}
+                  <div class="recorded-badges">
+                    {#each editingBinding.keys as k}
+                      <kbd class="kbd-recorder">{k.replace("KEY_", "")}</kbd>
+                    {/each}
+                  </div>
+                  <span class="change-prompt">(Click / Tab here to record a new hotkey combo)</span>
+                {:else}
+                  ⚠️ Click/Focus here to press keys!
+                {/if}
+              </span>
+            {/if}
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" onclick={() => { editingBinding = null; isRecordingKeys = false; }}>Cancel</button>
+        <button class="btn-action primary" onclick={saveBindingModal}>Done</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   @import "./tab.css";
-  .rt-table {
-    width: 100%;
-    border-collapse: collapse;
+
+  .routing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding-bottom: 40px;
+  }
+
+  /* Sub-navigation tabs styling */
+  .sub-nav {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  .sub-btn {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-radius: var(--radius);
+    transition: all 0.15s ease-in-out;
+  }
+
+  .sub-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .sub-btn.active {
+    color: var(--accent2);
+    background: rgba(79, 195, 247, 0.08);
+  }
+
+  /* Header & Title bar */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 8px;
+  }
+
+  .description {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
+  }
+
+  /* Visual grid layout */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  /* Card and Glassmorphism design */
+  .card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    gap: 12px;
+    transition: all 0.2s ease-in-out;
+    background: rgba(26, 31, 46, 0.4);
+  }
+
+  .card:hover {
+    border-color: var(--accent2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+  }
+
+  .card.disabled {
+    opacity: 0.55;
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .card-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.delivery {
+    background: rgba(124, 77, 255, 0.15);
+    color: #b388ff;
+    border: 1px solid rgba(124, 77, 255, 0.3);
+  }
+
+  .badge.gesture {
+    background: rgba(0, 229, 255, 0.15);
+    color: #84ffff;
+    border: 1px solid rgba(0, 229, 255, 0.3);
+  }
+
+  .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     font-size: 12px;
   }
-  .rt-table th {
-    text-align: left;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--border);
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .info-label {
     color: var(--text-muted);
-    font-weight: 600;
   }
-  .rt-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--border);
+
+  .info-val {
+    color: var(--text);
+    text-align: right;
   }
-  .badge {
+
+  .line-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-all;
+  }
+
+  .keys-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  kbd {
     background: var(--surface2);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 1px 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--accent2);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+
+  .card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+
+  /* Empty state */
+  .empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    text-align: center;
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .empty-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  /* Button Overrides */
+  .btn-action {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-action:hover {
+    background: var(--border);
+    border-color: var(--text-muted);
+  }
+
+  .btn-action.primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+  }
+
+  .btn-action.primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-action.small {
+    padding: 4px 8px;
     font-size: 11px;
   }
-  .actions { display: flex; justify-content: flex-end; }
+
+  .btn-action.danger {
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.2);
+  }
+
+  .btn-action.danger:hover {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: #f87171;
+  }
+
+  /* Modal Dialog Glassmorphism style */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    background: #1e2436;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .close-btn:hover {
+    color: var(--text);
+  }
+
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Morph & Nested structures */
+  .morph-section {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .morph-section h5, .processing-toggles h5, .recorder-section h5 {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent2);
+  }
+
+  .processing-toggles {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .checkbox-field input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  .checkbox-field:hover {
+    color: var(--text);
+  }
+
+  /* Hotkey Recording Box */
+  .recorder-section {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .recorder-box {
+    background: rgba(0, 0, 0, 0.25);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+  }
+
+  .recorder-box:hover, .recorder-box:focus {
+    border-color: var(--accent2);
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  .recorder-box.recording {
+    border-color: var(--accent);
+    background: rgba(244, 63, 94, 0.05);
+    border-style: solid;
+    animation: border-pulse 1.5s infinite;
+  }
+
+  @keyframes border-pulse {
+    0%, 100% { border-color: rgba(244, 63, 94, 0.4); }
+    50% { border-color: rgba(244, 63, 94, 1); }
+  }
+
+  .pulse-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: flash 1s infinite;
+  }
+
+  @keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .recording-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .instruction-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .recorded-badges {
+    display: flex;
+    gap: 6px;
+  }
+
+  .kbd-recorder {
+    font-size: 12px;
+    background: var(--accent2);
+    color: #000;
+    border: none;
+    font-weight: 800;
+  }
+
+  .change-prompt {
+    font-size: 10px;
+    color: var(--accent2);
+    opacity: 0.8;
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+
   .btn-save {
     background: var(--accent);
     color: #fff;
     border: none;
     border-radius: var(--radius);
-    padding: 7px 18px;
+    padding: 8px 24px;
     font-weight: 600;
     font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
   }
-  .btn-save:disabled { opacity: 0.4; }
+
+  .btn-save:hover {
+    opacity: 0.9;
+  }
+
+  .btn-save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .font-semibold {
+    font-weight: 600;
+  }
+
+  .mt-2 {
+    margin-top: 8px;
+  }
+
+  /* Keyframe transitions for modals */
+  .animate-fade-in {
+    animation: fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
 </style>
