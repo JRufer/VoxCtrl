@@ -64,6 +64,9 @@ pub fn run() {
         speaking: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
+        monitoring: Arc::new(AtomicBool::new(false)),
+        input_device_index: Arc::new(std::sync::atomic::AtomicU32::new(cfg_data.audio.input_device_index.unwrap_or(u32::MAX))),
+        gain: Arc::new(std::sync::atomic::AtomicU32::new(cfg_data.audio.gain.to_bits())),
         word_count: Arc::new(AtomicU32::new(0)),
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
@@ -73,11 +76,19 @@ pub fn run() {
         tts_handle: Arc::new(Mutex::new(None)),
     });
 
+    let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
+
     {
         let audio_cfg = cfg_data.audio.clone();
-        let recording_flag = app_state.recording.clone();
-        let recorder = voxctr_audio::AudioRecorder::new(audio_cfg, recording_flag, app_state.dynamic_stream.clone());
-        let _ = recorder.run(audio_tx, None, Some(app_state.audio_ready.clone()));
+        let recorder = voxctr_audio::AudioRecorder::new(
+            audio_cfg,
+            app_state.recording.clone(),
+            app_state.monitoring.clone(),
+            app_state.dynamic_stream.clone(),
+            app_state.input_device_index.clone(),
+            app_state.gain.clone(),
+        );
+        let _ = recorder.run(audio_tx, Some(audio_level_tx), Some(app_state.audio_ready.clone()));
     }
 
     // Spawn a coordinator thread to accumulate audio chunks and trigger batch inference
@@ -269,6 +280,14 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // ── Forward audio levels to settings window ───────────────────────
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                while let Ok(level) = audio_level_rx.recv() {
+                    let _ = handle.emit("audio-level", level);
+                }
+            });
+
             // ── System tray ───────────────────────────────────────────────────
             let record_on_icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/record_on.png"))
                 .expect("Failed to load record_on icon");
@@ -432,6 +451,8 @@ pub fn run() {
             show_overlay,
             hide_overlay,
             list_audio_devices,
+            start_monitoring_audio,
+            stop_monitoring_audio,
             check_voice_downloaded,
             download_voice,
             check_model_downloaded,
@@ -529,9 +550,13 @@ mod tests {
             config,
             router,
             recording: Arc::new(AtomicBool::new(false)),
+            processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
             audio_ready: Arc::new(AtomicBool::new(false)),
             dynamic_stream: Arc::new(AtomicBool::new(false)),
+            monitoring: Arc::new(AtomicBool::new(false)),
+            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
+            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
@@ -558,9 +583,13 @@ mod tests {
             config,
             router,
             recording: Arc::new(AtomicBool::new(false)),
+            processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
             audio_ready: Arc::new(AtomicBool::new(false)),
             dynamic_stream: Arc::new(AtomicBool::new(false)),
+            monitoring: Arc::new(AtomicBool::new(false)),
+            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
+            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
@@ -587,9 +616,13 @@ mod tests {
             config,
             router,
             recording: Arc::new(AtomicBool::new(false)),
+            processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
             audio_ready: Arc::new(AtomicBool::new(false)),
             dynamic_stream: Arc::new(AtomicBool::new(false)),
+            monitoring: Arc::new(AtomicBool::new(false)),
+            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
+            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),

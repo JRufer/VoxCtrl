@@ -84,8 +84,10 @@ pub async fn save_config(
     state: State<'_, Arc<AppState>>,
     new_config: AppConfig,
 ) -> Result<(), String> {
-    // Update live dynamic stream state in AppState
+    // Update live dynamic stream state, input device index, and gain in AppState
     state.set_dynamic_stream(new_config.audio.dynamic_stream);
+    state.set_input_device_index(new_config.audio.input_device_index);
+    state.set_gain(new_config.audio.gain);
 
     let mut guard = state.config.lock().await;
     guard.data = new_config;
@@ -219,6 +221,20 @@ pub async fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 // ── Audio devices ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn start_monitoring_audio(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.set_monitoring(true);
+    info!("Live audio monitoring started");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_monitoring_audio(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.set_monitoring(false);
+    info!("Live audio monitoring stopped");
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {

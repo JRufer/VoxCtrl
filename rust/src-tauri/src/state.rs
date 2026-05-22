@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}};
 
 use tokio::sync::Mutex;
 use voxctr_config::Config;
@@ -19,6 +19,12 @@ pub struct AppState {
     pub audio_ready: Arc<AtomicBool>,
     /// Live sync atomic flag for dynamic stream preference
     pub dynamic_stream: Arc<AtomicBool>,
+    /// True when Svelte settings Audio tab is actively monitoring audio level
+    pub monitoring: Arc<AtomicBool>,
+    /// Live input device index, mapped to u32::MAX when None (default system device)
+    pub input_device_index: Arc<AtomicU32>,
+    /// Live gain value, stored as f32 bits
+    pub gain: Arc<AtomicU32>,
 
     /// Total words injected this session
     pub word_count: Arc<std::sync::atomic::AtomicU32>,
@@ -38,7 +44,7 @@ pub struct AppState {
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
 
-    /// TTS playback engine handle
+    /// Playback engine handle
     pub tts_handle: Arc<Mutex<Option<voxctr_tts::TtsEngineHandle>>>,
 }
 
@@ -81,6 +87,34 @@ impl AppState {
 
     pub fn set_dynamic_stream(&self, v: bool) {
         self.dynamic_stream.store(v, Ordering::SeqCst);
+    }
+
+    pub fn is_monitoring(&self) -> bool {
+        self.monitoring.load(Ordering::SeqCst)
+    }
+
+    pub fn set_monitoring(&self, v: bool) {
+        self.monitoring.store(v, Ordering::SeqCst);
+        if !v {
+            let _ = self.audio_tx.send(Vec::new());
+        }
+    }
+
+    pub fn get_input_device_index(&self) -> Option<u32> {
+        let val = self.input_device_index.load(Ordering::SeqCst);
+        if val == u32::MAX { None } else { Some(val) }
+    }
+
+    pub fn set_input_device_index(&self, v: Option<u32>) {
+        self.input_device_index.store(v.unwrap_or(u32::MAX), Ordering::SeqCst);
+    }
+
+    pub fn get_gain(&self) -> f32 {
+        f32::from_bits(self.gain.load(Ordering::SeqCst))
+    }
+
+    pub fn set_gain(&self, v: f32) {
+        self.gain.store(v.to_bits(), Ordering::SeqCst);
     }
 
     pub fn set_recording(&self, v: bool) {

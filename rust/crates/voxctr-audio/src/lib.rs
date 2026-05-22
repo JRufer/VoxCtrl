@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     time::Duration,
@@ -24,19 +24,31 @@ pub struct AudioRecorder {
     config: AudioConfig,
     /// Currently recording (pushed to inference queue)
     recording: Arc<AtomicBool>,
+    /// Currently monitoring (active settings tab VU meter level feed)
+    monitoring: Arc<AtomicBool>,
     /// Live sync dynamic stream preference
     dynamic_stream: Arc<AtomicBool>,
-    /// Gain applied to all samples
-    gain: f32,
+    /// Live input device index, mapped to u32::MAX when None (default system device)
+    input_device_index: Arc<AtomicU32>,
+    /// Live gain value, stored as f32 bits
+    gain: Arc<AtomicU32>,
 }
 
 impl AudioRecorder {
-    pub fn new(config: AudioConfig, recording: Arc<AtomicBool>, dynamic_stream: Arc<AtomicBool>) -> Self {
-        let gain = config.gain;
+    pub fn new(
+        config: AudioConfig,
+        recording: Arc<AtomicBool>,
+        monitoring: Arc<AtomicBool>,
+        dynamic_stream: Arc<AtomicBool>,
+        input_device_index: Arc<AtomicU32>,
+        gain: Arc<AtomicU32>,
+    ) -> Self {
         Self {
             config,
             recording,
+            monitoring,
             dynamic_stream,
+            input_device_index,
             gain,
         }
     }
@@ -64,14 +76,16 @@ impl AudioRecorder {
         audio_ready: Option<Arc<AtomicBool>>,
     ) -> Result<RecorderHandle> {
         let recording = self.recording.clone();
+        let monitoring = self.monitoring.clone();
         let dynamic_stream = self.dynamic_stream.clone();
+        let input_device_index = self.input_device_index.clone();
+        let gain = self.gain.clone();
         let cfg = self.config.clone();
-        let gain = self.gain;
 
         let handle = std::thread::Builder::new()
             .name("voxctr-audio".into())
             .spawn(move || {
-                if let Err(e) = capture_loop(cfg, gain, recording, dynamic_stream, audio_ready, tx, level_tx) {
+                if let Err(e) = capture_loop(cfg, gain, recording, monitoring, dynamic_stream, input_device_index, audio_ready, tx, level_tx) {
                     warn!("Audio capture error: {e}");
                 }
             })
@@ -87,11 +101,11 @@ pub struct RecorderHandle {
 
 // ── Device testing at startup ──────────────────────────────────────────────────
 
-pub fn test_and_detect_active_device(cfg: &AudioConfig) -> Result<cpal::Device> {
+pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Device> {
     let host = cpal::default_host();
     
     // 1. Try the configured input device if it exists
-    if let Some(idx) = cfg.input_device_index {
+    if let Some(idx) = idx_opt {
         if let Ok(mut devices) = host.input_devices() {
             if let Some(device) = devices.nth(idx as usize) {
                 if let Ok(config) = negotiate_config(&device) {
@@ -157,17 +171,22 @@ pub fn test_and_detect_active_device(cfg: &AudioConfig) -> Result<cpal::Device> 
 #[allow(unused_assignments, unused_variables)]
 fn capture_loop(
     cfg: AudioConfig,
-    gain: f32,
+    gain: Arc<AtomicU32>,
     recording: Arc<AtomicBool>,
+    monitoring: Arc<AtomicBool>,
     dynamic_stream: Arc<AtomicBool>,
+    input_device_index: Arc<AtomicU32>,
     audio_ready: Option<Arc<AtomicBool>>,
     tx: Sender<AudioChunk>,
     level_tx: Option<Sender<f32>>,
 ) -> Result<()> {
     let host = cpal::default_host();
 
+    let mut current_idx = input_device_index.load(Ordering::SeqCst);
+    let idx_opt = if current_idx == u32::MAX { None } else { Some(current_idx) };
+
     // Perform startup test to detect active device
-    let device = match test_and_detect_active_device(&cfg) {
+    let mut device = match test_and_detect_active_device(idx_opt) {
         Ok(d) => d,
         Err(e) => {
             warn!("Startup audio device detection failed: {e}. Falling back to default.");
@@ -177,19 +196,22 @@ fn capture_loop(
 
     info!("Using detected active audio device: {}", device.name().unwrap_or_default());
 
-    let hw_config = negotiate_config(&device)?;
-    let hw_rate = hw_config.sample_rate.0;
+    let mut hw_config = negotiate_config(&device)?;
+    let mut hw_rate = hw_config.sample_rate.0;
     info!("Hardware sample rate: {hw_rate} Hz");
 
-    let needs_resample = hw_rate != TARGET_SAMPLE_RATE;
+    let mut needs_resample = hw_rate != TARGET_SAMPLE_RATE;
 
     let mut current_stream: Option<cpal::Stream> = None;
     let mut was_recording = false;
     let mut was_dynamic = dynamic_stream.load(Ordering::SeqCst);
 
     // Initial setup based on current preference
+    let active_init = recording.load(Ordering::SeqCst) || monitoring.load(Ordering::SeqCst);
     if was_dynamic {
-        if let Some(ref ready) = audio_ready {
+        if active_init {
+            // Handled by dynamic loop below
+        } else if let Some(ref ready) = audio_ready {
             ready.store(false, Ordering::SeqCst);
         }
     } else {
@@ -197,10 +219,12 @@ fn capture_loop(
         let tx_inner = tx.clone();
         let level_tx_inner = level_tx.clone();
         let recording_inner = recording.clone();
+        let gain_inner = gain.clone();
         match device.build_input_stream(
             &hw_config,
             move |data: &[f32], _| {
-                let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                let current_gain = f32::from_bits(gain_inner.load(Ordering::SeqCst));
+                let gained: Vec<f32> = data.iter().map(|&s| s * current_gain).collect();
                 if let Some(ref ltx) = level_tx_inner {
                     let rms = rms(&gained);
                     let _ = ltx.send(rms);
@@ -233,14 +257,38 @@ fn capture_loop(
 
     loop {
         let is_recording = recording.load(Ordering::SeqCst);
+        let is_monitoring = monitoring.load(Ordering::SeqCst);
+        let active = is_recording || is_monitoring;
         let is_dynamic = dynamic_stream.load(Ordering::SeqCst);
+        let live_idx = input_device_index.load(Ordering::SeqCst);
+
+        // Detect device change at runtime (live hot-reload!)
+        if live_idx != current_idx {
+            info!("Device index changed from {current_idx} to {live_idx}, hot-reloading audio device...");
+            current_idx = live_idx;
+            let idx_opt = if current_idx == u32::MAX { None } else { Some(current_idx) };
+            match test_and_detect_active_device(idx_opt) {
+                Ok(new_device) => {
+                    if let Ok(new_config) = negotiate_config(&new_device) {
+                        device = new_device;
+                        hw_config = new_config;
+                        hw_rate = hw_config.sample_rate.0;
+                        needs_resample = hw_rate != TARGET_SAMPLE_RATE;
+                        info!("Hot-reload: successfully negotiated new device '{}' ({} Hz)", device.name().unwrap_or_default(), hw_rate);
+                        current_stream = None; // Drop old stream
+                        was_recording = false; // Force rebuild
+                    }
+                }
+                Err(e) => warn!("Hot-reload failed to find functional device for index {current_idx}: {e}"),
+            }
+        }
 
         // 1. Detect dynamic setting change at runtime (live hot-reload!)
         if is_dynamic != was_dynamic {
             info!("Dynamic stream preference changed at runtime to: {is_dynamic}");
             if is_dynamic {
-                // Changed to dynamic: turn off always-on stream if not currently recording
-                if !is_recording {
+                // Changed to dynamic: turn off always-on stream if not currently active
+                if !active {
                     current_stream = None; // Closes device!
                     if let Some(ref ready) = audio_ready {
                         ready.store(false, Ordering::SeqCst);
@@ -253,10 +301,12 @@ fn capture_loop(
                     let tx_inner = tx.clone();
                     let level_tx_inner = level_tx.clone();
                     let recording_inner = recording.clone();
+                    let gain_inner = gain.clone();
                     match device.build_input_stream(
                         &hw_config,
                         move |data: &[f32], _| {
-                            let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                            let current_gain = f32::from_bits(gain_inner.load(Ordering::SeqCst));
+                            let gained: Vec<f32> = data.iter().map(|&s| s * current_gain).collect();
                             if let Some(ref ltx) = level_tx_inner {
                                 let rms = rms(&gained);
                                 let _ = ltx.send(rms);
@@ -292,16 +342,18 @@ fn capture_loop(
 
         // 2. Manage dynamic recording stream lifecycles
         if is_dynamic {
-            if is_recording && !was_recording {
+            if active && !was_recording {
                 info!("Dynamic microphone stream starting (Option A)...");
                 let tx_inner = tx.clone();
                 let level_tx_inner = level_tx.clone();
                 let recording_inner = recording.clone();
+                let gain_inner = gain.clone();
 
                 match device.build_input_stream(
                     &hw_config,
                     move |data: &[f32], _| {
-                        let gained: Vec<f32> = data.iter().map(|&s| s * gain).collect();
+                        let current_gain = f32::from_bits(gain_inner.load(Ordering::SeqCst));
+                        let gained: Vec<f32> = data.iter().map(|&s| s * current_gain).collect();
                         if let Some(ref ltx) = level_tx_inner {
                             let rms = rms(&gained);
                             let _ = ltx.send(rms);
@@ -322,7 +374,9 @@ fn capture_loop(
                     Ok(stream) => {
                         if let Err(e) = stream.play() {
                             warn!("Failed to play dynamic audio stream: {e}");
-                            recording.store(false, Ordering::SeqCst);
+                            if !is_monitoring {
+                                recording.store(false, Ordering::SeqCst);
+                            }
                         } else {
                             current_stream = Some(stream);
                             if let Some(ref ready) = audio_ready {
@@ -334,10 +388,12 @@ fn capture_loop(
                     }
                     Err(e) => {
                         warn!("Failed to build dynamic audio stream: {e}");
-                        recording.store(false, Ordering::SeqCst);
+                        if !is_monitoring {
+                            recording.store(false, Ordering::SeqCst);
+                        }
                     }
                 }
-            } else if !is_recording && was_recording {
+            } else if !active && was_recording {
                 info!("Dynamic microphone stream stopping...");
                 if let Some(ref ready) = audio_ready {
                     ready.store(false, Ordering::SeqCst);

@@ -324,6 +324,7 @@ mod tests {
         let req = crate::backend::TranscribeRequest {
             audio: vec![0.0; 16000],
             language: None,
+            word_timestamps: false,
             initial_prompt: None,
         };
         assert!(backend.transcribe(&req).is_err());

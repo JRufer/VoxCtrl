@@ -33,6 +33,19 @@
   async function toggleRecording() {
     await invoke("toggle_recording");
   }
+
+  let lastTab = activeTab;
+  $effect(() => {
+    const currentTab = activeTab;
+    if (currentTab !== lastTab) {
+      lastTab = currentTab;
+      if ($config?.audio?.dynamic_stream && $status.recording) {
+        invoke("stop_recording").catch((e) => {
+          console.error("Failed to stop recording on activeTab change:", e);
+        });
+      }
+    }
+  });
 </script>
 
 <div class="settings-root">

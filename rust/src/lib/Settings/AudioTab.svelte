@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
 
@@ -10,8 +11,68 @@
   interface AudioDevice { index: number; name: string; }
   let devices = $state<AudioDevice[]>([]);
 
+  // VU Meter States using Svelte 5 Runes
+  let rawLevel = $state(0);
+  let smoothedLevel = $state(0);
+  let peakLevel = $state(0);
+  let peakHoldTime = 0;
+  let unlistenFn = $state<(() => void) | null>(null);
+
+  let rafId: number;
+
+  function updateVisuals() {
+    const target = rawLevel;
+    // Fast attack, slower decay physics
+    if (target > smoothedLevel) {
+      smoothedLevel += (target - smoothedLevel) * 0.45;
+    } else {
+      smoothedLevel += (target - smoothedLevel) * 0.12;
+    }
+
+    // Keep peak level with smooth decay
+    if (smoothedLevel > peakLevel) {
+      peakLevel = smoothedLevel;
+      peakHoldTime = 25; // hold for ~0.4s
+    } else {
+      if (peakHoldTime > 0) {
+        peakHoldTime--;
+      } else {
+        peakLevel = Math.max(0, peakLevel - 0.012);
+      }
+    }
+
+    rafId = requestAnimationFrame(updateVisuals);
+  }
+
   onMount(async () => {
     devices = await invoke<AudioDevice[]>("list_audio_devices");
+    
+    // Start backend microphone monitoring
+    try {
+      await invoke("start_monitoring_audio");
+      unlistenFn = await listen<number>("audio-level", (event) => {
+        rawLevel = event.payload;
+      });
+    } catch (e) {
+      console.error("Failed to start audio monitoring:", e);
+    }
+
+    rafId = requestAnimationFrame(updateVisuals);
+  });
+
+  onDestroy(async () => {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+    }
+    if (unlistenFn) {
+      unlistenFn();
+    }
+    // Stop backend microphone monitoring
+    try {
+      await invoke("stop_monitoring_audio");
+    } catch (e) {
+      console.error("Failed to stop audio monitoring:", e);
+    }
   });
 </script>
 
@@ -36,6 +97,38 @@
         {/each}
       </select>
     </label>
+
+    <!-- Hardware-inspired real-time VU meter -->
+    <div class="vu-meter-container">
+      <div class="vu-meter-info">
+        <span class="vu-label">Microphone Monitor</span>
+        <span class="vu-status-dot" class:active={rawLevel > 0.005}></span>
+        <span class="vu-status-text">{rawLevel > 0.005 ? "Signal Detected" : "Listening..."}</span>
+      </div>
+      <div class="vu-meter-bar-wrapper">
+        <div class="vu-meter-bar">
+          {#each Array(24) as _, i}
+            {@const threshold = i / 24}
+            {@const isActive = smoothedLevel >= threshold}
+            {@const isOrange = i >= 17}
+            <div
+              class="vu-segment"
+              class:active={isActive}
+              class:orange={isOrange}
+            ></div>
+          {/each}
+          
+          <!-- Peak marker line -->
+          {#if peakLevel > 0.01}
+            <div
+              class="vu-peak-marker"
+              style="left: {Math.min(0.99, peakLevel) * 100}%;"
+            ></div>
+          {/if}
+        </div>
+      </div>
+    </div>
+
     <label class="field">
       <span>Dynamic Stream (Open on trigger)</span>
       <input type="checkbox" bind:checked={cfg.audio.dynamic_stream} onchange={markDirty} />
@@ -84,4 +177,92 @@
 <style>
   @import "./tab.css";
   .val { font-size: 12px; color: var(--text-muted); min-width: 36px; text-align: right; }
+
+  .vu-meter-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+    margin: 4px 0 12px 0;
+  }
+
+  .vu-meter-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .vu-label {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .vu-status-dot {
+    width: 6px;
+    height: 6px;
+    background: #444;
+    transition: background 0.15s ease;
+  }
+
+  .vu-status-dot.active {
+    background: #39ff14; /* Neon Acid Green */
+    box-shadow: 0 0 8px #39ff14;
+  }
+
+  .vu-status-text {
+    color: var(--text);
+    opacity: 0.7;
+    margin-left: auto;
+  }
+
+  .vu-meter-bar-wrapper {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 3px;
+    box-sizing: border-box;
+  }
+
+  .vu-meter-bar {
+    position: relative;
+    display: flex;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+  }
+
+  .vu-segment {
+    flex: 1;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    transition: background 0.05s ease;
+  }
+
+  /* Neon Acid Green for safe range */
+  .vu-segment.active {
+    background: #39ff14;
+    box-shadow: 0 0 4px rgba(57, 255, 20, 0.3);
+  }
+
+  /* Signal Orange for warning range */
+  .vu-segment.active.orange {
+    background: #ff6d00;
+    box-shadow: 0 0 4px rgba(255, 109, 0, 0.5);
+  }
+
+  .vu-peak-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: #ffab00;
+    box-shadow: 0 0 6px #ffab00;
+    pointer-events: none;
+    transition: left 0.05s linear;
+  }
 </style>
