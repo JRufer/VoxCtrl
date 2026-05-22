@@ -58,6 +58,17 @@
   </div>
 
   <div class="field-group">
+    <h3>Custom Dictionary</h3>
+    <p class="hint">Provide a comma-separated list of words (e.g. names or jargon like "Waylin, Rufer, Enola, Kenz") that are hard to spell. The transcription process will correct these in the final text.</p>
+    <textarea 
+      class="custom-vocab-input"
+      placeholder="e.g. Waylin, Rufer, Enola, Kenz"
+      value={customVocabString}
+      oninput={onCustomVocabChange}
+    ></textarea>
+  </div>
+
+  <div class="field-group">
     <h3>Snippets</h3>
     <p class="hint">Type a trigger word → it expands to the replacement text.</p>
 
@@ -77,58 +88,96 @@
       <button class="btn-add" onclick={addSnippet}>Add</button>
     </div>
   </div>
-
-  <div class="field-group">
-    <h3>Custom Dictionary</h3>
-    <p class="hint">Provide a comma-separated list of words (e.g. names or jargon like "Waylin, Rufer, Enola, Kenz") that are hard to spell. The transcription process will correct these in the final text.</p>
-    <textarea 
-      class="custom-vocab-input"
-      placeholder="e.g. Waylin, Rufer, Enola, Kenz"
-      value={customVocabString}
-      oninput={onCustomVocabChange}
-    ></textarea>
-  </div>
 </section>
 
 <style>
   @import "./tab.css";
+
   .snippet-row {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 13px;
   }
-  .snippet-val { flex: 1; color: var(--text-muted); }
+
+  .snippet-val {
+    flex: 1;
+    color: var(--text-muted);
+  }
+
   .btn-remove {
     background: transparent;
     border: none;
     color: var(--text-muted);
     font-size: 12px;
     padding: 0 4px;
+    cursor: pointer;
+    transition: color 0.15s ease;
   }
-  .btn-remove:hover { color: var(--accent); }
+
+  .btn-remove:hover {
+    color: var(--accent);
+  }
+
   .snippet-add {
     display: flex;
     align-items: center;
     gap: 6px;
     margin-top: 4px;
   }
-  .snippet-add input { flex: 1; }
+
+  .snippet-add input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 13px;
+    min-width: 0;
+    outline: none;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+  }
+
+  .snippet-add input:focus {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+  }
+
+  .snippet-add input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.5;
+  }
+
   .btn-add {
     background: var(--accent);
     color: #fff;
     border: none;
-    border-radius: 4px;
-    padding: 4px 10px;
+    border-radius: var(--radius);
+    padding: 8px 16px;
     font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
+
+  .btn-add:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+
+  .btn-add:active {
+    transform: translateY(0);
+  }
+
   .custom-vocab-input {
     width: 100%;
     min-height: 80px;
-    background: var(--bg-input, #2e2e2e);
-    color: var(--text-color, #ffffff);
-    border: 1px solid var(--border-color, #444);
-    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     padding: 8px 12px;
     font-family: inherit;
     font-size: 13px;
@@ -136,8 +185,16 @@
     margin-top: 8px;
     outline: none;
     box-sizing: border-box;
+    transition: all 0.2s ease;
   }
+
   .custom-vocab-input:focus {
-    border-color: var(--accent);
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+  }
+
+  .custom-vocab-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.5;
   }
 </style>
