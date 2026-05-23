@@ -265,6 +265,13 @@ pub fn run() {
 
     // ── Build Tauri app ───────────────────────────────────────────────────────
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            tracing::info!("Single instance trigger: argv={:?}, cwd={:?}", argv, cwd);
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
@@ -289,22 +296,22 @@ pub fn run() {
             });
 
             // ── System tray ───────────────────────────────────────────────────
-            let record_on_icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/record_on.png"))
+            let record_on_icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/record_on.png"))
                 .expect("Failed to load record_on icon");
-            let record_off_icon = tauri::image::Image::from_bytes(include_bytes!("../../../assets/record_off.png"))
+            let record_off_icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/record_off.png"))
                 .expect("Failed to load record_off icon");
             let processing_frames = [
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_1.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_1.png"))
                     .expect("Failed to load processing_1 icon"),
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_2.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_2.png"))
                     .expect("Failed to load processing_2 icon"),
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_3.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_3.png"))
                     .expect("Failed to load processing_3 icon"),
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_4.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_4.png"))
                     .expect("Failed to load processing_4 icon"),
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_5.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_5.png"))
                     .expect("Failed to load processing_5 icon"),
-                tauri::image::Image::from_bytes(include_bytes!("../../../assets/processing_6.png"))
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_6.png"))
                     .expect("Failed to load processing_6 icon"),
             ];
             let tray_icon = record_off_icon.clone();

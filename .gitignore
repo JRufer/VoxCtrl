@@ -36,6 +36,7 @@ Thumbs.db
 /target/
 **/target/
 **/*.rs.bk
+.cargo_home/
 
 # Node
 node_modules/
