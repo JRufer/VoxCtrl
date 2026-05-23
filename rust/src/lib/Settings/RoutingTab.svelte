@@ -714,6 +714,7 @@
             tabindex="0"
             role="button"
             aria-label="Hotkey recorder input"
+            onclick={() => isRecordingKeys = true}
             onfocus={() => isRecordingKeys = true}
             onblur={() => isRecordingKeys = false}
             onkeydown={handleRecordKeyDown}
