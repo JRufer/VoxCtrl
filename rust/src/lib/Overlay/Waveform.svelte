@@ -58,14 +58,12 @@
       <span class="info-text">
         {#if $status.processing}
           PROCESSING...
-        {:else if recording && !isReady}
-          CONNECTING...
         {:else}
-          MIC
+          🎙️ MIC
         {/if}
       </span>
       <span class="sep">·</span>
-      <span class="info-text">
+      <span class="info-subtext">
         {#if $status.processing}
           thinking with AI
         {:else if recording && !isReady}
@@ -76,8 +74,8 @@
       </span>
     </div>
     {#if recording || $status.processing}
-      <div class="target-pill" style="animation: pill-in 0.25s ease both;">
-        <span class="arrow">→</span>
+      <div class="target-pill">
+        <span class="arrow">🎯</span>
         <span class="pill-text">{targetLabel}</span>
       </div>
     {/if}
@@ -98,7 +96,7 @@
           class:processing={$status.processing}
           style="
             height: {h}px;
-            --glow: {((recording && isReady) || $status.processing) ? Math.round(env * 18) : 0}px;
+            --glow: {((recording && isReady) || $status.processing) ? Math.round(env * 16) : 0}px;
             --opacity: {((recording && isReady) || $status.processing) ? (0.45 + env * 0.55) : 0.18};
           "
         ></div>
@@ -109,20 +107,25 @@
 
 <style>
   .wave-widget {
-    width: 580px;
-    background: linear-gradient(160deg, #04111f 0%, #071828 100%);
-    border: 1px solid rgba(0, 180, 230, 0.18);
-    border-radius: 18px;
-    padding: 14px 20px 18px;
+    width: 540px;
+    background: linear-gradient(160deg, #0d0e12 0%, #08090b 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px; /* Option C */
+    padding: 14px 20px 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     box-shadow:
-      0 0 0 1px rgba(0, 200, 255, 0.06),
-      0 8px 40px rgba(0, 0, 0, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      0 10px 40px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
     pointer-events: none;
     user-select: none;
+    animation: zoom-in 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.25) both;
+  }
+
+  @keyframes zoom-in {
+    from { opacity: 0; transform: scale(0.95) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
   }
 
   /* ── Info bar ────────────────────────────────── */
@@ -130,75 +133,80 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 18px;
+    height: 20px;
   }
 
   .info-left {
     display: flex;
     align-items: center;
-    gap: 7px;
-    color: rgba(140, 200, 230, 0.65);
+    gap: 8px;
+    color: var(--color-obsidian-300);
     font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
+    font-weight: 750;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
+    font-family: 'Outfit', 'Inter', sans-serif;
   }
 
   .mic-dot {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: #00e5c0;
-    box-shadow: 0 0 6px #00e5c0;
+    background: var(--color-accent-tangerine);
+    box-shadow: 0 0 8px var(--color-accent-tangerine);
     flex-shrink: 0;
   }
 
   .mic-dot.initializing {
-    background: #ff9100;
-    box-shadow: 0 0 8px #ff9100;
+    background: #f59e0b;
+    box-shadow: 0 0 8px #f59e0b;
     animation: pulse-orange 0.6s ease-in-out infinite alternate;
   }
 
   .mic-dot.processing {
-    background: #00e5ff;
-    box-shadow: 0 0 10px #00e5ff;
-    animation: pulse-cyan 0.7s ease-in-out infinite alternate;
+    background: var(--color-accent-blue);
+    box-shadow: 0 0 8px var(--color-accent-blue);
+    animation: pulse-cyan 0.6s ease-in-out infinite alternate;
   }
 
   @keyframes pulse-orange {
-    from { opacity: 0.4; transform: scale(0.95); }
-    to { opacity: 1.0; transform: scale(1.25); }
-  }
-
-  @keyframes pulse-cyan {
-    from { opacity: 0.45; transform: scale(0.95); }
+    from { opacity: 0.4; transform: scale(0.9); }
     to { opacity: 1.0; transform: scale(1.3); }
   }
 
+  @keyframes pulse-cyan {
+    from { opacity: 0.4; transform: scale(0.9); }
+    to { opacity: 1.0; transform: scale(1.3); }
+  }
+
+  .info-subtext {
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
   .sep {
-    opacity: 0.4;
+    color: rgba(255, 255, 255, 0.15);
   }
 
   /* Target pill — top-right */
   .target-pill {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: 1.5px solid rgba(0, 195, 255, 0.55);
-    border-radius: 20px;
-    padding: 2px 11px 2px 9px;
-    color: #4dd9f7;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 99px;
+    padding: 2.5px 12px;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(0, 195, 255, 0.2);
+    font-family: 'Outfit', 'Inter', sans-serif;
   }
 
   .arrow {
-    font-size: 11px;
-    opacity: 0.8;
+    font-size: 10px;
   }
 
   .pill-text {
@@ -206,17 +214,13 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  @keyframes pill-in {
-    from { opacity: 0; transform: translateX(6px); }
-    to   { opacity: 1; transform: translateX(0); }
+    color: var(--color-obsidian-300);
   }
 
   /* ── Wave stage ──────────────────────────────── */
   .wave-stage {
     position: relative;
-    height: 80px;
+    height: 70px;
     display: flex;
     align-items: center;
   }
@@ -230,8 +234,8 @@
     height: 1px;
     background: repeating-linear-gradient(
       to right,
-      rgba(0, 180, 220, 0.35) 0px,
-      rgba(0, 180, 220, 0.35) 3px,
+      rgba(255, 255, 255, 0.06) 0px,
+      rgba(255, 255, 255, 0.06) 3px,
       transparent 3px,
       transparent 8px
     );
@@ -244,7 +248,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 2.5px;
+    gap: 3px;
     width: 100%;
     height: 100%;
     z-index: 1;
@@ -252,25 +256,24 @@
 
   .bar {
     width: 3px;
-    border-radius: 2px;
-    background: #00c8f0;
+    border-radius: 99px;
+    background: var(--color-accent-tangerine);
     opacity: var(--opacity, 0.18);
-    /* Symmetric bars — grow from centre */
-    transition: height 0.06s cubic-bezier(0.4, 0, 0.2, 1),
+    transition: height 0.06s cubic-bezier(0.175, 0.885, 0.32, 1.2),
                 opacity 0.06s ease;
     min-height: 2px;
   }
 
   .bar.active {
     box-shadow:
-      0 0 var(--glow) rgba(0, 200, 240, 0.9),
-      0 0 calc(var(--glow) * 2) rgba(0, 200, 240, 0.35);
+      0 0 var(--glow) var(--color-accent-tangerine),
+      0 0 calc(var(--glow) * 1.5) rgba(255, 107, 53, 0.3);
   }
 
   .bar.processing {
-    background: linear-gradient(to bottom, #00e5ff, #7c4dff);
+    background: var(--color-accent-blue);
     box-shadow:
-      0 0 var(--glow) rgba(124, 77, 255, 0.9),
-      0 0 calc(var(--glow) * 2) rgba(0, 229, 255, 0.35);
+      0 0 var(--glow) var(--color-accent-blue),
+      0 0 calc(var(--glow) * 1.5) rgba(56, 189, 248, 0.3);
   }
 </style>

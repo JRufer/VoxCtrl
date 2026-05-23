@@ -17,9 +17,11 @@
     "@tauri-apps/plugin-shell": "^2"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5",
+    "@sveltejs/vite-plugin-svelte": "^4",
+    "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2",
     "svelte": "^5",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5",
     "vite": "^5"
   }
