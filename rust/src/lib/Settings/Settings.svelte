@@ -98,9 +98,9 @@
         >
           {#if $status.recording}
             <span class="pulse-ring"></span>
-            <span class="btn-text">🛑 Stop Session</span>
+            <span class="btn-text">🛑 Stop</span>
           {:else}
-            <span class="btn-text">🎙️ Record Speech</span>
+            <span class="btn-text">🎙️ Record</span>
           {/if}
         </button>
       </div>
@@ -155,11 +155,11 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    width: 170px;
+    width: 135px;
     background: var(--color-obsidian-900);
     border-right: 1px solid var(--border);
     flex-shrink: 0;
-    padding: 20px 8px;
+    padding: 20px 6px;
     z-index: 10;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
   }
@@ -167,18 +167,20 @@
   .brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 6px 10px 24px 10px;
+    gap: 8px;
+    padding: 6px 4px 16px 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
     margin-bottom: 16px;
+    white-space: nowrap;
   }
 
   .brand-logo {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     object-fit: contain;
     filter: drop-shadow(0 2px 8px rgba(255, 107, 53, 0.3));
     animation: floating 4s ease-in-out infinite;
+    flex-shrink: 0;
   }
 
   @keyframes floating {
@@ -189,22 +191,26 @@
   .brand-text {
     display: flex;
     flex-direction: column;
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .brand-name {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 850;
     color: #fff;
     letter-spacing: -0.5px;
     line-height: 1.1;
+    white-space: nowrap;
   }
 
   .brand-tag {
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 700;
     color: var(--color-accent-blue);
-    letter-spacing: 0.15em;
+    letter-spacing: 0.12em;
     margin-top: 1px;
+    white-space: nowrap;
   }
 
   .sidebar-nav {
@@ -220,11 +226,11 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 10px;
+    gap: 8px;
+    padding: 8px 6px;
     border-radius: var(--radius);
     color: var(--color-obsidian-300);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     text-align: left;
     transition: var(--transition-snappy-fast);
@@ -248,7 +254,7 @@
   }
 
   .nav-icon {
-    font-size: 15px;
+    font-size: 14px;
     transition: transform 0.2s var(--ease-spring-out);
   }
 
@@ -277,10 +283,10 @@
     background: var(--color-obsidian-950);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 8px 6px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     transition: var(--transition-snappy);
     box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
   }
@@ -293,19 +299,21 @@
   .status-header {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     align-items: flex-start;
+    white-space: nowrap;
   }
 
   .status-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
+    white-space: nowrap;
   }
 
   .status-dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: var(--color-obsidian-300);
     transition: var(--transition-snappy-fast);
@@ -328,9 +336,10 @@
   }
 
   .status-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--color-obsidian-300);
+    white-space: nowrap;
   }
 
   .status-panel.recording .status-label {
@@ -338,20 +347,21 @@
   }
 
   .word-count {
-    font-size: 10px;
+    font-size: 9px;
     color: rgba(255, 255, 255, 0.3);
     font-weight: 600;
+    white-space: nowrap;
   }
 
   /* Custom Spring Record CTA Button */
   .btn-record {
     position: relative;
     width: 100%;
-    padding: 8px 6px;
+    padding: 6px 4px;
     border-radius: var(--radius);
     background: rgba(255, 107, 53, 0.08);
     color: var(--color-accent-tangerine);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 750;
     text-align: center;
     border: 1px solid rgba(255, 107, 53, 0.2);
