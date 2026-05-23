@@ -17,6 +17,7 @@ VoxCtr uses OpenAI's Whisper model (via native CPU/GPU accelerated `whisper-rs`)
 * **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, or double-tap gestures directly to any keyboard.
 * **DBus Dictation Service**: Exposes `ai.voxctl.Dictation` on the Linux session bus, letting you script recording states or display statistics in status bars (like Waybar or polybar).
 * **Neural Text-to-Speech (TTS)**: Built-in local neural voice feedback powered by Piper, with automatic local package installation and a voice downloader interface.
+* **Intelligent Post-Processing & Ollama**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional **local Ollama integration** (supporting Llama 3.2, Phi-3, or Mistral) for real-time grammar correction, tone rewriting, or custom formatting.
 
 ---
 
@@ -63,6 +64,12 @@ Below are the 9 target types supported by VoxCtr and what they are used for:
                   ┌──────────────────────────────┐
                   │     Output Target Router     │
                   │      (targets.toml)          │
+                  └───────┬───────┬────────┬─────┘
+                          │       │        │
+                          ▼       ▼        ▼
+                  ┌──────────────────────────────┐
+                  │  Optional AI Post-processing │
+                  │  (Filler Removal / Ollama)   │
                   └───────┬───────┬────────┬─────┘
                           │       │        │
             ┌─────────────┘       │        └─────────────┐
