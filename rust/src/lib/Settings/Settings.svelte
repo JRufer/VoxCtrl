@@ -155,11 +155,11 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    width: 220px;
+    width: 170px;
     background: var(--color-obsidian-900);
     border-right: 1px solid var(--border);
     flex-shrink: 0;
-    padding: 20px 12px;
+    padding: 20px 8px;
     z-index: 10;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
   }
@@ -221,13 +221,14 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 14px;
+    padding: 8px 10px;
     border-radius: var(--radius);
     color: var(--color-obsidian-300);
     font-size: 13px;
     font-weight: 600;
     text-align: left;
     transition: var(--transition-snappy-fast);
+    white-space: nowrap;
   }
 
   .nav-btn:hover {
@@ -291,8 +292,9 @@
 
   .status-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
   }
 
   .status-indicator {
@@ -345,7 +347,7 @@
   .btn-record {
     position: relative;
     width: 100%;
-    padding: 8px 12px;
+    padding: 8px 6px;
     border-radius: var(--radius);
     background: rgba(255, 107, 53, 0.08);
     color: var(--color-accent-tangerine);
@@ -356,6 +358,7 @@
     box-shadow: 0 2px 6px rgba(255, 107, 53, 0.05);
     transition: var(--transition-snappy-fast);
     overflow: hidden;
+    white-space: nowrap;
   }
 
   .btn-record:hover {
