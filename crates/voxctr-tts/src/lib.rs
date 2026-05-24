@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use tracing::{debug, info, warn};
 use voxctr_config::{TtsConfig, TtsEngine};
@@ -135,7 +135,15 @@ impl TtsEngineWorker {
 
     fn speak_one(&self, u: &Utterance) -> Result<()> {
         match self.config.engine {
-            TtsEngine::Piper => self.speak_piper(u),
+            TtsEngine::Piper => {
+                match self.speak_piper(u) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        warn!("Piper TTS failed or not found: {e}. Falling back to Espeak-ng...");
+                        self.speak_espeak(u)
+                    }
+                }
+            }
             TtsEngine::Espeak => self.speak_espeak(u),
         }
     }

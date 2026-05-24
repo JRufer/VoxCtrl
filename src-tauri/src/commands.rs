@@ -126,6 +126,16 @@ pub async fn save_targets(
     let router = state.router.lock().await;
     router.reload(targets).await;
     info!("Targets saved and router reloaded");
+
+    // Dynamically spawn new FIFO response pipe listeners if TTS is active
+    let tts_handle_opt = {
+        let guard = state.tts_handle.lock().await;
+        guard.clone()
+    };
+    if let Some(tts) = tts_handle_opt {
+        state.spawn_fifo_responders(tts).await;
+    }
+
     Ok(())
 }
 

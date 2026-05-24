@@ -6,7 +6,7 @@ VoxCtl ships a built-in **Model Context Protocol (MCP)** server that exposes the
 
 ## Overview
 
-When the MCP server is enabled, VoxCtl listens on a Unix domain socket and presents three tools:
+When the MCP server is enabled, VoxCtl listens on a local transport and presents three tools:
 
 | Tool | What it does |
 |---|---|
@@ -31,10 +31,11 @@ Agent → transcribe_voice()  → next turn …
 | Package | Purpose | Install |
 |---|---|---|
 | `piper` | Neural TTS engine | `yay -S piper-tts` or [piper releases](https://github.com/rhasspy/piper/releases) |
-| `aplay` | PCM audio playback | `sudo pacman -S alsa-utils` |
-| `socat` | Stdio ↔ Unix socket bridge (Claude Desktop) | `sudo pacman -S socat` |
+| `aplay` | PCM audio playback (Linux) | `sudo pacman -S alsa-utils` |
+| `socat` | Stdio ↔ Unix socket bridge (Claude Desktop Linux) | `sudo pacman -S socat` |
 
-`espeak-ng` can be used as a fallback if Piper is not installed:
+**Automatic Fallback Engine**:
+`espeak-ng` serves as an automatic fallback when the configured `piper` engine fails or its local ONNX voice models are missing. To ensure fallback functions correctly, install `espeak-ng`:
 
 ```bash
 sudo pacman -S espeak-ng
@@ -42,10 +43,10 @@ sudo pacman -S espeak-ng
 
 ### Voice models
 
-Voice models are downloaded from inside the app. Go to **Settings → Voice Output**, select a voice from the picker, and click **⬇ Download**. Models are stored in:
+Voice models are downloaded from inside the app. Go to **Settings → Voice Output**, select a voice from the picker, and click **⬇ Download**. Models are stored locally in:
 
 ```
-~/.local/share/voxctl/voices/
+~/.local/share/voxctl/piper-voices/
 ```
 
 ---
@@ -57,10 +58,12 @@ Voice models are downloaded from inside the app. Go to **Settings → Voice Outp
 1. Open **Settings → AI**
 2. Scroll to the **MCP Server** section
 3. Toggle **"Enable MCP Server"**
-4. Note the socket path shown (default: `/tmp/voxctl-mcp.sock`)
-5. Optionally click **"Register in Claude Desktop"** to auto-configure Claude Desktop
+4. The server will bind to the standard socket/pipe path shown in the settings window.
+5. Optionally click **"Register in Claude Desktop"** to auto-configure Claude Desktop (Linux).
 
 ### Via config.json
+
+Add the `mcp` config block to your active `config.json` configuration file located at `~/.config/voxctl/config.json`:
 
 ```json
 {
@@ -71,19 +74,24 @@ Voice models are downloaded from inside the app. Go to **Settings → Voice Outp
 }
 ```
 
-The server starts automatically when the app launches if `mcp_server_enabled` is `true`.
+The server starts automatically when the app launches if `server_enabled` is `true`.
 
 ---
 
 ## Transport
 
-The server listens on a **Unix domain socket**:
+The transport layer is platform-dependent:
 
-```
-/tmp/voxctl-mcp.sock
-```
+* **Linux**: A **Unix domain socket** located at:
+  ```
+  /tmp/voxctl-mcp.sock
+  ```
+* **Windows**: A **Named Pipe** located at:
+  ```
+  \\.\pipe\voxctl-mcp
+  ```
 
-Each connection gets its own daemon thread. The protocol is newline-delimited JSON-RPC 2.0: one JSON object per line, terminated with `\n`.
+Each connection is spawned as an asynchronous `tokio` task. The protocol is newline-delimited JSON-RPC 2.0: one JSON object per line, terminated with `\n`.
 
 ---
 
@@ -169,9 +177,9 @@ Opens the microphone and returns a transcript when speech ends.
 
 **Behaviour notes**
 
-- While recording, the recording overlay is always shown (regardless of `show_overlay` config) — the user always has a visual indicator that the mic is live.
-- The microphone is released automatically once VAD detects silence or `timeout_seconds` elapses.
-- VoxCtl's full post-processing pipeline is applied before the transcript is returned.
+* While recording, the active waveform or recording overlay is shown — the user always has a visual indicator that the mic is live.
+* The microphone is released automatically once VAD detects silence or `timeout_seconds` elapses.
+* VoxCtl's full post-processing pipeline (including Ollama formatting/cleaning if enabled) is applied before the transcript is returned.
 
 ---
 
@@ -213,10 +221,10 @@ Queues text for playback using the configured TTS voice.
 
 **Behaviour notes**
 
-- Returns as soon as the text is queued — does not block until playback finishes.
-- If `tts_response_overlay` is enabled, a teal overlay is displayed while TTS plays.
-- The user can interrupt playback at any time with the configured TTS stop key (default: `Escape`).
-- If Piper is not installed or the voice model is missing, `espeak-ng` is used as fallback.
+* Returns as soon as the text is queued — does not block until playback finishes.
+* If `response_overlay` is enabled, a visual speaking overlay is displayed while TTS plays.
+* The user can interrupt playback at any time with the configured TTS stop key (default: `Escape`).
+* If `piper` is not installed, fails to spawn, or its ONNX voice files are missing, the system automatically falls back to speaking via `espeak-ng`.
 
 **Error — missing `text` argument**
 
@@ -276,7 +284,7 @@ The `text` field is a JSON-encoded object:
 
 ---
 
-## Connecting: Claude Desktop
+## Connecting: Claude Desktop (Linux)
 
 ### One-click registration
 
@@ -312,8 +320,10 @@ Restart Claude Desktop. The tools `transcribe_voice`, `speak_text`, and `get_sta
 ```python
 import socket
 import json
+import platform
 
 SOCK = "/tmp/voxctl-mcp.sock"
+PIPE = r"\\.\pipe\voxctl-mcp"
 
 def rpc(sock, method, params=None, rpc_id=1):
     req = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params or {}}
@@ -328,25 +338,27 @@ def rpc(sock, method, params=None, rpc_id=1):
             break
     return json.loads(data.split(b"\n")[0])
 
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-    s.connect(SOCK)
-
-    # Handshake
-    rpc(s, "initialize")
-    s.sendall((json.dumps({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}) + "\n").encode())
-
-    # Ask the user a question
-    rpc(s, "tools/call", {"name": "speak_text", "arguments": {"text": "What would you like to do?"}}, rpc_id=2)
-
-    # Record the reply
-    resp = rpc(s, "tools/call", {"name": "transcribe_voice", "arguments": {"timeout_seconds": 15}}, rpc_id=3)
-    transcript = resp["result"]["content"][0]["text"]
-    print("User said:", transcript)
+# Linux/Unix connection example
+if platform.system() != "Windows":
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(SOCK)
+        
+        # Handshake
+        rpc(s, "initialize")
+        s.sendall((json.dumps({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}) + "\n").encode())
+    
+        # Ask the user a question
+        rpc(s, "tools/call", {"name": "speak_text", "arguments": {"text": "What would you like to do?"}}, rpc_id=2)
+    
+        # Record the reply
+        resp = rpc(s, "tools/call", {"name": "transcribe_voice", "arguments": {"timeout_seconds": 15}}, rpc_id=3)
+        transcript = resp["result"]["content"][0]["text"]
+        print("User said:", transcript)
 ```
 
 ---
 
-## Connecting: Shell / socat
+## Connecting: Shell / socat (Linux)
 
 ```bash
 # One-shot: list tools
@@ -359,13 +371,15 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 
 ## Response Loopback (FIFO pipe)
 
-For agents that generate responses to a named FIFO, VoxCtl can read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
+For agents that generate responses to a named FIFO, VoxCtl can dynamically read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
 
 ### How it works
 
-1. The agent writes its response text to a named FIFO.
-2. `ResponseListener` (a daemon thread) reads each line and passes it to `TTSEngine.speak()`.
-3. The TTS overlay appears while playback continues.
+1. The user configures an output target specifying a `response_pipe` path.
+2. The Tauri application spawns an asynchronous `run_fifo_responder` task that watches this FIFO file.
+3. When the agent writes its response text to the FIFO, VoxCtl reads each line and pushes it to the TTS Engine worker queue.
+4. Playback proceeds automatically, showing the visual speaking overlay.
+5. The task automatically handles agent disconnects (EOF) and will reconnect on the next session without restarting VoxCtl.
 
 ### Configuration in `targets.toml`
 
@@ -380,22 +394,6 @@ post_processing = "none"
 append_newline = true
 ```
 
-### Agent-side setup
-
-```bash
-# Create both FIFOs
-mkfifo /tmp/my-agent.in /tmp/my-agent.out
-
-# Agent reads commands from .in, writes responses to .out
-while true; do
-  read -r cmd < /tmp/my-agent.in
-  response=$(my_llm_cli "$cmd")
-  echo "$response" > /tmp/my-agent.out
-done
-```
-
-Each line written to `response_pipe` is treated as a separate TTS utterance. Empty lines are ignored. The listener re-opens the FIFO on EOF so the agent can restart without restarting VoxCtl.
-
 ---
 
 ## TTS Configuration
@@ -407,23 +405,26 @@ All TTS and MCP settings live in `~/.config/voxctl/config.json` and in **Setting
 | `tts.enabled` | `bool` | `false` | Master TTS on/off switch |
 | `tts.engine` | `string` | `"piper"` | `"piper"` or `"espeak"` |
 | `tts.voice` | `string` | `"en-us-lessac-medium"` | Voice ID from the catalog |
-| `tts.stop_key` | `string[]` | `["KEY_ESCAPE"]` | evdev key(s) to stop TTS playback |
-| `tts.response_overlay` | `bool` | `true` | Show teal overlay while TTS plays |
+| `tts.stop_key` | `string[]` | `["KEY_ESCAPE"]` | Hotkeys to stop TTS playback |
+| `tts.response_overlay` | `bool` | `true` | Show speaking overlay while TTS plays |
 | `mcp.server_enabled` | `bool` | `false` | Start the MCP server on launch |
 | `mcp.record_timeout` | `number` | `15.0` | Default recording timeout in seconds |
 
 ### Available voices
 
-| Voice ID | Language | Quality | Size |
+| Voice ID | Language | Quality | Sample Rate |
 |---|---|---|---|
-| `en-us-lessac-medium` | US English | Medium | ~55 MB |
-| `en-us-ryan-medium` | US English | Medium | ~55 MB |
-| `en-us-ryan-high` | US English | High | ~130 MB |
-| `en-us-amy-low` | US English | Low | ~5 MB |
-| `en-us-joe-medium` | US English | Medium | ~55 MB |
-| `en-us-kusal-medium` | US English | Medium | ~55 MB |
-| `en-us-danny-low` | US English | Low | ~5 MB |
-| `en-gb-alan-low` | GB English | Low | ~5 MB |
+| `en-us-libritts-high` | US English | High | 22050 Hz |
+| `en-us-amy-low` | US English | Low | 16000 Hz |
+| `en-us-kathleen-low` | US English | Low | 16000 Hz |
+| `en-gb-southern_english_female-low` | GB English | Low | 16000 Hz |
+| `en-us-ryan-high` | US English | High | 22050 Hz |
+| `en-us-ryan-medium` | US English | Medium | 22050 Hz |
+| `en-us-ryan-low` | US English | Low | 16000 Hz |
+| `en-us-lessac-medium` | US English | Medium | 16000 Hz |
+| `en-us-lessac-low` | US English | Low | 16000 Hz |
+| `en-us-danny-low` | US English | Low | 16000 Hz |
+| `en-gb-alan-low` | GB English | Low | 16000 Hz |
 
 Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download**.
 
@@ -431,28 +432,27 @@ Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download
 
 ## MCP Server Internals
 
-### Socket path
+### Socket and pipe paths
 
-```
-/tmp/voxctl-mcp.sock
-```
+* **Linux**: `/tmp/voxctl-mcp.sock`
+* **Windows**: `\\.\pipe\voxctl-mcp`
 
 ### Threading model
 
-- One `threading.Thread` accepts incoming connections in a loop.
-- Each accepted connection spawns a short-lived daemon thread that reads newline-delimited JSON, dispatches, and writes the response.
-- The `transcribe_voice` handler blocks its connection thread while waiting for the transcript; other connections continue to be served concurrently.
+* Spawns an asynchronous transport listener loop via `tokio::spawn` upon application startup if enabled in settings.
+* Each incoming connection spawns its own async tokio task (`tokio::spawn`), enabling fully non-blocking handling of concurrent client requests.
+* The `transcribe_voice` handler operates asynchronously: other connections can continue to list status or write spoken text without being blocked.
 
 ### Recording synchronisation
 
-`transcribe_voice` works by:
+`transcribe_voice` is handled by the shared atomic `AppState` structure:
 
-1. Scheduling `on_press('mcp')` on the Qt main thread via `QTimer.singleShot`.
-2. Starting an auto-stop thread that calls `on_release('mcp')` after `timeout_seconds`.
-3. Blocking on a `queue.Queue.get(timeout=timeout+5)`.
-4. The main app's `_on_text_injected` callback puts every transcription result into this queue.
-
-This means only one `transcribe_voice` call can be in flight at a time per VoxCtl instance. Concurrent calls from multiple clients will queue at the recording controller.
+1. The tool handler locks and clears `last_text` (a thread-safe Mutex-protected string representing the latest transcription result).
+2. It sets the `recording` atomic boolean to `true`, which immediately triggers the active recording overlays in the Tauri/Svelte frontend.
+3. A background timer task is spawned that sleeps for `timeout_seconds` and automatically flips `recording` back to `false` (and feeds a sentinel empty buffer to the audio channel to flush the VAD processor).
+4. The tool task polls `self.is_recording()` at 50ms intervals until the recording session closes (triggered by the timer or manual user stop).
+5. Once recording ends, the task polls the `last_text` buffer for up to 3.0 seconds (60 iterations × 50ms) to allow the local Whisper.cpp or Moonshine inference worker thread to compile the waveform.
+6. The resulting transcription text is packaged into standard MCP JSON-RPC format and returned. If no speech is recorded or the buffer is blank, `(no speech detected)` is returned.
 
 ---
 
@@ -468,18 +468,18 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 
 **TTS plays but no audio**
 
-- Check that `aplay` is installed (`which aplay`).
-- Verify the voice model is downloaded: models live in `~/.local/share/voxctl/voices/`.
-- Try `tts_engine = "espeak"` as a fallback.
+* **Linux**: Check that `aplay` is installed (`which aplay`).
+* Verify the voice model is downloaded: models live in `~/.local/share/voxctl/piper-voices/`.
+* Try `tts_engine = "espeak"` as a fallback choice.
 
 **`transcribe_voice` returns `(no speech detected)`**
 
-- Confirm your microphone is selected in **Settings → Audio**.
-- Raise `timeout_seconds` — the default 15 s may be too short if recording takes time to initialise.
-- Check VAD threshold in **Settings → Audio** — a high threshold may cut off quiet speech.
+* Confirm your microphone is selected in **Settings → Audio**.
+* Raise `timeout_seconds` — the default 15 s may be too short if recording takes time to initialise.
+* Check VAD threshold in **Settings → Audio** — a high threshold may cut off quiet speech.
 
 **Claude Desktop does not see the tools**
 
-- Restart Claude Desktop after editing `claude_desktop_config.json`.
-- Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctl-mcp.sock` connects successfully from a terminal.
-- Check that `voxctl-mcp.sock` exists (`ls -la /tmp/*.sock`).
+* Restart Claude Desktop after editing `claude_desktop_config.json`.
+* Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctl-mcp.sock` connects successfully from a terminal.
+* Check that `voxctl-mcp.sock` exists (`ls -la /tmp/*.sock`).

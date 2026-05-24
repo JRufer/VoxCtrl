@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}};
 
 use tokio::sync::Mutex;
@@ -46,6 +47,9 @@ pub struct AppState {
 
     /// Playback engine handle
     pub tts_handle: Arc<Mutex<Option<voxctr_tts::TtsEngineHandle>>>,
+
+    /// Set of active FIFO response pipes currently being listened to
+    pub active_fifos: Arc<Mutex<HashSet<String>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -134,5 +138,23 @@ impl AppState {
 
     pub fn total_words(&self) -> u32 {
         self.word_count.load(Ordering::SeqCst)
+    }
+
+    pub async fn spawn_fifo_responders(&self, tts: voxctr_tts::TtsEngineHandle) {
+        let targets_guard = self.targets.lock().await;
+        let mut active_fifos_guard = self.active_fifos.lock().await;
+
+        for target in targets_guard.iter() {
+            if let Some(ref pipe_path) = target.response_pipe {
+                if !pipe_path.trim().is_empty() && !active_fifos_guard.contains(pipe_path) {
+                    active_fifos_guard.insert(pipe_path.clone());
+                    let tts_clone = tts.clone();
+                    let pipe_path_clone = pipe_path.clone();
+                    tokio::spawn(async move {
+                        voxctr_tts::run_fifo_responder(pipe_path_clone, tts_clone).await;
+                    });
+                }
+            }
+        }
     }
 }

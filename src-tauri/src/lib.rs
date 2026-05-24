@@ -87,6 +87,7 @@ pub fn run() {
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
         tts_handle: Arc::new(Mutex::new(None)),
+        active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
     });
 
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
@@ -149,9 +150,15 @@ pub fn run() {
     };
 
     let state_for_tts = app_state.clone();
+    let tts_handle_clone = _tts_handle.clone();
     tokio::spawn(async move {
-        let mut handle = state_for_tts.tts_handle.lock().await;
-        *handle = _tts_handle;
+        {
+            let mut handle = state_for_tts.tts_handle.lock().await;
+            *handle = tts_handle_clone.clone();
+        }
+        if let Some(tts) = tts_handle_clone {
+            state_for_tts.spawn_fifo_responders(tts).await;
+        }
     });
 
     // ── Hotkey listener ───────────────────────────────────────────────────────
@@ -581,6 +588,7 @@ mod tests {
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
             tts_handle: Arc::new(Mutex::new(None)),
+            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         };
 
         assert!(!state.is_recording());
@@ -614,6 +622,7 @@ mod tests {
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
             tts_handle: Arc::new(Mutex::new(None)),
+            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         };
 
         state.increment_words(15);
@@ -647,6 +656,7 @@ mod tests {
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
             tts_handle: Arc::new(Mutex::new(None)),
+            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         };
 
         {
