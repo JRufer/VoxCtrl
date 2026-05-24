@@ -96,6 +96,30 @@ VoxCtr provides a clean, native settings window and overlay environment:
 * **Hotkeys tab**: Setup keybindings (`bindings.toml`) and detect subset/exact-match conflicts in real time.
 * **Voice Output tab**: Download and preview Piper voices for local speech synthesis.
 
+### 🎨 Heads-Up HUD Overlay Styles
+
+VoxCtr features a dynamic transparent overlay window that renders floating real-time audio visualization above your desktop during dictation. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
+
+1. **Ocean Wave (Default) 🌊**
+   A premium, liquid fluid animation utilizing three overlapping, semi-transparent SVG wave layers (Deep Blue, Aqua Cyan, and Ice Teal) that execute dynamic parallax sliding.
+   * **Voice Reactive Swelling:** The amplitude of all waves swells dynamically in response to microphone sound levels.
+   * **Active Sea Level Rise:** The overall average water level swells upward as you speak and recedes to a low tide when silent.
+   * **Gentle Breathing Ripple:** In absolute silence, the waves execute a slow, calming idle ripple animation.
+
+2. **Voice Card 🎙️**
+   A state-of-the-art capsule-shaped overlay card featuring the active target window name/badge and an ultra-reactive 45-bar graphic equalizer waveform.
+   * **Hyper-Sensitive Physics:** Calibrated with a snappier attack rate and instant release decay, animating HSL-gradient (purple-pink-rose) bars that swell and dance with your voice activity.
+   * **Symmetric Layout:** The visualizer mirrors symmetrically from the center for a premium, high-tech graphic equalizer aesthetic.
+
+3. **Waveform 📈**
+   A wider Obsidian-style widget designed with a central horizontal dotted axis and a 48-bar Gaussian center-weighted envelope. It utilizes a high-frequency organic noise fluctuation on activity and transitions to a smooth sine-wave glide during AI post-processing/thinking phases.
+
+4. **Pulse Ring 🟠**
+   A minimalist, hyper-clean target tracking HUD composed of a solid orange core indicator surrounded by dual expanding, fading echo rings. The pulse speed and core glow scale dynamically on sound intensity to provide subtle, non-intrusive recording feedback.
+
+5. **Disabled (None) ❌**
+   Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
+
 ### ⚙️ Window Management & Focus Raising
 * **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.
 
