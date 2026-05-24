@@ -91,9 +91,13 @@ done
 if [ -d "/opt/cuda" ]; then
     export CUDA_PATH="/opt/cuda"
     export CUDA_TOOLKIT_ROOT_DIR="/opt/cuda"
+    export CUDAToolkit_ROOT="/opt/cuda"
+    export CUDACXX="/opt/cuda/bin/nvcc"
 elif [ -d "/usr/local/cuda" ]; then
     export CUDA_PATH="/usr/local/cuda"
     export CUDA_TOOLKIT_ROOT_DIR="/usr/local/cuda"
+    export CUDAToolkit_ROOT="/usr/local/cuda"
+    export CUDACXX="/usr/local/cuda/bin/nvcc"
 fi
 
 info "Running Tauri release compiler with headless PATH and CUDA injection..."

@@ -148,12 +148,23 @@ pub async fn get_bindings(
 
 #[tauri::command]
 pub async fn save_bindings(
-    _state: State<'_, Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     bindings: Vec<HotkeyBinding>,
 ) -> Result<(), String> {
     let dir = voxctr_routing::config_dir();
     voxctr_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
     info!("Bindings saved");
+    
+    // Hot reload the bindings in the active listener threads
+    let reloader_guard = state.hotkey_reloader.lock().await;
+    if let Some(reloader) = &*reloader_guard {
+        if let Err(e) = reloader.send(bindings) {
+            tracing::warn!("Failed to hot-reload bindings: {e}");
+        } else {
+            info!("Hot-reload signal sent to listener");
+        }
+    }
+    
     Ok(())
 }
 

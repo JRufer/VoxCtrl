@@ -53,6 +53,9 @@ pub struct AppState {
 
     /// Set of active FIFO response pipes currently being listened to
     pub active_fifos: Arc<Mutex<HashSet<String>>>,
+
+    /// Channel for sending hotkey configurations directly to background threads
+    pub hotkey_reloader: Arc<Mutex<Option<crossbeam_channel::Sender<Vec<voxctr_routing::HotkeyBinding>>>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

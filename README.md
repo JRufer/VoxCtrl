@@ -4,7 +4,18 @@
 
 A high-performance, private, on-device voice-to-text dictation application and programmable **voice input broker** built natively in Rust and Tauri with a Svelte frontend. 
 
-VoxCtr uses OpenAI's Whisper model (via native CPU/GPU accelerated `whisper-rs`) for fast, local, and completely offline transcription. It acts as an intelligent desktop voice gateway, routing your speech to any destination—whether typing directly into a focused window, invoking terminal agents, appending to journals, triggering shell commands, or feeding local AI assistants.
+**Zero Telemetry. Zero Cloud. 100% On-Device.**
+VoxCtr acts as an intelligent desktop voice gateway, routing your speech to any destination—whether typing directly into a focused window, invoking terminal agents, appending to journals, triggering shell commands, or feeding local AI assistants.
+
+---
+
+## 🔒 Privacy First & Fully On-Device
+
+In an era of cloud processing, VoxCtr is built from the ground up to guarantee absolute data sovereignty:
+* **No Cloud API Keys Required**: VoxCtr relies exclusively on OpenAI's Whisper models (via native CPU/GPU accelerated `whisper-rs`) running directly on your local hardware.
+* **No Telemetry**: Your ambient microphone data never leaves your machine. There are no hidden tracking scripts or analytical pings.
+* **Air-Gapped Ready**: Once the application and models are downloaded, VoxCtr requires zero internet access to function.
+* **Local Neural Voices**: All text-to-speech feedback is generated offline via a local Piper engine.
 
 ---
 
@@ -13,9 +24,9 @@ VoxCtr uses OpenAI's Whisper model (via native CPU/GPU accelerated `whisper-rs`)
 * **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution and NVIDIA CUDA GPU acceleration.
 * **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
-* **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor).
+* **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
 * **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, or double-tap gestures directly to any keyboard.
-* **DBus Dictation Service**: Exposes `ai.voxctl.Dictation` on the Linux session bus, letting you script recording states or display statistics in status bars (like Waybar or polybar).
+* **DBus Dictation Service**: Exposes `ai.voxctl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
 * **Neural Text-to-Speech (TTS)**: Built-in local neural voice feedback powered by Piper, with automatic local package installation and a voice downloader interface.
 * **Intelligent Post-Processing & Ollama**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional **local Ollama integration** (supporting Llama 3.2, Phi-3, or Mistral) for real-time grammar correction, tone rewriting, or custom formatting.
 
@@ -24,6 +35,8 @@ VoxCtr uses OpenAI's Whisper model (via native CPU/GPU accelerated `whisper-rs`)
 ## 🎯 The Deep Targeting System
 
 The core of VoxCtr is its **Output Target Router**. Rather than simply pasting text where your cursor is, VoxCtr allows you to declare **named output targets** in `targets.toml` and bind them to different global keyboard gestures. This turns your voice into a programmable router.
+
+**New in v0.1:** You can now bind **multiple targets** to a single hotkey gesture! When activated, your text is broadcast concurrently to all bound targets. Configurations also **hot-reload instantly** in the background, without requiring an app restart.
 
 Below are the 9 target types supported by VoxCtr and what they are used for:
 

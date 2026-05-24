@@ -14,6 +14,9 @@ pub use gestures::{GestureEvent, GestureKind};
 pub type GestureSender = mpsc::UnboundedSender<GestureEvent>;
 pub type GestureReceiver = mpsc::UnboundedReceiver<GestureEvent>;
 
+pub type ReloaderSender = crossbeam_channel::Sender<Vec<HotkeyBinding>>;
+pub type ReloaderReceiver = crossbeam_channel::Receiver<Vec<HotkeyBinding>>;
+
 pub fn channel() -> (GestureSender, GestureReceiver) {
     mpsc::unbounded_channel()
 }
@@ -25,23 +28,25 @@ pub fn start_listener(
     tx: GestureSender,
     device_path: Option<String>,
 ) -> ListenerHandle {
+    let (reloader_tx, reloader_rx) = crossbeam_channel::unbounded();
+
     #[cfg(target_os = "linux")]
     {
-        linux::start(bindings, tx, device_path)
+        linux::start(bindings, tx, device_path, reloader_rx);
     }
     #[cfg(target_os = "windows")]
     {
-        windows::start(bindings, tx)
+        windows::start(bindings, tx, reloader_rx);
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         tracing::warn!("Hotkey listener not supported on this platform");
-        ListenerHandle { _inner: () }
     }
+
+    ListenerHandle { reloader_tx }
 }
 
 /// Opaque handle; drop to stop the listener.
 pub struct ListenerHandle {
-    #[allow(dead_code)]
-    _inner: std::marker::PhantomData<()>,
+    pub reloader_tx: ReloaderSender,
 }

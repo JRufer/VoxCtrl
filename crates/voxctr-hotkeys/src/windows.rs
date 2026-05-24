@@ -8,17 +8,14 @@ use crate::{
     GestureSender, ListenerHandle,
 };
 
-pub fn start(bindings: Vec<HotkeyBinding>, tx: GestureSender) -> ListenerHandle {
+pub fn start(bindings: Vec<HotkeyBinding>, tx: GestureSender, rx_reload: crate::ReloaderReceiver) {
     std::thread::Builder::new()
         .name("voxctr-rdev".into())
-        .spawn(move || run(bindings, tx))
+        .spawn(move || run(bindings, tx, rx_reload))
         .expect("failed to spawn rdev thread");
-    ListenerHandle {
-        _inner: std::marker::PhantomData,
-    }
 }
 
-fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender) {
+fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, rx_reload: crate::ReloaderReceiver) {
     info!("rdev hotkey listener active (Windows)");
 
     let mut states: Vec<BindingState> =
@@ -34,7 +31,16 @@ fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender) {
         let tx = tx.clone();
         let states = states.clone();
         let pressed = pressed.clone();
+        let rx_reload = rx_reload.clone();
         move |event: rdev::Event| {
+            if let Ok(new_bindings) = rx_reload.try_recv() {
+                tracing::info!("windows hotkey loop: reloading {} bindings", new_bindings.len());
+                let mut st = states.lock().unwrap();
+                let mut pr = pressed.lock().unwrap();
+                *st = new_bindings.into_iter().map(BindingState::new).collect();
+                pr.clear();
+            }
+
             let key_name = match &event.event_type {
                 rdev::EventType::KeyPress(k) => format!("KEY_{k:?}").to_ascii_uppercase(),
                 rdev::EventType::KeyRelease(k) => format!("KEY_{k:?}").to_ascii_uppercase(),

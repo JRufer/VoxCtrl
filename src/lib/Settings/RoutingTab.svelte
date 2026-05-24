@@ -11,6 +11,7 @@
   // Modals state
   let editingTarget = $state<OutputTarget | null>(null);
   let isEditingTargetNew = $state(false);
+  let originalTargetId = $state<string | null>(null);
   let editingBinding = $state<HotkeyBinding | null>(null);
   let isEditingBindingNew = $state(false);
   let isRecordingKeys = $state(false);
@@ -140,6 +141,7 @@
 
   function editTarget(tgt: OutputTarget) {
     isEditingTargetNew = false;
+    originalTargetId = tgt.id;
     const clone = JSON.parse(JSON.stringify(tgt));
     if (!clone.processing) {
       clone.processing = {};
@@ -201,9 +203,39 @@
       }
       targets = [...targets, editingTarget];
     } else {
-      targets = targets.map(t => t.id === editingTarget!.id ? editingTarget! : t);
+      if (originalTargetId !== editingTarget!.id && targets.some(t => t.id === editingTarget!.id)) {
+        alert("Another target with this ID already exists.");
+        return;
+      }
+
+      // Update bindings that point to the old ID
+      if (originalTargetId && originalTargetId !== editingTarget!.id) {
+        let bindingsChanged = false;
+        bindings = bindings.map(b => {
+          let updated = false;
+          let newTargetIds = b.target_ids ? [...b.target_ids] : [b.target_id];
+          for (let i = 0; i < newTargetIds.length; i++) {
+            if (newTargetIds[i] === originalTargetId) {
+              newTargetIds[i] = editingTarget!.id;
+              updated = true;
+            }
+          }
+          if (updated) {
+            bindingsChanged = true;
+            return { ...b, target_ids: newTargetIds, target_id: newTargetIds[0] };
+          }
+          return b;
+        });
+
+        if (bindingsChanged) {
+          await persistBindings();
+        }
+      }
+
+      targets = targets.map(t => t.id === originalTargetId ? editingTarget! : t);
     }
     editingTarget = null;
+    originalTargetId = null;
     await persistTargets();
   }
 

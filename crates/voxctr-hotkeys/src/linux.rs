@@ -15,18 +15,20 @@ pub fn start(
     bindings: Vec<HotkeyBinding>,
     tx: GestureSender,
     device_path: Option<String>,
-) -> ListenerHandle {
+    rx_reload: crate::ReloaderReceiver,
+) {
     let rt_handle = tokio::runtime::Handle::try_current().ok();
 
     if let Some(path) = device_path {
         let b = bindings.clone();
         let t = tx.clone();
         let rt = rt_handle.clone();
+        let rx = rx_reload.clone();
         std::thread::Builder::new()
             .name("voxctr-evdev".into())
             .spawn(move || {
                 let _guard = rt.as_ref().map(|h| h.enter());
-                run(b, t, Some(path))
+                run(b, t, Some(path), rx)
             })
             .expect("failed to spawn evdev thread");
     } else {
@@ -39,23 +41,20 @@ pub fn start(
                 let t = tx.clone();
                 let p = Some(path);
                 let rt = rt_handle.clone();
+                let rx = rx_reload.clone();
                 std::thread::Builder::new()
                     .name("voxctr-evdev".into())
                     .spawn(move || {
                         let _guard = rt.as_ref().map(|h| h.enter());
-                        run(b, t, p)
+                        run(b, t, p, rx)
                     })
                     .expect("failed to spawn evdev thread");
             }
         }
     }
-
-    ListenerHandle {
-        _inner: std::marker::PhantomData,
-    }
 }
 
-fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<String>) {
+fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<String>, rx_reload: crate::ReloaderReceiver) {
     let mut device = match open_device(&device_path) {
         Some(d) => d,
         None => return,
@@ -69,6 +68,13 @@ fn run(bindings: Vec<HotkeyBinding>, tx: GestureSender, device_path: Option<Stri
     let mut pressed: HashSet<String> = HashSet::new();
 
     loop {
+        // Hot-reload configuration if available
+        while let Ok(new_bindings) = rx_reload.try_recv() {
+            tracing::info!("linux hotkey loop: reloading {} bindings", new_bindings.len());
+            states = new_bindings.into_iter().map(BindingState::new).collect();
+            pressed.clear();
+        }
+
         match device.fetch_events() {
             Ok(events) => {
                 for ev in events {

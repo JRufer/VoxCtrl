@@ -89,6 +89,7 @@ pub fn run() {
         audio_tx: audio_tx.clone(),
         tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        hotkey_reloader: Arc::new(Mutex::new(None)),
     });
 
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
@@ -164,11 +165,17 @@ pub fn run() {
 
     // ── Hotkey listener ───────────────────────────────────────────────────────
     let (gesture_tx, mut gesture_rx) = voxctr_hotkeys::channel();
-    let _listener = voxctr_hotkeys::start_listener(
+    let listener = voxctr_hotkeys::start_listener(
         bindings,
         gesture_tx,
         cfg_data.audio.evdev_device.clone(),
     );
+
+    let state_for_gesture = app_state.clone();
+    tokio::spawn(async move {
+        let mut reloader = state_for_gesture.hotkey_reloader.lock().await;
+        *reloader = Some(listener.reloader_tx);
+    });
 
     let state_for_gesture = app_state.clone();
     tokio::spawn(async move {
