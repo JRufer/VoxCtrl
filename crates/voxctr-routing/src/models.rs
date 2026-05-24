@@ -52,6 +52,7 @@ pub enum DeliveryType {
     Dbus,
     Http,
     Webhook,
+    Mcp,
 }
 
 // ── Per-target processing overrides ──────────────────────────────────────────
@@ -131,6 +132,11 @@ pub struct OutputTarget {
     pub webhook_secret: Option<String>,
     pub webhook_json_template: Option<serde_json::Value>,
 
+    // MCP
+    pub mcp_path: Option<String>,
+    pub mcp_tool: Option<String>,
+    pub mcp_args: Option<serde_json::Value>,
+
     #[serde(default = "bool_true")]
     pub send_on_release: bool,
     #[serde(default = "bool_true")]
@@ -179,6 +185,9 @@ impl OutputTarget {
             webhook_url: None,
             webhook_secret: None,
             webhook_json_template: None,
+            mcp_path: None,
+            mcp_tool: None,
+            mcp_args: None,
             send_on_release: true,
             append_newline: false,
             initial_prompt: None,

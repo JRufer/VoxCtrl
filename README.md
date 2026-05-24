@@ -105,6 +105,26 @@ VoxCtr features a native Model Context Protocol (MCP) server listening on a loca
 2. **`speak_text(text)`**: Queues text to be spoken aloud locally on the user's host machine using the configured Piper neural TTS engine.
 3. **`get_status()`**: Returns a JSON object with boolean states indicating whether the microphone is currently recording or the TTS engine is currently speaking.
 
+### 🎯 Generic MCP Routing Target
+VoxCtr supports routing transcribed text directly to any local or networked MCP server via its **Output Target Router** using the `mcp` delivery type in `targets.toml`. 
+
+The client is fully standard-compliant (Option B, performing `initialize` -> `notifications/initialized` -> `tools/call` handshakes on socket connect) to guarantee maximum compatibility with strict third-party MCP servers.
+
+#### Configuration Schema
+You can declare generic MCP targets in your `targets.toml` or configure them through the GUI Settings window:
+
+```toml
+[[target]]
+id = "self_speak"
+label = "Synthesize Speech Loopback"
+delivery = "mcp"
+mcp_path = "/tmp/voxctl-mcp.sock"   # Optional custom socket or pipe path (defaults to standard socket/pipe)
+mcp_tool = "speak_text"            # The name of the MCP tool to call (defaults to 'speak_text')
+
+[target.mcp_args]
+text = "{TEXT}"                    # Custom arguments template (substitutes the transcription at {TEXT})
+```
+
 ---
 
 ## 📦 Installation & Relocation

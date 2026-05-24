@@ -95,6 +95,7 @@
       dbus: "DBus",
       http: "HTTP",
       webhook: "Webhook",
+      mcp: "MCP",
     };
     return map[d] ?? d;
   }

@@ -31,6 +31,9 @@ export interface OutputTarget {
   http_headers?: Record<string, string>;
   webhook_url?: string;
   webhook_secret?: string;
+  mcp_path?: string;
+  mcp_tool?: string;
+  mcp_args?: Record<string, any>;
   send_on_release: boolean;
   append_newline: boolean;
   initial_prompt?: string;

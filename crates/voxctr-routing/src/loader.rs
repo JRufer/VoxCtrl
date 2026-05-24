@@ -68,6 +68,9 @@ struct RawTarget {
     webhook_url: Option<String>,
     webhook_secret: Option<String>,
     webhook_json_template: Option<toml::Value>,
+    mcp_path: Option<String>,
+    mcp_tool: Option<String>,
+    mcp_args: Option<toml::Value>,
     #[serde(default = "bool_true")]
     send_on_release: bool,
     #[serde(default = "bool_true")]
@@ -142,6 +145,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         "dbus" => DeliveryType::Dbus,
         "http" => DeliveryType::Http,
         "webhook" => DeliveryType::Webhook,
+        "mcp" => DeliveryType::Mcp,
         _ => DeliveryType::Inject,
     };
 
@@ -185,6 +189,9 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
     let webhook_json_template = r
         .webhook_json_template
         .and_then(|v| serde_json::to_value(v).ok());
+    let mcp_args = r
+        .mcp_args
+        .and_then(|v| serde_json::to_value(v).ok());
 
     OutputTarget {
         id: r.id,
@@ -206,6 +213,9 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         webhook_url: r.webhook_url,
         webhook_secret: r.webhook_secret,
         webhook_json_template,
+        mcp_path: r.mcp_path,
+        mcp_tool: r.mcp_tool,
+        mcp_args,
         send_on_release: r.send_on_release,
         append_newline: r.append_newline,
         initial_prompt: r.initial_prompt,
@@ -280,6 +290,12 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
         webhook_secret: t.webhook_secret.clone(),
         webhook_json_template: t
             .webhook_json_template
+            .as_ref()
+            .and_then(|v| serde_json::from_value(v.clone()).ok()),
+        mcp_path: t.mcp_path.clone(),
+        mcp_tool: t.mcp_tool.clone(),
+        mcp_args: t
+            .mcp_args
             .as_ref()
             .and_then(|v| serde_json::from_value(v.clone()).ok()),
         send_on_release: t.send_on_release,

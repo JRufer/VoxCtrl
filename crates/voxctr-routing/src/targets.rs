@@ -25,6 +25,7 @@ pub fn build_target(config: OutputTarget) -> Box<dyn DeliveryTarget> {
         DeliveryType::Dbus      => Box::new(DbusTarget(config)),
         DeliveryType::Http      => Box::new(HttpTarget(config)),
         DeliveryType::Webhook   => Box::new(WebhookTarget(config)),
+        DeliveryType::Mcp       => Box::new(McpTarget(config)),
     }
 }
 
@@ -477,6 +478,156 @@ impl DeliveryTarget for WebhookTarget {
         TestResult { reachable: true, detail: "Webhook target configured".into() }
     }
 }
+
+// ── McpTarget ─────────────────────────────────────────────────────────────────
+
+pub struct McpTarget(OutputTarget);
+
+#[async_trait::async_trait]
+impl DeliveryTarget for McpTarget {
+    async fn deliver(&self, text: &str) -> DeliveryResult {
+        let tool = self.0.mcp_tool.as_deref().unwrap_or("speak_text");
+        let args = build_json_payload(&self.0.mcp_args, text);
+
+        #[cfg(target_os = "linux")]
+        let s = {
+            let path = self.0.mcp_path.as_deref().unwrap_or("/tmp/voxctl-mcp.sock");
+            match UnixStream::connect(path).await {
+                Ok(s) => s,
+                Err(e) => return DeliveryResult::err(format!("Failed to connect to MCP socket {path}: {e}")),
+            }
+        };
+
+        #[cfg(target_os = "windows")]
+        let s = {
+            use tokio::net::windows::named_pipe::ClientOptions;
+            let path = self.0.mcp_path.as_deref().unwrap_or(r"\\.\pipe\voxctl-mcp");
+            match ClientOptions::new().open(path) {
+                Ok(s) => s,
+                Err(e) => return DeliveryResult::err(format!("Failed to connect to MCP named pipe {path}: {e}")),
+            }
+        };
+
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        return DeliveryResult::err("MCP target not supported on this platform");
+
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let (reader, mut writer) = tokio::io::split(s);
+        let mut lines = BufReader::new(reader).lines();
+
+        // Step 1: initialize request
+        let init_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "VoxCtr-Client",
+                    "version": "1.0.0"
+                }
+            }
+        });
+        let payload = serde_json::to_string(&init_req).unwrap() + "\n";
+        if let Err(e) = writer.write_all(payload.as_bytes()).await {
+            return DeliveryResult::err(format!("Failed to write initialize to MCP: {e}"));
+        }
+        if let Err(e) = writer.flush().await {
+            return DeliveryResult::err(format!("Failed to flush: {e}"));
+        }
+
+        // Read initialize response
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if let Some(err) = val.get("error") {
+                        let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown initialization error");
+                        return DeliveryResult::err(format!("MCP initialization error: {msg}"));
+                    }
+                } else {
+                    return DeliveryResult::err("Failed to parse JSON initialize response from MCP server");
+                }
+            }
+            Ok(None) => return DeliveryResult::err("MCP server closed connection during initialization"),
+            Err(e) => return DeliveryResult::err(format!("Failed to read initialize response from MCP server: {e}")),
+        }
+
+        // Step 2: notifications/initialized
+        let initialized_notify = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        });
+        let payload = serde_json::to_string(&initialized_notify).unwrap() + "\n";
+        if let Err(e) = writer.write_all(payload.as_bytes()).await {
+            return DeliveryResult::err(format!("Failed to write initialized notification to MCP: {e}"));
+        }
+        if let Err(e) = writer.flush().await {
+            return DeliveryResult::err(format!("Failed to flush: {e}"));
+        }
+
+        // Step 3: tools/call
+        let tool_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": tool,
+                "arguments": args
+            }
+        });
+        let payload = serde_json::to_string(&tool_req).unwrap() + "\n";
+        if let Err(e) = writer.write_all(payload.as_bytes()).await {
+            return DeliveryResult::err(format!("Failed to write tool call request to MCP: {e}"));
+        }
+        if let Err(e) = writer.flush().await {
+            return DeliveryResult::err(format!("Failed to flush: {e}"));
+        }
+
+        // Read tool call response
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                    if let Some(err) = val.get("error") {
+                        let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown tool call error");
+                        DeliveryResult::err(format!("MCP tool call error: {msg}"))
+                    } else if let Some(res) = val.get("result") {
+                        DeliveryResult::ok(serde_json::to_string(res).unwrap_or_else(|_| text.to_string()))
+                    } else {
+                        DeliveryResult::ok(text.to_string())
+                    }
+                } else {
+                    DeliveryResult::err("Failed to parse JSON tool call response from MCP server")
+                }
+            }
+            Ok(None) => DeliveryResult::err("MCP server closed connection during tool call"),
+            Err(e) => DeliveryResult::err(format!("Failed to read tool call response from MCP server: {e}")),
+        }
+    }
+
+    async fn test(&self) -> TestResult {
+        #[cfg(target_os = "linux")]
+        {
+            let path = self.0.mcp_path.as_deref().unwrap_or("/tmp/voxctl-mcp.sock");
+            match UnixStream::connect(path).await {
+                Ok(_) => TestResult { reachable: true, detail: format!("MCP socket {path} reachable") },
+                Err(e) => TestResult { reachable: false, detail: e.to_string() },
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use tokio::net::windows::named_pipe::ClientOptions;
+            let path = self.0.mcp_path.as_deref().unwrap_or(r"\\.\pipe\voxctl-mcp");
+            match ClientOptions::new().open(path) {
+                Ok(_) => TestResult { reachable: true, detail: format!("MCP named pipe {path} reachable") },
+                Err(e) => TestResult { reachable: false, detail: e.to_string() },
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        TestResult { reachable: false, detail: "Platform not supported".into() }
+    }
+}
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

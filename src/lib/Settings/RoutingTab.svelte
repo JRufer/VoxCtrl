@@ -21,6 +21,7 @@
   let editOllamaModel = $state("");
   let editOllamaMode = $state("custom");
   let editOllamaPrompt = $state("");
+  let editMcpArgsString = $state("");
 
   onMount(async () => {
     targets = await invoke<OutputTarget[]>("get_targets");
@@ -51,6 +52,7 @@
       inject: "Inject Text directly", clipboard: "Copy to Clipboard", exec: "Execute Command",
       pipe: "Write to Named Pipe", socket: "Send to TCP/Unix Socket", file: "Append to File",
       dbus: "Emit DBus Signal", http: "HTTP Request", webhook: "Send Webhook",
+      mcp: "Call MCP Server",
     };
     return map[d] ?? d;
   }
@@ -71,6 +73,7 @@
     editOllamaModel = "";
     editOllamaMode = "custom";
     editOllamaPrompt = "";
+    editMcpArgsString = '{\n  "text": "{TEXT}"\n}';
 
     editingTarget = {
       id: "new_target_" + Math.random().toString(36).substring(2, 6),
@@ -79,6 +82,8 @@
       file_prefix: "- ",
       file_timestamp: true,
       http_method: "POST",
+      mcp_tool: "speak_text",
+      mcp_args: { text: "{TEXT}" },
       send_on_release: false,
       append_newline: true,
       tts_engine: "None",
@@ -105,6 +110,7 @@
     editOllamaModel = clone.processing.ollama_model || "";
     editOllamaMode = clone.processing.ollama_mode || "custom";
     editOllamaPrompt = clone.processing.ollama_prompt || "";
+    editMcpArgsString = clone.mcp_args ? JSON.stringify(clone.mcp_args, null, 2) : '{\n  "text": "{TEXT}"\n}';
 
     editingTarget = clone;
   }
@@ -134,6 +140,15 @@
       ollama_mode: editOllamaMode,
       ollama_prompt: editOllamaPrompt,
     };
+ 
+    if (editingTarget.delivery === "mcp") {
+      try {
+        editingTarget.mcp_args = JSON.parse(editMcpArgsString);
+      } catch (e) {
+        alert("Invalid JSON format in MCP Custom Tool Arguments.");
+        return;
+      }
+    }
 
     if (isEditingTargetNew) {
       if (targets.some(t => t.id === editingTarget!.id)) {
@@ -337,6 +352,12 @@
                 <span class="info-val line-clamp">{t.http_url || t.webhook_url}</span>
               </div>
             {/if}
+            {#if t.delivery === "mcp"}
+              <div class="info-row">
+                <span class="info-label">MCP Tool:</span>
+                <span class="info-val">{t.mcp_tool || "speak_text"}</span>
+              </div>
+            {/if}
           </div>
           <div class="card-actions">
             <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
@@ -452,6 +473,7 @@
             <option value="dbus">DBus Signal</option>
             <option value="http">HTTP Custom Client</option>
             <option value="webhook">Send Webhook Event</option>
+            <option value="mcp">Call MCP Server Tool</option>
           </select>
         </label>
 
@@ -559,6 +581,38 @@
                 <input type="password" bind:value={editingTarget.webhook_secret} placeholder="Secret salt" />
               </label>
             {/if}
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "mcp"}
+          <div class="morph-section">
+            <h5>MCP Server Client settings</h5>
+            <label class="field">
+              <span>Custom Socket/Pipe Path (Optional override)</span>
+              <input
+                type="text"
+                bind:value={editingTarget.mcp_path}
+                placeholder="e.g. /tmp/voxctl-mcp.sock"
+              />
+              <span class="hint">Leave empty to use defaults (<code>/tmp/voxctl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctl-mcp</code> on Windows).</span>
+            </label>
+            <label class="field">
+              <span>MCP Tool Name</span>
+              <input
+                type="text"
+                bind:value={editingTarget.mcp_tool}
+                placeholder="speak_text"
+              />
+            </label>
+            <label class="field col mt-2">
+              <span>Custom Tool Arguments (JSON Template - <code>{"{TEXT}"}</code> placeholder supported)</span>
+              <textarea
+                rows="4"
+                bind:value={editMcpArgsString}
+                placeholder={'{"text": "{TEXT}"}'}
+              ></textarea>
+              <span class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</span>
+            </label>
           </div>
         {/if}
 

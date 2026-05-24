@@ -10,3 +10,6 @@ pub use models::{
 };
 pub use router::OutputTargetRouter;
 pub use targets::{build_target, DeliveryTarget};
+
+#[cfg(test)]
+mod tests;
