@@ -1325,14 +1325,26 @@
   }
   textarea {
     width: 100%;
-    background: var(--bg);
+    background: var(--color-obsidian-950);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     color: var(--text);
-    padding: 8px;
+    padding: 8px 12px;
     font-size: 13px;
     font-family: monospace;
     resize: vertical;
+    outline: none;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: var(--transition-spring-fast);
+  }
+  textarea:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--color-obsidian-900);
+  }
+  textarea:focus {
+    border-color: var(--accent2);
+    background-color: var(--color-obsidian-950);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
   }
   .field.col {
     flex-direction: column;

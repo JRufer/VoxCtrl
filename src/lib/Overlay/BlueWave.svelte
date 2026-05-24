@@ -5,67 +5,67 @@
 
   let { recording = false, speaking = false } = $props();
 
-  let barHeights = $state<number[]>(Array(45).fill(4));
   let unlistenAudioLevel: (() => void) | null = null;
   let animationFrameId: number;
   let targetVolume = 0;
   let currentVolume = 0;
 
+  // SVG elements reference
+  let path1El: SVGPathElement | null = null;
+  let path2El: SVGPathElement | null = null;
+  let path3El: SVGPathElement | null = null;
+
   onMount(() => {
     // Listen to real-time audio levels emitted from the Rust backend
     listen<number>("audio-level", (event) => {
-      // Calibrated audio signal multiplier reduced by 1/3rd (100.0)
+      // Calibrated audio signal multiplier
       targetVolume = Math.min(1.0, event.payload * 100.0);
     }).then((unlisten) => {
       unlistenAudioLevel = unlisten;
     });
 
     let time = 0;
+    const width = 288;
+    const height = 55;
+
+    function getWavePath(amplitude: number, frequency: number, phase: number, yOffset: number) {
+      let points = [];
+      for (let x = 0; x <= width; x += 4) {
+        const y = yOffset + Math.sin(x * frequency + phase) * amplitude;
+        points.push(`${x},${y}`);
+      }
+      return `M 0,${height} L 0,${yOffset} ` + points.map(p => `L ${p}`).join(' ') + ` L ${width},${height} Z`;
+    }
+
     function updateAnimation() {
       time += 1;
       
-      // Accelerate interpolation for immediate and snappy visual reaction ("fast attack")
-      currentVolume += (targetVolume - currentVolume) * 0.42;
-      
-      // Accelerate decay rate for immediate visual drop-offs on silence ("fast release")
-      targetVolume *= 0.82;
+      // Snappy volume interpolation
+      currentVolume += (targetVolume - currentVolume) * 0.38;
+      targetVolume *= 0.84;
 
-      const numBars = 45;
-      const centerIdx = 22; // Center index of the symmetric array
-      const rawHeights: number[] = [];
+      // Layer 1 (Back Wave - Deep Blue)
+      const phase1 = time * 0.035;
+      const amp1 = 2.5 + currentVolume * 14.0;
+      const yOff1 = 38 - currentVolume * 12.0; // Sea level rises on activity
+      const path1 = getWavePath(amp1, 0.016, phase1, yOff1);
 
-      for (let i = 0; i < numBars; i++) {
-        // Gaussian bell curve centering larger base heights in the middle
-        const centerDist = Math.abs(i - centerIdx);
-        const baseHeight = Math.max(3, 15 * Math.exp(-(centerDist * centerDist) / 80));
-        
-        let targetHeight = baseHeight;
-        if (currentVolume > 0.01) {
-          // Propagate waves outwards by combining time and bar indices
-          let wave = Math.sin(time * 0.18 + i * 0.35) * 0.45 + 0.55;
-          // Add some organic high-frequency jitter for graphic-equalizer realism
-          let jitter = Math.random() * 0.25 + 0.78;
-          // Dynamic height scaling multiplier reduced by 1/3rd (240 range)
-          targetHeight = baseHeight + (currentVolume * 240 * wave * jitter);
-        } else {
-          // Slow breathing animation when idle (silence)
-          let idleWave = Math.sin(time * 0.04 + i * 0.15) * 1.0;
-          targetHeight = Math.max(3, baseHeight + idleWave);
-        }
+      // Layer 2 (Middle Wave - Cyan Aqua)
+      const phase2 = -time * 0.05; // Moves in reverse
+      const amp2 = 2.0 + currentVolume * 18.0;
+      const yOff2 = 34 - currentVolume * 14.0;
+      const path2 = getWavePath(amp2, 0.024, phase2, yOff2);
 
-        rawHeights.push(targetHeight);
-      }
+      // Layer 3 (Front Wave - Bright Ice Teal)
+      const phase3 = time * 0.065;
+      const amp3 = 1.5 + currentVolume * 22.0;
+      const yOff3 = 28 - currentVolume * 16.0;
+      const path3 = getWavePath(amp3, 0.020, phase3, yOff3);
 
-      // Symmetric layout mapping: average height values with their horizontal mirror
-      const symmetricHeights: number[] = [];
-      for (let i = 0; i < numBars; i++) {
-        const mirrorIdx = numBars - 1 - i;
-        const avgHeight = (rawHeights[i] + rawHeights[mirrorIdx]) / 2;
-        // Clamp height ceiling to 60px (proportional layout reduction)
-        symmetricHeights.push(Math.max(3, Math.min(60, avgHeight)));
-      }
+      if (path1El) path1El.setAttribute("d", path1);
+      if (path2El) path2El.setAttribute("d", path2);
+      if (path3El) path3El.setAttribute("d", path3);
 
-      barHeights = symmetricHeights;
       animationFrameId = requestAnimationFrame(updateAnimation);
     }
 
@@ -86,13 +86,30 @@
     </span>
   </div>
   
-  <div class="equalizer-container">
-    {#each barHeights as height, i}
-      <div 
-        class="eq-bar" 
-        style="height: {height}px; background: hsl({285 + (i / 45) * 60}, 76%, 60%);"
-      ></div>
-    {/each}
+  <div class="ocean-container">
+    <svg width="288" height="55" viewBox="0 0 288 55" xmlns="http://www.w3.org/2000/svg">
+      <!-- Wave 1 (Deep Ocean Blue) -->
+      <path 
+        bind:this={path1El} 
+        fill="rgba(2, 132, 199, 0.35)" 
+        stroke="rgba(2, 132, 199, 0.15)"
+        stroke-width="1"
+      />
+      <!-- Wave 2 (Rich Cyan Aqua) -->
+      <path 
+        bind:this={path2El} 
+        fill="rgba(6, 182, 212, 0.5)" 
+        stroke="rgba(6, 182, 212, 0.2)"
+        stroke-width="1"
+      />
+      <!-- Wave 3 (Vibrant Ice Teal) -->
+      <path 
+        bind:this={path3El} 
+        fill="rgba(34, 211, 238, 0.65)" 
+        stroke="rgba(34, 211, 238, 0.4)"
+        stroke-width="1.5"
+      />
+    </svg>
   </div>
 </div>
 
@@ -161,21 +178,19 @@
     text-overflow: ellipsis;
   }
 
-  .equalizer-container {
+  .ocean-container {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
-    gap: 2px;
-    height: 60px;
+    height: 55px;
     width: 100%;
     margin-top: auto;
+    overflow: hidden;
+    border-radius: 0 0 16px 16px;
   }
 
-  .eq-bar {
-    width: 3.5px;
-    border-radius: 99px;
-    transition: height 0.06s cubic-bezier(0.215, 0.610, 0.355, 1);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    flex-shrink: 0;
+  svg {
+    display: block;
+    overflow: hidden;
   }
 </style>

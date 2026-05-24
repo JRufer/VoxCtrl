@@ -5,6 +5,20 @@
   import VoiceCard from "./VoiceCard.svelte";
   import Waveform from "./Waveform.svelte";
   import Pulse from "./Pulse.svelte";
+  import BlueWave from "./BlueWave.svelte";
+
+  let visible = $state(true);
+
+  $effect(() => {
+    // Whenever the overlay style changes, temporarily unmount the visualizer for 1 tick
+    // to force the WebKitGTK transparent compositor to completely wipe and flush the old frame buffer
+    const _style = $config.ui.overlay_style;
+    visible = false;
+    const timer = setTimeout(() => {
+      visible = true;
+    }, 25); // 25ms ensures a full repaint frame ticks in WebKitGTK
+    return () => clearTimeout(timer);
+  });
 
   onMount(() => {
     // Add transparent overlay class dynamically to html and body
@@ -28,14 +42,18 @@
 </script>
 
 <div class="overlay-root" data-recording={$recording} data-speaking={$speaking} data-processing={$status.processing}>
-  {#if $recording || $speaking || $status.processing}
-    {#if $config.ui.overlay_style === "waveform"}
-      <Waveform recording={$recording} />
-    {:else if $config.ui.overlay_style === "pulse"}
-      <Pulse recording={$recording} />
-    {:else if $config.ui.overlay_style !== "none"}
-      <VoiceCard recording={$recording} speaking={$speaking} />
-    {/if}
+  {#if ($recording || $speaking || $status.processing) && visible}
+    {#key $config.ui.overlay_style}
+      {#if $config.ui.overlay_style === "waveform"}
+        <Waveform recording={$recording} />
+      {:else if $config.ui.overlay_style === "pulse"}
+        <Pulse recording={$recording} />
+      {:else if $config.ui.overlay_style === "blue_wave"}
+        <BlueWave recording={$recording} speaking={$speaking} />
+      {:else if $config.ui.overlay_style !== "none"}
+        <VoiceCard recording={$recording} speaking={$speaking} />
+      {/if}
+    {/key}
   {/if}
 </div>
 
@@ -46,6 +64,7 @@
     box-shadow: none !important;
     border: none !important;
     outline: none !important;
+    overflow: hidden !important;
   }
 
   :global(*:focus) {
@@ -62,5 +81,6 @@
     justify-content: center;
     pointer-events: none;
     user-select: none;
+    overflow: hidden !important;
   }
 </style>

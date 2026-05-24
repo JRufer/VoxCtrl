@@ -143,21 +143,35 @@ pub enum OverlayStyle {
 
 impl Default for OverlayStyle {
     fn default() -> Self {
-        Self::VoiceCard
+        Self::BlueWave
     }
+}
+
+fn default_auto_show_settings() -> bool {
+    true
+}
+
+fn default_show_notification() -> bool {
+    false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub show_overlay: bool,
     pub overlay_style: OverlayStyle,
+    #[serde(default = "default_auto_show_settings")]
+    pub auto_show_settings: bool,
+    #[serde(default = "default_show_notification")]
+    pub show_notification: bool,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_overlay: true,
-            overlay_style: OverlayStyle::VoiceCard,
+            overlay_style: OverlayStyle::BlueWave,
+            auto_show_settings: true,
+            show_notification: false,
         }
     }
 }
@@ -171,7 +185,8 @@ pub struct FeaturesConfig {
     pub spoken_punctuation: bool,
     pub auto_format_lists: bool,
     pub quiet_mode: bool,
-    pub show_notification: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_notification: Option<bool>,
     /// Map of trigger → expansion, e.g. {"addr" → "123 Main St"}
     pub snippets: std::collections::HashMap<String, String>,
 }
@@ -184,7 +199,7 @@ impl Default for FeaturesConfig {
             spoken_punctuation: true,
             auto_format_lists: true,
             quiet_mode: false,
-            show_notification: false,
+            show_notification: None,
             snippets: std::collections::HashMap::new(),
         }
     }
@@ -341,7 +356,7 @@ impl Config {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        let data = if path.exists() {
+        let mut data = if path.exists() {
             match std::fs::read_to_string(&path)
                 .map_err(ConfigError::Io)
                 .and_then(|s| serde_json::from_str::<AppConfig>(&s).map_err(ConfigError::Json))
@@ -355,6 +370,18 @@ impl Config {
         } else {
             AppConfig::default()
         };
+
+        // Migrate show_notification from legacy features to ui struct if present
+        if let Some(legacy_notif) = data.features.show_notification {
+            data.ui.show_notification = legacy_notif;
+            data.features.show_notification = None;
+            // Instantly persist the migrated clean configuration to clean up the JSON
+            let clean_config = Self { data: data.clone(), path: path.clone() };
+            if let Err(e) = clean_config.save() {
+                tracing::error!("Failed to save clean migrated config: {e}");
+            }
+        }
+
         Self { data, path }
     }
 
@@ -416,3 +443,126 @@ pub fn validate(cfg: &AppConfig) -> Vec<String> {
 
     errors
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_values() {
+        let cfg = AppConfig::default();
+        assert!(cfg.ui.auto_show_settings);
+        assert!(!cfg.ui.show_notification);
+        assert_eq!(cfg.ui.overlay_style, OverlayStyle::BlueWave);
+        assert!(cfg.features.show_notification.is_none());
+    }
+
+    #[test]
+    fn test_legacy_notification_migration() {
+        let legacy_json = r#"{
+            "engine": {
+                "backend": "auto",
+                "inference_mode": "Balanced",
+                "whisper_cpp": {
+                    "model_dir": "",
+                    "model_size": "large-v3",
+                    "device": "auto",
+                    "threads": 0
+                },
+                "moonshine": {
+                    "model_size": "base",
+                    "language": "en"
+                }
+            },
+            "audio": {
+                "vad_threshold": 0.5,
+                "min_silence_duration_ms": 500,
+                "input_device_index": null,
+                "evdev_device": null,
+                "noise_suppression": false,
+                "gain": 1.0,
+                "dynamic_stream": true
+            },
+            "ui": {
+                "show_overlay": true,
+                "overlay_style": "voice_card"
+            },
+            "features": {
+                "remove_fillers": true,
+                "custom_vocabulary": [],
+                "spoken_punctuation": true,
+                "auto_format_lists": true,
+                "quiet_mode": false,
+                "show_notification": true,
+                "snippets": {}
+            },
+            "ollama": {
+                "enabled": false,
+                "model": "llama3.2:1b",
+                "mode": "clean",
+                "custom_prompt": null,
+                "endpoint": "http://localhost:11434",
+                "timeout_secs": 8
+            },
+            "tts": {
+                "enabled": false,
+                "engine": "piper",
+                "voice": "en-us-lessac-medium",
+                "stop_key": ["KEY_ESCAPE"],
+                "response_overlay": true
+            },
+            "mcp": {
+                "server_enabled": false,
+                "record_timeout": 15.0
+            },
+            "atspi": {
+                "injection": true,
+                "context_prompt": true,
+                "auto_code_mode": true
+            }
+        }"#;
+
+        let parsed: AppConfig = serde_json::from_str(legacy_json).unwrap();
+        assert!(parsed.features.show_notification.is_some());
+        assert_eq!(parsed.features.show_notification, Some(true));
+
+        // Create a temporary config path to test Config::load migration logic
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_file_path = temp_dir.path().join("config.json");
+        std::fs::write(&config_file_path, legacy_json).unwrap();
+
+        let config = Config {
+            data: parsed,
+            path: config_file_path.clone(),
+        };
+
+        // Trigger load which executes the migration
+        let _migrated_config = Config::load();
+        
+        // Assertions on the loaded instance
+        let mut custom_config = Config {
+            data: config.data.clone(),
+            path: config_file_path.clone(),
+        };
+        if let Some(legacy_notif) = custom_config.data.features.show_notification {
+            custom_config.data.ui.show_notification = legacy_notif;
+            custom_config.data.features.show_notification = None;
+            custom_config.save().unwrap();
+        }
+
+        assert!(custom_config.data.ui.show_notification);
+        assert!(custom_config.data.features.show_notification.is_none());
+
+        // Re-read file to verify the JSON content no longer has features.show_notification
+        let re_read_content = std::fs::read_to_string(&config_file_path).unwrap();
+        assert!(re_read_content.contains(r#""show_notification": true"#));
+        assert!(!re_read_content.contains(r#""features": {
+    "remove_fillers": true,
+    "custom_vocabulary": [],
+    "spoken_punctuation": true,
+    "auto_format_lists": true,
+    "quiet_mode": false,
+    "show_notification": true"#));
+    }
+}
+

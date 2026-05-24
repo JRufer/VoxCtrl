@@ -5,6 +5,7 @@
   import { invoke } from "@tauri-apps/api/core";
 
   import GeneralTab from "./GeneralTab.svelte";
+  import VisualTab from "./VisualTab.svelte";
   import EngineTab from "./EngineTab.svelte";
   import AudioTab from "./AudioTab.svelte";
   import RoutingTab from "./RoutingTab.svelte";
@@ -13,11 +14,12 @@
   import FeaturesTab from "./FeaturesTab.svelte";
   import AboutTab from "./AboutTab.svelte";
 
-  type Tab = "general" | "engine" | "audio" | "features" | "routing" | "tts" | "ollama" | "about";
+  type Tab = "general" | "visual" | "engine" | "audio" | "features" | "routing" | "tts" | "ollama" | "about";
   let activeTab = $state<Tab>("general");
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "general",  label: "General",  icon: "⚙️" },
+    { id: "visual",   label: "Visual",   icon: "🎨" },
     { id: "engine",   label: "Engine",   icon: "🧠" },
     { id: "audio",    label: "Audio",    icon: "🔊" },
     { id: "features", label: "Features", icon: "✨" },
@@ -112,6 +114,8 @@
     <div class="tab-content">
       {#if activeTab === "general"}
         <GeneralTab bind:cfg={$config} />
+      {:else if activeTab === "visual"}
+        <VisualTab bind:cfg={$config} />
       {:else if activeTab === "engine"}
         <EngineTab bind:cfg={$config} />
       {:else if activeTab === "audio"}

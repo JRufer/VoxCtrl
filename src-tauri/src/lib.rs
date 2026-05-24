@@ -194,7 +194,7 @@ pub fn run() {
 
                 let show_notif = {
                     let cfg_lock = state.config.blocking_lock();
-                    cfg_lock.data.features.show_notification
+                    cfg_lock.data.ui.show_notification
                 };
                 if show_notif {
                     voxctr_inject::show_notification("VoxCtr", &output.text);
@@ -363,11 +363,12 @@ pub fn run() {
             // Note: Windows ("overlay", "settings", "history") are automatically created by Tauri
             // via the declarations in `tauri.conf.json`. Manual creation here is omitted to prevent duplicates.
 
-            // Automatically show the settings window on startup to ensure the user can access the UI,
-            // even if their Linux desktop environment does not support or display the system tray icon.
-            if let Some(window) = app.get_webview_window("settings") {
-                let _ = window.show();
-                let _ = window.set_focus();
+            // Automatically show the settings window on startup if configured to do so
+            if cfg_data.ui.auto_show_settings {
+                if let Some(window) = app.get_webview_window("settings") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
 
             // Emit periodic status updates to all windows

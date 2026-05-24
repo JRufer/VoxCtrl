@@ -116,7 +116,8 @@ h3 {
 
 /* Beautiful Obsidian inputs */
 .field input[type="number"],
-.field input[type="text"] {
+.field input[type="text"],
+.field input[type="password"] {
   background: var(--color-obsidian-950);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -130,13 +131,15 @@ h3 {
 }
 
 .field input[type="number"]:hover,
-.field input[type="text"]:hover {
+.field input[type="text"]:hover,
+.field input[type="password"]:hover {
   border-color: rgba(255, 255, 255, 0.15);
   background-color: var(--color-obsidian-900);
 }
 
 .field input[type="number"]:focus,
-.field input[type="text"]:focus {
+.field input[type="text"]:focus,
+.field input[type="password"]:focus {
   border-color: var(--accent2);
   background-color: var(--color-obsidian-950);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);

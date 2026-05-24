@@ -89,10 +89,15 @@ VoxCtr provides a clean, native settings window and overlay environment:
 ![Settings Panel](assets/settings.png)
 
 ### 📌 Interactive Settings UI
+* **General tab**: Configure core system attributes, including the local MCP JSON-RPC server toggles, record timeouts, and Wayland/X11 AT-SPI2 text injection behaviors.
+* **Visual tab**: A premium Cyber Obsidian interface that groups all aesthetic and presentation settings. It features an interactive **Overlay Style Selector** (supporting Voice Card, Waveform, Pulse Ring, Ocean Wave, or Disabled styles), toggles for displaying heads-up HUD overlays while speaking, and controls for sending system notifications on transcription. It also lets you configure if the Settings window should open automatically at launch or start minimized in the system tray.
 * **Audio tab**: Configure device gain, input indices, and toggle dynamic streaming/VAD threshold settings.
 * **Routing tab**: Define named targets (`targets.toml`), delivery properties, and post-processors.
 * **Hotkeys tab**: Setup keybindings (`bindings.toml`) and detect subset/exact-match conflicts in real time.
 * **Voice Output tab**: Download and preview Piper voices for local speech synthesis.
+
+### ⚙️ Window Management & Focus Raising
+* **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.
 
 ---
 

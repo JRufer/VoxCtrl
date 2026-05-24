@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tracing::info;
 use voxctr_config::AppConfig;
 use voxctr_routing::{HotkeyBinding, OutputTarget};
@@ -82,6 +82,7 @@ pub async fn get_config(state: State<'_, Arc<AppState>>) -> Result<AppConfig, St
 #[tauri::command]
 pub async fn save_config(
     state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     new_config: AppConfig,
 ) -> Result<(), String> {
     // Update live dynamic stream state, input device index, and gain in AppState
@@ -90,9 +91,13 @@ pub async fn save_config(
     state.set_gain(new_config.audio.gain);
 
     let mut guard = state.config.lock().await;
-    guard.data = new_config;
+    guard.data = new_config.clone();
     guard.save().map_err(|e| e.to_string())?;
     info!("Config saved");
+
+    // Emit config-changed event to all windows to enable instant reactivity
+    let _ = app.emit("config-changed", new_config);
+
     Ok(())
 }
 

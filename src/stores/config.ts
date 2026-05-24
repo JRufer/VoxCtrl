@@ -1,5 +1,6 @@
 import { writable } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface AppConfig {
   engine: EngineConfig;
@@ -44,6 +45,8 @@ export interface AudioConfig {
 export interface UiConfig {
   show_overlay: boolean;
   overlay_style: "voice_card" | "waveform" | "pulse" | "blue_wave" | "none";
+  auto_show_settings: boolean;
+  show_notification: boolean;
 }
 
 export interface FeaturesConfig {
@@ -52,7 +55,6 @@ export interface FeaturesConfig {
   spoken_punctuation: boolean;
   auto_format_lists: boolean;
   quiet_mode: boolean;
-  show_notification: boolean;
   snippets: Record<string, string>;
 }
 
@@ -105,14 +107,18 @@ const defaultConfig: AppConfig = {
     gain: 1.0,
     dynamic_stream: true,
   },
-  ui: { show_overlay: true, overlay_style: "voice_card" },
+  ui: {
+    show_overlay: true,
+    overlay_style: "blue_wave",
+    auto_show_settings: true,
+    show_notification: false,
+  },
   features: {
     remove_fillers: true,
     custom_vocabulary: [],
     spoken_punctuation: true,
     auto_format_lists: true,
     quiet_mode: false,
-    show_notification: false,
     snippets: {},
   },
   ollama: {
@@ -176,4 +182,16 @@ config.subscribe((cfg) => {
 });
 
 loadConfig();
+
+// Listen for config-changed events from other windows or the backend
+// to keep the in-memory store synchronized without circular auto-save feedback loops
+listen<AppConfig>("config-changed", (event) => {
+  isLoaded = false;
+  config.set(event.payload);
+  setTimeout(() => {
+    isLoaded = true;
+  }, 0);
+}).catch((e) => {
+  console.error("Failed to setup config-changed listener:", e);
+});
 

@@ -29,8 +29,8 @@
       {
         "label": "overlay",
         "title": "VoxCtr Overlay",
-        "width": 320,
-        "height": 120,
+        "width": 560,
+        "height": 160,
         "visible": false,
         "decorations": false,
         "transparent": true,
