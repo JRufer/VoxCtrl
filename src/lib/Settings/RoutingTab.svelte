@@ -23,6 +23,38 @@
   let editOllamaPrompt = $state("");
   let editMcpArgsString = $state("");
 
+  // Derived JSON error validation for MCP custom arguments
+  let mcpArgsError = $derived.by(() => {
+    if (!editMcpArgsString.trim()) return null;
+    try {
+      JSON.parse(editMcpArgsString);
+      return null;
+    } catch (e: any) {
+      return e.message;
+    }
+  });
+
+  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
+  function autoResize(node: HTMLTextAreaElement) {
+    function resize() {
+      node.style.height = "auto";
+      node.style.height = `${node.scrollHeight}px`;
+    }
+    node.addEventListener("input", resize);
+    // Initial calculation on mount or tab display
+    const timer = setTimeout(resize, 0);
+
+    return {
+      update() {
+        resize();
+      },
+      destroy() {
+        clearTimeout(timer);
+        node.removeEventListener("input", resize);
+      }
+    };
+  }
+
   onMount(async () => {
     targets = await invoke<OutputTarget[]>("get_targets");
     bindings = await invoke<HotkeyBinding[]>("get_bindings");
@@ -50,7 +82,7 @@
   function deliveryLabel(d: string) {
     const map: Record<string, string> = {
       inject: "Inject Text directly", clipboard: "Copy to Clipboard", exec: "Execute Command",
-      pipe: "Write to Named Pipe", socket: "Send to TCP/Unix Socket", file: "Append to File",
+      pipe: "Write to Named Pipe", socket: "Send to TCP/Unix Socket", file: "Write to File",
       dbus: "Emit DBus Signal", http: "HTTP Request", webhook: "Send Webhook",
       mcp: "Call MCP Server",
     };
@@ -81,6 +113,7 @@
       delivery: "inject",
       file_prefix: "- ",
       file_timestamp: true,
+      file_mode: "append",
       http_method: "POST",
       mcp_tool: "speak_text",
       mcp_args: { text: "{TEXT}" },
@@ -102,6 +135,9 @@
     const clone = JSON.parse(JSON.stringify(tgt));
     if (!clone.processing) {
       clone.processing = {};
+    }
+    if (!clone.file_mode) {
+      clone.file_mode = "append";
     }
     
     // Load flat state values
@@ -468,7 +504,7 @@
             <option value="inject">Inject Text Directly (Simulate keyboard)</option>
             <option value="clipboard">Save to Clipboard</option>
             <option value="exec">Execute Command</option>
-            <option value="file">Append to File</option>
+            <option value="file">Write to File</option>
             <option value="socket">TCP / Unix Socket</option>
             <option value="dbus">DBus Signal</option>
             <option value="http">HTTP Custom Client</option>
@@ -479,23 +515,27 @@
 
         <!-- Dynamic morphing options based on delivery type -->
         {#if editingTarget.delivery === "exec"}
-          <div class="morph-section">
-            <h5>Shell Executor settings</h5>
-            <label class="field">
-              <span>Terminal Command</span>
+          <div class="morph-section mcp-container">
+            <h5>Shell Executor Settings</h5>
+            <div class="field col">
+              <div class="field-label-row">
+                <span class="field-title">Terminal Command</span>
+                <span class="field-tag">Shell command</span>
+              </div>
               <input
                 type="text"
                 bind:value={editingTarget.command}
                 placeholder="e.g. xdg-open {'{TEXT}'}"
+                class="full-width-input"
               />
-              <span class="hint">Use <code>{"{TEXT}"}</code> inside the command string as a placeholder.</span>
-            </label>
+              <p class="hint">Use <code>{"{TEXT}"}</code> inside the command string as a placeholder to substitute transcribed speech.</p>
+            </div>
           </div>
         {/if}
 
         {#if editingTarget.delivery === "file"}
           <div class="morph-section">
-            <h5>Local File writer settings</h5>
+            <h5>Local File Writer Settings</h5>
             <label class="field">
               <span>File Absolute Path</span>
               <input
@@ -503,6 +543,13 @@
                 bind:value={editingTarget.file_path}
                 placeholder="e.g. /home/user/notes.md"
               />
+            </label>
+            <label class="field">
+              <span>Write Mode</span>
+              <select bind:value={editingTarget.file_mode}>
+                <option value="append">Append (Add to end of file)</option>
+                <option value="prepend">Prepend (Add to beginning of file)</option>
+              </select>
             </label>
             <label class="field">
               <span>Text Prefix</span>
@@ -585,34 +632,54 @@
         {/if}
 
         {#if editingTarget.delivery === "mcp"}
-          <div class="morph-section">
+          <div class="morph-section mcp-container">
             <h5>MCP Server Client settings</h5>
-            <label class="field">
-              <span>Custom Socket/Pipe Path (Optional override)</span>
+            
+            <div class="field col">
+              <div class="field-label-row">
+                <span class="field-title">Custom Socket/Pipe Path</span>
+                <span class="field-tag">Optional override</span>
+              </div>
               <input
                 type="text"
                 bind:value={editingTarget.mcp_path}
                 placeholder="e.g. /tmp/voxctl-mcp.sock"
+                class="full-width-input"
               />
-              <span class="hint">Leave empty to use defaults (<code>/tmp/voxctl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctl-mcp</code> on Windows).</span>
-            </label>
-            <label class="field">
-              <span>MCP Tool Name</span>
+              <p class="hint">Leave empty to use defaults (<code>/tmp/voxctl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctl-mcp</code> on Windows).</p>
+            </div>
+
+            <div class="field col">
+              <div class="field-label-row">
+                <span class="field-title">MCP Tool Name</span>
+              </div>
               <input
                 type="text"
                 bind:value={editingTarget.mcp_tool}
                 placeholder="speak_text"
+                class="full-width-input"
               />
-            </label>
-            <label class="field col mt-2">
-              <span>Custom Tool Arguments (JSON Template - <code>{"{TEXT}"}</code> placeholder supported)</span>
+            </div>
+
+            <div class="field col mt-2">
+              <div class="field-label-row">
+                <span class="field-title">Custom Tool Arguments</span>
+                <span class="field-tag">JSON Template</span>
+              </div>
               <textarea
                 rows="4"
                 bind:value={editMcpArgsString}
+                class:has-error={mcpArgsError}
                 placeholder={'{"text": "{TEXT}"}'}
+                use:autoResize
               ></textarea>
-              <span class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</span>
-            </label>
+              <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+              {#if mcpArgsError}
+                <span class="validation-error-msg">
+                  ⚠️ Invalid JSON format: {mcpArgsError}
+                </span>
+              {/if}
+            </div>
           </div>
         {/if}
 
@@ -649,19 +716,26 @@
                   />
                 </label>
 
-                <label class="field col mt-2">
-                  <span>Custom Prompt Template (<code>{"{text}"}</code> is required)</span>
+                <div class="field col mt-2">
+                  <div class="field-label-row">
+                    <span class="field-title">Custom Prompt Template</span>
+                    <span class="field-tag">LLM Prompt</span>
+                  </div>
                   <textarea
                     rows="3"
                     bind:value={editOllamaPrompt}
+                    class:has-error={editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
                     placeholder="e.g. write a haiku about {'{text}'}"
+                    use:autoResize
                   ></textarea>
                   {#if editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
-                    <span class="prompt-error-msg">
+                    <span class="validation-error-msg">
                       ⚠️ Validation Error: Prompt template MUST contain the <code>{"{text}"}</code> placeholder.
                     </span>
+                  {:else}
+                    <p class="hint">Prompt template MUST contain the <code>{"{text}"}</code> placeholder.</p>
                   {/if}
-                </label>
+                </div>
               </div>
             {/if}
           {/if}
@@ -1350,5 +1424,78 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+    width: 100%;
+  }
+
+  /* MCP & Ollama Redesigned Form Styles */
+  .mcp-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 6px 0;
+  }
+
+  .field-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 2px;
+  }
+
+  .field-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .field-tag {
+    font-size: 9px;
+    padding: 2px 6px;
+    background: rgba(79, 195, 247, 0.08);
+    color: var(--accent2);
+    border: 1px solid rgba(79, 195, 247, 0.25);
+    border-radius: 4px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+
+  .full-width-input {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  p.hint {
+    margin: 4px 0 0 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  p.hint code {
+    background: var(--color-obsidian-950);
+    color: var(--color-accent-blue);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    border: 1px solid var(--border);
+  }
+
+  /* Input validation visual status styles */
+  textarea.has-error, input.has-error {
+    border-color: #e57373 !important;
+    box-shadow: 0 0 0 2px rgba(229, 115, 115, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  .validation-error-msg {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #e57373;
+    line-height: 1.4;
   }
 </style>

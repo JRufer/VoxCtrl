@@ -25,6 +25,7 @@ export interface OutputTarget {
   file_path?: string;
   file_prefix: string;
   file_timestamp: boolean;
+  file_mode?: string;
   dbus_signal?: string;
   http_url?: string;
   http_method: string;

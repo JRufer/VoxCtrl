@@ -116,6 +116,8 @@ pub struct OutputTarget {
     pub file_prefix: String,
     #[serde(default = "bool_true")]
     pub file_timestamp: bool,
+    #[serde(default = "default_file_mode")]
+    pub file_mode: String,
 
     // DBus
     pub dbus_signal: Option<String>,
@@ -162,6 +164,9 @@ fn default_http_method() -> String {
 fn default_tts_engine() -> String {
     "piper".into()
 }
+fn default_file_mode() -> String {
+    "append".into()
+}
 
 impl OutputTarget {
     pub fn default_inject() -> Self {
@@ -177,6 +182,7 @@ impl OutputTarget {
             file_path: None,
             file_prefix: String::new(),
             file_timestamp: true,
+            file_mode: "append".into(),
             dbus_signal: None,
             http_url: None,
             http_method: "POST".into(),

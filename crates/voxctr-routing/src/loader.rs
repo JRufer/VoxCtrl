@@ -59,6 +59,8 @@ struct RawTarget {
     file_prefix: String,
     #[serde(default = "bool_true")]
     file_timestamp: bool,
+    #[serde(default = "default_file_mode")]
+    file_mode: String,
     dbus_signal: Option<String>,
     http_url: Option<String>,
     #[serde(default = "default_post")]
@@ -125,6 +127,9 @@ fn default_post() -> String {
 }
 fn default_tts_engine() -> String {
     "piper".into()
+}
+fn default_file_mode() -> String {
+    "append".into()
 }
 fn default_tap_ms() -> u32 {
     250
@@ -205,6 +210,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         file_path: r.file_path,
         file_prefix: r.file_prefix,
         file_timestamp: r.file_timestamp,
+        file_mode: r.file_mode,
         dbus_signal: r.dbus_signal,
         http_url: r.http_url,
         http_method: r.http_method,
@@ -278,6 +284,7 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
         file_path: t.file_path.clone(),
         file_prefix: t.file_prefix.clone(),
         file_timestamp: t.file_timestamp,
+        file_mode: t.file_mode.clone(),
         dbus_signal: t.dbus_signal.clone(),
         http_url: t.http_url.clone(),
         http_method: t.http_method.clone(),

@@ -36,6 +36,27 @@
       .filter(w => w.length > 0);
     markDirty();
   }
+
+  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
+  function autoResize(node: HTMLTextAreaElement) {
+    function resize() {
+      node.style.height = "auto";
+      node.style.height = `${node.scrollHeight}px`;
+    }
+    node.addEventListener("input", resize);
+    // Initial calculation on mount or state update
+    const timer = setTimeout(resize, 0);
+
+    return {
+      update() {
+        resize();
+      },
+      destroy() {
+        clearTimeout(timer);
+        node.removeEventListener("input", resize);
+      }
+    };
+  }
 </script>
 
 <section>
@@ -65,6 +86,7 @@
       placeholder="e.g. Waylin, Rufer, Enola, Kenz"
       value={customVocabString}
       oninput={onCustomVocabChange}
+      use:autoResize
     ></textarea>
   </div>
 

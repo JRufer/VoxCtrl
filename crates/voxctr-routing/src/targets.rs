@@ -301,17 +301,26 @@ impl DeliveryTarget for FileTarget {
         line.push_str(text);
         line.push('\n');
 
-        use tokio::io::AsyncWriteExt as _;
-        match tokio::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-            .await
-        {
-            Ok(mut f) => match f.write_all(line.as_bytes()).await {
-                Ok(_) => DeliveryResult::ok(text.into()),
-                Err(e) => DeliveryResult::err(e.to_string()),
-            },
+        let is_prepend = self.0.file_mode == "prepend";
+        let write_result = if is_prepend {
+            let existing_content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+            let mut new_content = line;
+            new_content.push_str(&existing_content);
+            tokio::fs::write(&path, new_content.as_bytes()).await
+        } else {
+            match tokio::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&path)
+                .await
+            {
+                Ok(mut f) => f.write_all(line.as_bytes()).await,
+                Err(e) => Err(e),
+            }
+        };
+
+        match write_result {
+            Ok(_) => DeliveryResult::ok(text.into()),
             Err(e) => DeliveryResult::err(e.to_string()),
         }
     }
