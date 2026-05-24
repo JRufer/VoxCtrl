@@ -213,6 +213,7 @@ pub async fn download_model(model_size: String) -> Result<(), String> {
 pub async fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("overlay") {
         w.show().map_err(|e| e.to_string())?;
+        w.set_always_on_top(true).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

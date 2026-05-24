@@ -23,6 +23,18 @@ use crate::{
 mod commands;
 mod state;
 
+// Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
+fn show_and_focus_window(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    #[cfg(target_os = "linux")]
+    {
+        // Workaround for Linux window managers preventing focus stealing/bringing to front
+        let _ = window.hide();
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
 // ── Tauri app entry point ─────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -269,8 +281,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             tracing::info!("Single instance trigger: argv={:?}, cwd={:?}", argv, cwd);
             if let Some(window) = app.get_webview_window("settings") {
-                let _ = window.show();
-                let _ = window.set_focus();
+                show_and_focus_window(&window);
             }
         }))
         .plugin(tauri_plugin_shell::init())
@@ -334,14 +345,12 @@ pub fn run() {
                     match event.id().as_ref() {
                         "settings" => {
                             if let Some(window) = app.get_webview_window("settings") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                                show_and_focus_window(&window);
                             }
                         }
                         "history" => {
                             if let Some(window) = app.get_webview_window("history") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                                show_and_focus_window(&window);
                             }
                         }
                         "quit" => {
@@ -353,8 +362,7 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
                         if let Some(window) = tray.app_handle().get_webview_window("settings") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            show_and_focus_window(&window);
                         }
                     }
                 })
@@ -366,8 +374,7 @@ pub fn run() {
             // Automatically show the settings window on startup if configured to do so
             if cfg_data.ui.auto_show_settings {
                 if let Some(window) = app.get_webview_window("settings") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    show_and_focus_window(&window);
                 }
             }
 
@@ -407,6 +414,7 @@ pub fn run() {
                     if let Some(window) = handle.get_webview_window("overlay") {
                         if should_show_overlay {
                             let _ = window.show();
+                            let _ = window.set_always_on_top(true);
                         } else {
                             let _ = window.hide();
                         }
