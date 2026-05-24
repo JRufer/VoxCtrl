@@ -14,17 +14,17 @@
   import FeaturesTab from "./FeaturesTab.svelte";
   import AboutTab from "./AboutTab.svelte";
 
-  type Tab = "general" | "visual" | "engine" | "audio" | "features" | "routing" | "tts" | "ollama" | "about";
+  type Tab = "general" | "engine" | "routing" | "visual" | "audio" | "tts" | "features" | "ollama" | "about";
   let activeTab = $state<Tab>("general");
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "general",  label: "General",  icon: "⚙️" },
-    { id: "visual",   label: "Visual",   icon: "🎨" },
     { id: "engine",   label: "Engine",   icon: "🧠" },
-    { id: "audio",    label: "Audio",    icon: "🔊" },
-    { id: "features", label: "Features", icon: "✨" },
     { id: "routing",  label: "Routing",  icon: "🔀" },
+    { id: "visual",   label: "Visual",   icon: "🎨" },
+    { id: "audio",    label: "Audio",    icon: "🔊" },
     { id: "tts",      label: "TTS",      icon: "🗣️" },
+    { id: "features", label: "Features", icon: "✨" },
     { id: "ollama",   label: "Ollama",   icon: "🦙" },
     { id: "about",    label: "About",    icon: "ℹ️" },
   ];
@@ -114,18 +114,18 @@
     <div class="tab-content">
       {#if activeTab === "general"}
         <GeneralTab bind:cfg={$config} />
-      {:else if activeTab === "visual"}
-        <VisualTab bind:cfg={$config} />
       {:else if activeTab === "engine"}
         <EngineTab bind:cfg={$config} />
-      {:else if activeTab === "audio"}
-        <AudioTab bind:cfg={$config} />
-      {:else if activeTab === "features"}
-        <FeaturesTab bind:cfg={$config} />
       {:else if activeTab === "routing"}
         <RoutingTab />
+      {:else if activeTab === "visual"}
+        <VisualTab bind:cfg={$config} />
+      {:else if activeTab === "audio"}
+        <AudioTab bind:cfg={$config} />
       {:else if activeTab === "tts"}
         <TtsTab bind:cfg={$config} />
+      {:else if activeTab === "features"}
+        <FeaturesTab bind:cfg={$config} />
       {:else if activeTab === "ollama"}
         <OllamaTab bind:cfg={$config} />
       {:else if activeTab === "about"}
@@ -182,7 +182,7 @@
     width: 20px;
     height: 20px;
     object-fit: contain;
-    filter: drop-shadow(0 2px 8px rgba(255, 107, 53, 0.3));
+    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
     animation: floating 4s ease-in-out infinite;
     flex-shrink: 0;
   }
@@ -296,8 +296,8 @@
   }
 
   .status-panel.recording {
-    border-color: rgba(255, 107, 53, 0.25);
-    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.1), inset 0 2px 6px rgba(0, 0, 0, 0.3);
+    border-color: rgba(56, 189, 248, 0.25);
+    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.1), inset 0 2px 6px rgba(0, 0, 0, 0.3);
   }
 
   .status-header {
@@ -324,8 +324,8 @@
   }
 
   .status-panel.recording .status-dot {
-    background: var(--color-accent-tangerine);
-    box-shadow: 0 0 8px var(--color-accent-tangerine);
+    background: var(--color-accent-blue);
+    box-shadow: 0 0 8px var(--color-accent-blue);
     animation: heartBeat 1.2s infinite;
   }
 
@@ -347,7 +347,7 @@
   }
 
   .status-panel.recording .status-label {
-    color: var(--color-accent-tangerine);
+    color: var(--color-accent-blue);
   }
 
   .word-count {
@@ -363,24 +363,24 @@
     width: 100%;
     padding: 6px 4px;
     border-radius: var(--radius);
-    background: rgba(255, 107, 53, 0.08);
-    color: var(--color-accent-tangerine);
+    background: rgba(56, 189, 248, 0.08);
+    color: var(--color-accent-blue);
     font-size: 11px;
     font-weight: 750;
     text-align: center;
-    border: 1px solid rgba(255, 107, 53, 0.2);
-    box-shadow: 0 2px 6px rgba(255, 107, 53, 0.05);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.05);
     transition: var(--transition-snappy-fast);
     overflow: hidden;
     white-space: nowrap;
   }
 
   .btn-record:hover {
-    background: var(--color-accent-tangerine);
+    background: var(--color-accent-blue);
     color: #fff;
-    border-color: var(--color-accent-tangerine);
+    border-color: var(--color-accent-blue);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.25);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.25);
   }
 
   .btn-record:active {
@@ -388,10 +388,10 @@
   }
 
   .btn-record.active {
-    background: var(--color-accent-tangerine);
+    background: var(--color-accent-blue);
     color: #fff;
-    border-color: var(--color-accent-tangerine);
-    box-shadow: 0 4px 16px rgba(255, 107, 53, 0.35);
+    border-color: var(--color-accent-blue);
+    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35);
   }
 
   .pulse-ring {
@@ -401,7 +401,7 @@
     width: 100%;
     height: 100%;
     border-radius: var(--radius);
-    border: 2px solid var(--color-accent-tangerine);
+    border: 2px solid var(--color-accent-blue);
     animation: ripple 1.6s infinite ease-out;
     opacity: 0;
     pointer-events: none;
@@ -470,7 +470,7 @@
 
   .btn-save {
     background: var(--color-accent-blue);
-    color: var(--color-obsidian-950);
+    color: #fff;
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 12px;

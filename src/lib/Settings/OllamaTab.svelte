@@ -119,26 +119,30 @@
   }
   .action-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     margin-top: 14px;
-    padding-top: 10px;
+    padding-top: 14px;
     border-top: 1px solid var(--border);
   }
   .btn-test {
+    width: 100%;
     background: var(--accent);
     border: none;
     color: #fff;
     border-radius: var(--radius);
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: 6px 0;
+    font-size: 12px;
     cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s, transform 0.1s;
+    font-weight: 700;
+    transition: var(--transition-snappy-fast);
+    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.15);
   }
   .btn-test:hover:not(:disabled) {
-    background: var(--accent2);
+    filter: brightness(1.1);
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
   }
   .btn-test:active:not(:disabled) {
     transform: translateY(0);
@@ -148,8 +152,9 @@
     cursor: not-allowed;
   }
   .status-msg {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
   }
   .status-msg.success {
     color: #4caf50;

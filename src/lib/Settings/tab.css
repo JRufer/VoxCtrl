@@ -35,20 +35,19 @@ h3 {
 }
 
 .field-group {
-  background: var(--surface2);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  gap: 16px;
   transition: var(--transition-spring);
 }
 
 .field-group:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .field {
@@ -72,78 +71,8 @@ h3 {
   color: #fff;
 }
 
-/* Redesigned Premium Custom Toggle / Checkbox */
-.field input[type="checkbox"] {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--color-obsidian-700);
-  outline: none;
-  border-radius: 99px;
-  cursor: pointer;
-  transition: var(--transition-spring-fast);
-  border: 1px solid var(--border);
-}
-
-.field input[type="checkbox"]::before {
-  content: "";
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  top: 2px;
-  left: 2px;
-  background: var(--color-obsidian-300);
-  transition: var(--transition-spring-fast);
-}
-
-.field input[type="checkbox"]:checked {
-  background: var(--color-accent-blue);
-  border-color: var(--color-accent-blue);
-}
-
-.field input[type="checkbox"]:checked::before {
-  left: 18px;
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.field input[type="checkbox"]:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-/* Beautiful Obsidian inputs */
-.field input[type="number"],
-.field input[type="text"],
-.field input[type="password"] {
-  background: var(--color-obsidian-950);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  padding: 8px 12px;
-  font-size: 13px;
-  min-width: 170px;
-  outline: none;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: var(--transition-spring-fast);
-}
-
-.field input[type="number"]:hover,
-.field input[type="text"]:hover,
-.field input[type="password"]:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  background-color: var(--color-obsidian-900);
-}
-
-.field input[type="number"]:focus,
-.field input[type="text"]:focus,
-.field input[type="password"]:focus {
-  border-color: var(--accent2);
-  background-color: var(--color-obsidian-950);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
-}
+/* Select styling inherits dropdown styles defined globally in app.css */
+/* Input styles have been moved globally to app.css */
 
 /* select styling inherits dropdown styles defined globally in app.css */
 .field select {
@@ -167,4 +96,73 @@ h3 {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   border: 1px solid var(--border);
+}
+
+/* Common UI Row Header & Dynamic List */
+.field-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.btn-add-inline {
+  background: transparent;
+  border: none;
+  color: var(--accent2);
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  transition: var(--transition-snappy-fast);
+}
+.btn-add-inline:hover {
+  background: rgba(56, 189, 248, 0.08);
+  color: #fff;
+}
+
+.dynamic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.dynamic-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.dynamic-list-row input,
+.dynamic-list-row select {
+  min-width: 0;
+}
+
+.btn-remove-inline {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  transition: var(--transition-snappy-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  box-sizing: border-box;
+}
+
+.btn-remove-inline:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
 }

@@ -6,22 +6,28 @@
   function markDirty() { configDirty.set(true); }
 
   // Snippets editing
-  let snippetKey = $state("");
-  let snippetVal = $state("");
-  let snippetEntries = $derived(Object.entries(cfg.features.snippets));
+  let snippetList = $state<{key: string, val: string}[]>(
+    Object.entries(cfg.features.snippets).map(([k, v]) => ({ key: k, val: v }))
+  );
 
-  function addSnippet() {
-    if (!snippetKey.trim() || !snippetVal.trim()) return;
-    cfg.features.snippets = { ...cfg.features.snippets, [snippetKey.trim()]: snippetVal.trim() };
-    snippetKey = "";
-    snippetVal = "";
+  function syncSnippets() {
+    const newSnippets: Record<string, string> = {};
+    for (const {key, val} of snippetList) {
+      if (key.trim()) {
+        newSnippets[key.trim()] = val.trim();
+      }
+    }
+    cfg.features.snippets = newSnippets;
     markDirty();
   }
 
-  function removeSnippet(key: string) {
-    const { [key]: _, ...rest } = cfg.features.snippets;
-    cfg.features.snippets = rest;
-    markDirty();
+  function addEmptySnippetRow() {
+    snippetList = [...snippetList, { key: "", val: "" }];
+  }
+
+  function removeSnippetRow(index: number) {
+    snippetList = snippetList.filter((_, i) => i !== index);
+    syncSnippets();
   }
 
   let customVocabString = $derived(
@@ -91,23 +97,42 @@
   </div>
 
   <div class="field-group">
-    <h3>Snippets</h3>
-    <p class="hint">Type a trigger word → it expands to the replacement text.</p>
-
-    {#each snippetEntries as [key, val]}
-      <div class="snippet-row">
-        <code>{key}</code>
-        <span>→</span>
-        <span class="snippet-val">{val}</span>
-        <button class="btn-remove" onclick={() => removeSnippet(key)}>✕</button>
+    <div class="field-label-row">
+      <div style="display: flex; flex-direction: column;">
+        <h3 style="margin-bottom: 0;">Snippets</h3>
+        <p class="hint" style="margin-top: 4px;">Type a trigger word → it expands to the replacement text.</p>
       </div>
-    {/each}
+      <button class="btn-add-inline" type="button" onclick={addEmptySnippetRow}>
+        ＋ Add Snippet
+      </button>
+    </div>
 
-    <div class="snippet-add">
-      <input type="text" placeholder="trigger" bind:value={snippetKey} />
-      <span>→</span>
-      <input type="text" placeholder="expansion" bind:value={snippetVal} />
-      <button class="btn-add" onclick={addSnippet}>Add</button>
+    <div class="dynamic-list">
+      {#each snippetList as snippet, idx}
+        <div class="dynamic-list-row">
+          <input 
+            type="text" 
+            placeholder="Trigger word" 
+            bind:value={snippetList[idx].key} 
+            oninput={syncSnippets} 
+            style="flex: 0.4;"
+          />
+          <span style="color: var(--text-muted);">→</span>
+          <input 
+            type="text" 
+            placeholder="Expansion text" 
+            bind:value={snippetList[idx].val} 
+            oninput={syncSnippets} 
+            style="flex: 1;"
+          />
+          <button class="btn-remove-inline" type="button" onclick={() => removeSnippetRow(idx)}>✕</button>
+        </div>
+      {/each}
+      {#if snippetList.length === 0}
+        <div class="empty-state" style="padding: 20px; grid-column: 1 / -1;">
+          <p>No snippets defined.</p>
+        </div>
+      {/if}
     </div>
   </div>
 </section>
@@ -115,83 +140,7 @@
 <style>
   @import "./tab.css";
 
-  .snippet-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-  }
 
-  .snippet-val {
-    flex: 1;
-    color: var(--text-muted);
-  }
-
-  .btn-remove {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 12px;
-    padding: 0 4px;
-    cursor: pointer;
-    transition: color 0.15s ease;
-  }
-
-  .btn-remove:hover {
-    color: var(--accent);
-  }
-
-  .snippet-add {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 4px;
-  }
-
-  .snippet-add input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    padding: 8px 12px;
-    font-size: 13px;
-    min-width: 0;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
-  }
-
-  .snippet-add input:focus {
-    border-color: var(--accent2);
-    box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
-  }
-
-  .snippet-add input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.5;
-  }
-
-  .btn-add {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius);
-    padding: 8px 16px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .btn-add:hover {
-    opacity: 0.95;
-    transform: translateY(-1px);
-  }
-
-  .btn-add:active {
-    transform: translateY(0);
-  }
 
   .custom-vocab-input {
     width: 100%;

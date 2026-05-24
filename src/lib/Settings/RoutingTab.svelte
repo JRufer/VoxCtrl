@@ -409,17 +409,17 @@
   <div class="sub-nav">
     <button
       class="sub-btn"
-      class:active={activeSection === "targets"}
-      onclick={() => activeSection = "targets"}
-    >
-      🎯 Output Targets ({targets.length})
-    </button>
-    <button
-      class="sub-btn"
       class:active={activeSection === "bindings"}
       onclick={() => activeSection = "bindings"}
     >
       ⌨ Hotkey Bindings ({bindings.length})
+    </button>
+    <button
+      class="sub-btn"
+      class:active={activeSection === "targets"}
+      onclick={() => activeSection = "targets"}
+    >
+      🎯 Output Targets ({targets.length})
     </button>
   </div>
 
@@ -430,10 +430,11 @@
         <h3>Output Targets</h3>
         <p class="description">Define routing destinations where transcribed text is typed, copied, piped, or sent over network sockets.</p>
       </div>
-      <button class="btn-action primary" onclick={addNewTarget}>
-        ＋ Add New Target
-      </button>
     </div>
+
+    <button class="btn-add-wide" onclick={addNewTarget}>
+      ＋ Add New Output Target
+    </button>
 
     <div class="cards-grid">
       {#each targets as t}
@@ -497,10 +498,11 @@
         <h3>Hotkey Bindings</h3>
         <p class="description">Bind physical keyboard combinations to your output targets. Each hotkey supports customizable triggers (double-taps, holding keys, etc.)</p>
       </div>
-      <button class="btn-action primary" onclick={addNewBinding}>
-        ＋ Add New Binding
-      </button>
     </div>
+
+    <button class="btn-add-wide" onclick={addNewBinding}>
+      ＋ Add New Hotkey Binding
+    </button>
 
     <div class="cards-grid">
       {#each bindings as b}
@@ -1235,6 +1237,35 @@
   .btn-action.danger:hover {
     background: rgba(248, 113, 113, 0.1);
     border-color: #f87171;
+  }
+
+  .btn-add-wide {
+    width: 100%;
+    background: var(--accent2); /* Solid blue */
+    color: #fff; /* Light text */
+    border: none;
+    border-radius: var(--radius);
+    padding: 6px 0; /* Thinner */
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition-snappy-fast);
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.15);
+  }
+
+  .btn-add-wide:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+  }
+  
+  .btn-add-wide:active {
+    transform: translateY(0);
   }
 
   /* Modal Dialog Glassmorphism style */
