@@ -156,42 +156,60 @@ text = "{TEXT}"                    # Custom arguments template (substitutes the 
 
 ---
 
-## 📦 Installation & Relocation
+## 📦 Portable AppImage & Installation
 
-VoxCtr runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE).
+VoxCtr runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, combined with an automation script that handles system integration and hotkey permissions.
 
-### 1. Build and Install Dependencies
-We provide a unified installer that detects your package manager, pulls in required development and system libraries, installs the Rust toolchain, and compiles the application:
+### 1. Unified Setup & System Integration
+
+To install runtime dependencies, fetch/configure the AppImage, and integrate VoxCtr into your desktop environment, run the unified `install.sh` script:
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-#### What `install.sh` Installs:
-* **Tauri Webview**: `webkit2gtk-4.1` (Tauri 2 system requirement)
-* **Crypto Cache**: `openssl` (for secure HTTP/Webhooks)
-* **Status Tray**: `libayatana-appindicator3`
-* **Keystroke Tools**: `wtype` (Wayland) and `xdotool` (X11)
-* **Clipboard Utilities**: `wl-clipboard` and `xclip`
-* **Audio Backend**: `portaudio`
-* **Build Essentials**: Rust compiler, `nodejs`, `npm`, and `pkgconf`
+#### What `install.sh` accomplishes automatically:
+* **System Runtime Packages**: Detects your package manager (`apt`, `pacman`, `dnf`, `zypper`) and installs WebKitGTK, OpenSSL, PortAudio, `wtype`, `xdotool`, and clipboard utilities.
+* **AppImage Retrieval**: Checks for `VoxCtl-x86_64.AppImage` locally. If missing, it attempts to fetch the latest pre-compiled binary from GitHub. If not found or offline, it falls back to building it from source.
+* **Low-Level Hardware Hotkeys**: Creates the `/etc/udev/rules.d/99-voxctl.rules` rule to permit access to `uinput`, and adds your user to the `input` group so the evdev key listener works globally without running the application as root.
+* **Desktop Menu Integration**: Registers a modern `.desktop` entry in `~/.local/share/applications/` and copies application icons so VoxCtr appears in your desktop application menus.
 
-### 2. Global Hotkey Permissions
-For the low-level `evdev` global hotkey listener to read keyboard events without running the application as root, ensure your user is in the `input` group:
-
-```bash
-sudo usermod -aG input $USER
-```
 > [!IMPORTANT]
-> You must **log out and log back in** (or reboot) for these group assignment changes to take effect on your system.
+> If `install.sh` adds your user account to the `input` group, you **must log out and log back in** (or reboot) for hardware global hotkeys to function correctly.
 
-### 3. Launching the App
-After installation, you can launch the compiled desktop application at any time using the helper script in the root directory:
+---
+
+### 2. Standalone AppImage Compilation
+
+If you wish to compile the application and bundle a fresh, portable AppImage manually from source, run the dedicated compiler script:
 
 ```bash
-./voxctr.sh
+chmod +x build_appimage.sh
+./build_appimage.sh
 ```
+
+This compilation script:
+* Restructures the workspace compiler toolchain, wrapping the local `appimagetool` to execute inside headless and FUSE-less build/sandbox environments using `--appimage-extract-and-run`.
+* Runs frontend compilation via Vite/Svelte and compiles the Rust Tauri backend.
+* Automatically injects system GPU/CUDA library paths into the compiler environment for hardware-accelerated transcription (if compatible NVIDIA cards are present).
+* Moves and exposes the final, standalone, portable AppImage directly to the root of the workspace as `VoxCtl-x86_64.AppImage`.
+
+---
+
+### 3. Execution Options
+
+Once set up, you can execute the application in three ways:
+
+* **From Desktop Menu**: Launch **VoxCtr** directly from your desktop launcher or application drawer.
+* **Standalone Portable AppImage**: Run the standalone AppImage executable in the root directory:
+  ```bash
+  ./VoxCtl-x86_64.AppImage
+  ```
+* **Helper Script Wrapper**: Run the workspace helper script:
+  ```bash
+  ./voxctr.sh
+  ```
 
 ---
 

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# VoxCtr Installer Script
+# VoxCtr Installer & Host Setup Script
 #
-# Detects system package manager, installs all system dependencies,
-# and builds the Tauri/Rust application in release mode.
+# Configures the host environment to run the portable AppImage natively:
+# 1. Installs system runtime dependencies (PortAudio, WebKitGTK, tools).
+# 2. Ensures the portable AppImage exists (compiling if missing).
+# 3. Establishes hardware udev permissions for evdev global hotkeys.
+# 4. Integrates the AppImage into the desktop launcher (~/.local/share/applications/).
 
 set -euo pipefail
 
@@ -27,111 +30,131 @@ detect_pkg_manager() {
 }
 
 PKG_MGR=$(detect_pkg_manager)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1. Install System Dependencies
+# 1. Install Host Runtime Dependencies
 # ══════════════════════════════════════════════════════════════════════════════
-step "Installing System Dependencies"
+step "Installing Host Runtime Dependencies"
 
 info "Detected Package Manager: $PKG_MGR"
 
 case "$PKG_MGR" in
     pacman)
-        info "Running pacman system update and installing dependencies..."
+        info "Installing portable runtime packages via pacman..."
         sudo pacman -S --noconfirm --needed \
-            base-devel rustup nodejs npm pkgconf \
-            webkit2gtk-4.1 openssl libayatana-appindicator3 \
-            wtype xdotool wl-clipboard xclip portaudio
+            webkit2gtk-4.1 openssl libayatana-appindicator \
+            wtype xdotool wl-clipboard xclip portaudio squashfs-tools
         ;;
     apt)
-        info "Running apt-get update and installing dependencies..."
+        info "Installing portable runtime packages via apt..."
         sudo apt-get update -y
         sudo apt-get install -y \
-            build-essential curl nodejs npm pkg-config \
             libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev \
-            wtype xdotool wl-clipboard xclip portaudio19-dev
+            wtype xdotool wl-clipboard xclip portaudio19-dev squashfs-tools
         ;;
     dnf)
-        info "Running dnf package installation..."
-        sudo dnf groupinstall -y "Development Tools"
+        info "Installing portable runtime packages via dnf..."
         sudo dnf install -y \
-            curl nodejs npm pkgconf-pkg-config \
             webkit2gtk4.1-devel openssl-devel libayatana-appindicator3-devel \
-            wtype xdotool wl-clipboard xclip portaudio-devel
+            wtype xdotool wl-clipboard xclip portaudio-devel squashfs-tools
         ;;
     zypper)
-        info "Running zypper package installation..."
-        sudo zypper install -t pattern -y devel_basis
+        info "Installing portable runtime packages via zypper..."
         sudo zypper install -y \
-            curl nodejs npm pkg-config \
             webkit2gtk3-devel libopenssl-devel libayatana-appindicator3-devel \
-            wtype xdotool wl-clipboard xclip portaudio-devel
+            wtype xdotool wl-clipboard xclip portaudio-devel squashfs-tools
         ;;
     *)
-        fail "Unsupported package manager. Please install dependencies manually:"
-        echo "  - Rust compiler & Cargo"
-        echo "  - Node.js & npm (v18+)"
-        echo "  - webkit2gtk-4.1 dev libraries"
-        echo "  - openssl / libssl dev libraries"
-        echo "  - libayatana-appindicator3 dev libraries"
-        echo "  - portaudio dev libraries"
-        echo "  - xdotool, wtype, xclip, wl-clipboard"
-        exit 1
+        warn "Unsupported package manager. Please ensure you have these runtimes installed manually:"
+        echo "  - webkit2gtk-4.1 libraries"
+        echo "  - openssl (libssl)"
+        echo "  - libayatana-appindicator3"
+        echo "  - portaudio libraries"
+        echo "  - wtype (Wayland keystrokes) / xdotool (X11 keystrokes)"
+        echo "  - wl-clipboard (Wayland clipboard) / xclip (X11 clipboard)"
         ;;
 esac
 
-ok "System dependencies installed successfully."
+ok "Host runtime dependencies installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. Rust Compiler Toolchain setup
+# 2. Retrieve / Compile AppImage
 # ══════════════════════════════════════════════════════════════════════════════
-step "Setting up Rust Compiler"
+step "Retrieving Portable AppImage"
 
-if ! command -v cargo &>/dev/null; then
-    info "Rust toolchain is not fully initialized. Installing via rustup..."
-    if command -v rustup &>/dev/null; then
-        rustup default stable
+PORTABLE_APPIMAGE="./VoxCtl-x86_64.AppImage"
+
+if [ -f "$PORTABLE_APPIMAGE" ]; then
+    ok "Portable AppImage found in workspace root: $PORTABLE_APPIMAGE"
+else
+    info "Portable AppImage not found in root. Attempting to fetch pre-compiled binary..."
+    
+    DOWNLOAD_URL="https://github.com/JRufer/VoxCtr/releases/latest/download/VoxCtl-x86_64.AppImage"
+    FETCHED=0
+    
+    if command -v curl &>/dev/null; then
+        info "Downloading latest AppImage via curl..."
+        if curl -s -L -f -o "$PORTABLE_APPIMAGE" "$DOWNLOAD_URL"; then
+            FETCHED=1
+        fi
+    elif command -v wget &>/dev/null; then
+        info "Downloading latest AppImage via wget..."
+        if wget -q -O "$PORTABLE_APPIMAGE" "$DOWNLOAD_URL"; then
+            FETCHED=1
+        fi
+    fi
+    
+    if [ $FETCHED -eq 1 ]; then
+        chmod +x "$PORTABLE_APPIMAGE"
+        ok "Fetched latest pre-compiled AppImage successfully!"
     else
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source "$HOME/.cargo/env"
+        warn "Could not fetch pre-compiled binary (it may not be released yet or network is offline)."
+        info "Falling back to compiling AppImage from source..."
+        
+        # Check for build toolchain dependencies
+        MISSING_BUILD_TOOLS=0
+        if ! command -v cargo &>/dev/null; then MISSING_BUILD_TOOLS=1; fi
+        if ! command -v npm &>/dev/null;   then MISSING_BUILD_TOOLS=1; fi
+        
+        if [ $MISSING_BUILD_TOOLS -eq 1 ]; then
+            info "Compiler tools are missing. Installing build toolchain dependencies..."
+            case "$PKG_MGR" in
+                pacman)
+                    sudo pacman -S --noconfirm --needed base-devel rustup nodejs npm pkgconf
+                    ;;
+                apt)
+                    sudo apt-get install -y build-essential curl nodejs npm pkg-config
+                    ;;
+                dnf)
+                    sudo dnf groupinstall -y "Development Tools"
+                    sudo dnf install -y curl nodejs npm pkgconf-pkg-config
+                    ;;
+                zypper)
+                    sudo zypper install -t pattern -y devel_basis
+                    sudo zypper install -y curl nodejs npm pkg-config
+                    ;;
+            esac
+            
+            # Initialize rustup if needed
+            if ! command -v cargo &>/dev/null && command -v rustup &>/dev/null; then
+                rustup default stable
+                source "$HOME/.cargo/env" || true
+            fi
+        fi
+        
+        # Run the compiler script
+        info "Executing build_appimage.sh to compile portable package..."
+        ./build_appimage.sh
+        ok "AppImage compiled successfully from source."
     fi
 fi
-ok "Rust toolchain ready: $(cargo --version)"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. Build Node Frontend Dependencies
+# 3. Udev Rules Setup for evdev Hotkeys
 # ══════════════════════════════════════════════════════════════════════════════
-step "Building Frontend (npm)"
-
-info "Installing frontend node packages..."
-npm install
-
-info "Building frontend assets..."
-npm run build
-ok "Frontend assets built successfully."
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. Compile Tauri App
-# ══════════════════════════════════════════════════════════════════════════════
-step "Compiling Tauri / Rust Application"
-
-info "Installing Tauri CLI locally..."
-npm install @tauri-apps/cli --save-dev
-
-info "Compiling application in release mode..."
-npx tauri build
-
-if [ -f "./target/release/voxctr" ]; then
-    ok "Application compiled successfully! Binary: ./target/release/voxctr"
-else
-    fail "Compilation finished but binary was not found where expected."
-    exit 1
-fi
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. Udev Rules Setup for evdev Hotkeys
-# ══════════════════════════════════════════════════════════════════════════════
-step "Configuring Hardware permissions (udev)"
+step "Configuring Hardware Permissions (udev)"
 
 UDEV_RULE_PATH="/etc/udev/rules.d/99-voxctl.rules"
 if [ ! -f "$UDEV_RULE_PATH" ]; then
@@ -146,14 +169,62 @@ else
     ok "udev rules already exist."
 fi
 
+# Add active user to input group if not already present
+if ! groups "$USER" | grep -q "\binput\b"; then
+    info "Adding user '$USER' to 'input' group for hardware keystroke capture..."
+    sudo usermod -aG input "$USER"
+    warn "You have been added to the 'input' group. You MUST log out and log back in for hotkey bindings to work!"
+else
+    ok "User is already in the 'input' group."
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. Desktop Integration launcher
+# ══════════════════════════════════════════════════════════════════════════════
+step "Registering Desktop Launcher & Application Icon"
+
+ICON_DEST_DIR="$HOME/.local/share/icons/hicolor/128x128/apps"
+LAUNCHER_DEST_DIR="$HOME/.local/share/applications"
+
+mkdir -p "$ICON_DEST_DIR"
+mkdir -p "$LAUNCHER_DEST_DIR"
+
+# Install high-res desktop icon
+if [ -f "./src-tauri/icons/128x128.png" ]; then
+    cp "./src-tauri/icons/128x128.png" "$ICON_DEST_DIR/voxctl.png"
+    ok "Application icon installed: $ICON_DEST_DIR/voxctl.png"
+fi
+
+# Write desktop entry linked directly to the portable AppImage
+LAUNCHER_PATH="$LAUNCHER_DEST_DIR/voxctl.desktop"
+ABS_APPIMAGE_PATH="$(readlink -f "$PORTABLE_APPIMAGE")"
+
+cat > "$LAUNCHER_PATH" <<EOF
+[Desktop Entry]
+Name=VoxCtr
+Comment=Private Global Voice Dictation Gateway
+Exec=$ABS_APPIMAGE_PATH
+Icon=voxctl
+Terminal=false
+Type=Application
+Categories=Utility;AudioVideo;
+StartupNotify=false
+Keywords=whisper;voice;dictation;wayland;
+EOF
+
+chmod +x "$LAUNCHER_PATH"
+ok "Desktop launcher integrated successfully: $LAUNCHER_PATH"
+
 echo ""
-echo -e "${BOLD}==========================================${NC}"
-echo -e "${BOLD}  Installation Complete!${NC}"
-echo -e "${BOLD}==========================================${NC}"
+echo -e "${BOLD}==================================================${NC}"
+echo -e "${BOLD}  Setup & Integration Complete!${NC}"
+echo -e "${BOLD}==================================================${NC}"
 echo ""
-echo "  To start the application, run:"
-echo "    ./voxctr.sh"
+echo "  VoxCtr is now fully integrated into your desktop environment!"
+echo "  You can launch it directly from your applications menu or run:"
+echo -e "    ${GREEN}$PORTABLE_APPIMAGE${NC}"
 echo ""
-echo "  Note: If you just set up hotkeys for the first time, you may"
-echo "  need to ensure your user is in the 'input' group and log out/in."
+echo "  ⚠️  IMPORTANT REMINDER:"
+echo "  If you were just added to the 'input' group, you MUST log out"
+echo "  and log back in (or reboot) for evdev hotkeys to function correctly."
 echo ""
