@@ -10,6 +10,7 @@ use voxctr_routing::HotkeyBinding;
 #[derive(Debug, Clone)]
 pub struct GestureEvent {
     pub binding_id: String,
+    pub binding_label: String,
     pub target_id: String,
     pub kind: GestureKind,
 }

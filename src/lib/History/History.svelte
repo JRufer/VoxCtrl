@@ -101,11 +101,15 @@
   }
 
   function getTargetNotes(targetId: string) {
-    const target = targetMap.get(targetId);
-    if (!target) {
-      return targetId === "default" ? "Focused Window (Inject)" : targetId;
-    }
-    return `${target.label} (${deliveryLabel(target.delivery)})`;
+    if (!targetId) return "";
+    const ids = targetId.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    return ids.map(id => {
+      const target = targetMap.get(id);
+      if (!target) {
+        return id === "default" ? "Focused Window (Inject)" : id;
+      }
+      return `${target.label} (${deliveryLabel(target.delivery)})`;
+    }).join(" + ");
   }
 </script>
 

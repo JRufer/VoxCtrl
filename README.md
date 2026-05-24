@@ -238,7 +238,7 @@ file_timestamp = true
 ```
 
 ### `bindings.toml`
-Binds hotkey gestures directly to target IDs:
+Binds hotkey gestures directly to target IDs (supports single or **multiple sequential targets**):
 ```toml
 format_version = "1.1"
 
@@ -250,12 +250,27 @@ gesture = "hold"
 target_id = "default"
 
 [[binding]]
-id = "journal_doubletap"
-label = "Voice to Meeting Journal (Double-Tap)"
-keys = ["KEY_LEFTALT"]
-gesture = "double_tap"
-target_id = "notes"
+id = "dictate_and_log"
+label = "Type & Save Journal (Hold)"
+keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"]
+gesture = "hold"
+target_id = "default"                        # Backward compatibility fallback (first target)
+target_ids = ["default", "notes"]            # Sequential delivery to both targets!
 ```
+
+### Multi-Target Hotkey Bindings
+VoxCtr supports routing your speech to **multiple output targets simultaneously** using a single hotkey gesture! 
+
+When a multi-target binding is activated:
+1. Your speech is captured and transcribed **once**.
+2. The final text is delivered **sequentially** to each target specified in `target_ids`.
+3. The UI automatically ensures you cannot assign the same target more than once to prevent accidental duplicates.
+
+#### Svelte UI Target Setup
+Inside the Hotkey Binding Editor modal:
+- Dynamic target selector fields let you add additional routing destinations using the `＋ Add Target` button.
+- Already selected targets are automatically disabled in other dropdowns so you cannot select duplicates.
+- Extra dropdown rows feature a clear `✕` button to remove them if added by accident.
 
 ---
 

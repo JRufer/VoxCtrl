@@ -123,8 +123,7 @@ pub async fn save_targets(
     *state.targets.lock().await = targets.clone();
 
     // Hot-reload the router
-    let router = state.router.lock().await;
-    router.reload(targets).await;
+    state.router.reload(targets).await;
     info!("Targets saved and router reloaded");
 
     // Dynamically spawn new FIFO response pipe listeners if TTS is active

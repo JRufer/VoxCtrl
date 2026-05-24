@@ -49,6 +49,7 @@ export interface HotkeyBinding {
   keys: string[];
   gesture: string;
   target_id: string;
+  target_ids?: string[];
   tap_ms: number;
   hold_threshold_ms: number;
   label: string;

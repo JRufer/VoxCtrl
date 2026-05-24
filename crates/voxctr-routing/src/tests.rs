@@ -156,3 +156,38 @@ async fn test_mcp_delivery_handshake() {
     server.await.unwrap();
     let _ = std::fs::remove_file(&socket_path);
 }
+
+#[test]
+fn test_hotkey_binding_multi_target_roundtrip() {
+    use crate::models::{GestureType, HotkeyBinding};
+    use crate::loader::{load_bindings, save_bindings};
+
+    let temp_dir = std::env::temp_dir().join(format!("voxctr_bindings_test_{}", chrono::Utc::now().timestamp_millis()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let binding = HotkeyBinding {
+        id: "multi_test".into(),
+        label: "Multi Test".into(),
+        keys: vec!["KEY_LEFTMETA".into(), "KEY_SPACE".into()],
+        gesture: GestureType::Hold,
+        target_id: "target1".into(),
+        target_ids: vec!["target1".into(), "target2".into()],
+        tap_ms: 300,
+        hold_threshold_ms: 500,
+        disabled: false,
+    };
+
+    assert_eq!(binding.resolved_target_ids(), vec!["target1", "target2"]);
+    assert_eq!(binding.target_ids_string(), "target1,target2");
+
+    save_bindings(&[binding.clone()], &temp_dir).unwrap();
+    let loaded = load_bindings(&temp_dir).unwrap();
+
+    assert_eq!(loaded.len(), 1);
+    let loaded_binding = &loaded[0];
+    assert_eq!(loaded_binding.id, "multi_test");
+    assert_eq!(loaded_binding.target_id, "target1"); // Compatible field populated
+    assert_eq!(loaded_binding.target_ids, vec!["target1", "target2"]);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

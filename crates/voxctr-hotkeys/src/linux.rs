@@ -128,7 +128,8 @@ fn handle_press(
                     s.hold_active = true;
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Start,
                     });
                 }
@@ -138,14 +139,16 @@ fn handle_press(
                     s.toggle_on = true;
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Start,
                     });
                 } else {
                     s.toggle_on = false;
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Stop,
                     });
                 }
@@ -155,7 +158,8 @@ fn handle_press(
                 if completed {
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Start,
                     });
                 }
@@ -163,7 +167,8 @@ fn handle_press(
             GestureType::Chord => {
                 let _ = tx.send(GestureEvent {
                     binding_id: s.binding.id.clone(),
-                    target_id: s.binding.target_id.clone(),
+                    binding_label: s.binding.label.clone(),
+                    target_id: s.binding.target_ids_string(),
                     kind: GestureKind::Start,
                 });
             }
@@ -191,7 +196,8 @@ fn handle_release(
                     s.hold_active = false;
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Stop,
                     });
                 }
@@ -201,7 +207,8 @@ fn handle_release(
                 if completed {
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
-                        target_id: s.binding.target_id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
                         kind: GestureKind::Stop,
                     });
                 }

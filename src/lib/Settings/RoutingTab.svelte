@@ -97,6 +97,14 @@
     return map[g] ?? g;
   }
 
+  function formatBindingTargets(b: HotkeyBinding) {
+    const ids = b.target_ids && b.target_ids.length > 0 ? b.target_ids : [b.target_id];
+    return ids.map(id => {
+      const t = targets.find(target => target.id === id);
+      return t ? `${t.label} (${deliveryLabel(t.delivery)})` : (id === "default" ? "Focused Window" : id);
+    }).join(" + ");
+  }
+
   // --- CRUD Output Targets ---
   function addNewTarget() {
     isEditingTargetNew = true;
@@ -200,7 +208,10 @@
   }
 
   async function deleteTarget(id: string) {
-    const usedBy = bindings.filter(b => b.target_id === id).map(b => b.label || b.id);
+    const usedBy = bindings.filter(b => {
+      const ids = b.target_ids && b.target_ids.length > 0 ? b.target_ids : [b.target_id];
+      return ids.includes(id);
+    }).map(b => b.label || b.id);
     if (usedBy.length > 0) {
       alert(`Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`);
       return;
@@ -224,6 +235,7 @@
       keys: ["KEY_LEFTMETA", "KEY_SPACE"],
       gesture: "hold",
       target_id: targets[0].id,
+      target_ids: [targets[0].id],
       tap_ms: 300,
       hold_threshold_ms: 500,
       disabled: false,
@@ -232,12 +244,32 @@
 
   function editBinding(b: HotkeyBinding) {
     isEditingBindingNew = false;
-    editingBinding = JSON.parse(JSON.stringify(b));
+    const clone = JSON.parse(JSON.stringify(b));
+    if (!clone.target_ids) {
+      clone.target_ids = clone.target_id ? [clone.target_id] : [];
+    }
+    editingBinding = clone;
   }
 
   async function toggleBindingDisabled(id: string) {
     bindings = bindings.map(b => b.id === id ? { ...b, disabled: !b.disabled } : b);
     await persistBindings();
+  }
+
+  function addBindingTarget() {
+    if (!editingBinding) return;
+    if (!editingBinding.target_ids) {
+      editingBinding.target_ids = [editingBinding.target_id];
+    }
+    // Find first target ID that is not already selected to avoid automatic duplicates
+    const available = targets.find(t => !editingBinding!.target_ids!.includes(t.id));
+    const nextId = available ? available.id : targets[0].id;
+    editingBinding.target_ids = [...editingBinding.target_ids, nextId];
+  }
+
+  function removeBindingTarget(index: number) {
+    if (!editingBinding || !editingBinding.target_ids) return;
+    editingBinding.target_ids = editingBinding.target_ids.filter((_, i) => i !== index);
   }
 
   async function saveBindingModal() {
@@ -250,6 +282,25 @@
       alert("Please capture at least one hotkey before saving.");
       return;
     }
+    if (editingBinding.target_ids && editingBinding.target_ids.length > 0) {
+      // Clean up empty entries
+      editingBinding.target_ids = editingBinding.target_ids.filter(id => id.trim() !== "");
+      if (editingBinding.target_ids.length === 0) {
+        alert("Please assign at least one Output Target.");
+        return;
+      }
+      // Check for duplicates
+      const uniqueIds = new Set(editingBinding.target_ids);
+      if (uniqueIds.size !== editingBinding.target_ids.length) {
+        alert("Duplicate targets detected.\nYou cannot assign the same Output Target multiple times to a single keybind.");
+        return;
+      }
+      editingBinding.target_id = editingBinding.target_ids[0];
+    } else {
+      editingBinding.target_id = "";
+      editingBinding.target_ids = [];
+    }
+
     if (isEditingBindingNew) {
       if (bindings.some(b => b.id === editingBinding!.id)) {
         alert("Binding with this ID already exists.");
@@ -434,7 +485,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Target:</span>
-              <span class="info-val font-semibold">{b.target_id}</span>
+              <span class="info-val font-semibold">{formatBindingTargets(b)}</span>
             </div>
             {#if b.gesture === "hold"}
               <div class="info-row">
@@ -797,14 +848,41 @@
           />
         </label>
 
-        <label class="field">
-          <span>Assign to Output Target</span>
-          <select bind:value={editingBinding.target_id}>
-            {#each targets as t}
-              <option value={t.id}>{t.label} ({t.delivery})</option>
+        <div class="field col">
+          <div class="field-label-row">
+            <span class="field-title">Assign to Output Targets</span>
+            <button class="btn-add-inline" type="button" onclick={addBindingTarget}>
+              ＋ Add Target
+            </button>
+          </div>
+
+          <div class="target-selects-list">
+            {#each editingBinding.target_ids || [] as tid, idx}
+              <div class="target-select-row">
+                <select bind:value={editingBinding.target_ids[idx]}>
+                  {#each targets as t}
+                    <option
+                      value={t.id}
+                      disabled={editingBinding.target_ids.includes(t.id) && t.id !== tid}
+                    >
+                      {t.label} ({t.delivery})
+                    </option>
+                  {/each}
+                </select>
+                {#if idx > 0}
+                  <button
+                    class="btn-remove-inline"
+                    type="button"
+                    onclick={() => removeBindingTarget(idx)}
+                    title="Remove Target"
+                  >
+                    ✕
+                  </button>
+                {/if}
+              </div>
             {/each}
-          </select>
-        </label>
+          </div>
+        </div>
 
         <label class="field">
           <span>Input Gesture Style</span>
@@ -1497,5 +1575,64 @@
     font-weight: 500;
     color: #e57373;
     line-height: 1.4;
+  }
+
+  .btn-add-inline {
+    background: transparent;
+    border: none;
+    color: var(--accent2);
+    font-size: 11px;
+    font-weight: 750;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+  }
+  .btn-add-inline:hover {
+    background: rgba(79, 195, 247, 0.08);
+    color: #fff;
+  }
+
+  .target-selects-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .target-select-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .target-select-row select {
+    flex: 1;
+    width: 100%;
+  }
+
+  .btn-remove-inline {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    box-sizing: border-box;
+  }
+  .btn-remove-inline:hover {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
   }
 </style>

@@ -21,6 +21,8 @@ pub struct HotkeyBinding {
     pub keys: Vec<String>,
     pub gesture: GestureType,
     pub target_id: String,
+    #[serde(default)]
+    pub target_ids: Vec<String>,
     #[serde(default = "default_tap_ms")]
     pub tap_ms: u32,
     #[serde(default = "default_hold_threshold_ms")]
@@ -29,6 +31,20 @@ pub struct HotkeyBinding {
     pub label: String,
     #[serde(default)]
     pub disabled: bool,
+}
+
+impl HotkeyBinding {
+    pub fn resolved_target_ids(&self) -> Vec<String> {
+        if self.target_ids.is_empty() {
+            vec![self.target_id.clone()]
+        } else {
+            self.target_ids.clone()
+        }
+    }
+
+    pub fn target_ids_string(&self) -> String {
+        self.resolved_target_ids().join(",")
+    }
 }
 
 fn default_tap_ms() -> u32 {

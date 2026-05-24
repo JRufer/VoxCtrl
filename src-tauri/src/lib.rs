@@ -61,7 +61,7 @@ pub fn run() {
     let targets = load_targets(&cdir).unwrap_or_default();
     let bindings = load_bindings(&cdir).unwrap_or_default();
 
-    let router = Arc::new(Mutex::new(OutputTargetRouter::new(targets.clone())));
+    let router = Arc::new(OutputTargetRouter::new(targets.clone()));
 
     // ── Audio pipeline ────────────────────────────────────────────────────────
     let (audio_tx, audio_rx) = crossbeam_channel::bounded::<voxctr_audio::AudioChunk>(64);
@@ -83,6 +83,7 @@ pub fn run() {
         word_count: Arc::new(AtomicU32::new(0)),
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
+        active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
         targets: Arc::new(Mutex::new(targets.clone())),
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
@@ -176,6 +177,7 @@ pub fn run() {
             match event.kind {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
+                    *state_for_gesture.active_binding_label.lock().await = event.binding_label.clone();
                     state_for_gesture.set_recording(true);
                 }
                 GestureKind::Stop => {
@@ -206,8 +208,21 @@ pub fn run() {
                 let state_lt = state.clone();
                 let text_lt = output.text.clone();
                 rt_handle.spawn(async move {
-                    let r = router.lock().await;
-                    r.deliver(&target_id, &text).await;
+                    let target_ids: Vec<String> = target_id
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let mut join_set = tokio::task::JoinSet::new();
+                    for tid in target_ids {
+                        let r = router.clone();
+                        let text_clone = text.clone();
+                        join_set.spawn(async move {
+                            r.deliver(&tid, &text_clone).await;
+                        });
+                    }
+                    // Wait for all deliveries to complete concurrently
+                    while let Some(_) = join_set.join_next().await {}
                     *state_lt.last_text.lock().await = text_lt;
                 });
 
@@ -429,18 +444,33 @@ pub fn run() {
                     last_recording = is_recording;
 
                     let active_target_id = state_for_ticker.active_target.lock().await.clone();
-                    let target_label = {
+                    let binding_label = state_for_ticker.active_binding_label.lock().await.clone();
+                    let target_label = if (is_recording || is_processing) && !binding_label.is_empty() {
+                        binding_label
+                    } else {
                         let targets_guard = state_for_ticker.targets.lock().await;
-                        targets_guard.iter()
-                            .find(|t| t.id == active_target_id)
-                            .map(|t| t.label.clone())
-                            .unwrap_or_else(|| {
-                                if active_target_id == "default" {
-                                    "Focused Window".to_string()
-                                } else {
-                                    active_target_id.clone()
-                                }
+                        let ids: Vec<&str> = active_target_id
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        let labels: Vec<String> = ids
+                            .iter()
+                            .map(|id| {
+                                targets_guard
+                                    .iter()
+                                    .find(|t| &t.id == id)
+                                    .map(|t| t.label.clone())
+                                    .unwrap_or_else(|| {
+                                        if *id == "default" {
+                                            "Focused Window".to_string()
+                                        } else {
+                                            id.to_string()
+                                        }
+                                    })
                             })
+                            .collect();
+                        labels.join(" + ")
                     };
 
                     let payload = serde_json::json!({
@@ -567,7 +597,7 @@ mod tests {
     async fn test_app_state_initial_values() {
         let config = Config::load();
         let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(Mutex::new(OutputTargetRouter::new(Vec::new())));
+        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
         let (audio_tx, _) = crossbeam_channel::bounded(1);
 
         let state = AppState {
@@ -584,6 +614,7 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
@@ -601,7 +632,7 @@ mod tests {
     async fn test_app_state_words_increment() {
         let config = Config::load();
         let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(Mutex::new(OutputTargetRouter::new(Vec::new())));
+        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
         let (audio_tx, _) = crossbeam_channel::bounded(1);
 
         let state = AppState {
@@ -618,6 +649,7 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
@@ -635,7 +667,7 @@ mod tests {
     async fn test_history_entries() {
         let config = Config::load();
         let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(Mutex::new(OutputTargetRouter::new(Vec::new())));
+        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
         let (audio_tx, _) = crossbeam_channel::bounded(1);
 
         let state = AppState {
@@ -652,6 +684,7 @@ mod tests {
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
+            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
@@ -674,6 +707,101 @@ mod tests {
         assert_eq!(hist[0].text, "hello world");
         assert_eq!(hist[0].target_id, "default");
         assert_eq!(hist[0].inference_ms, 120);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_multi_target_delivery() {
+        use voxctr_routing::models::{DeliveryType, OutputTarget};
+        let target_a = OutputTarget {
+            id: "target_a".into(),
+            label: "Target A".into(),
+            delivery: DeliveryType::Clipboard,
+            command: None,
+            pipe_path: None,
+            socket_host: None,
+            socket_port: None,
+            socket_unix: None,
+            file_path: None,
+            file_prefix: "".into(),
+            file_timestamp: false,
+            file_mode: "append".into(),
+            dbus_signal: None,
+            http_url: None,
+            http_method: "POST".into(),
+            http_headers: None,
+            http_json_template: None,
+            webhook_url: None,
+            webhook_secret: None,
+            webhook_json_template: None,
+            mcp_path: None,
+            mcp_tool: None,
+            mcp_args: None,
+            send_on_release: true,
+            append_newline: false,
+            initial_prompt: None,
+            processing: Default::default(),
+            response_pipe: None,
+            tts_engine: "piper".into(),
+            tts_voice: None,
+        };
+
+        let target_b = OutputTarget {
+            id: "target_b".into(),
+            label: "Target B".into(),
+            delivery: DeliveryType::Clipboard,
+            command: None,
+            pipe_path: None,
+            socket_host: None,
+            socket_port: None,
+            socket_unix: None,
+            file_path: None,
+            file_prefix: "".into(),
+            file_timestamp: false,
+            file_mode: "append".into(),
+            dbus_signal: None,
+            http_url: None,
+            http_method: "POST".into(),
+            http_headers: None,
+            http_json_template: None,
+            webhook_url: None,
+            webhook_secret: None,
+            webhook_json_template: None,
+            mcp_path: None,
+            mcp_tool: None,
+            mcp_args: None,
+            send_on_release: true,
+            append_newline: false,
+            initial_prompt: None,
+            processing: Default::default(),
+            response_pipe: None,
+            tts_engine: "piper".into(),
+            tts_voice: None,
+        };
+
+        let targets = vec![target_a, target_b];
+
+        let router = Arc::new(OutputTargetRouter::new(targets));
+        let text = "Concurrent delivery text".to_string();
+        let target_ids = vec!["target_a".to_string(), "target_b".to_string()];
+
+        let mut join_set = tokio::task::JoinSet::new();
+        for tid in target_ids {
+            let r = router.clone();
+            let text_clone = text.clone();
+            join_set.spawn(async move {
+                r.deliver(&tid, &text_clone).await
+            });
+        }
+
+        let mut results = Vec::new();
+        while let Some(res) = join_set.join_next().await {
+            results.push(res.unwrap());
+        }
+
+        assert_eq!(results.len(), 2);
+        for res in results {
+            assert!(res.success);
+        }
     }
 }
 

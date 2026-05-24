@@ -8,7 +8,7 @@ use voxctr_routing::OutputTargetRouter;
 /// All shared mutable state, behind Arc so it can be handed to Tauri commands.
 pub struct AppState {
     pub config: Arc<Mutex<Config>>,
-    pub router: Arc<Mutex<OutputTargetRouter>>,
+    pub router: Arc<OutputTargetRouter>,
 
     /// True while a hotkey hold/toggle is active (recording)
     pub recording: Arc<AtomicBool>,
@@ -35,6 +35,9 @@ pub struct AppState {
 
     /// Currently active dictation target ID
     pub active_target: Arc<Mutex<String>>,
+
+    /// Currently active keybind display name/label
+    pub active_binding_label: Arc<Mutex<String>>,
 
     /// Currently configured target definitions (in-memory cache for fast lookups)
     pub targets: Arc<Mutex<Vec<voxctr_routing::OutputTarget>>>,

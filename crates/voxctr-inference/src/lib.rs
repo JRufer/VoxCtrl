@@ -121,7 +121,9 @@ impl InferenceEngine {
 
         let dir = voxctr_routing::config_dir();
         let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
-        let target = targets.iter().find(|t| t.id == req.target_id);
+        let target_ids: Vec<&str> = req.target_id.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        let first_target_id = target_ids.first().copied().unwrap_or("default");
+        let target = targets.iter().find(|t| t.id == first_target_id);
 
         let mut merged_prompt = String::new();
 
@@ -260,7 +262,9 @@ impl InferenceEngine {
         // Load routing targets from the routing directory
         let dir = voxctr_routing::config_dir();
         let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
-        let target = targets.iter().find(|t| t.id == target_id);
+        let target_ids: Vec<&str> = target_id.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        let first_target_id = target_ids.first().copied().unwrap_or("default");
+        let target = targets.iter().find(|t| t.id == first_target_id);
 
         let remove_fillers = target
             .and_then(|t| t.processing.remove_fillers)

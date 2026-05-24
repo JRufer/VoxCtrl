@@ -111,6 +111,8 @@ struct RawBinding {
     keys: Vec<String>,
     gesture: String,
     target_id: String,
+    #[serde(default)]
+    target_ids: Option<Vec<String>>,
     #[serde(default = "default_tap_ms")]
     tap_ms: u32,
     #[serde(default = "default_hold_ms")]
@@ -336,12 +338,22 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
         "chord" => GestureType::Chord,
         _ => GestureType::Hold,
     };
+    let target_ids = if let Some(ref ids) = r.target_ids {
+        if ids.is_empty() {
+            vec![r.target_id.clone()]
+        } else {
+            ids.clone()
+        }
+    } else {
+        vec![r.target_id.clone()]
+    };
     HotkeyBinding {
         id: r.id,
         label: r.label,
         keys: r.keys,
         gesture,
         target_id: r.target_id,
+        target_ids,
         tap_ms: r.tap_ms,
         hold_threshold_ms: r.hold_threshold_ms,
         disabled: r.disabled,
@@ -355,12 +367,14 @@ fn binding_to_raw(b: &HotkeyBinding) -> RawBinding {
         GestureType::Chord => "chord",
         GestureType::Hold => "hold",
     };
+    let target_id = b.target_ids.first().cloned().unwrap_or_else(|| b.target_id.clone());
     RawBinding {
         id: b.id.clone(),
         label: b.label.clone(),
         keys: b.keys.clone(),
         gesture: gesture.into(),
-        target_id: b.target_id.clone(),
+        target_id,
+        target_ids: Some(b.target_ids.clone()),
         tap_ms: b.tap_ms,
         hold_threshold_ms: b.hold_threshold_ms,
         disabled: b.disabled,
@@ -381,6 +395,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             keys: vec!["KEY_LEFTMETA".into(), "KEY_SPACE".into()],
             gesture: GestureType::Hold,
             target_id: "default".into(),
+            target_ids: vec!["default".into()],
             tap_ms: 250,
             hold_threshold_ms: 200,
             disabled: false,
@@ -395,6 +410,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             ],
             gesture: GestureType::Toggle,
             target_id: "default".into(),
+            target_ids: vec!["default".into()],
             tap_ms: 250,
             hold_threshold_ms: 200,
             disabled: false,
