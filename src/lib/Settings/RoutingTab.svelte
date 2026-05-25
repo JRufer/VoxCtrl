@@ -102,8 +102,8 @@
     const ids = b.target_ids && b.target_ids.length > 0 ? b.target_ids : [b.target_id];
     return ids.map(id => {
       const t = targets.find(target => target.id === id);
-      return t ? `${t.label} (${deliveryLabel(t.delivery)})` : (id === "default" ? "Focused Window" : id);
-    }).join(" + ");
+      return t ? t.label : (id === "default" ? "Focused Window" : id);
+    }).join(", ");
   }
 
   // --- CRUD Output Targets ---
@@ -504,37 +504,22 @@
       ＋ Add New Hotkey Binding
     </button>
 
-    <div class="cards-grid">
+    <div class="bindings-list">
       {#each bindings as b}
-        <div class="card glass" class:disabled={b.disabled}>
-          <div class="card-header">
-            <h4>{b.label || b.id}</h4>
-            <span class="badge gesture">{b.gesture}</span>
-          </div>
-          <div class="card-body">
-            <div class="keys-display">
-              {#each b.keys as k}
-                <kbd>{k.replace("KEY_", "")}</kbd>
-              {/each}
-            </div>
-            <div class="info-row">
-              <span class="info-label">Target:</span>
-              <span class="info-val font-semibold">{formatBindingTargets(b)}</span>
-            </div>
-            {#if b.gesture === "hold"}
-              <div class="info-row">
-                <span class="info-label">Hold Timing:</span>
-                <span class="info-val">{b.hold_threshold_ms}ms</span>
+        <div class="binding-item glass" class:disabled={b.disabled}>
+          <div class="binding-content">
+            <div class="binding-title">{b.label || b.id}</div>
+            <div class="binding-row2">
+              <div class="keys-display">
+                {#each b.keys as k}
+                  <kbd>{k.replace("KEY_", "")}</kbd>
+                {/each}
               </div>
-            {/if}
-            {#if b.gesture === "double_tap"}
-              <div class="info-row">
-                <span class="info-label">Tap Interval:</span>
-                <span class="info-val">{b.tap_ms}ms</span>
-              </div>
-            {/if}
+              <span class="badge gesture">{b.gesture}</span>
+            </div>
+            <div class="binding-targets">{formatBindingTargets(b)}</div>
           </div>
-          <div class="card-actions">
+          <div class="binding-actions">
             <button class="btn-action small" onclick={() => toggleBindingDisabled(b.id)}>
               {b.disabled ? "Enable" : "Disable"}
             </button>
@@ -1147,7 +1132,66 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    margin-bottom: 4px;
+  }
+
+  .bindings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .binding-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    gap: 12px;
+    transition: all 0.2s ease-in-out;
+    background: rgba(26, 31, 46, 0.4);
+  }
+
+  .binding-item:hover {
+    border-color: var(--accent2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .binding-item.disabled {
+    opacity: 0.55;
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .binding-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .binding-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .binding-row2 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .binding-targets {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .binding-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
   }
 
   kbd {
