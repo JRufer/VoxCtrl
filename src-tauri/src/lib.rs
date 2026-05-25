@@ -243,7 +243,7 @@ pub fn run() {
 
                 // Push to history only when the feature is enabled
                 let history_enabled = {
-                    let cfg_lock = state.config.lock().await;
+                    let cfg_lock = state.config.blocking_lock();
                     cfg_lock.data.ui.history_enabled
                 };
                 if history_enabled {
