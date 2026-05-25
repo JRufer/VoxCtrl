@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { config } from "../../stores/config";
 
   interface HistoryEntry {
     text: string;
@@ -127,7 +128,15 @@
     </button>
   </header>
 
-  {#if loading}
+  {#if !$config?.ui?.history_enabled}
+    <div class="empty-state">
+      <div class="empty-graphic">
+        <span class="empty-emoji">🚫</span>
+      </div>
+      <h3 class="empty-title">History Disabled</h3>
+      <p class="empty-subtitle">Transcript history is turned off. Enable it in <strong>Settings → General</strong> to start logging.</p>
+    </div>
+  {:else if loading}
     <div class="empty-state">
       <div class="spinner-container">
         <svg class="spinner-svg" viewBox="0 0 50 50">
@@ -470,7 +479,12 @@
     font-size: 12px;
     color: var(--text-muted);
     text-align: center;
-    max-width: 250px;
+    max-width: 260px;
     line-height: 1.5;
+  }
+
+  .empty-subtitle strong {
+    color: var(--accent2);
+    font-weight: 600;
   }
 </style>

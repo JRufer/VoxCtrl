@@ -47,6 +47,7 @@ export interface UiConfig {
   overlay_style: "voice_card" | "waveform" | "pulse" | "blue_wave" | "none";
   auto_show_settings: boolean;
   show_notification: boolean;
+  history_enabled: boolean;
 }
 
 export interface FeaturesConfig {
@@ -112,6 +113,7 @@ const defaultConfig: AppConfig = {
     overlay_style: "blue_wave",
     auto_show_settings: true,
     show_notification: false,
+    history_enabled: false,
   },
   features: {
     remove_fillers: true,
