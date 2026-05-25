@@ -159,22 +159,19 @@
           </div>
           
           <div class="entry-meta">
-            <!-- Time Badge -->
-            <span class="badge badge-neutral">
-              <span class="badge-icon">⏰</span>
-              {formatTime(entry.timestamp)}
-            </span>
-            
-            <!-- Target Badge -->
+            <div class="meta-row">
+              <span class="badge badge-neutral">
+                <span class="badge-icon">⏰</span>
+                {formatTime(entry.timestamp)}
+              </span>
+              <span class="badge badge-orange">
+                <span class="badge-icon">⚡</span>
+                {entry.inference_ms}ms
+              </span>
+            </div>
             <span class="badge badge-blue">
               <span class="badge-icon">🎯</span>
               {getTargetNotes(entry.target_id)}
-            </span>
-            
-            <!-- Inference Speed Badge -->
-            <span class="badge badge-orange">
-              <span class="badge-icon">⚡</span>
-              {entry.inference_ms}ms
             </span>
           </div>
         </div>
@@ -356,8 +353,14 @@
 
   .entry-meta {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 6px;
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   .badge {
