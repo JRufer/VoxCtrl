@@ -518,13 +518,13 @@
               <span class="badge gesture">{b.gesture}</span>
             </div>
             <div class="binding-targets">{formatBindingTargets(b)}</div>
-          </div>
-          <div class="binding-actions">
-            <button class="btn-action small" onclick={() => toggleBindingDisabled(b.id)}>
-              {b.disabled ? "Enable" : "Disable"}
-            </button>
-            <button class="btn-action small" onclick={() => editBinding(b)}>Edit</button>
-            <button class="btn-action small danger" onclick={() => deleteBinding(b.id)}>Delete</button>
+            <div class="binding-actions">
+              <button class="btn-action small" onclick={() => toggleBindingDisabled(b.id)}>
+                {b.disabled ? "Enable" : "Disable"}
+              </button>
+              <button class="btn-action small" onclick={() => editBinding(b)}>Edit</button>
+              <button class="btn-action small danger" onclick={() => deleteBinding(b.id)}>Delete</button>
+            </div>
           </div>
         </div>
       {:else}
@@ -1142,12 +1142,9 @@
 
   .binding-item {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 10px 14px;
-    gap: 12px;
     transition: all 0.2s ease-in-out;
     background: rgba(26, 31, 46, 0.4);
   }
@@ -1191,7 +1188,9 @@
   .binding-actions {
     display: flex;
     gap: 6px;
-    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 8px;
+    margin-top: 4px;
   }
 
   kbd {
