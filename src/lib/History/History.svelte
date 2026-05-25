@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { config } from "../../stores/config";
 
   interface HistoryEntry {
     text: string;
@@ -127,7 +128,15 @@
     </button>
   </header>
 
-  {#if loading}
+  {#if !$config?.ui?.history_enabled}
+    <div class="empty-state">
+      <div class="empty-graphic">
+        <span class="empty-emoji">🚫</span>
+      </div>
+      <h3 class="empty-title">History Disabled</h3>
+      <p class="empty-subtitle">Transcript history is turned off. Enable it in <strong>Settings → General</strong> to start logging.</p>
+    </div>
+  {:else if loading}
     <div class="empty-state">
       <div class="spinner-container">
         <svg class="spinner-svg" viewBox="0 0 50 50">
@@ -151,25 +160,27 @@
           <div class="entry-bubble">
             <span class="bubble-decorator"></span>
             <p class="entry-text">{entry.text}</p>
+            <button
+              class="btn-copy"
+              title="Copy to clipboard"
+              onclick={() => navigator.clipboard.writeText(entry.text)}
+            >⎘</button>
           </div>
           
           <div class="entry-meta">
-            <!-- Time Badge -->
-            <span class="badge badge-neutral">
-              <span class="badge-icon">⏰</span>
-              {formatTime(entry.timestamp)}
-            </span>
-            
-            <!-- Target Badge -->
+            <div class="meta-row">
+              <span class="badge badge-neutral">
+                <span class="badge-icon">⏰</span>
+                {formatTime(entry.timestamp)}
+              </span>
+              <span class="badge badge-orange">
+                <span class="badge-icon">⚡</span>
+                {entry.inference_ms}ms
+              </span>
+            </div>
             <span class="badge badge-blue">
               <span class="badge-icon">🎯</span>
               {getTargetNotes(entry.target_id)}
-            </span>
-            
-            <!-- Inference Speed Badge -->
-            <span class="badge badge-orange">
-              <span class="badge-icon">⚡</span>
-              {entry.inference_ms}ms
             </span>
           </div>
         </div>
@@ -189,7 +200,6 @@
     overflow: hidden;
   }
 
-  /* Redesigned Premium Toolbar */
   .toolbar {
     display: flex;
     align-items: center;
@@ -197,7 +207,7 @@
     padding: 16px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--color-obsidian-900);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
     z-index: 10;
   }
 
@@ -208,8 +218,8 @@
   }
 
   .title-logo {
-    font-size: 24px;
-    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.25));
+    font-size: 20px;
+    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
   }
 
   .title-text {
@@ -218,7 +228,7 @@
   }
 
   h1 {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 850;
     color: #fff;
     letter-spacing: -0.5px;
@@ -226,18 +236,17 @@
   }
 
   .subtitle {
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 700;
-    color: var(--color-obsidian-300);
+    color: var(--color-accent-blue);
     letter-spacing: 0.12em;
-    margin-top: 2px;
+    margin-top: 1px;
   }
 
-  /* Clear button with spring active state */
   .btn-clear {
-    background: rgba(255, 107, 53, 0.08);
-    border: 1px solid rgba(255, 107, 53, 0.2);
-    color: var(--color-accent-tangerine);
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
     padding: 6px 14px;
     border-radius: var(--radius);
     font-size: 12px;
@@ -246,54 +255,52 @@
   }
 
   .btn-clear:hover {
+    background: #ef4444;
+    border-color: #ef4444;
     color: #fff;
-    background: var(--color-accent-tangerine);
-    border-color: var(--color-accent-tangerine);
-    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.25);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
   }
 
-  /* Scrollable Transcript Feed */
+  .btn-clear:active {
+    transform: scale(0.97);
+  }
+
   .list {
     flex: 1;
     overflow-y: auto;
-    padding: 24px;
+    padding: 20px 24px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 8px;
   }
 
-  /* Redesigned Transcript Cards with snappy spring physics */
   .entry {
-    background: var(--surface2);
+    background: rgba(26, 31, 46, 0.4);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 16px 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
+    transition: all 0.2s ease-in-out;
     animation: cardSlide 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
   }
 
   @keyframes cardSlide {
-    from { opacity: 0; transform: translateY(12px); }
+    from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
 
-  .card-spring {
-    transition: var(--transition-snappy);
-  }
-
   .entry:hover {
-    transform: scale(1.01) translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.08);
-    background-color: var(--color-obsidian-700);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    border-color: var(--accent2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
   }
 
   .entry-bubble {
     position: relative;
     padding-left: 10px;
+    padding-right: 28px;
   }
 
   .bubble-decorator {
@@ -302,15 +309,49 @@
     top: 4px;
     bottom: 4px;
     width: 3px;
-    background: var(--color-accent-blue);
+    background: var(--accent2);
     border-radius: 99px;
     opacity: 0.5;
   }
 
+  .btn-copy {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .entry:hover .btn-copy {
+    opacity: 1;
+  }
+
+  .btn-copy:hover {
+    color: var(--accent2);
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.2);
+  }
+
+  .btn-copy:active {
+    transform: scale(0.92);
+  }
+
   .entry-text {
-    font-size: 13.5px;
+    font-size: 13px;
     line-height: 1.6;
-    color: var(--color-obsidian-100);
+    color: var(--text);
     font-weight: 500;
     white-space: pre-wrap;
   }
@@ -319,48 +360,52 @@
     color: #fff;
   }
 
-  /* Badge System */
   .entry-meta {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   .badge {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 99px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: -0.1px;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     border: 1px solid transparent;
   }
 
   .badge-icon {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .badge-neutral {
-    background: var(--color-obsidian-950);
-    color: var(--color-obsidian-300);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
     border-color: var(--border);
   }
 
   .badge-blue {
-    background: rgba(56, 189, 248, 0.08);
-    color: var(--color-accent-blue);
-    border-color: rgba(56, 189, 248, 0.15);
+    background: rgba(0, 229, 255, 0.15);
+    color: #84ffff;
+    border-color: rgba(0, 229, 255, 0.3);
   }
 
   .badge-orange {
-    background: rgba(255, 107, 53, 0.08);
-    color: var(--color-accent-tangerine);
-    border-color: rgba(255, 107, 53, 0.15);
+    background: rgba(124, 77, 255, 0.15);
+    color: #b388ff;
+    border-color: rgba(124, 77, 255, 0.3);
   }
 
-  /* Premium loading & empty states */
   .empty-state {
     flex: 1;
     display: flex;
@@ -368,7 +413,7 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    color: var(--color-obsidian-300);
+    color: var(--text-muted);
     padding: 40px;
   }
 
@@ -403,38 +448,43 @@
   .loading-label {
     font-size: 12px;
     font-weight: 600;
+    color: var(--text-muted);
     letter-spacing: 0.05em;
   }
 
   .empty-graphic {
-    width: 72px;
-    height: 72px;
-    background: var(--color-obsidian-900);
+    width: 64px;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    margin-bottom: 8px;
   }
 
   .empty-emoji {
-    font-size: 32px;
+    font-size: 28px;
   }
 
   .empty-title {
-    font-size: 16px;
-    font-weight: 750;
+    font-size: 15px;
+    font-weight: 700;
     color: #fff;
     letter-spacing: -0.2px;
   }
 
   .empty-subtitle {
     font-size: 12px;
-    color: var(--color-obsidian-300);
+    color: var(--text-muted);
     text-align: center;
-    max-width: 250px;
+    max-width: 260px;
     line-height: 1.5;
+  }
+
+  .empty-subtitle strong {
+    color: var(--accent2);
+    font-weight: 600;
   }
 </style>

@@ -163,6 +163,8 @@ pub struct UiConfig {
     pub auto_show_settings: bool,
     #[serde(default = "default_show_notification")]
     pub show_notification: bool,
+    #[serde(default)]
+    pub history_enabled: bool,
 }
 
 impl Default for UiConfig {
@@ -172,6 +174,7 @@ impl Default for UiConfig {
             overlay_style: OverlayStyle::BlueWave,
             auto_show_settings: true,
             show_notification: false,
+            history_enabled: false,
         }
     }
 }
