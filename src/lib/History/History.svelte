@@ -151,6 +151,11 @@
           <div class="entry-bubble">
             <span class="bubble-decorator"></span>
             <p class="entry-text">{entry.text}</p>
+            <button
+              class="btn-copy"
+              title="Copy to clipboard"
+              onclick={() => navigator.clipboard.writeText(entry.text)}
+            >⎘</button>
           </div>
           
           <div class="entry-meta">
@@ -289,6 +294,7 @@
   .entry-bubble {
     position: relative;
     padding-left: 10px;
+    padding-right: 28px;
   }
 
   .bubble-decorator {
@@ -300,6 +306,40 @@
     background: var(--accent2);
     border-radius: 99px;
     opacity: 0.5;
+  }
+
+  .btn-copy {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .entry:hover .btn-copy {
+    opacity: 1;
+  }
+
+  .btn-copy:hover {
+    color: var(--accent2);
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.2);
+  }
+
+  .btn-copy:active {
+    transform: scale(0.92);
   }
 
   .entry-text {
