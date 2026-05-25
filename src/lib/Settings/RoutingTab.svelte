@@ -15,6 +15,8 @@
   let editingBinding = $state<HotkeyBinding | null>(null);
   let isEditingBindingNew = $state(false);
   let isRecordingKeys = $state(false);
+  let confirmDeleteTargetId = $state<string | null>(null);
+  let confirmDeleteBindingId = $state<string | null>(null);
 
   // Flat edit states to ensure absolute Svelte 5 reactivity for target processing overrides
   let editApplySnippets = $state(true);
@@ -248,10 +250,8 @@
       alert(`Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`);
       return;
     }
-    if (confirm("Are you sure you want to delete this target?")) {
-      targets = targets.filter(t => t.id !== id);
-      await persistTargets();
-    }
+    targets = targets.filter(t => t.id !== id);
+    await persistTargets();
   }
 
   // --- CRUD Hotkey Bindings ---
@@ -348,10 +348,8 @@
   }
 
   async function deleteBinding(id: string) {
-    if (confirm("Are you sure you want to delete this hotkey binding?")) {
-      bindings = bindings.filter(b => b.id !== id);
-      await persistBindings();
-    }
+    bindings = bindings.filter(b => b.id !== id);
+    await persistBindings();
   }
 
   // --- Keyboard Event Capture / Recorder ---
@@ -481,7 +479,13 @@
           </div>
           <div class="card-actions">
             <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
-            <button class="btn-action small danger" onclick={() => deleteTarget(t.id)}>Delete</button>
+            {#if confirmDeleteTargetId === t.id}
+              <span class="confirm-label">Delete?</span>
+              <button class="btn-action small danger" onclick={() => { deleteTarget(t.id); confirmDeleteTargetId = null; }}>Yes</button>
+              <button class="btn-action small" onclick={() => confirmDeleteTargetId = null}>No</button>
+            {:else}
+              <button class="btn-action small danger" onclick={() => confirmDeleteTargetId = t.id}>Delete</button>
+            {/if}
           </div>
         </div>
       {:else}
@@ -523,7 +527,13 @@
                 {b.disabled ? "Enable" : "Disable"}
               </button>
               <button class="btn-action small" onclick={() => editBinding(b)}>Edit</button>
-              <button class="btn-action small danger" onclick={() => deleteBinding(b.id)}>Delete</button>
+              {#if confirmDeleteBindingId === b.id}
+                <span class="confirm-label">Delete?</span>
+                <button class="btn-action small danger" onclick={() => { deleteBinding(b.id); confirmDeleteBindingId = null; }}>Yes</button>
+                <button class="btn-action small" onclick={() => confirmDeleteBindingId = null}>No</button>
+              {:else}
+                <button class="btn-action small danger" onclick={() => confirmDeleteBindingId = b.id}>Delete</button>
+              {/if}
             </div>
           </div>
         </div>
@@ -1187,10 +1197,17 @@
 
   .binding-actions {
     display: flex;
+    justify-content: flex-end;
+    align-items: center;
     gap: 6px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     padding-top: 8px;
     margin-top: 4px;
+  }
+
+  .confirm-label {
+    font-size: 11px;
+    color: var(--text-muted);
   }
 
   kbd {
