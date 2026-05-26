@@ -5935,7 +5935,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctr-app"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5968,7 +5968,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-audio"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "cpal",
@@ -5983,7 +5983,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-config"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -5996,7 +5996,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-dbus"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -6008,7 +6008,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-hotkeys"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -6025,7 +6025,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-inference"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -6047,7 +6047,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-inject"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6061,7 +6061,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-llm"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -6075,7 +6075,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-mcp"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -6087,7 +6087,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-routing"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6109,7 +6109,7 @@ dependencies = [
 
 [[package]]
 name = "voxctr-tts"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
