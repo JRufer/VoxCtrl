@@ -16,7 +16,8 @@ Uses `/dev/input/event*` devices directly, bypassing the desktop environment ent
 - X11 sessions
 - Wayland sessions
 - TTY / no-DE environments
-- Over SSH with an active session
+
+The evdev keyboard device can be specified via `audio.evdev_device` in config (e.g. `"/dev/input/event4"`). If not set, the listener discovers keyboard devices automatically.
 
 **Requirement:** The user must be in the `input` group (or have read access to `/dev/input/event*`):
 
@@ -25,13 +26,9 @@ sudo usermod -aG input $USER
 # Log out and back in
 ```
 
-The listener opens all event devices that expose keyboard events, watches for key press/release events, and matches against registered bindings.
-
 ### Windows
 
-Uses Win32 `SetWindowsHookEx` with `WH_KEYBOARD_LL` to intercept global keyboard events.
-
-No special permissions are required for standard user accounts.
+Uses Win32 `SetWindowsHookEx` with `WH_KEYBOARD_LL` to intercept global keyboard events. No special permissions are required.
 
 ---
 
@@ -39,32 +36,37 @@ No special permissions are required for standard user accounts.
 
 Each binding specifies a `gesture` that controls when recording starts and stops.
 
-### Hold
+### `hold`
 ```
-Key Down ──► START RECORDING
-Key Up   ──► STOP RECORDING
+Key Down ──► START RECORDING (GestureKind::Start)
+Key Up   ──► STOP RECORDING  (GestureKind::Stop)
 ```
 Most natural for short dictations. Recording is exactly as long as the key is held.
 
-### Toggle
-```
-Key Down (1st) ──► START RECORDING
-Key Down (2nd) ──► STOP RECORDING
-```
-Useful for longer dictations where holding a key would be tiring. Press once to start, press again to stop.
+The `hold_threshold_ms` field (default 200ms) sets the minimum hold duration before a recording start is registered, preventing accidental triggers.
 
-### Double
+### `toggle`
 ```
-Key Down + Up (rapidly) ──► (ignored)
-Key Down + Up (again within threshold) ──► START/STOP TOGGLE
+Key Down (1st press) ──► START RECORDING
+Key Down (2nd press) ──► STOP RECORDING
 ```
-Two rapid presses act as a toggle trigger. Distinguishes from accidental single presses.
+For longer dictations where holding a key would be tiring. Press once to start, press again to stop.
+
+### `double_tap`
+```
+Rapid press+release twice within tap_ms ──► START RECORDING
+(then behaves as toggle for stop)
+```
+Two rapid presses trigger recording. The `tap_ms` field (default 250ms) sets the inter-press window. Distinguishes from accidental single presses.
+
+### `chord`
+All keys in `keys` must be simultaneously held. Uses the same hold-start / release-stop behavior. Superset-shadowing applies: if another binding's key set is a superset of this one and all its keys are also held, only the longer binding fires.
 
 ---
 
 ## Key Names
 
-Keys are identified by their **evdev event code name** on Linux. Common keys:
+Keys use **evdev event code names** on Linux. On Windows, the same names are mapped to Virtual Key codes internally.
 
 ### Modifier Keys
 | Name | Key |
@@ -85,7 +87,7 @@ Keys are identified by their **evdev event code name** on Linux. Common keys:
 | `KEY_SPACE` | Space |
 | `KEY_ENTER` | Enter |
 | `KEY_TAB` | Tab |
-| `KEY_ESC` | Escape |
+| `KEY_ESCAPE` | Escape |
 | `KEY_BACKSPACE` | Backspace |
 | `KEY_F1`–`KEY_F12` | Function keys |
 | `KEY_A`–`KEY_Z` | Letter keys |
@@ -93,7 +95,7 @@ Keys are identified by their **evdev event code name** on Linux. Common keys:
 
 ### Finding Key Names
 
-To find the evdev name for any key:
+To discover the evdev name for any key:
 ```bash
 # Install evtest if not present
 sudo apt install evtest
@@ -101,40 +103,58 @@ sudo apt install evtest
 # Run (pick your keyboard device)
 sudo evtest /dev/input/event2
 
-# Press the key you want — look for "EV_KEY" lines
-# e.g.: Event: type 1 (EV_KEY), code 125 (KEY_LEFTMETA), value 1
+# Press the key — look for "EV_KEY" lines:
+# Event: type 1 (EV_KEY), code 125 (KEY_LEFTMETA), value 1
 ```
 
 ---
 
 ## Hot-Reload
 
-Hotkey bindings can be updated without restarting the listener. When `bindings.toml` changes on disk or bindings are saved via the UI:
+Hotkey bindings update at runtime without restarting the listener. When bindings are saved via the UI or `save_bindings` IPC command:
 
-1. New bindings are parsed
-2. Sent through `binding_reload_tx` channel
-3. The listener thread receives them and swaps its internal binding table atomically
-
-This means you can add, modify, or remove hotkeys at runtime.
+1. New bindings are written to `bindings.toml`
+2. Sent through the `hotkey_reloader` crossbeam channel
+3. The listener thread receives them and swaps its binding state table
 
 ---
 
 ## Multi-Key Combos
 
-`keys` in a binding is an array. VoxCtr tracks which keys from the combo are currently held and only fires the gesture when **all** keys in the combo are pressed:
+`keys` is an array. All keys must be pressed for the gesture to activate. Order doesn't matter:
 
 ```toml
 keys = ["KEY_LEFTMETA", "KEY_SPACE"]
-# Fires only when both Left-Super AND Space are held
+# Fires when both Left-Super AND Space are held, in any order
 ```
 
-Order does not matter — holding Meta then Space, or Space then Meta, both trigger.
+---
+
+## GestureEvent
+
+The output of the hotkey system is a stream of `GestureEvent` values sent on the `gesture_tx` channel:
+
+```rust
+pub struct GestureEvent {
+    pub binding_id: String,
+    pub binding_label: String,
+    pub target_id: String,  // comma-joined for multi-target
+    pub kind: GestureKind,
+}
+
+pub enum GestureKind {
+    Start,  // Begin recording
+    Stop,   // End recording
+}
+```
+
+`lib.rs` receives these and coordinates the audio recorder and inference pipeline.
 
 ---
 
 ## Conflict Handling
 
-If two bindings share the same key combo, the first matching binding wins. Disable bindings you don't want rather than leaving conflicting ones active:
+If two bindings share the same key combo, the first matching binding wins (the one listed first in `bindings.toml`). Disable unused bindings rather than leaving conflicts active:
 
 ```toml
 [[binding]]
@@ -143,18 +163,3 @@ disabled = true
 keys = ["KEY_LEFTMETA", "KEY_SPACE"]
 # ...
 ```
-
----
-
-## GestureEvent
-
-The output of the hotkey system is a stream of `GestureEvent` values sent on `gesture_tx`:
-
-```rust
-pub enum GestureEvent {
-    StartRecording { binding_id: String, target_ids: Vec<String> },
-    StopRecording  { binding_id: String },
-}
-```
-
-`lib.rs` receives these and coordinates the audio recorder and inference pipeline accordingly.

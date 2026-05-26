@@ -19,8 +19,6 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 | Linux | `/tmp/voxctl-mcp.sock` (Unix domain socket) |
 | Windows | `\\.\pipe\voxctl-mcp` (named pipe) |
 
-The socket is owned by the current user with mode `0600` (no other user can connect).
-
 ### Protocol
 
 JSON-RPC 2.0 over the socket. Follows MCP spec v2024-11-05.
@@ -31,54 +29,48 @@ JSON-RPC 2.0 over the socket. Follows MCP spec v2024-11-05.
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"claude-desktop"}}}
 
 // Server responds:
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"voxctr","version":"..."}}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"voxctl","version":"1.0.0"}}}
 
-// Client sends:
+// Client sends (notification, no id):
 {"jsonrpc":"2.0","method":"notifications/initialized"}
 ```
 
 ### Available Tools
 
 #### `transcribe_voice`
-Records audio and returns the transcription as text.
+Records audio and returns the transcription. Blocks until recording ends or timeout is reached.
 
 ```json
 {
   "method": "tools/call",
   "params": {
     "name": "transcribe_voice",
-    "arguments": {
-      "timeout_seconds": 30
-    }
+    "arguments": { "timeout_seconds": 15 }
   }
 }
 ```
+
+`timeout_seconds` defaults to `mcp.record_timeout` (15.0 seconds). Returns `"(no speech detected)"` if no audio was captured.
 
 Response:
 ```json
-{
-  "result": {
-    "content": [{"type": "text", "text": "the transcribed text here"}]
-  }
-}
+{"content": [{"type": "text", "text": "the transcribed text here"}]}
 ```
 
-The call blocks until recording completes (hotkey released) or the timeout is reached.
-
 #### `speak_text`
-Queues text for TTS playback.
+Queues text for TTS playback. Returns immediately while audio plays asynchronously.
 
 ```json
 {
   "method": "tools/call",
   "params": {
     "name": "speak_text",
-    "arguments": {
-      "text": "Recording started. Please speak now."
-    }
+    "arguments": { "text": "Recording started. Please speak now." }
   }
 }
 ```
+
+Returns: `{"content": [{"type": "text", "text": "spoken"}]}`
 
 #### `get_status`
 Returns current recording/speaking state.
@@ -92,9 +84,24 @@ Response:
 {"content": [{"type": "text", "text": "{\"recording\": false, \"speaking\": false}"}]}
 ```
 
+**Recommended pattern — speak then record safely:**
+1. Call `speak_text` with your question
+2. Poll `get_status` until `speaking = false`
+3. Call `transcribe_voice`
+
+### Enabling the MCP Server
+
+In `config.json`:
+```json
+"mcp": {
+  "server_enabled": true,
+  "record_timeout": 15.0
+}
+```
+
 ### Configuring Claude Desktop
 
-Add to your Claude Desktop `claude_desktop_config.json`:
+Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -103,18 +110,6 @@ Add to your Claude Desktop `claude_desktop_config.json`:
       "args": ["-U", "/tmp/voxctl-mcp.sock"]
     }
   }
-}
-```
-
-Or use a proxy script that connects to the socket.
-
-### Enabling the MCP Server
-
-In `config.json`:
-```json
-"mcp": {
-  "enabled": true,
-  "record_timeout": 30
 }
 ```
 
@@ -138,7 +133,7 @@ VoxCtr registers on the session bus as:
 | `start_recording()` | `() → ()` | Begin recording |
 | `stop_recording()` | `() → ()` | Stop recording and process audio |
 | `toggle_recording()` | `() → ()` | Toggle recording state |
-| `get_status()` | `() → s` | Returns `"recording"`, `"processing"`, or `"idle"` |
+| `get_status()` | `() → s` | Returns `"idle"`, `"recording"`, or `"transcribing"` |
 | `get_word_count()` | `() → u` | Total words dictated this session |
 
 ### Signals
@@ -159,17 +154,14 @@ dbus-send --session --dest=ai.voxctl.Dictation \
 # Watch for injected text
 dbus-monitor --session "type='signal',interface='ai.voxctl.Dictation'"
 
-# Get current status
+# Get current status ("idle", "recording", or "transcribing")
 dbus-send --session --print-reply \
   --dest=ai.voxctl.Dictation \
   /ai/voxctl/Dictation \
   ai.voxctl.Dictation.get_status
 ```
 
-### Use Cases
-- Desktop environment macros
-- i3/Sway workspace scripts
-- System-wide voice command pipeline
+The DBus service is a stub on non-Linux platforms (compiles but does nothing).
 
 ---
 
@@ -179,42 +171,45 @@ dbus-send --session --print-reply \
 
 ### Purpose
 
-After Whisper transcribes your speech, the raw text can optionally be rewritten by a local LLM running in [Ollama](https://ollama.ai/). This is useful for correcting grammar, adjusting tone, or reformatting content.
+After Whisper transcribes speech, text can optionally be rewritten by a local LLM running in [Ollama](https://ollama.ai/). Enabled per-target via `processing.ollama_enabled = true` in `targets.toml`.
 
 ### Configuration
 
 ```json
 "ollama": {
-  "enabled": true,
+  "enabled": false,
   "endpoint": "http://localhost:11434",
-  "model": "llama3.2",
+  "model": "llama3.2:1b",
   "mode": "clean",
-  "custom_prompt": ""
+  "custom_prompt": null,
+  "timeout_secs": 8
 }
 ```
 
 ### Modes
 
-| Mode | Behavior |
+| Mode | Prompt sent to LLM |
 |---|---|
-| `clean` | Fix grammar, punctuation, and capitalization |
-| `formal` | Rewrite in formal/professional language |
-| `casual` | Rewrite in conversational language |
-| `bullet` | Convert to a bullet-point list |
-| `concise` | Shorten and summarize |
-| `custom` | Use `custom_prompt` as the instruction |
+| `clean` | "Fix grammar and punctuation only. Return only the corrected text, no commentary." |
+| `formal` | "Rewrite in formal professional language. Return only the result." |
+| `casual` | "Rewrite in casual conversational language. Return only the result." |
+| `bullet` | "Convert to a bullet-point list. Return only the list." |
+| `concise` | "Summarize concisely in 1-2 sentences. Return only the summary." |
+| `custom` | Uses `custom_prompt` field |
 
-### Custom Prompt Template
+### Custom Prompt
 
-With `mode = "custom"`, the `custom_prompt` field is used as the LLM instruction. The transcribed text is appended:
+With `mode = "custom"`, the `custom_prompt` field is used as the LLM instruction:
+- If `custom_prompt` contains `{text}`, that placeholder is replaced with the transcribed text
+- Otherwise, the transcribed text is appended after the prompt on a new line
 
-```json
-"custom_prompt": "Rewrite the following as a professional email reply:"
-```
+### Availability Caching
+
+`OllamaClient.is_available()` probes `GET /api/tags` on first call and **caches the result**. If Ollama was unreachable at startup, it will appear unreachable until the availability cache is reset (e.g. by changing the endpoint in settings).
 
 ### Graceful Fallback
 
-If Ollama is unreachable or returns an error, VoxCtr logs the failure and delivers the **original** Whisper transcription unchanged. It never blocks or drops text.
+If Ollama is unreachable, the HTTP request times out, or the response cannot be parsed, VoxCtr logs the failure and delivers the **original** Whisper transcription unchanged. Text is never dropped.
 
 ### Testing the Connection
 
@@ -232,7 +227,7 @@ const result = await invoke('test_ollama', {
 ## HTTP Webhooks
 
 ### Endpoint Delivery (`http` type)
-POST with JSON body:
+POST with JSON body to `http_url`:
 ```
 POST https://your-endpoint.com/voice
 Content-Type: application/json
@@ -240,30 +235,22 @@ Content-Type: application/json
 {"text": "transcribed text"}
 ```
 
+Configurable: `http_method`, `http_headers`, `http_json_template`.
+
 ### Signed Webhooks (`webhook` type)
-Same POST but with additional HMAC-SHA256 signature:
+Same POST (to `webhook_url`) but with HMAC-SHA256 signature:
 ```
 X-VoxCtr-Signature: sha256=abc123...
-```
-
-Verify on your server:
-```python
-import hmac, hashlib
-
-def verify(payload: bytes, secret: str, signature: str) -> bool:
-    expected = 'sha256=' + hmac.new(
-        secret.encode(), payload, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
 ```
 
 ---
 
 ## AT-SPI2 Context Integration (Linux)
 
-When `atspi.enabled = true`, VoxCtr uses the Linux Accessibility API (AT-SPI2) to:
+When `atspi.context_prompt = true`, VoxCtr uses the Linux Accessibility API (AT-SPI2) to read the surrounding text from the focused text field. This text is included in the Whisper initial prompt to improve transcription continuity and vocabulary consistency.
 
-1. **Read focused widget text** — Retrieves the last ~200 characters from the focused text field to use as a Whisper context prompt, improving transcription continuity.
-2. **Auto code mode** — Detects if the focused application is a code editor and automatically enables code-mode post-processing.
+When `atspi.auto_code_mode = true`, VoxCtr detects when the focused application is a code editor or terminal and automatically enables code-mode post-processing.
 
-Requires the `at-spi2-core` package and the `org.a11y.Bus` DBus service.
+When `atspi.injection = true`, AT-SPI2 is used as the primary text injection method (before falling back to wtype/xdotool).
+
+Requires the `at-spi2-core` package and the `org.a11y.Bus` DBus service to be running.

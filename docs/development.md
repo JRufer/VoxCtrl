@@ -181,17 +181,17 @@ All `#[tauri::command]` handlers. Each command is a thin wrapper that reads/writ
 ### `crates/voxctr-config/src/lib.rs`
 The `AppConfig` struct is the source of truth for all settings. If you add a config option, add it here first, then expose it in the Settings UI.
 
-### `crates/voxctr-routing/src/targets.rs`
-Defines `OutputTarget`, `DeliveryType`, and the routing dispatch logic. Add new delivery types here.
+### `crates/voxctr-routing/src/models.rs`
+Defines `OutputTarget`, `HotkeyBinding`, `DeliveryType`, `TargetProcessingConfig`, and `GestureType`. Add new delivery types or target fields here.
 
 ---
 
 ## Adding a New Output Target Type
 
-1. Add a variant to `DeliveryType` enum in `crates/voxctr-routing/src/targets.rs`
-2. Add a match arm in `OutputTargetRouter::route()` with the delivery logic
-3. Add any target-specific config fields to `OutputTarget` struct (all optional with defaults)
-4. Update the TypeScript `OutputTarget` interface in `src/`
+1. Add a variant to `DeliveryType` enum in `crates/voxctr-routing/src/models.rs`
+2. Add any target-specific fields to `OutputTarget` in `crates/voxctr-routing/src/models.rs`
+3. Add a match arm in the router dispatch logic in `crates/voxctr-routing/src/router.rs`
+4. Update the TypeScript `OutputTarget` interface in `src/stores/config.ts`
 5. Add the new type to the delivery type selector in `src/lib/Settings/RoutingTab.svelte`
 6. Document in `docs/routing.md`
 

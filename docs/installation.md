@@ -95,8 +95,8 @@ On first launch, VoxCtr will:
 ### Download a Whisper Model
 Before you can dictate, you need a speech recognition model:
 1. Go to Settings → Engine
-2. Choose a model size (recommendation: `base` for speed, `small` for better accuracy)
-3. Click "Download" and wait for completion (~100 MB for `base`)
+2. Choose a model size (recommendation: `small` for a good speed/accuracy balance; the default is `large-v3` for maximum accuracy)
+3. Click "Download" and wait for completion (~142 MB for `base`, ~466 MB for `small`, ~3 GB for `large-v3`)
 
 ### Configure a Hotkey
 A default binding (`Super + Space`, hold gesture → inject to focused window) is created automatically. Verify it in Settings → Hotkeys, or change the key combo if it conflicts with your desktop environment.
@@ -151,7 +151,7 @@ See [Development Guide](./development.md).
 ### No audio devices found
 - Run `arecord -l` to verify your mic is recognized by ALSA
 - Check if PulseAudio/PipeWire is running: `pactl info`
-- Try setting `audio.device_index` manually to a specific device index
+- Try setting `audio.input_device_index` manually to a specific device index (integer, not null)
 
 ### Text not injecting on Wayland
 - Verify `wtype` is installed: `which wtype`

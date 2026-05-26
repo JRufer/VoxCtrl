@@ -42,15 +42,18 @@ A single hotkey binding can route to **multiple targets simultaneously**.
 
 ### Visualization & HUD
 - Transparent floating overlay window with real-time audio visualization
-- Four overlay styles: Ocean Wave, Voice Card, Waveform, Pulse
+- Four overlay styles: Blue Wave (default), Voice Card, Waveform, Pulse
 - Auto-show on recording start, auto-hide on completion
 
 ### Post-Processing Pipeline
 Applied after transcription before delivery:
-- Filler word removal (`um`, `uh`, `hmm`)
-- Spoken punctuation conversion (`"period"` → `.`)
+- Filler word removal (`um`, `uh`, `hmm`, `er`, `ah`, `ugh`, `mhm`)
+- Spoken punctuation conversion (`"period"` → `.`, `"comma"` → `,`, and 20+ more)
+- Auto-format lists (detects "first/second/third" ordinals → numbered list)
 - Snippet expansion (custom shorthand → full text)
-- Optional Ollama LLM rewrite (grammar clean, formal, casual, bullet, concise, or custom prompt)
+- Custom vocabulary fuzzy correction (Levenshtein matching for proper nouns/domain terms)
+- Code mode (camelCase conversion, spoken operators)
+- Optional Ollama LLM rewrite (clean, formal, casual, bullet, concise, or custom prompt)
 
 ### Text-to-Speech
 - Neural TTS via Piper (ONNX, ~11 English voices)

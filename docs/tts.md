@@ -13,95 +13,103 @@ VoxCtr includes a neural TTS engine for voice output. This is useful for reading
 ### Piper (Primary)
 [Piper](https://github.com/rhasspy/piper) is a fast, local neural TTS system using ONNX models. It produces high-quality natural-sounding speech entirely offline.
 
-VoxCtr ships with support for approximately 11 English voices from the Piper v0.0.2 release.
-
-Voice files are stored at `~/.local/share/voxctl/piper-voices/`. Each voice requires:
-- `voice-name.onnx` — the neural network model
-- `voice-name.onnx.json` — model configuration
+VoxCtr invokes the `piper` binary directly (looks first in `~/.local/share/voxctl/piper/piper`, then on PATH). It pipes text to Piper's stdin, receives raw 16-bit PCM on stdout, and plays via `aplay` (Linux) or a temp WAV file + PowerShell `SoundPlayer` (Windows).
 
 ### Espeak-ng (Fallback)
-If Piper is unavailable or no voice is downloaded, VoxCtr falls back to [espeak-ng](https://github.com/espeak-ng/espeak-ng), a formant-synthesis engine that requires no downloads. Quality is lower but it is always available.
+If Piper is unavailable or no voice is downloaded, VoxCtr falls back to `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
+
+---
+
+## Voice Catalogue
+
+Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored at `~/.local/share/voxctl/piper-voices/`.
+
+| Voice name | Quality | Sample rate |
+|---|---|---|
+| `en-us-libritts-high` | high | 22050 Hz |
+| `en-us-ryan-high` | high | 22050 Hz |
+| `en-us-ryan-medium` | medium | 22050 Hz |
+| `en-us-ryan-low` | low | 16000 Hz |
+| `en-us-lessac-medium` | medium | 16000 Hz |
+| `en-us-lessac-low` | low | 16000 Hz |
+| `en-us-amy-low` | low | 16000 Hz |
+| `en-us-kathleen-low` | low | 16000 Hz |
+| `en-us-danny-low` | low | 16000 Hz |
+| `en-gb-southern_english_female-low` | low | 16000 Hz |
+| `en-gb-alan-low` | low | 16000 Hz |
+
+The default voice is **`en-us-lessac-medium`**.
 
 ---
 
 ## Voice Packs
 
-### Available Voices
+### Checking if a voice is downloaded
+```typescript
+const downloaded = await invoke<boolean>('check_voice_downloaded', {
+  voiceName: 'en-us-lessac-medium'
+});
+```
 
-Voices are downloaded from the Piper GitHub release. Available English voices include (names are illustrative):
-
-- `en_US-lessac-medium`
-- `en_US-libritts-high`
-- `en_US-ryan-high`
-- `en_US-kusal-medium`
-- `en_US-joe-medium`
-- `en_GB-alan-medium`
-- `en_GB-jenny_dioco-medium`
-
-Check the Settings → TTS tab for the full current list and download status.
-
-### Downloading Voices
-
+### Downloading a voice
 Via the UI: Settings → TTS → select a voice → click Download.
 
 Via IPC:
 ```typescript
-await invoke('download_voice', { name: 'en_US-lessac-medium' });
+await invoke('download_voice', { voiceName: 'en-us-ryan-high' });
 ```
 
-Via the Tauri command from Rust:
-```rust
-download_voice("en_US-lessac-medium").await?;
-```
+The download fetches `voice-<name>.tar.gz` from the Piper GitHub release, extracts the `.onnx` and `.onnx.json` files into the voices directory, and uses atomic temp-file writes to avoid partial downloads.
 
 ---
 
 ## Audio Playback
 
-After synthesis, VoxCtr plays audio using the system audio stack:
+After synthesis, raw PCM audio is played using the system audio stack:
 
-- **Linux:** `aplay` (ALSA)
-- **Windows:** PowerShell `[System.Media.SoundPlayer]`
+- **Linux:** `aplay -r <sample_rate> -f S16_LE -c 1 -` (ALSA, streaming from stdin)
+- **Windows:** Writes a temp WAV file, plays with PowerShell `[System.Media.SoundPlayer]::PlaySync()`
 
-The audio plays asynchronously — the TTS engine queues requests and a dedicated task drains the queue sequentially so speech doesn't overlap.
+The TTS engine queues requests in a bounded channel (capacity 32). Utterances play sequentially — subsequent calls are queued and played in order without overlapping.
 
 ---
 
 ## Triggering TTS
 
 ### From the MCP Server
-LLM agents can queue speech via the `speak_text` MCP tool:
 ```json
 {"method": "tools/call", "params": {"name": "speak_text", "arguments": {"text": "Recording complete."}}}
 ```
 
-### From a Hotkey Binding Target
-Route to a TTS target — the `tts_engine` field on a target specifies which voice to use.
-
-### From the IPC Command
+### From a Tauri IPC Command
 ```typescript
-await invoke('speak_text', { text: 'Hello world', voice: 'en_US-lessac-medium' });
+await invoke('speak_text', { text: 'Hello world', voice: 'en-us-ryan-high' });
 ```
 
-### From the FIFO Pipe
-VoxCtr watches a named FIFO for newline-terminated text to speak. Write to it from any script:
+The `voice` parameter is optional; if omitted, the configured default voice is used.
+
+### From a FIFO Response Pipe
+If a target has a `response_pipe` path configured, VoxCtr watches that FIFO for newline-terminated text and speaks each line:
+
 ```bash
 echo "Recording started" > /tmp/voxctl-tts.fifo
 ```
 
+Multiple targets can have different `response_pipe` paths. VoxCtr spawns a FIFO watcher task for each unique path when targets are loaded or updated.
+
 ---
 
-## Stop Keys
+## Stopping Playback
 
-TTS playback can be interrupted with a configurable key combination. Set `tts.stop_keys` in config:
+The `stop_key` (singular, an array) config field lists keys that interrupt current TTS playback when pressed:
 
 ```json
 "tts": {
-  "stop_keys": ["KEY_ESC"]
+  "stop_key": ["KEY_ESCAPE"]
 }
 ```
 
-When the stop key is pressed during playback, the current utterance is cancelled and the queue is cleared.
+Sending `None` through the TTS engine channel (via `TtsEngineHandle::stop()`) clears the current utterance.
 
 ---
 
@@ -113,26 +121,32 @@ Under `tts` in `config.json`:
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS functionality |
 | `engine` | string | `"piper"` | `"piper"` or `"espeak"` |
-| `voice` | string | `"en_US-lessac-medium"` | Voice name for Piper |
-| `stop_keys` | string[] | `["KEY_ESC"]` | Keys that interrupt playback |
-| `rate` | int | `175` | Speech rate in words-per-minute (espeak only) |
-| `pitch` | int | `50` | Pitch level 0-99 (espeak only) |
+| `voice` | string | `"en-us-lessac-medium"` | Voice name (hyphen-delimited) |
+| `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
+| `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
 
 ---
 
 ## TtsEngineHandle
 
-The TTS handle is stored in `AppState` and shared with the MCP server and routing system:
+The TTS handle is stored in `AppState` and shared with the MCP server, routing system, and IPC commands:
 
 ```rust
-pub struct TtsEngineHandle {
-    tx: mpsc::Sender<TtsRequest>,
+pub struct Utterance {
+    pub text: String,
+    pub voice: Option<String>,      // None = use config default
+    pub source_label: Option<String>,
 }
 
-pub struct TtsRequest {
-    pub text: String,
-    pub voice: Option<String>,
+pub struct TtsEngineHandle {
+    tx: Sender<Option<Utterance>>,  // None = stop signal
+}
+
+impl TtsEngineHandle {
+    pub fn speak(&self, text: impl Into<String>);
+    pub fn speak_utterance(&self, u: Utterance);
+    pub fn stop(&self);  // sends None, clears current playback
 }
 ```
 
-Send a request by cloning the handle and sending on the channel. The worker task picks it up and synthesizes/plays sequentially.
+The handle is `Clone` — multiple callers can hold a copy and enqueue utterances concurrently.

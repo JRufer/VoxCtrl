@@ -7,7 +7,7 @@
 - Enumerate and select audio input devices
 - Stream raw PCM from the microphone via CPAL
 - Resample from the hardware rate to 16 kHz (Whisper's required input rate)
-- Compute RMS levels for the VU meter and noise gate
+- Compute RMS levels for the VU meter and VAD noise gate
 - Support two streaming modes: dynamic (on-demand) and always-on
 
 ---
@@ -16,82 +16,83 @@
 
 On startup, `test_and_detect_active_device()` probes devices in priority order:
 
-1. **Configured device** — `audio.device_index` from config
+1. **Configured device** — `audio.input_device_index` from config (if non-null)
 2. **Default input device** — CPAL's `default_input_device()`
-3. **First enumerable device** — iterates all hosts/devices
+3. **First enumerable device** — iterates all input devices, picks first that builds a stream
 
-A "test capture" of ~200ms is performed to confirm the device actually produces audio before committing to it. The result is stored atomically so the inference and UI layers can query it.
+A test stream is opened on each candidate to confirm it is functional before committing. If none succeed, CPAL's default device is used as a last resort.
 
-Devices are listed with `list_audio_devices()` which returns `(index, name)` pairs for the Settings → Audio tab.
+Devices are enumerated with `list_input_devices()`, which returns `(index: u32, name: String)` pairs for the Settings → Audio tab.
+
+The device can be **hot-reloaded** at runtime: if `audio.input_device_index` changes (via the UI), the capture loop detects the change and re-opens the stream on the new device without restarting.
 
 ---
 
 ## Streaming Modes
 
-### Dynamic Streaming (default)
-The microphone stream is opened when recording starts and closed when it stops. This is the default mode.
+### Dynamic Streaming (default, `dynamic_stream: true`)
+The microphone stream is opened when recording starts and closed when it stops.
 
 - Lower CPU/battery usage when idle
-- A small startup latency (~10–50ms) when a hotkey is pressed
+- A small startup latency (~30ms polling interval) on hotkey press
 - Suitable for most users
 
-### Always-On Streaming
-The stream stays open permanently. Chunks are buffered and discarded when not recording.
+### Always-On Streaming (`dynamic_stream: false`)
+The stream stays open permanently. Chunks are forwarded to the recording buffer only while recording is active; they are discarded otherwise.
 
 - Zero startup latency
 - Higher idle CPU usage
-- Required for VAD-triggered recording (future feature)
+- The stream also runs during VU meter monitoring (Settings → Audio tab)
 
-Toggle via `audio.dynamic_stream` in config.
+Both modes also serve the live audio monitoring flag used by the VU meter in the Settings → Audio tab.
 
 ---
 
 ## Audio Processing Chain
 
 ```
-Hardware Input (e.g. 48000 Hz, f32 or i16 samples)
+Hardware input (e.g. 48000 Hz, f32 samples)
         │
         ▼
-   normalize_samples()     — convert i16/i32/u16 to f32 [-1.0, 1.0]
+   apply_gain()         — multiply each sample by gain (atomic f32, live-updated)
         │
         ▼
-   apply_gain()             — multiply by gain factor (default 1.0)
+   rms() → level_tx     — f32 RMS forwarded to UI every ~30ms for VU meter
         │
         ▼
-   resample_chunk()         — linear interpolation to 16000 Hz
+   resample_chunk()      — linear interpolation to 16000 Hz (if hardware rate differs)
         │
         ▼
-   audio_tx.send(chunk)     — Vec<f32> forwarded to lib.rs accumulator
-        │
-        ▼
-   rms() → audio_level_tx   — f32 RMS forwarded to UI for visualization
+   audio_tx.send(chunk)  — Vec<f32> forwarded to lib.rs accumulator (only if recording=true)
 ```
 
 ### Resampling
 
-`resample_chunk(input, from_rate, to_rate)` uses linear interpolation via the **Rubato** library. This is fast and introduces minimal latency, which is more important than perfect audio quality for speech recognition.
+`resample_chunk(input, from_hz, to_hz)` uses simple linear interpolation to convert from the hardware sample rate to 16 kHz. This is fast and low-latency, which is more important than perfect fidelity for speech recognition.
 
 ### Gain Control
 
-`audio.gain` (0.0–4.0) is stored as an `AtomicU32` (bit-cast from f32) so it can be updated from the UI without locking the audio thread.
+`audio.gain` is stored as an `AtomicU32` (bit-cast from f32) in `AppState`, allowing live updates from the UI without locking the audio thread.
 
 ---
 
 ## Noise Gate / VAD
 
-A simple energy-based Voice Activity Detection gate is applied during inference, not capture:
+Voice Activity Detection is applied in the inference layer (not capture), after the full recording is accumulated:
 
 ```
-RMS energy of captured audio
-        │
-        ▼
-    < audio.vad_threshold?   →  Drop (return empty string)
-        │
-        ▼
-    Send to Whisper
+rms_threshold = (1.0 - audio.vad_threshold) * 0.006
+
+IF rms(audio) < rms_threshold
+THEN discard — return empty string
 ```
 
-The threshold is configurable (default ~0.02). Setting it too high causes missed speech; too low causes Whisper to transcribe silence as hallucinated text (a known Whisper behavior).
+**VAD threshold interpretation:**
+- `0.5` (default) → rms_threshold = 0.003 (comfortable speech easily passes)
+- `1.0` (maximum sensitivity) → rms_threshold = 0.0 (no gate; all audio processed)
+- `0.0` (minimum sensitivity) → rms_threshold = 0.006 (only loud audio passes)
+
+Setting it too low (high sensitivity) can cause Whisper to transcribe silence as hallucinated text. The default 0.5 is well-calibrated for typical microphone setups.
 
 ---
 
@@ -101,28 +102,29 @@ All under `audio` in `config.json`:
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `device_index` | `i32` | `-1` (auto) | CPAL device index; -1 = auto-detect |
-| `gain` | `f32` | `1.0` | Microphone gain multiplier (0.0–4.0) |
-| `vad_threshold` | `f32` | `0.02` | RMS threshold below which audio is discarded |
-| `dynamic_stream` | `bool` | `true` | Open/close mic stream on demand |
+| `input_device_index` | integer or null | `null` | CPAL device index; null = auto-detect |
+| `evdev_device` | string or null | `null` | Linux evdev keyboard path, e.g. `"/dev/input/event4"` |
+| `gain` | float | `1.0` | Microphone amplification multiplier |
+| `vad_threshold` | float | `0.5` | Sensitivity 0.0–1.0; higher = more sensitive (0.0 RMS gate at 1.0) |
+| `min_silence_duration_ms` | integer | `500` | Milliseconds of silence to trigger recording stop |
+| `noise_suppression` | bool | `false` | Enable basic noise suppression |
+| `dynamic_stream` | bool | `true` | Open/close mic on demand vs. always-on |
 
 ---
 
-## AudioRecorder API
+## AudioRecorder
+
+`AudioRecorder` is constructed with shared atomics from `AppState` so it reacts to live config changes without restarts:
 
 ```rust
-// Create recorder with a channel for audio chunks and RMS levels
-let recorder = AudioRecorder::new(audio_tx, level_tx, config);
-
-// Start capturing (dynamic mode: opens stream)
-recorder.start()?;
-
-// Stop capturing (dynamic mode: closes stream)
-recorder.stop()?;
-
-// Update gain at runtime (atomic, no restart needed)
-recorder.set_gain(1.5);
-
-// Switch device at runtime (triggers stream restart)
-recorder.set_device_index(2);
+pub struct AudioRecorder {
+    config: AudioConfig,
+    recording: Arc<AtomicBool>,
+    monitoring: Arc<AtomicBool>,
+    dynamic_stream: Arc<AtomicBool>,
+    input_device_index: Arc<AtomicU32>,
+    gain: Arc<AtomicU32>,
+}
 ```
+
+It is started via `.run(audio_tx, level_tx, audio_ready)` which spawns the `capture_loop` on a dedicated OS thread. The loop polls every 30ms to check for device index changes, dynamic stream preference changes, and recording/monitoring state transitions.

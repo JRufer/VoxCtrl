@@ -8,56 +8,70 @@ VoxCtr opens three separate native windows managed by Tauri:
 
 | Window | Route | Default Size | Properties |
 |---|---|---|---|
-| Settings | `/settings` | 840 × 640 | Resizable, standard chrome |
-| Overlay | `/overlay` | 560 × 160 | Transparent, always-on-top, no decorations, non-focusable |
+| Settings | `/settings` | 840 × 640 (min 700 × 500) | Resizable, standard chrome |
+| Overlay | `/overlay` | 560 × 160 | Transparent, always-on-top, no decorations, not resizable, skip taskbar |
 | History | `/history` | 600 × 500 | Resizable, standard chrome |
 
-Windows are declared in `src-tauri/tauri.conf.json`.
+Windows are declared in `src-tauri/tauri.conf.json`. All three start hidden (`visible: false`) and are shown programmatically.
 
 ---
 
 ## Settings Window
 
-The main configuration interface. Organized into tabs:
+The main configuration interface. Organized into a sidebar with nine tabs:
 
 ### General Tab
-- Overlay style selector (Ocean Wave, Voice Card, Waveform, Pulse)
-- Auto-show overlay on recording toggle
+- Overlay show/hide toggle
+- Overlay style selector
+- Auto-show settings on startup toggle
 - Desktop notification toggle
 - History tracking toggle
-- Word count display
+- Recording status indicator and word count
+- Manual record/stop button
+
+### Engine Tab
+- Backend selector (`auto`, `whisper-cpp`, `moonshine`)
+- Inference mode selector (`Balanced`, `Aggressive`)
+- Whisper model size selector with download status
+- Compute device selector (auto / CPU / CUDA / Vulkan)
+- Thread count control
+- Moonshine model/language settings
+- "Download Model" button with progress
+
+### Routing Tab
+- Visual editor for `targets.toml` — add/edit/delete output targets
+- Per-target fields: label, delivery type, type-specific options
+- Per-target processing override controls
+- Hotkey binding management (add/edit/delete bindings, key combo recorder, gesture selector)
+
+### Visual Tab
+- Preview and selection of overlay animation styles
+- Overlay appearance controls
 
 ### Audio Tab
 - Input device selector (lists all CPAL devices)
-- Gain slider (0.0 – 4.0)
+- Gain slider
 - VAD threshold slider
+- Noise suppression toggle
 - Dynamic stream toggle
-- Live audio level meter (VU meter, updates from `audio-level` events)
-- "Test Microphone" button
+- Live audio level meter (VU meter, updates from `audio-level` events during monitoring)
+- Evdev device path input
 
-### Visual Tab
-- Preview of each overlay animation style
-- Overlay opacity and size controls
+### TTS Tab
+- Enable/disable toggle
+- Engine selector (Piper / Espeak)
+- Voice selector with download status per voice
+- "Download Voice" button per voice
+- Stop key configuration
+- Response overlay toggle
 
-### Routing Tab
-- Visual editor for `targets.toml`
-- Add/edit/delete output targets
-- Per-target fields: label, delivery type, type-specific options
-- Per-target processing overrides
-
-### Hotkeys Tab
-- Visual editor for `bindings.toml`
-- Add/edit/delete hotkey bindings
-- Key combo recorder (press keys to set)
-- Gesture selector
-- Multi-target assignment
-
-### Engine Tab
-- Backend selector (Whisper / Moonshine)
-- Model size selector with download status
-- Compute device selector (auto / CPU / CUDA / Vulkan)
-- Language selector
-- "Download Model" button with progress indicator
+### Features Tab
+- Filler removal toggle
+- Spoken punctuation toggle
+- Auto-format lists toggle
+- Quiet mode toggle
+- Custom vocabulary list editor
+- Snippet key-value editor
 
 ### Ollama Tab
 - Enable/disable toggle
@@ -67,43 +81,34 @@ The main configuration interface. Organized into tabs:
 - Custom prompt text area
 - "Test Connection" button → shows available models
 
-### TTS Tab
-- Enable/disable toggle
-- Engine selector (Piper / Espeak)
-- Voice selector with download status per voice
-- "Download Voice" button per voice
-- Stop key configuration
-- "Test Voice" button
-
 ### About Tab
 - Version information
-- Links to documentation
-- License info
+- Links to documentation and source
 
 ---
 
 ## Overlay Window
 
-A transparent, always-on-top floating HUD that visualizes audio activity. It has no title bar, cannot be focused by clicking, and auto-shows/hides based on recording state.
+A transparent, always-on-top floating HUD that visualizes audio activity. It has no title bar, no taskbar entry, is not resizable, and auto-shows/hides based on recording state (controlled by `ui.show_overlay`).
 
 ### Visualization Styles
 
-#### Ocean Wave
-Animated flowing wave in blue/cyan tones. Wave amplitude responds to microphone input level.
+Set via `ui.overlay_style` in config:
 
-#### Voice Card
-A minimal card with a pulsing animated circle and the current status text ("Listening...", "Processing...", "Speaking...").
+#### `blue_wave` (default)
+Animated flowing wave in blue/cyan tones. Wave amplitude responds to microphone input level. Component: `BlueWave.svelte`.
 
-#### Waveform
-Classic oscilloscope-style waveform visualization. The amplitude tracks the real-time audio level.
+#### `voice_card`
+A minimal card with a pulsing animated circle and the current status text ("Listening...", "Processing...", "Speaking..."). Component: `VoiceCard.svelte`.
 
-#### Pulse
-A series of animated bars (like an equalizer) that pulse in response to audio input.
+#### `waveform`
+Classic oscilloscope-style waveform visualization. Amplitude tracks the real-time audio level. Component: `Waveform.svelte`.
 
-### Overlay Auto-Behavior
-Controlled by `ui.auto_show_overlay`:
-- `true` — overlay appears automatically when recording starts and hides when text is delivered
-- `false` — overlay must be shown manually via the tray icon or IPC
+#### `pulse`
+A series of animated bars (like an equalizer) that pulse in response to audio input. Component: `Pulse.svelte`.
+
+#### `none`
+Overlay is disabled entirely.
 
 ---
 
@@ -113,16 +118,15 @@ Displays a log of all transcription sessions in reverse-chronological order.
 
 Each entry shows:
 - Timestamp
-- Transcribed text (truncated with expand option)
+- Transcribed text
 - Target that received the text
-- Word count
 - Inference time (ms)
-- Detected language
 
 Features:
-- Click an entry to copy text to clipboard
-- "Clear History" button
-- Persists in memory until the app is closed (not written to disk by default)
+- "Clear History" button (also resets word count)
+- History persists in memory until the app is closed (not written to disk)
+
+Enabled via `ui.history_enabled = true` in config.
 
 ---
 
@@ -131,16 +135,17 @@ Features:
 ### Config Store (`src/stores/config.ts`)
 
 ```typescript
-// Reactive store — all Settings components read from this
+// Reactive store — all Settings components bind to this
 export const config = writable<AppConfig>(defaultConfig);
+export const configDirty = writable(false);
 
 // Auto-save: debounced 400ms after any change
-config.subscribe(debounce(async (cfg) => {
-  await invoke('save_config', { config: cfg });
-}, 400));
+config.subscribe((cfg) => {
+  // 400ms debounce → invoke('save_config', { newConfig: cfg })
+});
 ```
 
-The store is initialized by calling `get_config()` on startup. The `config-changed` Tauri event refreshes it when another window or external process modifies the config.
+Initialized by `loadConfig()` which calls `get_config()` IPC on startup. The `config-changed` Tauri event refreshes the store when another window or external process modifies config, with a guard to avoid circular auto-save loops.
 
 ### Status Store (`src/stores/status.ts`)
 
@@ -149,13 +154,20 @@ export const status = writable<AppStatus>({
   recording: false,
   processing: false,
   speaking: false,
+  audio_ready: true,
   word_count: 0,
-  active_target: '',
+  active_target_id: "default",
+  active_target_label: "Focused Window",
 });
 
-// Updated every 250ms from backend status-tick events
-listen('status-tick', (event) => status.set(event.payload));
+// Derived convenience stores:
+export const recording = derived(status, ($s) => $s.recording);
+export const speaking = derived(status, ($s) => $s.speaking);
+export const wordCount = derived(status, ($s) => $s.word_count);
+export const activeTargetLabel = derived(status, ($s) => $s.active_target_label ?? "Focused Window");
 ```
+
+Updated by `status-tick` Tauri events (emitted by backend every ~250ms) and an initial `get_status()` call on load.
 
 ---
 
@@ -163,9 +175,9 @@ listen('status-tick', (event) => status.set(event.payload));
 
 | Event | Payload | Description |
 |---|---|---|
-| `status-tick` | `AppStatus` | Periodic state update (every 250ms) |
-| `config-changed` | `AppConfig` | Config was modified externally |
-| `audio-level` | `f32` | RMS audio level for VU meter |
+| `status-tick` | `AppStatus` | Periodic state update (~250ms) |
+| `config-changed` | `AppConfig` | Config was modified (by any window or externally) |
+| `audio-level` | `f32` | RMS audio level for VU meter (while monitoring is active) |
 
 ---
 
@@ -175,7 +187,7 @@ listen('status-tick', (event) => status.set(event.payload));
 # Development (hot-reload frontend, Rust recompiles on save)
 npm run tauri dev
 
-# Production build
+# Production build (AppImage on Linux, .exe/.msi on Windows)
 npm run tauri build
 ```
 

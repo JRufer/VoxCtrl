@@ -75,10 +75,16 @@ voxctr-hotkeys ──gesture_tx──► lib.rs coordinator
                          ▼
                   InferenceEngine.process()
                   (voxctr-inference)
+                    │  Noise gate (VAD)
                     │  Whisper transcription
                     │  Filler removal
+                    │  Spoken punctuation
+                    │  Auto-format lists
                     │  Snippet expansion
-                    │  Ollama rewrite (optional)
+                    │  Custom vocab fuzzy correction
+                    │  Code mode
+                    │  Silence hallucination filter
+                    │  Ollama rewrite (optional, per-target)
                          │
                     text_tx (InferenceOutput)
                          │
@@ -126,7 +132,7 @@ VoxCtr uses Tokio for async I/O plus dedicated OS threads for latency-sensitive 
 - `text_tx` / `text_rx` — `InferenceOutput`
 - `audio_level_tx` / `level_rx` — `f32` RMS
 - `gesture_tx` / `gesture_rx` — `GestureEvent`
-- `binding_reload_tx` — updated bindings list (hot-reload)
+- `hotkey_reloader` — updated bindings list sent to listener thread (hot-reload)
 
 ---
 
@@ -136,19 +142,19 @@ The Svelte frontend is a single-page app with three logical "pages" rendered as 
 
 ```
 App.svelte  (route switcher)
-  ├── /settings  → Settings component
+  ├── /settings  → Settings component (sidebar with 9 tabs)
   │     ├── GeneralTab
-  │     ├── AudioTab
-  │     ├── VisualTab
-  │     ├── RoutingTab
-  │     ├── HotkeysTab
   │     ├── EngineTab
-  │     ├── OllamaTab
+  │     ├── RoutingTab     (targets + bindings editor)
+  │     ├── VisualTab
+  │     ├── AudioTab
   │     ├── TtsTab
+  │     ├── FeaturesTab
+  │     ├── OllamaTab
   │     └── AboutTab
   │
   ├── /overlay   → Overlay component
-  │     ├── OceanWave
+  │     ├── BlueWave       (default)
   │     ├── VoiceCard
   │     ├── Waveform
   │     └── Pulse
@@ -157,8 +163,8 @@ App.svelte  (route switcher)
 ```
 
 **State management:**
-- `src/stores/config.ts` — reactive `AppConfig` with 400ms debounced auto-save via `save_config` IPC
-- `src/stores/status.ts` — live recording/processing/speaking state from `status-tick` events
+- `src/stores/config.ts` — reactive `AppConfig` with 400ms debounced auto-save via `save_config` IPC; also listens for `config-changed` events
+- `src/stores/status.ts` — live state from `status-tick` events + derived stores (`recording`, `speaking`, `wordCount`, `activeTargetLabel`)
 
 ---
 
