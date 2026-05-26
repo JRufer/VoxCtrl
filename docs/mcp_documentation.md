@@ -386,7 +386,7 @@ append_newline = true
 
 ## TTS Configuration
 
-All TTS and MCP settings live in `~/.config/voxctl/config.json` and in **Settings → TTS** or **Settings → Ollama**.
+All TTS settings live in `~/.config/voxctl/config.json` under the `tts` key (**Settings → TTS**). MCP settings live under the `mcp` key (**Settings → Ollama**).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
