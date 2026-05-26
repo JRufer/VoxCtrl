@@ -51,20 +51,20 @@ case "$PKG_MGR" in
         info "Installing portable runtime packages via apt..."
         sudo apt-get update -y
         sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev \
-            wtype xdotool wl-clipboard xclip portaudio19-dev squashfs-tools
+            libwebkit2gtk-4.1-0 libssl3 libayatana-appindicator3-1 \
+            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools
         ;;
     dnf)
         info "Installing portable runtime packages via dnf..."
         sudo dnf install -y \
-            webkit2gtk4.1-devel openssl-devel libayatana-appindicator3-devel \
-            wtype xdotool wl-clipboard xclip portaudio-devel squashfs-tools
+            webkit2gtk4.1 openssl libayatana-appindicator3 \
+            wtype xdotool wl-clipboard xclip portaudio squashfs-tools
         ;;
     zypper)
         info "Installing portable runtime packages via zypper..."
         sudo zypper install -y \
-            webkit2gtk3-devel libopenssl-devel libayatana-appindicator3-devel \
-            wtype xdotool wl-clipboard xclip portaudio-devel squashfs-tools
+            libwebkit2gtk-4_1-0 libopenssl3 libayatana-appindicator3-1 \
+            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools
         ;;
     *)
         warn "Unsupported package manager. Please ensure you have these runtimes installed manually:"
@@ -84,14 +84,31 @@ ok "Host runtime dependencies installed."
 # ══════════════════════════════════════════════════════════════════════════════
 step "Retrieving Portable AppImage"
 
-PORTABLE_APPIMAGE="./VoxCtl-x86_64.AppImage"
+# Helper function to dynamically scan and resolve the best local AppImage
+resolve_local_appimage() {
+    # Scan for any semver-compliant versioned AppImages (e.g. VoxCtr-0.1.0-x86_64.AppImage)
+    local found=( $(find . -maxdepth 1 -name "VoxCtr-*-x86_64.AppImage" 2>/dev/null | sort -V || true) )
+    if [ ${#found[@]} -gt 0 ]; then
+        echo "${found[-1]}"
+    elif [ -f "./VoxCtr-latest-x86_64.AppImage" ]; then
+        echo "./VoxCtr-latest-x86_64.AppImage"
+    elif [ -f "./VoxCtl-x86_64.AppImage" ]; then
+        echo "./VoxCtl-x86_64.AppImage"
+    else
+        echo ""
+    fi
+}
 
-if [ -f "$PORTABLE_APPIMAGE" ]; then
-    ok "Portable AppImage found in workspace root: $PORTABLE_APPIMAGE"
+PORTABLE_APPIMAGE=$(resolve_local_appimage)
+
+if [ -n "$PORTABLE_APPIMAGE" ] && [ -f "$PORTABLE_APPIMAGE" ]; then
+    ok "Portable AppImage found in workspace: $PORTABLE_APPIMAGE"
 else
+    # Default target filename for downloads
+    PORTABLE_APPIMAGE="./VoxCtr-latest-x86_64.AppImage"
     info "Portable AppImage not found in root. Attempting to fetch pre-compiled binary..."
     
-    DOWNLOAD_URL="https://github.com/JRufer/VoxCtr/releases/latest/download/VoxCtl-x86_64.AppImage"
+    DOWNLOAD_URL="https://github.com/JRufer/VoxCtr/releases/latest/download/VoxCtr-latest-x86_64.AppImage"
     FETCHED=0
     
     if command -v curl &>/dev/null; then
@@ -148,7 +165,20 @@ else
         info "Executing build_appimage.sh to compile portable package..."
         ./build_appimage.sh
         ok "AppImage compiled successfully from source."
+        
+        # Re-resolve since a new file was built
+        PORTABLE_APPIMAGE=$(resolve_local_appimage)
     fi
+fi
+
+# Extract dynamic variables from the resolved AppImage path for brand consistency
+FILENAME=$(basename "$PORTABLE_APPIMAGE")
+if [[ "$FILENAME" =~ VoxCtr-(.*)-x86_64.AppImage ]]; then
+    APP_NAME="VoxCtr"
+    APP_VERSION="${BASH_REMATCH[1]}"
+else
+    APP_NAME="VoxCtr"
+    APP_VERSION="latest"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -156,7 +186,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 step "Configuring Hardware Permissions (udev)"
 
-UDEV_RULE_PATH="/etc/udev/rules.d/99-voxctl.rules"
+UDEV_RULE_PATH="/etc/udev/rules.d/99-voxctr.rules"
 if [ ! -f "$UDEV_RULE_PATH" ]; then
     info "Setting up udev rules for global hotkeys (requires sudo)..."
     sudo tee "$UDEV_RULE_PATH" > /dev/null <<EOF
@@ -178,6 +208,12 @@ else
     ok "User is already in the 'input' group."
 fi
 
+# Remove legacy rule if it exists to keep system clean
+if [ -f "/etc/udev/rules.d/99-voxctl.rules" ]; then
+    info "Removing legacy udev rule path..."
+    sudo rm -f "/etc/udev/rules.d/99-voxctl.rules"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. Desktop Integration launcher
 # ══════════════════════════════════════════════════════════════════════════════
@@ -189,14 +225,38 @@ LAUNCHER_DEST_DIR="$HOME/.local/share/applications"
 mkdir -p "$ICON_DEST_DIR"
 mkdir -p "$LAUNCHER_DEST_DIR"
 
+ICON_DEST_PATH="$ICON_DEST_DIR/voxctr.png"
+ICON_COPIED=0
+
 # Install high-res desktop icon
 if [ -f "./src-tauri/icons/128x128.png" ]; then
-    cp "./src-tauri/icons/128x128.png" "$ICON_DEST_DIR/voxctl.png"
-    ok "Application icon installed: $ICON_DEST_DIR/voxctl.png"
+    cp "./src-tauri/icons/128x128.png" "$ICON_DEST_PATH"
+    ICON_COPIED=1
+    ok "Application icon installed from source tree: $ICON_DEST_PATH"
+else
+    # Try to extract the icon dynamically from the AppImage (resolves raw deployment bug)
+    info "Attempting to extract application icon from portable AppImage..."
+    if command -v unsquashfs &>/dev/null; then
+        if "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/128x128/apps/voxctr.png &>/dev/null; then
+            cp squashfs-root/usr/share/icons/hicolor/128x128/apps/voxctr.png "$ICON_DEST_PATH"
+            rm -rf squashfs-root
+            ICON_COPIED=1
+            ok "Application icon extracted and installed successfully: $ICON_DEST_PATH"
+        elif "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/512x512/apps/voxctr.png &>/dev/null; then
+            cp squashfs-root/usr/share/icons/hicolor/512x512/apps/voxctr.png "$ICON_DEST_PATH"
+            rm -rf squashfs-root
+            ICON_COPIED=1
+            ok "Application icon extracted (512px) and installed successfully: $ICON_DEST_PATH"
+        fi
+    fi
+fi
+
+if [ $ICON_COPIED -eq 0 ]; then
+    warn "Could not extract or copy a custom high-res icon. Using desktop fallbacks."
 fi
 
 # Write desktop entry linked directly to the portable AppImage
-LAUNCHER_PATH="$LAUNCHER_DEST_DIR/voxctl.desktop"
+LAUNCHER_PATH="$LAUNCHER_DEST_DIR/voxctr.desktop"
 ABS_APPIMAGE_PATH="$(readlink -f "$PORTABLE_APPIMAGE")"
 
 cat > "$LAUNCHER_PATH" <<EOF
@@ -204,7 +264,7 @@ cat > "$LAUNCHER_PATH" <<EOF
 Name=VoxCtr
 Comment=Private Global Voice Dictation Gateway
 Exec=$ABS_APPIMAGE_PATH
-Icon=voxctl
+Icon=voxctr
 Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;
@@ -215,12 +275,17 @@ EOF
 chmod +x "$LAUNCHER_PATH"
 ok "Desktop launcher integrated successfully: $LAUNCHER_PATH"
 
+# Clean up legacy launcher if it exists
+if [ -f "$LAUNCHER_DEST_DIR/voxctl.desktop" ]; then
+    rm -f "$LAUNCHER_DEST_DIR/voxctl.desktop"
+fi
+
 echo ""
 echo -e "${BOLD}==================================================${NC}"
 echo -e "${BOLD}  Setup & Integration Complete!${NC}"
 echo -e "${BOLD}==================================================${NC}"
 echo ""
-echo "  VoxCtr is now fully integrated into your desktop environment!"
+echo "  VoxCtr ($APP_VERSION) is now fully integrated into your desktop environment!"
 echo "  You can launch it directly from your applications menu or run:"
 echo -e "    ${GREEN}$PORTABLE_APPIMAGE${NC}"
 echo ""

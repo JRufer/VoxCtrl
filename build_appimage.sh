@@ -24,6 +24,21 @@ step "Checking AppImage Compiler Toolchain"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+# Parse application metadata from tauri.conf.json
+TAURI_CONF="src-tauri/tauri.conf.json"
+if [ ! -f "$TAURI_CONF" ]; then
+    fail "Could not find Tauri configuration file at $TAURI_CONF"
+    exit 1
+fi
+
+if command -v jq &>/dev/null; then
+    APP_NAME=$(jq -r '.productName' "$TAURI_CONF")
+    APP_VERSION=$(jq -r '.version' "$TAURI_CONF")
+else
+    APP_NAME=$(grep -oP '"productName":\s*"\K[^"]+' "$TAURI_CONF" || echo "VoxCtr")
+    APP_VERSION=$(grep -oP '"version":\s*"\K[^"]+' "$TAURI_CONF" || echo "0.1.0")
+fi
+
 # Ensure the raw binary is renamed
 if [ -f "./appimagetool" ] && [ ! -f "./appimagetool.bin" ]; then
     info "Found raw appimagetool binary. Restructuring into wrapper setup..."
@@ -125,12 +140,17 @@ if [ ${#FOUND_APPIMAGES[@]} -eq 0 ]; then
 fi
 
 LATEST_BUNDLE="${FOUND_APPIMAGES[0]}"
-PORTABLE_PATH="./VoxCtl-x86_64.AppImage"
+PORTABLE_PATH="./${APP_NAME}-${APP_VERSION}-x86_64.AppImage"
+SYMLINK_PATH="./${APP_NAME}-latest-x86_64.AppImage"
 
 info "Found compiled bundle: $LATEST_BUNDLE"
-info "Moving and exposing portable AppImage directly to workspace root..."
+info "Moving and exposing portable versioned AppImage to root..."
 cp "$LATEST_BUNDLE" "$PORTABLE_PATH"
 chmod +x "$PORTABLE_PATH"
+
+# Establish a latest symlink to maintain compatibility for local scripts/runners
+ln -sf "$(basename "$PORTABLE_PATH")" "$SYMLINK_PATH"
+info "Created latest symlink: $SYMLINK_PATH -> $PORTABLE_PATH"
 
 echo ""
 echo -e "${BOLD}==================================================${NC}"
@@ -139,6 +159,7 @@ echo -e "${BOLD}==================================================${NC}"
 echo ""
 echo "  Your fully standalone, portable application is ready:"
 echo -e "    👉 ${GREEN}${PORTABLE_PATH}${NC} ($(du -sh "$PORTABLE_PATH" | cut -f1))"
+echo -e "    👉 Symlink: ${GREEN}${SYMLINK_PATH}${NC}"
 echo ""
 echo "  To launch and test the application directly, run:"
 echo "    $PORTABLE_PATH"

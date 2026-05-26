@@ -28,7 +28,7 @@ graph TD
 
     subgraph Output Bundles [4. Standalone Packages]
         H -->|Assembles| I[target/release/bundle/appimage/VoxCtr_*.AppImage]
-        I -->|Exposed by build_appimage.sh| J[Root: VoxCtl-x86_64.AppImage *]
+        I -->|Exposed by build_appimage.sh| J[Root: VoxCtr-VERSION-x86_64.AppImage]
     end
 
     classDef primary fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
@@ -81,7 +81,7 @@ chmod +x build_appimage.sh
 2. **Frontend Compiles**: Compiles all visual assets and generates the optimized production build (`/dist`).
 3. **Environment Setup**: Prepends the workspace root to the shell `$PATH` and exports `APPIMAGE_EXTRACT_AND_RUN=1` and `QT_QPA_PLATFORM=offscreen` to allow FUSE-less head-free compilation.
 4. **Tauri Releases**: Runs `npx tauri build` to compile the optimized release binary and bundles it using the FUSE-bypass tools.
-5. **Relocation**: Copies the completed executable as `VoxCtl-x86_64.AppImage` directly in the project root. Note: the output filename uses `VoxCtl` (with a lowercase `l`) — this is the legacy artifact name produced by `build_appimage.sh` and has not yet been renamed to match the current `VoxCtr` branding.
+5. **Relocation**: Copies the completed executable dynamically using the `productName` and `version` from `tauri.conf.json` (e.g. `VoxCtr-0.1.0-x86_64.AppImage`) directly to the project root, creating a convenient `VoxCtr-latest-x86_64.AppImage` symlink.
 
 ---
 
@@ -136,7 +136,7 @@ To run the completed portable application on a fresh host system, follow these d
 
 ### 1. Copy the Essential Files
 You only need to transfer **two files** to the new machine:
-* `VoxCtl-x86_64.AppImage` (the executable)
+* `VoxCtr-*-x86_64.AppImage` (the versioned executable)
 * `install.sh` (the host setup script)
 
 ### 2. Run the Unified Setup
