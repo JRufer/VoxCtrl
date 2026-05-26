@@ -1,0 +1,315 @@
+# Output Routing
+
+**Crate:** `crates/voxctr-routing/`
+
+## Overview
+
+VoxCtr's routing system decouples *what you say* from *where it goes*. You define:
+
+- **Output Targets** (`targets.toml`) — named delivery destinations
+- **Hotkey Bindings** (`bindings.toml`) — which keys trigger which targets
+
+Both files are hot-reloaded when changed on disk.
+
+---
+
+## Output Targets
+
+Defined in `~/.config/voxctl/targets.toml`. Each `[[target]]` block describes one destination.
+
+### Common Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Unique identifier, referenced by bindings |
+| `label` | string | required | Display name in the UI |
+| `delivery` | string | required | Delivery type (see below) |
+| `append_newline` | bool | `true` | Append `\n` after injected text |
+| `send_on_release` | bool | `true` | Wait for hotkey release before delivering |
+| `initial_prompt` | string | null | Whisper context prompt override for this target |
+| `processing` | object | (inherit) | Per-target post-processing overrides |
+| `tts_engine` | string | `"piper"` | TTS engine for response loopback |
+| `tts_voice` | string | null | Voice override for TTS response |
+| `response_pipe` | string | null | FIFO path for TTS response output |
+
+### Delivery Types
+
+#### `inject` — Keystroke Injection
+Simulates typing into the currently focused window.
+
+```toml
+[[target]]
+id = "default"
+label = "Focused Window"
+delivery = "inject"
+```
+
+Linux injection priority:
+1. `wtype` (Wayland)
+2. `xdotool type --clearmodifiers` (X11)
+3. Clipboard + Ctrl+V fallback
+
+Windows: clipboard paste via PowerShell.
+
+---
+
+#### `clipboard` — System Clipboard
+Copies text to the system clipboard. Does not paste.
+
+```toml
+[[target]]
+id = "clipboard"
+label = "Copy to Clipboard"
+delivery = "clipboard"
+```
+
+---
+
+#### `file` — File Append/Write
+Writes text to a file on disk.
+
+```toml
+[[target]]
+id = "notes"
+label = "Meeting Notes"
+delivery = "file"
+file_path = "~/Documents/notes.md"
+file_prefix = "- "        # Prepend to each entry
+file_timestamp = true     # Prepend ISO timestamp (default: true)
+file_mode = "append"      # "append" or "write" (default: "append")
+```
+
+---
+
+#### `exec` — Shell Command
+Runs a shell command. The transcribed text is passed as an argument.
+
+```toml
+[[target]]
+id = "cmd"
+label = "Custom Script"
+delivery = "exec"
+command = "/home/user/scripts/handle-voice.sh"
+```
+
+---
+
+#### `http` — HTTP POST
+POSTs the text as a JSON body to an HTTP endpoint.
+
+```toml
+[[target]]
+id = "api"
+label = "My API"
+delivery = "http"
+http_url = "http://localhost:8080/voice"
+http_method = "POST"      # Default: "POST"
+```
+
+Request body:
+```json
+{"text": "transcribed text here"}
+```
+
+Optional: `http_headers` (table) and `http_json_template` (JSON value).
+
+---
+
+#### `webhook` — Signed HTTP POST
+Like `http` but uses `webhook_url` and adds an HMAC-SHA256 signature header.
+
+```toml
+[[target]]
+id = "secure_hook"
+label = "Signed Webhook"
+delivery = "webhook"
+webhook_url = "https://example.com/hook"
+webhook_secret = "your-shared-secret"
+```
+
+Adds header: `X-VoxCtr-Signature: sha256=<hex>`
+
+Optional: `webhook_json_template` (JSON value) to customize the payload shape.
+
+Verify on your server:
+```python
+import hmac, hashlib
+
+def verify(payload: bytes, secret: str, signature: str) -> bool:
+    expected = 'sha256=' + hmac.new(
+        secret.encode(), payload, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+```
+
+---
+
+#### `socket` — Unix Domain Socket or TCP
+Sends text (newline-terminated) to a socket.
+
+```toml
+[[target]]
+id = "sock"
+label = "Unix Socket"
+delivery = "socket"
+socket_unix = "/tmp/myapp.sock"   # Unix domain socket path
+
+# OR for TCP:
+socket_host = "127.0.0.1"
+socket_port = 9000
+```
+
+---
+
+#### `pipe` — Named FIFO
+Writes to a named FIFO pipe.
+
+```toml
+[[target]]
+id = "fifo"
+label = "FIFO Output"
+delivery = "pipe"
+pipe_path = "/tmp/voice.fifo"
+```
+
+---
+
+#### `dbus` — DBus Signal
+Emits the text as a `text_injected` signal on the `ai.voxctl.Dictation` interface.
+
+```toml
+[[target]]
+id = "dbus"
+label = "DBus Output"
+delivery = "dbus"
+dbus_signal = "text_injected"   # Optional: override signal name
+```
+
+---
+
+#### `mcp` — MCP Response Queue
+Enqueues the text as a response to a pending `transcribe_voice` tool call from an MCP client.
+
+```toml
+[[target]]
+id = "mcp_out"
+delivery = "mcp"
+mcp_path = "/tmp/voxctl-mcp.sock"   # Optional socket path override
+mcp_tool = "transcribe_voice"        # Optional tool name hint
+```
+
+---
+
+### Per-Target Processing
+
+Each target can override global post-processing settings. All fields are optional (`null` = inherit global config):
+
+```toml
+[[target]]
+id = "code_editor"
+label = "Code Editor"
+delivery = "inject"
+
+[code_editor.processing]
+code_mode = true
+remove_fillers = false
+spoken_punctuation = true
+auto_format_lists = false
+apply_snippets = true
+ollama_enabled = false
+ollama_model = ""
+ollama_mode = ""
+ollama_prompt = ""
+atspi_context = true
+noise_suppression = false
+quiet_mode = false
+```
+
+---
+
+## Hotkey Bindings
+
+Defined in `~/.config/voxctl/bindings.toml`. Each `[[binding]]` block maps a key combo + gesture to one or more targets.
+
+### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | required | Unique identifier |
+| `label` | string | `""` | Display name in UI |
+| `keys` | string[] | required | Key names (evdev format on Linux) |
+| `gesture` | string | required | `"hold"`, `"toggle"`, `"double_tap"`, or `"chord"` |
+| `target_ids` | string[] | required | Ordered list of targets to route to |
+| `target_id` | string | | Single target (legacy; resolved if `target_ids` is empty) |
+| `hold_threshold_ms` | integer | `200` | Minimum hold duration in ms |
+| `tap_ms` | integer | `250` | Double-tap inter-press window in ms |
+| `disabled` | bool | `false` | Disable without removing |
+
+### Gesture Types
+
+| Gesture | Behavior |
+|---|---|
+| `hold` | Recording starts on press, stops on release |
+| `toggle` | First press starts, second press stops |
+| `double_tap` | Two rapid presses within `tap_ms` trigger a toggle session |
+| `chord` | All keys must be pressed simultaneously (superset-shadowing applies) |
+
+### Key Names (evdev format)
+
+Common keys:
+- `KEY_LEFTMETA` — Left Super/Windows key
+- `KEY_LEFTCTRL` — Left Ctrl
+- `KEY_LEFTSHIFT` — Left Shift
+- `KEY_LEFTALT` — Left Alt
+- `KEY_SPACE` — Space bar
+- `KEY_F1`–`KEY_F12` — Function keys
+- `KEY_A`–`KEY_Z` — Letter keys
+- `KEY_ESCAPE` — Escape key
+
+### Example bindings.toml
+
+```toml
+[[binding]]
+id = "dictate_hold"
+label = "Dictate to Cursor (Hold)"
+keys = ["KEY_LEFTMETA", "KEY_SPACE"]
+gesture = "hold"
+target_ids = ["default"]
+
+[[binding]]
+id = "dictate_notes"
+label = "Dictate to Notes File"
+keys = ["KEY_LEFTCTRL", "KEY_LEFTSHIFT", "KEY_N"]
+gesture = "toggle"
+target_ids = ["notes", "clipboard"]   # Routes to both sequentially
+
+[[binding]]
+id = "quick_copy"
+label = "Copy to Clipboard"
+keys = ["KEY_LEFTMETA", "KEY_V"]
+gesture = "double_tap"
+target_ids = ["clipboard"]
+tap_ms = 300
+```
+
+### Multi-Target Routing
+
+When `target_ids` contains multiple entries, VoxCtr delivers to each target **sequentially** in the listed order after a single recording session. This lets you, for example, inject text into a window AND log it to a file simultaneously.
+
+### Superset Shadowing
+
+If binding A's keys are a proper subset of binding B's keys (e.g. `META+SPACE` vs `CTRL+META+SPACE`), and both are pressed, only binding B fires. This prevents shorter combos from accidentally triggering when a longer combo is intended.
+
+---
+
+## Router Logic
+
+`OutputTargetRouter::route(text, target_id, targets)`:
+
+1. Look up target by `target_id` from the in-memory cache
+2. Apply per-target `processing` overrides (inheriting globals for null fields)
+3. Build delivery payload (append newline, prefix, timestamp)
+4. Dispatch to the appropriate delivery handler
+5. On error (socket unavailable, file unwritable, etc.), log the failure and continue — never crashes or drops the UI
+
+The router is hot-reloadable: `save_targets()` via IPC updates both the TOML file and the in-memory cache, and spawns any new FIFO response pipe listeners.

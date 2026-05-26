@@ -1,12 +1,12 @@
-# VoxCtl MCP Server
+# VoxCtr MCP Server
 
-VoxCtl ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
+VoxCtr ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
 
 ---
 
 ## Overview
 
-When the MCP server is enabled, VoxCtl listens on a local transport and presents three tools:
+When the MCP server is enabled, VoxCtr listens on a local transport and presents three tools:
 
 | Tool | What it does |
 |---|---|
@@ -18,7 +18,7 @@ This lets an AI agent have a full voice conversation:
 
 ```
 Agent → transcribe_voice()  → user speaks → transcript returned
-Agent → speak_text("…")     → VoxCtl speaks the response aloud
+Agent → speak_text("…")     → VoxCtr speaks the response aloud
 Agent → transcribe_voice()  → next turn …
 ```
 
@@ -43,7 +43,7 @@ sudo pacman -S espeak-ng
 
 ### Voice models
 
-Voice models are downloaded from inside the app. Go to **Settings → Voice Output**, select a voice from the picker, and click **⬇ Download**. Models are stored locally in:
+Voice models are downloaded from inside the app. Go to **Settings → TTS**, select a voice from the picker, and click **⬇ Download**. Models are stored locally in:
 
 ```
 ~/.local/share/voxctl/piper-voices/
@@ -55,11 +55,10 @@ Voice models are downloaded from inside the app. Go to **Settings → Voice Outp
 
 ### Via Settings UI
 
-1. Open **Settings → AI**
+1. Open **Settings → Ollama**
 2. Scroll to the **MCP Server** section
 3. Toggle **"Enable MCP Server"**
 4. The server will bind to the standard socket/pipe path shown in the settings window.
-5. Optionally click **"Register in Claude Desktop"** to auto-configure Claude Desktop (Linux).
 
 ### Via config.json
 
@@ -179,7 +178,7 @@ Opens the microphone and returns a transcript when speech ends.
 
 * While recording, the active waveform or recording overlay is shown — the user always has a visual indicator that the mic is live.
 * The microphone is released automatically once VAD detects silence or `timeout_seconds` elapses.
-* VoxCtl's full post-processing pipeline (including Ollama formatting/cleaning if enabled) is applied before the transcript is returned.
+* VoxCtr's full post-processing pipeline (including Ollama formatting/cleaning if enabled) is applied before the transcript is returned.
 
 ---
 
@@ -278,23 +277,13 @@ The `text` field is a JSON-encoded object:
 
 | Code | Meaning |
 |---|---|
+| `-32700` | Parse error (malformed JSON) |
 | `-32601` | Method not found |
-| `-32602` | Unknown tool name |
-| `-32603` | Internal error (missing required argument, callback exception) |
+| `-32603` | Internal error (unknown tool name, missing required argument, callback exception) |
 
 ---
 
 ## Connecting: Claude Desktop (Linux)
-
-### One-click registration
-
-In **Settings → AI → MCP Server**, click **"Register in Claude Desktop"**. The app writes the `socat` bridge entry to:
-
-```
-~/.config/claude/claude_desktop_config.json
-```
-
-### Manual configuration
 
 Add the following to `~/.config/claude/claude_desktop_config.json`:
 
@@ -311,7 +300,7 @@ Add the following to `~/.config/claude/claude_desktop_config.json`:
 
 Restart Claude Desktop. The tools `transcribe_voice`, `speak_text`, and `get_status` appear automatically in the tool picker.
 
-> **Note:** VoxCtl must already be running before Claude Desktop connects.
+> **Note:** VoxCtr must already be running before Claude Desktop connects.
 
 ---
 
@@ -371,7 +360,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 
 ## Response Loopback (FIFO pipe)
 
-For agents that generate responses to a named FIFO, VoxCtl can dynamically read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
+For agents that generate responses to a named FIFO, VoxCtr can dynamically read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
 
 ### How it works
 
@@ -390,7 +379,6 @@ label = "My Agent"
 delivery = "pipe"
 pipe_path = "/tmp/my-agent.in"
 response_pipe = "/tmp/my-agent.out"   # ← agent writes responses here
-post_processing = "none"
 append_newline = true
 ```
 
@@ -398,7 +386,7 @@ append_newline = true
 
 ## TTS Configuration
 
-All TTS and MCP settings live in `~/.config/voxctl/config.json` and in **Settings → Voice Output** or **Settings → AI**.
+All TTS settings live in `~/.config/voxctl/config.json` under the `tts` key (**Settings → TTS**). MCP settings live under the `mcp` key (**Settings → Ollama**).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -426,7 +414,7 @@ All TTS and MCP settings live in `~/.config/voxctl/config.json` and in **Setting
 | `en-us-danny-low` | US English | Low | 16000 Hz |
 | `en-gb-alan-low` | GB English | Low | 16000 Hz |
 
-Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download**.
+Download voices in **Settings → TTS → Voice Picker → ⬇ Download**.
 
 ---
 
@@ -460,11 +448,11 @@ Download voices in **Settings → Voice Output → Voice Picker → ⬇ Download
 
 **Socket does not exist**
 
-VoxCtl is not running, or the MCP server is disabled. Enable it in **Settings → AI** or set `"mcp": { "server_enabled": true }` in `config.json` and restart.
+VoxCtr is not running, or the MCP server is disabled. Enable it in **Settings → Ollama** or set `"mcp": { "server_enabled": true }` in `config.json` and restart.
 
 **`socat` connection refused**
 
-The socket exists but the server is not listening yet. Wait a moment after VoxCtl starts, or check the app's console output for errors.
+The socket exists but the server is not listening yet. Wait a moment after VoxCtr starts, or check the app's console output for errors.
 
 **TTS plays but no audio**
 
@@ -475,11 +463,12 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 **`transcribe_voice` returns `(no speech detected)`**
 
 * Confirm your microphone is selected in **Settings → Audio**.
-* Raise `timeout_seconds` — the default 15 s may be too short if recording takes time to initialise.
-* Check VAD threshold in **Settings → Audio** — a high threshold may cut off quiet speech.
+* Raise `timeout_seconds` — the default 15 s may be too short if recording takes time to initialize.
+* Check the VAD threshold in **Settings → Audio** — a higher sensitivity value (lower raw threshold) may be needed for quiet speech.
 
 **Claude Desktop does not see the tools**
 
 * Restart Claude Desktop after editing `claude_desktop_config.json`.
 * Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctl-mcp.sock` connects successfully from a terminal.
 * Check that `voxctl-mcp.sock` exists (`ls -la /tmp/*.sock`).
+* Ensure VoxCtr is running and the MCP server is enabled in **Settings → Ollama**.
