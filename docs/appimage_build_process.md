@@ -28,7 +28,7 @@ graph TD
 
     subgraph Output Bundles [4. Standalone Packages]
         H -->|Assembles| I[target/release/bundle/appimage/VoxCtr_*.AppImage]
-        I -->|Exposed by build_appimage.sh| J[Root: VoxCtl-x86_64.AppImage]
+        I -->|Exposed by build_appimage.sh| J[Root: VoxCtl-x86_64.AppImage *]
     end
 
     classDef primary fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
@@ -51,18 +51,18 @@ Before executing a build, ensure the host machine has the core compilation packa
 | **Rust Toolchain** | Rust compiler and Cargo bundle tools. | `rustup` / `rust` | `rustc` / `cargo` |
 | **Node.js Environment** | Package manager and Vite bundling. | `nodejs` `npm` | `nodejs` `npm` |
 | **System Webview** | Tauri interface runtime dependency. | `webkit2gtk-4.1` | `libwebkit2gtk-4.1-dev` |
-| **Audio Library** | Low-latency audio capture stream backend. | `portaudio` | `portaudio19-dev` |
+| **Audio Library** | Low-latency audio capture via CPAL/ALSA. | `alsa-lib` | `libasound2-dev` |
 | **Desktop Integrations**| System tray application icons support. | `libayatana-appindicator` | `libayatana-appindicator3-dev` |
 
 ### Rapid Prerequisites Install
 * **Arch Linux / CachyOS**:
   ```bash
-  sudo pacman -S --needed base-devel rustup nodejs npm webkit2gtk-4.1 portaudio libayatana-appindicator squashfs-tools
+  sudo pacman -S --needed base-devel rustup nodejs npm webkit2gtk-4.1 alsa-lib libayatana-appindicator squashfs-tools
   ```
 * **Ubuntu / Debian**:
   ```bash
   sudo apt-get update
-  sudo apt-get install -y build-essential curl nodejs npm pkg-config libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev portaudio19-dev squashfs-tools
+  sudo apt-get install -y build-essential curl nodejs npm pkg-config libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev libasound2-dev squashfs-tools
   ```
 
 ---
@@ -81,7 +81,7 @@ chmod +x build_appimage.sh
 2. **Frontend Compiles**: Compiles all visual assets and generates the optimized production build (`/dist`).
 3. **Environment Setup**: Prepends the workspace root to the shell `$PATH` and exports `APPIMAGE_EXTRACT_AND_RUN=1` and `QT_QPA_PLATFORM=offscreen` to allow FUSE-less head-free compilation.
 4. **Tauri Releases**: Runs `npx tauri build` to compile the optimized release binary and bundles it using the FUSE-bypass tools.
-5. **Relocation**: Exposes the completed executable as `VoxCtl-x86_64.AppImage` directly in the project root.
+5. **Relocation**: Copies the completed executable as `VoxCtl-x86_64.AppImage` directly in the project root. Note: the output filename uses `VoxCtl` (with a lowercase `l`) — this is the legacy artifact name produced by `build_appimage.sh` and has not yet been renamed to match the current `VoxCtr` branding.
 
 ---
 
@@ -105,13 +105,18 @@ To resolve this, we bypass the platform's editor hooks by writing the correct ba
 
 ```bash
 # 1. Re-write the correct wrapper script directly via the shell
+# NOTE: If your IDE/container injects a custom PATH entry that is being
+#       written into the shebang, adjust the sed pattern below to match
+#       your environment's injected bin path.
 cat << 'EOF' > ~/.cache/tauri/linuxdeploy-x86_64.AppImage
 #!/bin/bash
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=1
 export QT_QPA_PLATFORM=offscreen
-export PATH=$(echo $PATH | sed 's|/home/jrufer/.gemini/antigravity-ide/bin:||g')
-exec /home/jrufer/.cache/tauri/linuxdeploy-x86_64.AppImage.real "$@" --exclude-library=libselinux* --exclude-library=libgio* --exclude-library=*gdk_pixbuf*
+# Remove any IDE-injected PATH entries that corrupt the linuxdeploy wrapper.
+# Adjust the pattern below to match your environment if needed.
+export PATH=$(echo $PATH | sed 's|<YOUR_IDE_BIN_PATH>:||g')
+exec "$HOME/.cache/tauri/linuxdeploy-x86_64.AppImage.real" "$@" --exclude-library=libselinux* --exclude-library=libgio* --exclude-library=*gdk_pixbuf*
 EOF
 
 # 2. REVOKE write permissions to make the file immutable to the broken platform hook
@@ -149,7 +154,7 @@ Because `install.sh` adds your account to the low-level `input` group for global
 
 ## 📋 Build Flags & Config Reference
 
-* **Tauri Config ([tauri.conf.json](file:///home/jrufer/Development/VoxCtr/src-tauri/tauri.conf.json))**:
+* **Tauri Config (`src-tauri/tauri.conf.json`)**:
   * `"targets": ["appimage"]`: Isolated to bundle exclusively the AppImage target. Can be set back to `"all"` to compile `.deb` and `.rpm` files if production repositories require standard package formats.
 * **Environment Variables**:
   * `APPIMAGE_EXTRACT_AND_RUN=1`: Directs packaging and runtime binaries to extract themselves into `/tmp` rather than attempting FUSE mounts.
