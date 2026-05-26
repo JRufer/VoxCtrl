@@ -46,20 +46,20 @@
 
       // Layer 1 (Back Wave - Deep Blue)
       const phase1 = time * 0.035;
-      const amp1 = 2.5 + currentVolume * 14.0;
-      const yOff1 = 38 - currentVolume * 12.0; // Sea level rises on activity
+      const amp1 = ($status.processing ? (5.0 + Math.sin(time * 0.02) * 2.5) : 2.5) + currentVolume * 14.0;
+      const yOff1 = (38 - ($status.processing ? (4.0 + Math.sin(time * 0.015) * 2.0) : 0)) - currentVolume * 12.0; // Sea level rises on activity
       const path1 = getWavePath(amp1, 0.016, phase1, yOff1);
 
       // Layer 2 (Middle Wave - Cyan Aqua)
       const phase2 = -time * 0.05; // Moves in reverse
-      const amp2 = 2.0 + currentVolume * 18.0;
-      const yOff2 = 34 - currentVolume * 14.0;
+      const amp2 = ($status.processing ? (6.0 + Math.cos(time * 0.025) * 3.0) : 2.0) + currentVolume * 18.0;
+      const yOff2 = (34 - ($status.processing ? (5.0 + Math.cos(time * 0.02) * 2.5) : 0)) - currentVolume * 14.0;
       const path2 = getWavePath(amp2, 0.024, phase2, yOff2);
 
       // Layer 3 (Front Wave - Bright Ice Teal)
       const phase3 = time * 0.065;
-      const amp3 = 1.5 + currentVolume * 22.0;
-      const yOff3 = 28 - currentVolume * 16.0;
+      const amp3 = ($status.processing ? (7.0 + Math.sin(time * 0.03) * 3.5) : 1.5) + currentVolume * 22.0;
+      const yOff3 = (28 - ($status.processing ? (6.0 + Math.sin(time * 0.025) * 3.0) : 0)) - currentVolume * 16.0;
       const path3 = getWavePath(amp3, 0.020, phase3, yOff3);
 
       if (path1El) path1El.setAttribute("d", path1);
@@ -78,11 +78,11 @@
   });
 </script>
 
-<div class="voice-card-container">
+<div class="voice-card-container" class:processing={$status.processing}>
   <div class="header-row">
-    <span class="activity-label">Voice Activity</span>
-    <span class="target-badge">
-      <span class="target-text">{$status.active_target_label || "Focused Window"}</span>
+    <span class="activity-label">{$status.processing ? "AI Thinking" : "Voice Activity"}</span>
+    <span class="target-badge" class:processing={$status.processing}>
+      <span class="target-text">{$status.processing ? "Processing..." : ($status.active_target_label || "Focused Window")}</span>
     </span>
   </div>
   
@@ -130,6 +130,12 @@
     animation: slideUpIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
     user-select: none;
     pointer-events: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .voice-card-container.processing {
+    border-color: rgba(6, 182, 212, 0.35);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 15px rgba(6, 182, 212, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   @keyframes slideUpIn {
@@ -170,6 +176,19 @@
     border-radius: 6px;
     padding: 2.5px 9px;
     max-width: 130px;
+    transition: all 0.3s ease;
+  }
+
+  .target-badge.processing {
+    border-color: rgba(6, 182, 212, 0.4);
+    background: rgba(6, 182, 212, 0.07);
+    color: #06b6d4;
+    animation: badgePulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes badgePulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 0.6; }
   }
 
   .target-text {

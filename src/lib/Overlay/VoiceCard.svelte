@@ -47,6 +47,10 @@
           let jitter = Math.random() * 0.25 + 0.78;
           // Dynamic height scaling multiplier reduced by 1/3rd (240 range)
           targetHeight = baseHeight + (currentVolume * 240 * wave * jitter);
+        } else if ($status.processing) {
+          // Rhythmic scanning ripple sweeping across the bars during processing
+          let ripple = Math.sin(time * 0.09 - i * 0.28) * 0.5 + 0.5;
+          targetHeight = baseHeight + (ripple * 25.0 * Math.exp(-(centerDist * centerDist) / 180));
         } else {
           // Slow breathing animation when idle (silence)
           let idleWave = Math.sin(time * 0.04 + i * 0.15) * 1.0;
@@ -78,11 +82,11 @@
   });
 </script>
 
-<div class="voice-card-container">
+<div class="voice-card-container" class:processing={$status.processing}>
   <div class="header-row">
-    <span class="activity-label">Voice Activity</span>
-    <span class="target-badge">
-      <span class="target-text">{$status.active_target_label || "Focused Window"}</span>
+    <span class="activity-label">{$status.processing ? "AI Thinking" : "Voice Activity"}</span>
+    <span class="target-badge" class:processing={$status.processing}>
+      <span class="target-text">{$status.processing ? "Processing..." : ($status.active_target_label || "Focused Window")}</span>
     </span>
   </div>
   
@@ -90,7 +94,7 @@
     {#each barHeights as height, i}
       <div 
         class="eq-bar" 
-        style="height: {height}px; background: hsl({285 + (i / 45) * 60}, 76%, 60%);"
+        style="height: {height}px; background: {$status.processing ? `hsl(${190 + (i / 45) * 45}, 82%, 56%)` : `hsl(${285 + (i / 45) * 60}, 76%, 60%)`};"
       ></div>
     {/each}
   </div>
@@ -113,6 +117,12 @@
     animation: slideUpIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
     user-select: none;
     pointer-events: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .voice-card-container.processing {
+    border-color: rgba(6, 182, 212, 0.35);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 15px rgba(6, 182, 212, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   @keyframes slideUpIn {
@@ -153,6 +163,19 @@
     border-radius: 6px;
     padding: 2.5px 9px;
     max-width: 130px;
+    transition: all 0.3s ease;
+  }
+
+  .target-badge.processing {
+    border-color: rgba(6, 182, 212, 0.4);
+    background: rgba(6, 182, 212, 0.07);
+    color: #06b6d4;
+    animation: badgePulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes badgePulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 0.6; }
   }
 
   .target-text {
