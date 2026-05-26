@@ -30,8 +30,10 @@ export interface OutputTarget {
   http_url?: string;
   http_method: string;
   http_headers?: Record<string, string>;
+  http_json_template?: Record<string, any>;
   webhook_url?: string;
   webhook_secret?: string;
+  webhook_json_template?: Record<string, any>;
   mcp_path?: string;
   mcp_tool?: string;
   mcp_args?: Record<string, any>;

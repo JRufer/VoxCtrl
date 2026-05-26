@@ -38,10 +38,15 @@
   }
 
   let lastTab = activeTab;
+  let tabContentEl = $state<HTMLDivElement | null>(null);
+
   $effect(() => {
     const currentTab = activeTab;
     if (currentTab !== lastTab) {
       lastTab = currentTab;
+      if (tabContentEl) {
+        tabContentEl.scrollTop = 0;
+      }
       if ($config?.audio?.dynamic_stream && $status.recording) {
         invoke("stop_recording").catch((e) => {
           console.error("Failed to stop recording on activeTab change:", e);
@@ -111,7 +116,7 @@
 
   <!-- Main Content Area -->
   <main class="content-container">
-    <div class="tab-content">
+    <div class="tab-content" bind:this={tabContentEl}>
       {#if activeTab === "general"}
         <GeneralTab bind:cfg={$config} />
       {:else if activeTab === "engine"}

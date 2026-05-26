@@ -25,12 +25,36 @@
   let editOllamaMode = $state("custom");
   let editOllamaPrompt = $state("");
   let editMcpArgsString = $state("");
+  let editHttpTemplateString = $state("");
+  let editWebhookTemplateString = $state("");
 
   // Derived JSON error validation for MCP custom arguments
   let mcpArgsError = $derived.by(() => {
     if (!editMcpArgsString.trim()) return null;
     try {
       JSON.parse(editMcpArgsString);
+      return null;
+    } catch (e: any) {
+      return e.message;
+    }
+  });
+
+  // Derived JSON error validation for HTTP custom template
+  let httpTemplateError = $derived.by(() => {
+    if (!editHttpTemplateString.trim()) return null;
+    try {
+      JSON.parse(editHttpTemplateString);
+      return null;
+    } catch (e: any) {
+      return e.message;
+    }
+  });
+
+  // Derived JSON error validation for Webhook custom template
+  let webhookTemplateError = $derived.by(() => {
+    if (!editWebhookTemplateString.trim()) return null;
+    try {
+      JSON.parse(editWebhookTemplateString);
       return null;
     } catch (e: any) {
       return e.message;
@@ -117,6 +141,8 @@
     editOllamaMode = "custom";
     editOllamaPrompt = "";
     editMcpArgsString = '{\n  "text": "{TEXT}"\n}';
+    editHttpTemplateString = '{\n  "text": "{TEXT}"\n}';
+    editWebhookTemplateString = '{\n  "text": "{TEXT}"\n}';
 
     editingTarget = {
       id: "new_target_" + Math.random().toString(36).substring(2, 6),
@@ -126,6 +152,8 @@
       file_timestamp: true,
       file_mode: "append",
       http_method: "POST",
+      http_json_template: { text: "{TEXT}" },
+      webhook_json_template: { text: "{TEXT}" },
       mcp_tool: "speak_text",
       mcp_args: { text: "{TEXT}" },
       send_on_release: false,
@@ -159,6 +187,8 @@
     editOllamaMode = clone.processing.ollama_mode || "custom";
     editOllamaPrompt = clone.processing.ollama_prompt || "";
     editMcpArgsString = clone.mcp_args ? JSON.stringify(clone.mcp_args, null, 2) : '{\n  "text": "{TEXT}"\n}';
+    editHttpTemplateString = clone.http_json_template ? JSON.stringify(clone.http_json_template, null, 2) : '{\n  "text": "{TEXT}"\n}';
+    editWebhookTemplateString = clone.webhook_json_template ? JSON.stringify(clone.webhook_json_template, null, 2) : '{\n  "text": "{TEXT}"\n}';
 
     editingTarget = clone;
   }
@@ -194,6 +224,24 @@
         editingTarget.mcp_args = JSON.parse(editMcpArgsString);
       } catch (e) {
         alert("Invalid JSON format in MCP Custom Tool Arguments.");
+        return;
+      }
+    }
+
+    if (editingTarget.delivery === "http") {
+      try {
+        editingTarget.http_json_template = JSON.parse(editHttpTemplateString);
+      } catch (e) {
+        alert("Invalid JSON format in HTTP Custom Post Body.");
+        return;
+      }
+    }
+
+    if (editingTarget.delivery === "webhook") {
+      try {
+        editingTarget.webhook_json_template = JSON.parse(editWebhookTemplateString);
+      } catch (e) {
+        alert("Invalid JSON format in Webhook Custom Post Body.");
         return;
       }
     }
@@ -434,58 +482,39 @@
       ＋ Add New Output Target
     </button>
 
-    <div class="cards-grid">
+    <div class="bindings-list">
       {#each targets as t}
-        <div class="card glass">
-          <div class="card-header">
-            <h4>{t.label}</h4>
-            <span class="badge delivery">{t.delivery}</span>
-          </div>
-          <div class="card-body">
-            <div class="info-row">
-              <span class="info-label">ID:</span>
-              <code class="info-val">{t.id}</code>
+        <div class="binding-item glass">
+          <div class="binding-content">
+            <div class="binding-row2">
+              <div class="binding-title">{t.label}</div>
+              <span class="badge delivery">{t.delivery}</span>
             </div>
             {#if t.delivery === "exec"}
-              <div class="info-row">
-                <span class="info-label">Cmd:</span>
-                <span class="info-val line-clamp">{t.command}</span>
-              </div>
+              <div class="binding-targets">Cmd: {t.command}</div>
             {/if}
             {#if t.delivery === "file"}
-              <div class="info-row">
-                <span class="info-label">File:</span>
-                <span class="info-val line-clamp">{t.file_path}</span>
-              </div>
+              <div class="binding-targets">File: {t.file_path}</div>
             {/if}
             {#if t.delivery === "socket"}
-              <div class="info-row">
-                <span class="info-label">Socket:</span>
-                <span class="info-val">{t.socket_host}:{t.socket_port}</span>
-              </div>
+              <div class="binding-targets">Socket: {t.socket_host}:{t.socket_port}</div>
             {/if}
             {#if t.delivery === "http" || t.delivery === "webhook"}
-              <div class="info-row">
-                <span class="info-label">API:</span>
-                <span class="info-val line-clamp">{t.http_url || t.webhook_url}</span>
-              </div>
+              <div class="binding-targets">API: {t.http_url || t.webhook_url}</div>
             {/if}
             {#if t.delivery === "mcp"}
-              <div class="info-row">
-                <span class="info-label">MCP Tool:</span>
-                <span class="info-val">{t.mcp_tool || "speak_text"}</span>
-              </div>
+              <div class="binding-targets">MCP Tool: {t.mcp_tool || "speak_text"}</div>
             {/if}
-          </div>
-          <div class="card-actions">
-            <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
-            {#if confirmDeleteTargetId === t.id}
-              <span class="confirm-label">Delete?</span>
-              <button class="btn-action small danger" onclick={() => { deleteTarget(t.id); confirmDeleteTargetId = null; }}>Yes</button>
-              <button class="btn-action small" onclick={() => confirmDeleteTargetId = null}>No</button>
-            {:else}
-              <button class="btn-action small danger" onclick={() => confirmDeleteTargetId = t.id}>Delete</button>
-            {/if}
+            <div class="binding-actions">
+              <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
+              {#if confirmDeleteTargetId === t.id}
+                <span class="confirm-label">Delete?</span>
+                <button class="btn-action small danger" onclick={() => { deleteTarget(t.id); confirmDeleteTargetId = null; }}>Yes</button>
+                <button class="btn-action small" onclick={() => confirmDeleteTargetId = null}>No</button>
+              {:else}
+                <button class="btn-action small danger" onclick={() => confirmDeleteTargetId = t.id}>Delete</button>
+              {/if}
+            </div>
           </div>
         </div>
       {:else}
@@ -573,6 +602,7 @@
           <span>Display Label</span>
           <input
             type="text"
+            class="longer-display-label"
             bind:value={editingTarget.label}
             placeholder="e.g. Type directly into Obsidian"
           />
@@ -675,38 +705,87 @@
         {/if}
 
         {#if editingTarget.delivery === "http" || editingTarget.delivery === "webhook"}
-          <div class="morph-section">
+          <div class="morph-section mcp-container">
             <h5>API Endpoint Client settings</h5>
-            <label class="field">
-              <span>REST endpoint URL</span>
+            <div class="field col">
+              <div class="field-label-row">
+                <span class="field-title">REST endpoint URL</span>
+              </div>
               {#if editingTarget.delivery === 'http'}
                 <input
                   type="text"
                   bind:value={editingTarget.http_url}
                   placeholder="https://api.example.com/transcribe"
+                  class="full-width-input"
                 />
               {:else}
                 <input
                   type="text"
                   bind:value={editingTarget.webhook_url}
                   placeholder="https://api.example.com/transcribe"
+                  class="full-width-input"
                 />
               {/if}
-            </label>
+            </div>
+
             {#if editingTarget.delivery === "http"}
-              <label class="field">
-                <span>Method</span>
-                <select bind:value={editingTarget.http_method}>
+              <div class="field col mt-2">
+                <div class="field-label-row">
+                  <span class="field-title">Method</span>
+                </div>
+                <select bind:value={editingTarget.http_method} style="width: 100%;">
                   <option value="POST">POST</option>
                   <option value="GET">GET</option>
                   <option value="PUT">PUT</option>
                 </select>
-              </label>
+              </div>
+
+              <div class="field col mt-2">
+                <div class="field-label-row">
+                  <span class="field-title">Custom Post Body</span>
+                  <span class="field-tag">JSON Template</span>
+                </div>
+                <textarea
+                  rows="4"
+                  bind:value={editHttpTemplateString}
+                  class:has-error={httpTemplateError}
+                  placeholder={'{"text": "{TEXT}"}'}
+                  use:autoResize
+                ></textarea>
+                <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+                {#if httpTemplateError}
+                  <span class="validation-error-msg">
+                    ⚠️ Invalid JSON format: {httpTemplateError}
+                  </span>
+                {/if}
+              </div>
             {:else}
-              <label class="field">
-                <span>Webhook Secret Token (HMAC)</span>
-                <input type="password" bind:value={editingTarget.webhook_secret} placeholder="Secret salt" />
-              </label>
+              <div class="field col mt-2">
+                <div class="field-label-row">
+                  <span class="field-title">Webhook Secret Token (HMAC)</span>
+                </div>
+                <input type="password" bind:value={editingTarget.webhook_secret} placeholder="Secret salt" class="full-width-input" />
+              </div>
+
+              <div class="field col mt-2">
+                <div class="field-label-row">
+                  <span class="field-title">Custom Webhook Body</span>
+                  <span class="field-tag">JSON Template</span>
+                </div>
+                <textarea
+                  rows="4"
+                  bind:value={editWebhookTemplateString}
+                  class:has-error={webhookTemplateError}
+                  placeholder={'{"text": "{TEXT}"}'}
+                  use:autoResize
+                ></textarea>
+                <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+                {#if webhookTemplateError}
+                  <span class="validation-error-msg">
+                    ⚠️ Invalid JSON format: {webhookTemplateError}
+                  </span>
+                {/if}
+              </div>
             {/if}
           </div>
         {/if}
@@ -872,6 +951,7 @@
           <span>Display Label</span>
           <input
             type="text"
+            class="longer-display-label"
             bind:value={editingBinding.label}
             placeholder="e.g. Global Speech to Text shortcut"
           />
@@ -1757,5 +1837,9 @@
     border-color: #ef4444;
     color: #fff;
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .longer-display-label {
+    min-width: 255px !important;
   }
 </style>
