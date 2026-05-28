@@ -37,6 +37,7 @@ The main configuration interface. Organized into a sidebar with nine tabs:
 - Thread count control
 - Moonshine model/language settings
 - "Download Model" button with progress
+- **Missing Model Warning & Auto-Redirection**: Startup check programmatically determines if the configured Whisper voice model file is downloaded on the local machine. If missing, it immediately switches the active Settings tab to "Engine" and presents a Tailwind-styled yellow warning alert prompting the user to select and download a GGUF voice model size.
 
 ### Routing Tab
 - Visual editor for `targets.toml` — add/edit/delete output targets

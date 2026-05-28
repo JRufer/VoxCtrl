@@ -144,6 +144,7 @@ const defaultConfig: AppConfig = {
 
 export const config = writable<AppConfig>(defaultConfig);
 export const configDirty = writable(false);
+export const configLoaded = writable(false);
 
 let isLoaded = false;
 let saveTimeout: any = null;
@@ -153,11 +154,13 @@ export async function loadConfig() {
     const loaded = await invoke<AppConfig>("get_config");
     config.set(loaded);
     configDirty.set(false);
+    configLoaded.set(true);
     setTimeout(() => {
       isLoaded = true;
     }, 0);
   } catch (e) {
     console.error("loadConfig:", e);
+    configLoaded.set(true);
     setTimeout(() => {
       isLoaded = true;
     }, 0);

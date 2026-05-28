@@ -1,8 +1,10 @@
 <script lang="ts">
   import appIcon from "../../assets/app_icon.png";
-  import { config, saveConfig, configDirty } from "../../stores/config";
+  import { config, saveConfig, configDirty, configLoaded } from "../../stores/config";
   import { status } from "../../stores/status";
   import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+
 
   import GeneralTab from "./GeneralTab.svelte";
   import VisualTab from "./VisualTab.svelte";
@@ -53,6 +55,44 @@
         });
       }
     }
+  });
+
+  onMount(() => {
+    let unsubscribeLoaded: () => void;
+    unsubscribeLoaded = configLoaded.subscribe((loaded) => {
+      if (loaded) {
+        // Once config is loaded, retrieve values from config store
+        const cfg = $config;
+        if (cfg && cfg.engine && cfg.engine.whisper_cpp) {
+          const modelSize = cfg.engine.whisper_cpp.model_size;
+          if (cfg.engine.backend !== "moonshine") {
+            invoke<boolean>("check_model_downloaded", { modelSize })
+              .then(async (isDownloaded) => {
+                if (!isDownloaded) {
+                  activeTab = "engine";
+                  // Force settings window to open and focus, bypassing auto_show_settings
+                  try {
+                    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+                    const currentWin = getCurrentWindow();
+                    await currentWin.show();
+                    await currentWin.focus();
+                  } catch (winErr) {
+                    console.error("Failed to programmatically show settings window on startup:", winErr);
+                  }
+                }
+              })
+              .catch((e) => {
+                console.error("Failed to check model download status on startup:", e);
+              });
+          }
+        }
+        if (unsubscribeLoaded) {
+          unsubscribeLoaded();
+        } else {
+          setTimeout(() => unsubscribeLoaded(), 0);
+        }
+      }
+    });
   });
 </script>
 

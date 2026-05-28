@@ -199,19 +199,172 @@ Defines `OutputTarget`, `HotkeyBinding`, `DeliveryType`, `TargetProcessingConfig
 
 ## Testing
 
+VoxCtr utilizes a multi-tiered, unified testing suite spanning Svelte frontend components, Rust backend crates, and end-to-end integration tests over local socket connections.
+
+### Master Test Orchestrator
+
+The easiest way to run the entire test suite (Rust, Svelte, and Pytest Integration) is via the master test runner script:
+
 ```bash
-# Run all tests
-cargo test --workspace
-
-# Run tests for a specific crate
-cargo test -p voxctr-config
-cargo test -p voxctr-routing
-
-# Frontend type checking
-npm run check    # svelte-check + tsc
+npm test
 ```
 
-There are currently no end-to-end tests. The audio pipeline is tested manually via the dev server.
+This runs `python3 scripts/run_tests.py`, which sequences the following three test suites and returns a consolidated exit code (cleanly skipping the integration tests with a warning if `pytest` is not installed on the system):
+1. **Rust Backend tests** (`cargo test`)
+2. **Svelte Frontend tests** (`npm run test:unit`)
+3. **Python Integration tests** (`pytest tests/integration/`)
+
+---
+
+### Rust Backend Crate Tests
+
+Backend logic, including settings schemas, migrations, routing models, and utilities, is tested using standard Rust/Cargo unit tests.
+
+#### Running Backend Tests
+```bash
+# Run all tests across the entire workspace
+cargo test --workspace
+
+# Run tests for a specific backend crate
+cargo test -p voxctr-config
+cargo test -p voxctr-routing
+```
+
+#### Writing Backend Tests
+Backend unit tests are written inside their respective crate files within a `#[cfg(test)]` module block.
+Example from `crates/voxctr-config/src/lib.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_values() {
+        let cfg = AppConfig::default();
+        assert!(cfg.ui.auto_show_settings);
+        assert_eq!(cfg.ui.overlay_style, OverlayStyle::BlueWave);
+    }
+}
+```
+
+---
+
+### Svelte Frontend Unit & Component Tests
+
+Frontend Svelte 5 components, settings views, and warning overlays are tested using **Vitest**, **JSDOM**, and **Svelte Testing Library**.
+
+* **Test Location**: `tests/svelte/` (files ending in `.test.ts`)
+* **Framework Stack**: Vitest (runner), jsdom (DOM environment), `@testing-library/svelte` (rendering & selectors)
+
+#### Running Frontend Tests
+```bash
+# Run all frontend tests once
+npm run test:unit
+
+# Run frontend tests in interactive watch mode
+npx vitest
+```
+
+#### Mocking Tauri APIs
+Tauri commands (`invoke`) and events (`listen`) are mocked inside Svelte tests using Vitest's `vi.mock` to ensure they run successfully in headless/JSDOM environments without a live Webview context.
+
+Example from `tests/svelte/EngineTab.test.ts`:
+```typescript
+import { describe, test, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import EngineTab from "../../src/lib/Settings/EngineTab.svelte";
+
+// Mock Tauri core commands
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (cmd, args) => {
+    if (cmd === "check_model_downloaded") {
+      return args.modelSize === "base"; // mock "base" downloaded, others missing
+    }
+    return true;
+  }),
+}));
+
+// Mock Tauri events
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => {
+    return () => {}; // return clean unsubscribe function
+  }),
+}));
+```
+
+#### Writing Svelte Tests
+When testing Svelte components:
+1. Render the component using `render(Component, { props })`.
+2. Locate elements using Svelte Testing Library selectors (e.g., `screen.findByText` or `screen.queryByText`).
+3. Assert behaviors using Vitest's `expect()`.
+
+Example:
+```typescript
+describe("EngineTab.svelte Warning Banner", () => {
+  test("shows warning banner if Whisper voice model is not downloaded", async () => {
+    const mockConfig = {
+      engine: {
+        backend: "whisper-cpp",
+        whisper_cpp: { model_size: "large-v3" },
+      }
+    } as any;
+
+    render(EngineTab, { cfg: mockConfig });
+    
+    // Assert warning banner is found
+    const title = await screen.findByText("Voice Model Not Downloaded");
+    expect(title).not.toBeNull();
+  });
+});
+```
+
+---
+
+### Python Socket Integration Tests
+
+Integration tests verify end-to-end communication channels such as the Model Context Protocol (MCP) server over Unix domain sockets (`/tmp/voxctl-mcp.sock`).
+
+* **Test Location**: `tests/integration/` (files prefixed with `test_`)
+* **Framework**: Pytest
+
+#### Running Integration Tests
+```bash
+# Ensure pytest is installed
+pip install pytest
+
+# Run integration tests
+pytest tests/integration/
+```
+*Note: These tests check for the live socket connection. If VoxCtr is not currently running, these tests will gracefully skip to prevent false failure reports.*
+
+#### Writing Integration Tests
+Integration tests use the standard `pytest` framework, creating client socket connections to communicate with `/tmp/voxctl-mcp.sock` over JSON-RPC.
+
+Example:
+```python
+import socket
+import json
+import pytest
+import os
+
+SOCKET_PATH = "/tmp/voxctl-mcp.sock"
+
+@pytest.mark.skipif(not os.path.exists(SOCKET_PATH), reason="MCP Socket not running")
+def test_mcp_handshake_and_tools():
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(SOCKET_PATH)
+    try:
+        # Send a standard JSON-RPC request to the MCP server
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        sock.sendall((json.dumps(payload) + "\n").encode('utf-8'))
+        
+        # Read and parse response
+        resp = json.loads(sock.recv(1024).decode('utf-8').strip())
+        assert "result" in resp
+        assert "tools" in resp["result"]
+    finally:
+        sock.close()
+```
 
 ### Simulating and Testing udev Diagnostics
 

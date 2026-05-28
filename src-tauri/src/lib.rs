@@ -464,8 +464,16 @@ pub fn run() {
             // Note: Windows ("overlay", "settings", "history") are automatically created by Tauri
             // via the declarations in `tauri.conf.json`. Manual creation here is omitted to prevent duplicates.
 
-            // Automatically show the settings window on startup if configured to do so
-            if cfg_data.ui.auto_show_settings {
+            // Force show the settings window on startup if the voice model is missing
+            let mut show_settings = cfg_data.ui.auto_show_settings;
+            if cfg_data.engine.backend != voxctr_config::BackendChoice::Moonshine {
+                let model_size = &cfg_data.engine.whisper_cpp.model_size;
+                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size) {
+                    show_settings = true;
+                }
+            }
+
+            if show_settings {
                 if let Some(window) = app.get_webview_window("settings") {
                     show_and_focus_window(&window);
                 }
