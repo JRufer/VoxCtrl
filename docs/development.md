@@ -213,6 +213,38 @@ npm run check    # svelte-check + tsc
 
 There are currently no end-to-end tests. The audio pipeline is tested manually via the dev server.
 
+### Simulating and Testing udev Diagnostics
+
+Linux global hotkeys require specific udev permissions and user group memberships configured by `install.sh`. To make testing these startup states safe and easy, developers can use the `VOXCTR_TEST_UDEV_STATUS` environment variable to mock various diagnostic outcomes without mutating their own user accounts or system rules.
+
+#### Why Test This?
+* **Onboarding Verification**: Ensure that new users are clearly prompted to install required dependencies.
+* **Troubleshooting Relogins**: Verify the specific advice prompting the user to reboot or log out if they ran `install.sh` but didn't refresh their session.
+* **Layout Integrity**: Make sure the modal overlays perfectly on the dark obsidian theme on launch.
+
+#### Mock Configurations
+
+* **Simulate Missing Setup (Installer never run)**:
+  Simulates `/etc/udev/rules.d/99-voxctr.rules` does not exist:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=missing npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) in the foreground detailing the need for hardware udev rules, providing a direct **📥 Download install.sh** button to GitHub, and a **Continue Anyway** native window close pathway.
+
+* **Simulate Relogin Required (Installer run but session not updated)**:
+  Simulates that rules exist but the current shell process is missing `input` group permissions:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=relogin npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) displaying the explicit logout/relogin guidance (hiding the installer download CTA since the rules are already present).
+
+* **Simulate Normal/Configured State (Bypasses checks)**:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=ok npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns only the standard settings window; the diagnostic warning window remains completely hidden.
+
+
 ---
 
 ## Debugging

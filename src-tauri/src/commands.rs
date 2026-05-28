@@ -325,3 +325,83 @@ pub async fn test_ollama(
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct UdevStatusPayload {
+    pub is_configured: bool,
+    pub rule_exists: bool,
+    pub in_group: bool,
+    pub needs_relogin: bool,
+}
+
+#[tauri::command]
+pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
+    // 1. Check for developer override via environment variable
+    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+        match override_val.as_str() {
+            "missing" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: false,
+                    rule_exists: false,
+                    in_group: false,
+                    needs_relogin: false,
+                });
+            }
+            "relogin" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: false,
+                    rule_exists: true,
+                    in_group: false,
+                    needs_relogin: true,
+                });
+            }
+            "ok" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: true,
+                    rule_exists: true,
+                    in_group: true,
+                    needs_relogin: false,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // 2. Platform-specific checks
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(UdevStatusPayload {
+            is_configured: true,
+            rule_exists: true,
+            in_group: true,
+            needs_relogin: false,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Check if /etc/udev/rules.d/99-voxctr.rules exists
+        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+
+        // Check if the current user session has the "input" group by running `id -Gn`
+        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+            Ok(output) => {
+                let groups_str = String::from_utf8_lossy(&output.stdout);
+                groups_str.split_whitespace().any(|g| g == "input")
+            }
+            Err(_) => false,
+        };
+
+        // If udev rules exist but user is not in group in active session, they need a relogin
+        let needs_relogin = rule_exists && !in_group;
+        let is_configured = rule_exists && in_group;
+
+        Ok(UdevStatusPayload {
+            is_configured,
+            rule_exists,
+            in_group,
+            needs_relogin,
+        })
+    }
+}
+
+
