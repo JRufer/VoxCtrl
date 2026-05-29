@@ -5940,6 +5940,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "crossbeam-channel",
+ "dirs 5.0.1",
  "serde",
  "serde_json",
  "tauri",

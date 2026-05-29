@@ -22,6 +22,7 @@ use crate::{
 
 mod commands;
 mod state;
+mod default_overlays;
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -583,6 +584,7 @@ pub fn run() {
             speak_text,
             show_overlay,
             hide_overlay,
+            get_custom_overlays,
             list_audio_devices,
             start_monitoring_audio,
             stop_monitoring_audio,

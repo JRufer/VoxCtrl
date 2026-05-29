@@ -246,6 +246,67 @@ pub async fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct CustomOverlayInfo {
+    pub name: String,
+    pub html: String,
+    pub css: String,
+}
+
+#[tauri::command]
+pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
+    let overlays_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("voxctl")
+        .join("overlays");
+
+    if !overlays_dir.exists() {
+        let _ = std::fs::create_dir_all(&overlays_dir);
+    }
+
+    crate::default_overlays::ensure_default_overlays(&overlays_dir);
+
+    let mut list = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&overlays_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let mut folder_name = entry.file_name().to_string_lossy().to_string();
+
+                    // Automatically resolve naming conflicts with built-in styles
+                    let reserved = ["waveform", "pulse", "blue_wave", "voice_card", "none"];
+                    if reserved.contains(&folder_name.to_lowercase().as_str()) {
+                        folder_name = format!("{}_custom", folder_name);
+                    }
+
+                    let html_path = entry.path().join("index.html");
+                    let css_path = entry.path().join("style.css");
+
+                    let html = if html_path.exists() {
+                        std::fs::read_to_string(&html_path).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    let css = if css_path.exists() {
+                        std::fs::read_to_string(&css_path).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    list.push(CustomOverlayInfo {
+                        name: folder_name,
+                        html,
+                        css,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(list)
+}
+
 // ── Audio devices ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -401,6 +462,22 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
             in_group,
             needs_relogin,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_custom_overlays_returns_list() {
+        let result = get_custom_overlays().await;
+        assert!(result.is_ok());
+        if let Ok(list) = result {
+            // Check that the list is serializable
+            let json = serde_json::to_string(&list);
+            assert!(json.is_ok());
+        }
     }
 }
 
