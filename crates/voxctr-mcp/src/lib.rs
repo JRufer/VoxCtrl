@@ -121,7 +121,6 @@ async fn run_unix_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()> {
     }
 }
 
-#[cfg(target_os = "linux")]
 async fn handle_connection<S, C>(stream: S, callbacks: Arc<C>) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
