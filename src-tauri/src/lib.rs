@@ -10,7 +10,6 @@ use tauri::{
     Emitter, Manager,
 };
 use tokio::sync::Mutex;
-use tracing::error;
 use voxctr_config::Config;
 use voxctr_routing::{load_bindings, load_targets, config_dir, OutputTargetRouter};
 use voxctr_mcp::McpCallbacks;
@@ -308,7 +307,7 @@ pub fn run() {
         });
         tokio::spawn(async move {
             if let Err(e) = voxctr_dbus::start_service(dbus_state, start_tx, stop_tx).await {
-                error!("DBus service error: {e}");
+                tracing::error!("DBus service error: {e}");
             }
         });
     }
