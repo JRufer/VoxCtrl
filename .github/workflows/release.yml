@@ -30,29 +30,35 @@ jobs:
             os: ubuntu-22.04
             features: ""
             artifact_label: linux-x86_64
+            cuda: false
 
           # ── Linux CUDA ─────────────────────────────────────────────────────
           - name: linux-cuda
             os: ubuntu-22.04
             features: "cuda"
             artifact_label: linux-x86_64-cuda
+            cuda: true
 
           # ── Windows CPU ────────────────────────────────────────────────────
           - name: windows-cpu
             os: windows-latest
             features: ""
             artifact_label: windows-x86_64
+            cuda: false
 
           # ── Windows CUDA ───────────────────────────────────────────────────
           - name: windows-cuda
             os: windows-latest
             features: "cuda"
             artifact_label: windows-x86_64-cuda
+            cuda: true
 
     steps:
       - uses: actions/checkout@v4
 
       # ── System deps (Linux) ─────────────────────────────────────────────────
+      # squashfs-tools (unsquashfs) is required for APPIMAGE_EXTRACT_AND_RUN=1
+      # which lets appimagetool/linuxdeploy run without FUSE on CI runners.
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -66,22 +72,34 @@ jobs:
             libspeechd-dev \
             libxdo-dev \
             patchelf \
+            squashfs-tools \
             pkg-config \
             build-essential
 
       # ── CUDA toolkit ────────────────────────────────────────────────────────
-      # Only installs CUDA headers + libraries needed for compilation.
-      # The resulting binary links CUDA dynamically; end-users only need
-      # an NVIDIA driver (not the full CUDA Toolkit) to run it.
+      # Installs CUDA headers + libraries for compilation only.
+      # End-users need an NVIDIA driver (not the Toolkit) to run CUDA builds.
       - name: Install CUDA Toolkit (Linux)
-        if: runner.os == 'Linux' && matrix.features == 'cuda'
+        if: runner.os == 'Linux' && matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.16
+        id: cuda-linux
         with:
           cuda: "12.4.0"
           linux-local-args: '["--toolkit"]'
 
+      # Export the extra CMake variables that whisper.cpp's CUDA build needs.
+      # Jimver sets CUDA_PATH; we also need CUDACXX and the root aliases.
+      - name: Set CUDA CMake variables (Linux)
+        if: runner.os == 'Linux' && matrix.cuda
+        run: |
+          CUDA_ROOT="${{ steps.cuda-linux.outputs.CUDA_PATH }}"
+          echo "CUDA_PATH=${CUDA_ROOT}"              >> "$GITHUB_ENV"
+          echo "CUDA_TOOLKIT_ROOT_DIR=${CUDA_ROOT}"  >> "$GITHUB_ENV"
+          echo "CUDAToolkit_ROOT=${CUDA_ROOT}"        >> "$GITHUB_ENV"
+          echo "CUDACXX=${CUDA_ROOT}/bin/nvcc"        >> "$GITHUB_ENV"
+
       - name: Install CUDA Toolkit (Windows)
-        if: runner.os == 'Windows' && matrix.features == 'cuda'
+        if: runner.os == 'Windows' && matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.16
         with:
           cuda: "12.4.0"
@@ -101,31 +119,54 @@ jobs:
 
       - run: npm install
 
-      # ── Tauri build ─────────────────────────────────────────────────────────
-      - name: Build (CPU)
-        if: matrix.features == ''
+      # ── Tauri build (Linux) ─────────────────────────────────────────────────
+      # APPIMAGE_EXTRACT_AND_RUN=1 tells linuxdeploy/appimagetool to extract
+      # and run without FUSE (uses unsquashfs from squashfs-tools instead).
+      # QT_QPA_PLATFORM=offscreen prevents Qt platform errors in headless CI.
+      - name: Build AppImage (Linux, CPU)
+        if: runner.os == 'Linux' && !matrix.cuda
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          QT_QPA_PLATFORM: offscreen
         run: npm run tauri build
 
-      - name: Build (CUDA)
-        if: matrix.features != ''
-        run: npm run tauri build -- --features ${{ matrix.features }}
+      - name: Build AppImage (Linux, CUDA)
+        if: runner.os == 'Linux' && matrix.cuda
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          QT_QPA_PLATFORM: offscreen
+        run: npm run tauri build -- --features cuda
 
-      # ── Collect artifacts (Linux) ────────────────────────────────────────────
+      # ── Tauri build (Windows) ───────────────────────────────────────────────
+      - name: Build installer (Windows, CPU)
+        if: runner.os == 'Windows' && !matrix.cuda
+        run: npm run tauri build
+
+      - name: Build installer (Windows, CUDA)
+        if: runner.os == 'Windows' && matrix.cuda
+        run: npm run tauri build -- --features cuda
+
+      # ── Collect and rename Linux artifacts ──────────────────────────────────
+      # Appends the artifact label (e.g. -linux-x86_64 or -linux-x86_64-cuda)
+      # before the extension so releases are easy to distinguish.
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'
         run: |
           mkdir -p upload
           find src-tauri/target/release/bundle \
-            \( -name "*.AppImage" -o -name "*.deb" \) | \
+              \( -name "*.AppImage" -o -name "*.deb" \) \
+              ! -name "*.AppImage.zsync" | \
           while read -r f; do
             base=$(basename "$f")
             stem="${base%.*}"
             ext="${base##*.}"
-            cp "$f" "upload/${stem}-${{ matrix.artifact_label }}.${ext}"
+            dest="upload/${stem}-${{ matrix.artifact_label }}.${ext}"
+            cp "$f" "$dest"
+            echo "Collected: $dest ($(du -sh "$f" | cut -f1))"
           done
           ls -lh upload/
 
-      # ── Collect artifacts (Windows) ──────────────────────────────────────────
+      # ── Collect and rename Windows artifacts ────────────────────────────────
       - name: Collect Windows artifacts
         if: runner.os == 'Windows'
         shell: pwsh
@@ -136,10 +177,11 @@ jobs:
             ForEach-Object {
               $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
               Copy-Item $_.FullName $dest
-              Write-Host "Copied: $dest"
+              $size = "{0:N1} MB" -f ($_.Length / 1MB)
+              Write-Host "Collected: $dest ($size)"
             }
 
-      # ── Upload to Actions (passed to publish job) ────────────────────────────
+      # ── Upload to Actions (picked up by publish job) ─────────────────────────
       - uses: actions/upload-artifact@v4
         with:
           name: artifacts-${{ matrix.name }}
@@ -186,14 +228,22 @@ jobs:
           body: |
             ## Downloads
 
-            | Platform | Variant | File |
+            Pick the build for your platform and GPU:
+
+            | Platform | File suffix | GPU required |
             |---|---|---|
-            | Linux | CPU | `*-linux-x86_64.AppImage` |
-            | Linux | CUDA (NVIDIA GPU) | `*-linux-x86_64-cuda.AppImage` |
-            | Windows | CPU | `*-windows-x86_64-setup.exe` |
-            | Windows | CUDA (NVIDIA GPU) | `*-windows-x86_64-cuda-setup.exe` |
+            | Linux | `-linux-x86_64.AppImage` | None |
+            | Linux (NVIDIA) | `-linux-x86_64-cuda.AppImage` | NVIDIA driver 520+ |
+            | Windows | `-windows-x86_64-setup.exe` | None |
+            | Windows (NVIDIA) | `-windows-x86_64-cuda-setup.exe` | NVIDIA driver 520+ |
 
-            **CUDA builds** require an NVIDIA GPU and driver 520+. They do not
-            require the CUDA Toolkit — only the driver.
+            **CUDA builds** use your GPU for Whisper inference (~3–10× faster).
+            They require an NVIDIA driver but **not** the CUDA Toolkit.
 
-            **CPU builds** run on any hardware.
+            **CPU builds** run on any hardware, including AMD, Intel, and ARM.
+
+            ### Linux — first run
+            ```bash
+            chmod +x VoxCtr_*-linux-x86_64.AppImage
+            ./VoxCtr_*-linux-x86_64.AppImage
+            ```

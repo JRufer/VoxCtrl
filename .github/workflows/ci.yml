@@ -32,6 +32,7 @@ jobs:
             libspeechd-dev \
             libxdo-dev \
             patchelf \
+            squashfs-tools \
             pkg-config \
             build-essential
 
@@ -64,6 +65,7 @@ jobs:
             libspeechd-dev \
             libxdo-dev \
             patchelf \
+            squashfs-tools \
             pkg-config \
             build-essential
 
