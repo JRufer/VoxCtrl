@@ -42,17 +42,27 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
-      # whisper-rs-sys compiles whisper.cpp via cmake, which is unreliable on Windows CI
-      # runners (VS generator version mismatches, missing C++ toolchain paths, etc.).
-      # cargo check only TYPE-CHECKS Rust code — it never links, so it does not need the
-      # compiled C++ static library. Setting DOCS_RS=1 causes whisper-rs-sys/build.rs to
-      # return early before the cmake call (line 177 of its build.rs), while still
-      # generating/copying the FFI bindings that cargo check needs to type-check whisper-rs.
-      # No other build scripts in this workspace react to DOCS_RS.
-      - name: Skip whisper.cpp cmake build on Windows (DOCS_RS bypass)
+      # whisper-rs-sys/build.rs runs in two phases:
+      #   1. bindgen — generates FFI bindings from the C headers
+      #   2. cmake  — compiles whisper.cpp into a static C++ library
+      #
+      # cargo check only needs the bindings (phase 1); it never links against
+      # the static library, so phase 2 is unnecessary and often fails on Windows
+      # CI runners due to cmake generator version mismatches with the installed
+      # Visual Studio.
+      #
+      # DOCS_RS=1  → build.rs returns after phase 1, before the cmake call
+      #              (see whisper-rs-sys/build.rs line 177 vs cmake at line 301)
+      # LIBCLANG_PATH → gives bindgen the path to libclang.dll so it generates
+      #                  Windows-correct struct sizes rather than falling back to
+      #                  the bundled Linux-generated src/bindings.rs (which has
+      #                  wrong sizes on Windows, causing E0080 overflow errors).
+      - name: Configure whisper-rs-sys for Windows cargo check
         if: runner.os == 'Windows'
         shell: bash
-        run: echo "DOCS_RS=1" >> "$GITHUB_ENV"
+        run: |
+          echo "DOCS_RS=1" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> "$GITHUB_ENV"
 
       - name: cargo check (workspace, no features)
         run: cargo check --workspace
