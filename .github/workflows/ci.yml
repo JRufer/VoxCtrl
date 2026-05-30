@@ -42,21 +42,22 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
+      # Initialize the MSVC developer environment (adds cl.exe, rc.exe, link.exe,
+      # etc. to PATH). rc.exe is needed by tauri-winres (voxctr-app's build
+      # script) to compile the app manifest resource file.
+      - name: Set up MSVC developer environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       # whisper-rs-sys/build.rs runs in two phases:
-      #   1. bindgen — generates FFI bindings from the C headers
+      #   1. bindgen — generates FFI bindings from the C headers (needs libclang)
       #   2. cmake  — compiles whisper.cpp into a static C++ library
       #
-      # cargo check only needs the bindings (phase 1); it never links against
-      # the static library, so phase 2 is unnecessary and often fails on Windows
-      # CI runners due to cmake generator version mismatches with the installed
-      # Visual Studio.
-      #
-      # DOCS_RS=1  → build.rs returns after phase 1, before the cmake call
-      #              (see whisper-rs-sys/build.rs line 177 vs cmake at line 301)
-      # LIBCLANG_PATH → gives bindgen the path to libclang.dll so it generates
-      #                  Windows-correct struct sizes rather than falling back to
-      #                  the bundled Linux-generated src/bindings.rs (which has
-      #                  wrong sizes on Windows, causing E0080 overflow errors).
+      # cargo check only needs phase 1 (it never links). DOCS_RS=1 causes
+      # build.rs to return early after phase 1 and before cmake (line 177 vs 301).
+      # LIBCLANG_PATH lets bindgen find libclang.dll so it generates
+      # Windows-correct struct sizes; without it bindgen falls back to the bundled
+      # Linux src/bindings.rs which has wrong sizes and causes E0080 errors.
       - name: Configure whisper-rs-sys for Windows cargo check
         if: runner.os == 'Windows'
         shell: bash
