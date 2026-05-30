@@ -48,6 +48,7 @@ The main configuration interface. Organized into a sidebar with nine tabs:
 ### Visual Tab
 - Preview and selection of overlay animation styles
 - **Overlay Position Control**: Dropdown choice for setting the Heads-Up display screen alignment (**Top**, **Center**, or **Bottom** of the screen).
+- **Overlay Display Control**: Dropdown choice to select which target monitor display screen (**Primary Monitor** or specific connected panels like `"HDMI-1"`) the visual overlay appears on. Features a graceful disconnection primary display failover and a golden warning badge alert.
 - Overlay appearance controls
 
 ### Audio Tab
@@ -93,7 +94,7 @@ The main configuration interface. Organized into a sidebar with nine tabs:
 
 A transparent, always-on-top floating HUD that visualizes audio activity. It has no title bar, no taskbar entry, is not resizable, and auto-shows/hides based on recording state (controlled by `ui.show_overlay`).
 
-The window coordinates are calculated dynamically relative to the active display monitor's size and scale factor, placing the visualizer cleanly in the **Center**, **Top** (60 logical pixels from the top), or **Bottom** (60 logical pixels from the bottom) of the screen depending on the `ui.overlay_position` setting. Position changes are hot-reloaded and applied instantly in real-time.
+The window coordinates are calculated dynamically relative to the active display monitor's size and scale factor, placing the visualizer cleanly in the **Center**, **Top** (60 logical pixels from the top), or **Bottom** (60 logical pixels from the bottom) of the screen depending on the `ui.overlay_position` setting. The HUD target display can be locked to a specific monitor screen (`ui.overlay_monitor`), failing over gracefully to the primary monitor with a golden warning badge if the target screen is unplugged. Position changes are hot-reloaded and applied instantly in real-time.
 
 ### Visualization Styles
 

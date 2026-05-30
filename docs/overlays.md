@@ -34,6 +34,22 @@ Tauri dynamically calculates physical pixel values taking into account your disp
 
 ---
 
+## Target Display / Multi-Monitor Support
+
+In multi-monitor setups, VoxCtr allows you to specify exactly which display screen the visual overlay should appear on.
+
+You can configure the target display under **Settings** -> **Visual & Feedback** -> **Overlay display** or manually in `config.json` via `ui.overlay_monitor`.
+
+Options:
+- **`"primary"` (Default)** — Constrains the overlay to the OS-defined primary display screen.
+- **Specific Monitor Name (e.g. `"HDMI-1"`, `"DP-2"`)** — Connected displays are dynamically queried once at application startup. Selecting one of these binds the visualizer to that specific panel.
+
+### Graceful Disconnection Failover
+
+If the configured target monitor is unplugged or disconnected at runtime, the Tauri backend will automatically fail over to the **Primary Monitor** to keep the visualizer fully accessible. When this happens, a golden warning badge will be displayed inside the settings UI to alert you that the target display is disconnected and fallback mode is active.
+
+---
+
 ## Built-in Styles
 
 Four built-in styles are available. The default is **Ocean Wave**.

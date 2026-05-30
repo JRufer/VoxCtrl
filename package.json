@@ -1,7 +1,7 @@
 {
   "name": "voxctr",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "predev": "pkill -x voxctr || true",
@@ -11,7 +11,6 @@
     "tauri": "tauri",
     "test": "python3 scripts/run_tests.py",
     "test:unit": "vitest run"
-
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -31,6 +30,5 @@
     "typescript": "^5",
     "vite": "^5",
     "vitest": "^3.0.0"
-
   }
 }

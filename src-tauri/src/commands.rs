@@ -100,7 +100,7 @@ pub async fn save_config(
 
     if let Some(w) = app.get_webview_window("overlay") {
         if w.is_visible().unwrap_or(false) {
-            crate::position_overlay_window(&w, &guard.data.ui.overlay_position);
+            crate::position_overlay_window(&w, &guard.data.ui.overlay_position, &guard.data.ui.overlay_monitor);
         }
     }
 
@@ -250,11 +250,11 @@ pub async fn show_overlay(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("overlay") {
-        let position = {
+        let (position, monitor_pref) = {
             let cfg = state.config.lock().await;
-            cfg.data.ui.overlay_position.clone()
+            (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
         };
-        crate::position_overlay_window(&w, &position);
+        crate::position_overlay_window(&w, &position, &monitor_pref);
         w.show().map_err(|e| e.to_string())?;
         w.set_always_on_top(true).map_err(|e| e.to_string())?;
     }
@@ -486,6 +486,39 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
             needs_relogin,
         })
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct MonitorInfo {
+    pub name: Option<String>,
+    pub width: u32,
+    pub height: u32,
+    pub is_primary: bool,
+}
+
+#[tauri::command]
+pub async fn get_available_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, String> {
+    if let Some(w) = app.webview_windows().values().next() {
+        if let Ok(monitors) = w.available_monitors() {
+            let mut list = Vec::new();
+            let primary = w.primary_monitor().ok().flatten();
+            let primary_name = primary.as_ref().and_then(|m| m.name());
+
+            for m in monitors {
+                let name = m.name().map(|s| s.to_string());
+                let is_primary = primary_name.is_some() && name.as_deref() == primary_name.map(|s| s.as_ref());
+                let size = m.size();
+                list.push(MonitorInfo {
+                    name,
+                    width: size.width,
+                    height: size.height,
+                    is_primary,
+                });
+            }
+            return Ok(list);
+        }
+    }
+    Ok(Vec::new())
 }
 
 #[cfg(test)]

@@ -502,17 +502,18 @@ pub fn run() {
                     }
 
                     // Toggle dynamic overlay window visibility based on show_overlay configuration
-                    let (should_show_overlay, overlay_position) = {
+                    let (should_show_overlay, overlay_position, overlay_monitor) = {
                         let cfg = state_for_ticker.config.lock().await;
                         (
                             (is_recording || is_processing) && cfg.data.ui.show_overlay,
                             cfg.data.ui.overlay_position.clone(),
+                            cfg.data.ui.overlay_monitor.clone(),
                         )
                     };
 
                     if let Some(window) = handle.get_webview_window("overlay") {
                         if should_show_overlay {
-                            position_overlay_window(&window, &overlay_position);
+                            position_overlay_window(&window, &overlay_position, &overlay_monitor);
                             let _ = window.show();
                             let _ = window.set_always_on_top(true);
                         } else {
@@ -568,6 +569,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_available_monitors,
             start_recording,
             stop_recording,
             toggle_recording,
@@ -678,8 +680,23 @@ pub fn calculate_overlay_y(
     }
 }
 
-pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str) {
-    if let Ok(Some(monitor)) = window.current_monitor() {
+pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str, monitor_pref: &str) {
+    let target_monitor = match monitor_pref {
+        "primary" => window.primary_monitor().ok().flatten(),
+        _ => {
+            if let Ok(monitors) = window.available_monitors() {
+                monitors.into_iter().find(|m| m.name().map(|s| s.as_ref()) == Some(monitor_pref))
+            } else {
+                None
+            }
+        }
+    };
+
+    let monitor = target_monitor
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
         let monitor_size = monitor.size();
         let monitor_pos = monitor.position();
         let scale_factor = window.scale_factor().unwrap_or(1.0);
@@ -722,6 +739,23 @@ mod tests {
         // High DPI scaling factor 2.0
         let y_top_hidpi = calculate_overlay_y(mon_y, mon_h, win_h, 2.0, "top");
         assert_eq!(y_top_hidpi, 120);
+
+        // Fractional scaling factor 1.5
+        let y_bottom_fractional = calculate_overlay_y(mon_y, mon_h, win_h, 1.5, "bottom");
+        assert_eq!(y_bottom_fractional, 1080 - 160 - 90);
+
+        // Secondary monitor positioned above primary display (negative Y coordinates)
+        let mon_y_negative = -1080;
+        let y_top_negative = calculate_overlay_y(mon_y_negative, mon_h, win_h, 1.0, "top");
+        assert_eq!(y_top_negative, -1080 + 60);
+
+        let y_bottom_negative = calculate_overlay_y(mon_y_negative, mon_h, win_h, 1.0, "bottom");
+        assert_eq!(y_bottom_negative, -1080 + 1080 - 160 - 60);
+
+        // 4K Monitor
+        let mon_h_4k = 2160;
+        let y_center_4k = calculate_overlay_y(mon_y, mon_h_4k, win_h, 1.0, "center");
+        assert_eq!(y_center_4k, (2160 - 160) / 2);
     }
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32};

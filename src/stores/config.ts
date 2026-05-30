@@ -46,6 +46,7 @@ export interface UiConfig {
   show_overlay: boolean;
   overlay_style: string;
   overlay_position: string;
+  overlay_monitor: string;
   auto_show_settings: boolean;
   show_notification: boolean;
   history_enabled: boolean;
@@ -113,6 +114,7 @@ const defaultConfig: AppConfig = {
     show_overlay: true,
     overlay_style: "blue_wave",
     overlay_position: "center",
+    overlay_monitor: "primary",
     auto_show_settings: true,
     show_notification: false,
     history_enabled: false,

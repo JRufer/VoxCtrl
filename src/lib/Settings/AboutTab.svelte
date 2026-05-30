@@ -1,6 +1,17 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import appIcon from "../../assets/voxctr.gif";
-  const version = "0.1.0";
+
+  let version = $state("0.1.0");
+
+  onMount(async () => {
+    try {
+      version = await getVersion();
+    } catch (e) {
+      console.error("Failed to fetch app version:", e);
+    }
+  });
 </script>
 
 <section>
