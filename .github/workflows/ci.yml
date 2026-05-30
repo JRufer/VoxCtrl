@@ -42,6 +42,16 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
+      # Initialize MSVC developer environment so cmake can find cl.exe
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Set LIBCLANG_PATH so bindgen (used by whisper-rs-sys) can find libclang on Windows
+      - name: Set LIBCLANG_PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: cargo check (workspace, no features)
         run: cargo check --workspace
 
