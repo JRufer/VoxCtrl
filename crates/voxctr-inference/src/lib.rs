@@ -167,7 +167,7 @@ impl InferenceEngine {
         let result = self.backend.transcribe(&t_req)?;
         let raw_text = result.text.clone();
 
-        let post_cfg = self.build_post_config_with_app_config(&req.target_id, &app_config);
+        let post_cfg = self.build_post_config_with_app_config(&req.target_id, &app_config, &targets);
         let mut processed = run_pipeline(&raw_text, &post_cfg);
 
         // ── Silence Hallucination Filter ──────────────────────────────────────
@@ -243,25 +243,7 @@ impl InferenceEngine {
         })
     }
 
-    fn build_post_config(&self, target_id: &str) -> PostProcessConfig {
-        // Load the config from the standard file path dynamically so edits are updated instantly
-        let config_path = voxctr_config::Config::config_path();
-        let app_config = if config_path.exists() {
-            std::fs::read_to_string(&config_path)
-                .ok()
-                .and_then(|s| serde_json::from_str::<voxctr_config::AppConfig>(&s).ok())
-                .unwrap_or_else(|| (*self.config).clone())
-        } else {
-            (*self.config).clone()
-        };
-
-        self.build_post_config_with_app_config(target_id, &app_config)
-    }
-
-    fn build_post_config_with_app_config(&self, target_id: &str, app_config: &voxctr_config::AppConfig) -> PostProcessConfig {
-        // Load routing targets from the routing directory
-        let dir = voxctr_routing::config_dir();
-        let targets = voxctr_routing::load_targets(&dir).unwrap_or_default();
+    fn build_post_config_with_app_config(&self, target_id: &str, app_config: &voxctr_config::AppConfig, targets: &[voxctr_routing::OutputTarget]) -> PostProcessConfig {
         let target_ids: Vec<&str> = target_id.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
         let first_target_id = target_ids.first().copied().unwrap_or("default");
         let target = targets.iter().find(|t| t.id == first_target_id);
