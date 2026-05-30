@@ -42,23 +42,16 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
-      # Initialize MSVC developer environment so cmake (and Ninja) can find cl.exe.
-      # Also adds Ninja to PATH, which is required when CMAKE_GENERATOR=Ninja is set.
-      - name: Set up MSVC (Windows)
+      # whisper-rs-sys compiles whisper.cpp via cmake, which is unreliable on Windows CI
+      # runners (VS generator version mismatches, missing C++ toolchain paths, etc.).
+      # cargo check only TYPE-CHECKS Rust code — it never links, so it does not need the
+      # compiled C++ static library. Setting DOCS_RS=1 causes whisper-rs-sys/build.rs to
+      # return early before the cmake call (line 177 of its build.rs), while still
+      # generating/copying the FFI bindings that cargo check needs to type-check whisper-rs.
+      # No other build scripts in this workspace react to DOCS_RS.
+      - name: Skip whisper.cpp cmake build on Windows (DOCS_RS bypass)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # Force Ninja generator for whisper-rs-sys cmake build.
-      # The cmake crate 0.1.58 auto-detects VS version (including VS18/2026 on Windows 2025
-      # runners) and passes a "Visual Studio 18 2026" generator string that older cmake
-      # binaries don't recognise. Ninja bypasses that version-detection path entirely and
-      # compiles faster in CI.
-      # Also set LIBCLANG_PATH so bindgen (whisper-rs-sys FFI) can find libclang.dll.
-      - name: Set Windows cmake/bindgen env vars
-        if: runner.os == 'Windows'
-        run: |
-          echo "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+        run: echo "DOCS_RS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: cargo check (workspace, no features)
         run: cargo check --workspace
