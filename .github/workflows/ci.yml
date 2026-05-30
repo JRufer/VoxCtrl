@@ -51,7 +51,8 @@ jobs:
       # No other build scripts in this workspace react to DOCS_RS.
       - name: Skip whisper.cpp cmake build on Windows (DOCS_RS bypass)
         if: runner.os == 'Windows'
-        run: echo "DOCS_RS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+        shell: bash
+        run: echo "DOCS_RS=1" >> "$GITHUB_ENV"
 
       - name: cargo check (workspace, no features)
         run: cargo check --workspace
