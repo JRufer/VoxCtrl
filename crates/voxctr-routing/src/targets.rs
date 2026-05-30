@@ -1,6 +1,8 @@
 use anyhow::Context;
 use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpStream, UnixStream};
+use tokio::net::TcpStream;
+#[cfg(unix)]
+use tokio::net::UnixStream;
 
 use crate::models::{DeliveryResult, DeliveryType, OutputTarget, TestResult};
 
@@ -273,40 +275,45 @@ pub struct SocketTarget(OutputTarget);
 impl DeliveryTarget for SocketTarget {
     async fn deliver(&self, text: &str) -> DeliveryResult {
         let payload = format!("{text}\n").into_bytes();
-        let result = if let Some(unix) = &self.0.socket_unix {
+
+        #[cfg(unix)]
+        if let Some(unix) = &self.0.socket_unix {
             let mut s = match UnixStream::connect(unix).await {
                 Ok(s) => s,
                 Err(e) => return DeliveryResult::err(e.to_string()),
             };
-            s.write_all(&payload).await
-        } else {
-            let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
-            let port = self.0.socket_port.unwrap_or(9000);
-            let mut s = match TcpStream::connect((host, port)).await {
-                Ok(s) => s,
-                Err(e) => return DeliveryResult::err(e.to_string()),
+            return match s.write_all(&payload).await {
+                Ok(_) => DeliveryResult::ok(text.into()),
+                Err(e) => DeliveryResult::err(e.to_string()),
             };
-            s.write_all(&payload).await
+        }
+
+        let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
+        let port = self.0.socket_port.unwrap_or(9000);
+        let mut s = match TcpStream::connect((host, port)).await {
+            Ok(s) => s,
+            Err(e) => return DeliveryResult::err(e.to_string()),
         };
-        match result {
+        match s.write_all(&payload).await {
             Ok(_) => DeliveryResult::ok(text.into()),
             Err(e) => DeliveryResult::err(e.to_string()),
         }
     }
 
     async fn test(&self) -> TestResult {
+        #[cfg(unix)]
         if let Some(unix) = &self.0.socket_unix {
-            match UnixStream::connect(unix).await {
+            return match UnixStream::connect(unix).await {
                 Ok(_) => TestResult { reachable: true, detail: format!("Unix socket {unix} reachable") },
                 Err(e) => TestResult { reachable: false, detail: e.to_string() },
-            }
-        } else {
-            let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
-            let port = self.0.socket_port.unwrap_or(9000);
-            match TcpStream::connect((host, port)).await {
-                Ok(_) => TestResult { reachable: true, detail: format!("TCP {host}:{port} reachable") },
-                Err(e) => TestResult { reachable: false, detail: e.to_string() },
-            }
+            };
+        }
+
+        let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
+        let port = self.0.socket_port.unwrap_or(9000);
+        match TcpStream::connect((host, port)).await {
+            Ok(_) => TestResult { reachable: true, detail: format!("TCP {host}:{port} reachable") },
+            Err(e) => TestResult { reachable: false, detail: e.to_string() },
         }
     }
 }
