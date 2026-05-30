@@ -17,10 +17,11 @@ crossbeam-channel = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true }
-whisper-rs = { version = "0.16", features = ["cuda"] }
+whisper-rs = { version = "0.16" }
 
 [features]
 default = []
+cuda = ["whisper-rs/cuda"]
 
 # Moonshine ONNX backend via onnxruntime
 moonshine = ["dep:ort", "dep:ndarray"]

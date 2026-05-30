@@ -53,3 +53,4 @@ zbus = { workspace = true }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+cuda = ["voxctr-inference/cuda"]

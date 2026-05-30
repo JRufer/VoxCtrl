@@ -1,5 +1,6 @@
 use std::{
     path::{Path, PathBuf},
+    sync::Mutex,
     time::Instant,
 };
 
@@ -35,8 +36,14 @@ pub struct WhisperCppBackend {
     model_path: Option<PathBuf>,
     loaded: bool,
 
-    /// whisper-rs in-process model
-    inner: Option<whisper_rs::WhisperContext>,
+    // Model context — kept alive so the state's Arc ref remains valid.
+    ctx: Option<whisper_rs::WhisperContext>,
+
+    // Inference state — KV cache + attention buffers, reused across calls.
+    // WhisperState holds Arc<WhisperInnerContext> so it is self-contained; no
+    // lifetime trickery needed.  We lock during each transcribe() call (the
+    // inference worker is single-threaded so there is never real contention).
+    state: Mutex<Option<whisper_rs::WhisperState>>,
 }
 
 impl WhisperCppBackend {
@@ -45,7 +52,8 @@ impl WhisperCppBackend {
             cfg,
             model_path: None,
             loaded: false,
-            inner: None,
+            ctx: None,
+            state: Mutex::new(None),
         }
     }
 
@@ -117,13 +125,15 @@ impl TranscriptionBackend for WhisperCppBackend {
         let mut params = whisper_rs::WhisperContextParameters::default();
         params.use_gpu = self.cfg.device.to_lowercase() != "cpu";
 
-        let ctx = whisper_rs::WhisperContext::new_with_params(
-            path.to_str().unwrap(),
-            params,
-        )
-        .context("whisper-rs load")?;
-        self.inner = Some(ctx);
+        let ctx = whisper_rs::WhisperContext::new_with_params(path.to_str().unwrap(), params)
+            .context("whisper-rs load")?;
 
+        // Create the inference state once. Allocates KV cache + attention buffers
+        // up front so transcribe() never has to reallocate them.
+        let state = ctx.create_state().context("whisper state init")?;
+
+        *self.state.lock().unwrap() = Some(state);
+        self.ctx = Some(ctx);
         self.model_path = Some(path);
         self.loaded = true;
         Ok(())
@@ -133,15 +143,15 @@ impl TranscriptionBackend for WhisperCppBackend {
         if !self.loaded {
             bail!("Model not loaded");
         }
-
-        if let Some(ctx) = &self.inner {
-            return transcribe_bundled(ctx, req, self.threads());
-        }
-        bail!("Model context not initialized")
+        let mut guard = self.state.lock().unwrap();
+        let state = guard.as_mut().context("whisper state not initialised")?;
+        transcribe_with_state(state, req, self.threads())
     }
 
     fn unload(&mut self) {
-        self.inner = None;
+        // Drop state first so its Arc ref to the inner context is released before ctx.
+        *self.state.lock().unwrap() = None;
+        self.ctx = None;
         self.loaded = false;
     }
 
@@ -150,10 +160,10 @@ impl TranscriptionBackend for WhisperCppBackend {
     }
 }
 
-// ── whisper-rs bundled path ───────────────────────────────────────────────────
+// ── whisper-rs transcription (reuses pre-allocated state) ────────────────────
 
-fn transcribe_bundled(
-    ctx: &whisper_rs::WhisperContext,
+fn transcribe_with_state(
+    state: &mut whisper_rs::WhisperState,
     req: &TranscribeRequest,
     threads: u32,
 ) -> Result<TranscriptionResult> {
@@ -174,7 +184,6 @@ fn transcribe_bundled(
     }
 
     let t0 = Instant::now();
-    let mut state = ctx.create_state().context("whisper state")?;
     state.full(params, &req.audio).context("whisper full")?;
     let inference_ms = t0.elapsed().as_millis() as u32;
 

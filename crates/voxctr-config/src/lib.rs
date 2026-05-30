@@ -375,6 +375,19 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.data)?;
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.path)?;
+            f.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
         std::fs::write(&self.path, json)?;
         Ok(())
     }
@@ -388,6 +401,23 @@ impl Default for Config {
     fn default() -> Self {
         Self::load()
     }
+}
+
+// ── Path utilities ────────────────────────────────────────────────────────────
+
+/// Search `$PATH` for an executable named `name`, returning its full path if found.
+/// On Windows, appends `.exe` automatically when `name` has no extension.
+pub fn find_in_path(name: &str) -> Option<PathBuf> {
+    let search_name: std::borrow::Cow<str> = if cfg!(target_os = "windows") && !name.contains('.') {
+        format!("{name}.exe").into()
+    } else {
+        name.into()
+    };
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(search_name.as_ref()))
+            .find(|p| p.is_file())
+    })
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────

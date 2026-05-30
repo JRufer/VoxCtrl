@@ -44,6 +44,7 @@ dirs = "5"
 # Audio
 cpal = "0.15"
 rubato = "0.15"
+rodio = "0.17"
 
 # Regex / text processing
 regex = "1"
@@ -64,6 +65,7 @@ notify-rust = "4"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 
 # Archive / download helpers
 flate2 = "1"

@@ -101,6 +101,15 @@ pub async fn save_config(
     Ok(())
 }
 
+// ── Build info ────────────────────────────────────────────────────────────────
+
+/// Returns true when this binary was compiled with the `cuda` cargo feature.
+/// The frontend uses this to show or hide the CUDA device option.
+#[tauri::command]
+pub fn cuda_enabled() -> bool {
+    cfg!(feature = "cuda")
+}
+
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]

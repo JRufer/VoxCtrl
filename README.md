@@ -21,7 +21,7 @@ In an era of cloud processing, VoxCtr is built from the ground up to guarantee a
 
 ## 🌟 Key Features
 
-* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution and NVIDIA CUDA GPU acceleration.
+* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution. NVIDIA CUDA GPU acceleration is available as an opt-in compile-time feature (`--features cuda`); Vulkan acceleration (AMD/Intel/NVIDIA) works in the standard build.
 * **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.

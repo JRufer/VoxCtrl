@@ -1,5 +1,3 @@
-#[cfg(target_os = "windows")]
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -45,25 +43,16 @@ pub fn piper_voices_dir() -> PathBuf {
 }
 
 pub fn piper_binary() -> Option<PathBuf> {
-    // Check local install first, then PATH
+    let exe = if cfg!(target_os = "windows") { "piper.exe" } else { "piper" };
     let local = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("voxctl")
         .join("piper")
-        .join("piper");
+        .join(exe);
     if local.exists() {
         return Some(local);
     }
-    which_binary("piper").map(PathBuf::from)
-}
-
-fn which_binary(name: &str) -> Option<String> {
-    std::process::Command::new("which")
-        .arg(name)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    voxctr_config::find_in_path("piper")
 }
 
 // ── Utterance queue ───────────────────────────────────────────────────────────
@@ -159,7 +148,7 @@ impl TtsEngineWorker {
             anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
         })?;
 
-        // piper reads from stdin, produces WAV on stdout; pipe to aplay/SoX
+        // piper reads from stdin, produces raw PCM on stdout; played via rodio
         let mut piper = std::process::Command::new(&binary)
             .arg("--model")
             .arg(&voice_path)
@@ -196,65 +185,16 @@ impl TtsEngineWorker {
 }
 
 fn play_raw_audio(raw: &[u8], sample_rate: u32) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        let mut child = std::process::Command::new("aplay")
-            .args([
-                "-r",
-                &sample_rate.to_string(),
-                "-f",
-                "S16_LE",
-                "-c",
-                "1",
-                "-",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("spawn aplay")?;
-        use std::io::Write;
-        child.stdin.as_mut().unwrap().write_all(raw)?;
-        child.wait()?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // Write to a temp WAV file and play with PowerShell
-        let tmp = tempfile::NamedTempFile::with_suffix(".wav")?;
-        write_wav(tmp.path(), raw, sample_rate)?;
-        std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "(New-Object Media.SoundPlayer '{}').PlaySync()",
-                    tmp.path().display()
-                ),
-            ])
-            .status()
-            .context("PowerShell SoundPlayer")?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn write_wav(path: &Path, raw: &[u8], sample_rate: u32) -> Result<()> {
-    use std::io::Write;
-    let data_len = raw.len() as u32;
-    let mut f = std::fs::File::create(path)?;
-    f.write_all(b"RIFF")?;
-    f.write_all(&(36 + data_len).to_le_bytes())?;
-    f.write_all(b"WAVEfmt ")?;
-    f.write_all(&16u32.to_le_bytes())?;
-    f.write_all(&1u16.to_le_bytes())?;
-    f.write_all(&1u16.to_le_bytes())?;
-    f.write_all(&sample_rate.to_le_bytes())?;
-    f.write_all(&(sample_rate * 2).to_le_bytes())?;
-    f.write_all(&2u16.to_le_bytes())?;
-    f.write_all(&16u16.to_le_bytes())?;
-    f.write_all(b"data")?;
-    f.write_all(&data_len.to_le_bytes())?;
-    f.write_all(raw)?;
+    let samples: Vec<i16> = raw
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    let (_stream, handle) = rodio::OutputStream::try_default()
+        .map_err(|e| anyhow::anyhow!("audio output device: {e}"))?;
+    let sink = rodio::Sink::try_new(&handle)
+        .map_err(|e| anyhow::anyhow!("audio sink: {e}"))?;
+    sink.append(rodio::buffer::SamplesBuffer::new(1, sample_rate, samples));
+    sink.sleep_until_end();
     Ok(())
 }
 
