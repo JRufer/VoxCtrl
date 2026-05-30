@@ -164,15 +164,15 @@ jobs:
         run: npm run tauri build -- --features cuda
 
       # ── Collect and rename Linux artifacts ──────────────────────────────────
-      # Appends the artifact label (e.g. -linux-x86_64 or -linux-x86_64-cuda)
-      # before the extension so releases are easy to distinguish.
+      # Search the whole workspace so the path is correct regardless of whether
+      # cargo uses a workspace-level or package-level target directory.
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'
         run: |
           mkdir -p upload
-          find target/release/bundle \
-              \( -name "*.AppImage" -o -name "*.deb" \) \
-              ! -name "*.AppImage.zsync" | \
+          find . \( -name "*.AppImage" -o -name "*.deb" \) \
+              ! -name "*.AppImage.zsync" \
+              ! -path "*/.cargo/*" | \
           while read -r f; do
             base=$(basename "$f")
             stem="${base%.*}"
@@ -184,19 +184,28 @@ jobs:
           ls -lh upload/
 
       # ── Collect and rename Windows artifacts ────────────────────────────────
+      # Search the whole workspace so the path is correct regardless of where
+      # Tauri/cargo places the bundle directory.
       - name: Collect Windows artifacts
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force upload | Out-Null
-          Get-ChildItem target\release\bundle -Recurse -Include "*.exe","*.msi" |
-            Where-Object { $_.Name -notlike "*-stub*" } |
+          Get-ChildItem -Path . -Recurse -Include "*.exe","*.msi" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*\bundle\*" -and $_.Name -notlike "*-stub*" } |
             ForEach-Object {
               $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
               Copy-Item $_.FullName $dest
               $size = "{0:N1} MB" -f ($_.Length / 1MB)
               Write-Host "Collected: $dest ($size)"
             }
+          if ((Get-ChildItem upload).Count -eq 0) {
+            Write-Host "ERROR: No bundle files found. Searching for any .exe/.msi to diagnose:"
+            Get-ChildItem -Path . -Recurse -Include "*.exe","*.msi" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notlike "*\.cargo*" } |
+              Select-Object -ExpandProperty FullName
+            exit 1
+          }
 
       # ── Upload to Actions (picked up by publish job) ─────────────────────────
       - uses: actions/upload-artifact@v4
