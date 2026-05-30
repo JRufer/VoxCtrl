@@ -30,8 +30,11 @@ sudo dnf install \
 ```
 
 ### Windows
-- Visual Studio Build Tools 2019+
-- WebView2 SDK (usually pre-installed)
+- Visual Studio Build Tools 2019+ (select the "Desktop development with C++" workload)
+- WebView2 Runtime (pre-installed on Windows 10 21H2+ and Windows 11)
+- Rust MSVC toolchain: `rustup default stable-x86_64-pc-windows-msvc`
+
+For full Windows build instructions and a PowerShell helper script, see **[docs/windows_build.md](windows_build.md)**.
 
 ---
 
@@ -131,6 +134,22 @@ npm run tauri build
 #   Linux:   .deb, .AppImage
 #   Windows: .msi, .exe (NSIS)
 ```
+
+### CUDA GPU Acceleration (opt-in)
+
+CUDA inference acceleration is disabled by default so the app builds on any machine. Enable it with the `cuda` cargo feature:
+
+```bash
+# Linux / macOS
+npm run tauri build -- --features cuda
+
+# Windows (PowerShell)
+npm run tauri build -- --features cuda
+# Or use the helper script:
+.\scripts\build_windows.ps1 -Cuda
+```
+
+The `cuda` feature propagates: `voxctr-app/cuda` → `voxctr-inference/cuda` → `whisper-rs/cuda`.
 
 ---
 

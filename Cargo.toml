@@ -44,6 +44,7 @@ dirs = "5"
 # Audio
 cpal = "0.15"
 rubato = "0.15"
+rodio = "0.17"
 
 # Regex / text processing
 regex = "1"

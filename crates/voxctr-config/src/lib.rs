@@ -421,6 +421,23 @@ impl Default for Config {
     }
 }
 
+// ── Path utilities ────────────────────────────────────────────────────────────
+
+/// Search `$PATH` for an executable named `name`, returning its full path if found.
+/// On Windows, appends `.exe` automatically when `name` has no extension.
+pub fn find_in_path(name: &str) -> Option<PathBuf> {
+    let search_name: std::borrow::Cow<str> = if cfg!(target_os = "windows") && !name.contains('.') {
+        format!("{name}.exe").into()
+    } else {
+        name.into()
+    };
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(search_name.as_ref()))
+            .find(|p| p.is_file())
+    })
+}
+
 // ── Validation ────────────────────────────────────────────────────────────────
 
 static VALID_MODEL_SIZES: &[&str] = &[
