@@ -79,6 +79,23 @@ jobs:
       # ── CUDA toolkit ────────────────────────────────────────────────────────
       # Installs CUDA headers + libraries for compilation only.
       # End-users need an NVIDIA driver (not the Toolkit) to run CUDA builds.
+
+      # CUDA toolkit + Rust CUDA build artifacts consume ~10-12 GB. Free up the
+      # large pre-installed packages that the GitHub-hosted runner ships with but
+      # that this build does not need (Android SDK, CodeQL, Haskell GHC, etc.)
+      # before installing CUDA so linuxdeploy has enough /tmp space to extract.
+      - name: Free disk space for CUDA build (Linux)
+        if: runner.os == 'Linux' && matrix.cuda
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY"
+          df -h
+
       - name: Install CUDA Toolkit (Linux)
         if: runner.os == 'Linux' && matrix.cuda
         uses: Jimver/cuda-toolkit@v0.2.16
