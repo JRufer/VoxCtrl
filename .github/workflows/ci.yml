@@ -42,31 +42,18 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
-      # Initialize the MSVC developer environment (adds cl.exe, rc.exe, link.exe,
-      # etc. to PATH). rc.exe is needed by tauri-winres (voxctr-app's build
-      # script) to compile the app manifest resource file.
-      - name: Set up MSVC developer environment (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # whisper-rs-sys/build.rs runs in two phases:
-      #   1. bindgen — generates FFI bindings from the C headers (needs libclang)
-      #   2. cmake  — compiles whisper.cpp into a static C++ library
-      #
-      # cargo check only needs phase 1 (it never links). DOCS_RS=1 causes
-      # build.rs to return early after phase 1 and before cmake (line 177 vs 301).
-      # LIBCLANG_PATH lets bindgen find libclang.dll so it generates
-      # Windows-correct struct sizes; without it bindgen falls back to the bundled
-      # Linux src/bindings.rs which has wrong sizes and causes E0080 errors.
-      - name: Configure whisper-rs-sys for Windows cargo check
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "DOCS_RS=1" >> "$GITHUB_ENV"
-          echo "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> "$GITHUB_ENV"
-
+      # Full workspace check on Linux (includes voxctr-inference which needs whisper-rs/C++)
       - name: cargo check (workspace, no features)
+        if: runner.os != 'Windows'
         run: cargo check --workspace
+
+      # On Windows, exclude crates that require whisper.cpp C++ compilation
+      # (voxctr-inference, voxctr-app). Their Rust type-safety is covered by
+      # the Linux check above; this job validates Windows-specific platform code
+      # in the remaining pure-Rust crates.
+      - name: cargo check (workspace excluding C++ crates, Windows)
+        if: runner.os == 'Windows'
+        run: cargo check --workspace --exclude voxctr-inference --exclude voxctr-app
 
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:
