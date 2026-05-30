@@ -1,8 +1,26 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
 
   let { cfg = $bindable() }: { cfg: AppConfig } = $props();
+
+  interface CustomOverlay {
+    name: string;
+    html: string;
+    css: string;
+  }
+
+  let customOverlays = $state<CustomOverlay[]>([]);
+
+  onMount(async () => {
+    try {
+      customOverlays = await invoke<CustomOverlay[]>("get_custom_overlays");
+    } catch (e) {
+      console.error("Failed to fetch custom overlays:", e);
+    }
+  });
 
   function markDirty() {
     configDirty.set(true);
@@ -26,7 +44,9 @@
         <option value="waveform">Waveform</option>
         <option value="pulse">Pulse Ring</option>
         <option value="blue_wave">Ocean Wave</option>
-        <option value="none">Disabled</option>
+        {#each customOverlays as overlay}
+          <option value={overlay.name}>{overlay.name}</option>
+        {/each}
       </select>
     </label>
   </div>

@@ -22,6 +22,7 @@ use crate::{
 
 mod commands;
 mod state;
+mod default_overlays;
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -346,6 +347,46 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // ── Startup udev Diagnostics ──────────────────────────────────────
+            #[cfg(target_os = "linux")]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut check_failed = false;
+
+                    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+                        match override_val.as_str() {
+                            "missing" | "relogin" => check_failed = true,
+                            _ => {}
+                        }
+                    } else {
+                        // Check if /etc/udev/rules.d/99-voxctr.rules exists
+                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+
+                        // Check if the current user session has the "input" group by running `id -Gn`
+                        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                            Ok(output) => {
+                                let groups_str = String::from_utf8_lossy(&output.stdout);
+                                groups_str.split_whitespace().any(|g| g == "input")
+                            }
+                            Err(_) => false,
+                        };
+
+                        if !rule_exists || !in_group {
+                            check_failed = true;
+                        }
+                    }
+
+                    if check_failed {
+                        if let Some(w) = app_handle.get_webview_window("udev-warning") {
+                            let _ = w.show();
+                            let _ = w.set_always_on_top(true);
+                            let _ = w.set_focus();
+                        }
+                    }
+                });
+            }
+
             // ── Forward audio levels to settings window ───────────────────────
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -418,8 +459,16 @@ pub fn run() {
             // Note: Windows ("overlay", "settings", "history") are automatically created by Tauri
             // via the declarations in `tauri.conf.json`. Manual creation here is omitted to prevent duplicates.
 
-            // Automatically show the settings window on startup if configured to do so
-            if cfg_data.ui.auto_show_settings {
+            // Force show the settings window on startup if the voice model is missing
+            let mut show_settings = cfg_data.ui.auto_show_settings;
+            if cfg_data.engine.backend != voxctr_config::BackendChoice::Moonshine {
+                let model_size = &cfg_data.engine.whisper_cpp.model_size;
+                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size) {
+                    show_settings = true;
+                }
+            }
+
+            if show_settings {
                 if let Some(window) = app.get_webview_window("settings") {
                     show_and_focus_window(&window);
                 }
@@ -529,6 +578,7 @@ pub fn run() {
             speak_text,
             show_overlay,
             hide_overlay,
+            get_custom_overlays,
             list_audio_devices,
             start_monitoring_audio,
             stop_monitoring_audio,
@@ -538,6 +588,7 @@ pub fn run() {
             download_model,
             test_ollama,
             cuda_enabled,
+            check_udev_status,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");
@@ -775,6 +826,32 @@ mod tests {
         for res in results {
             assert!(res.success);
         }
+    }
+
+    #[tokio::test]
+    async fn test_check_udev_status_env_overrides() {
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "missing");
+        let res = check_udev_status().await.unwrap();
+        assert!(!res.is_configured);
+        assert!(!res.rule_exists);
+        assert!(!res.in_group);
+        assert!(!res.needs_relogin);
+
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "relogin");
+        let res = check_udev_status().await.unwrap();
+        assert!(!res.is_configured);
+        assert!(res.rule_exists);
+        assert!(!res.in_group);
+        assert!(res.needs_relogin);
+
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "ok");
+        let res = check_udev_status().await.unwrap();
+        assert!(res.is_configured);
+        assert!(res.rule_exists);
+        assert!(res.in_group);
+        assert!(!res.needs_relogin);
+
+        std::env::remove_var("VOXCTR_TEST_UDEV_STATUS");
     }
 }
 

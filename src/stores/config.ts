@@ -44,7 +44,7 @@ export interface AudioConfig {
 
 export interface UiConfig {
   show_overlay: boolean;
-  overlay_style: "voice_card" | "waveform" | "pulse" | "blue_wave" | "none";
+  overlay_style: string;
   auto_show_settings: boolean;
   show_notification: boolean;
   history_enabled: boolean;
@@ -144,6 +144,7 @@ const defaultConfig: AppConfig = {
 
 export const config = writable<AppConfig>(defaultConfig);
 export const configDirty = writable(false);
+export const configLoaded = writable(false);
 
 let isLoaded = false;
 let saveTimeout: any = null;
@@ -153,11 +154,13 @@ export async function loadConfig() {
     const loaded = await invoke<AppConfig>("get_config");
     config.set(loaded);
     configDirty.set(false);
+    configLoaded.set(true);
     setTimeout(() => {
       isLoaded = true;
     }, 0);
   } catch (e) {
     console.error("loadConfig:", e);
+    configLoaded.set(true);
     setTimeout(() => {
       isLoaded = true;
     }, 0);

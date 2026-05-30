@@ -8,7 +8,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "python3 scripts/run_tests.py",
+    "test:unit": "vitest run"
+
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -21,9 +24,13 @@
     "@sveltejs/vite-plugin-svelte": "^4",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2",
+    "@testing-library/svelte": "^5.2.4",
+    "jsdom": "^26.0.0",
     "svelte": "^5",
     "tailwindcss": "^4.3.0",
     "typescript": "^5",
-    "vite": "^5"
+    "vite": "^5",
+    "vitest": "^3.0.0"
+
   }
 }

@@ -129,24 +129,6 @@ impl Default for AudioConfig {
     }
 }
 
-// ── UI ────────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum OverlayStyle {
-    VoiceCard,
-    Waveform,
-    Pulse,
-    BlueWave,
-    None,
-}
-
-impl Default for OverlayStyle {
-    fn default() -> Self {
-        Self::BlueWave
-    }
-}
-
 fn default_auto_show_settings() -> bool {
     true
 }
@@ -158,7 +140,7 @@ fn default_show_notification() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub show_overlay: bool,
-    pub overlay_style: OverlayStyle,
+    pub overlay_style: String,
     #[serde(default = "default_auto_show_settings")]
     pub auto_show_settings: bool,
     #[serde(default = "default_show_notification")]
@@ -171,7 +153,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_overlay: true,
-            overlay_style: OverlayStyle::BlueWave,
+            overlay_style: "blue_wave".into(),
             auto_show_settings: true,
             show_notification: false,
             history_enabled: false,
@@ -486,7 +468,7 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.ui.auto_show_settings);
         assert!(!cfg.ui.show_notification);
-        assert_eq!(cfg.ui.overlay_style, OverlayStyle::BlueWave);
+        assert_eq!(cfg.ui.overlay_style, "blue_wave");
         assert!(cfg.features.show_notification.is_none());
     }
 

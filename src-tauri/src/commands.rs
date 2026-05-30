@@ -255,6 +255,67 @@ pub async fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct CustomOverlayInfo {
+    pub name: String,
+    pub html: String,
+    pub css: String,
+}
+
+#[tauri::command]
+pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
+    let overlays_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("voxctl")
+        .join("overlays");
+
+    if !overlays_dir.exists() {
+        let _ = std::fs::create_dir_all(&overlays_dir);
+    }
+
+    crate::default_overlays::ensure_default_overlays(&overlays_dir);
+
+    let mut list = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&overlays_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let mut folder_name = entry.file_name().to_string_lossy().to_string();
+
+                    // Automatically resolve naming conflicts with built-in styles
+                    let reserved = ["waveform", "pulse", "blue_wave", "voice_card", "none"];
+                    if reserved.contains(&folder_name.to_lowercase().as_str()) {
+                        folder_name = format!("{}_custom", folder_name);
+                    }
+
+                    let html_path = entry.path().join("index.html");
+                    let css_path = entry.path().join("style.css");
+
+                    let html = if html_path.exists() {
+                        std::fs::read_to_string(&html_path).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    let css = if css_path.exists() {
+                        std::fs::read_to_string(&css_path).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    list.push(CustomOverlayInfo {
+                        name: folder_name,
+                        html,
+                        css,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(list)
+}
+
 // ── Audio devices ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -333,4 +394,100 @@ pub async fn test_ollama(
         })
     }
 }
+
+#[derive(serde::Serialize)]
+pub struct UdevStatusPayload {
+    pub is_configured: bool,
+    pub rule_exists: bool,
+    pub in_group: bool,
+    pub needs_relogin: bool,
+}
+
+#[tauri::command]
+pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
+    // 1. Check for developer override via environment variable
+    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+        match override_val.as_str() {
+            "missing" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: false,
+                    rule_exists: false,
+                    in_group: false,
+                    needs_relogin: false,
+                });
+            }
+            "relogin" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: false,
+                    rule_exists: true,
+                    in_group: false,
+                    needs_relogin: true,
+                });
+            }
+            "ok" => {
+                return Ok(UdevStatusPayload {
+                    is_configured: true,
+                    rule_exists: true,
+                    in_group: true,
+                    needs_relogin: false,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // 2. Platform-specific checks
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(UdevStatusPayload {
+            is_configured: true,
+            rule_exists: true,
+            in_group: true,
+            needs_relogin: false,
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Check if /etc/udev/rules.d/99-voxctr.rules exists
+        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+
+        // Check if the current user session has the "input" group by running `id -Gn`
+        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+            Ok(output) => {
+                let groups_str = String::from_utf8_lossy(&output.stdout);
+                groups_str.split_whitespace().any(|g| g == "input")
+            }
+            Err(_) => false,
+        };
+
+        // If udev rules exist but user is not in group in active session, they need a relogin
+        let needs_relogin = rule_exists && !in_group;
+        let is_configured = rule_exists && in_group;
+
+        Ok(UdevStatusPayload {
+            is_configured,
+            rule_exists,
+            in_group,
+            needs_relogin,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_custom_overlays_returns_list() {
+        let result = get_custom_overlays().await;
+        assert!(result.is_ok());
+        if let Ok(list) = result {
+            // Check that the list is serializable
+            let json = serde_json::to_string(&list);
+            assert!(json.is_ok());
+        }
+    }
+}
+
 

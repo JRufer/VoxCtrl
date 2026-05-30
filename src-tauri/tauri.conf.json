@@ -46,6 +46,16 @@
         "height": 500,
         "visible": false,
         "url": "/history"
+      },
+      {
+        "label": "udev-warning",
+        "title": "VoxCtr Diagnostics",
+        "width": 460,
+        "height": 380,
+        "visible": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "url": "/udev-warning"
       }
     ]
   },
