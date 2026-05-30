@@ -28,7 +28,7 @@ mod default_overlays;
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
     let w = window.clone();
     tauri::async_runtime::spawn(async move {
-        let mut pos = None;
+        let mut pos: Option<tauri::PhysicalPosition<i32>> = None;
         #[cfg(target_os = "linux")]
         {
             // If the window is already open/visible, we must hide it first and wait a short period
