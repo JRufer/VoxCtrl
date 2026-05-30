@@ -117,7 +117,7 @@ VoxCtr uses Tokio for async I/O plus dedicated OS threads for latency-sensitive 
 | Audio capture | OS thread (cpal) | Microphone streaming at hardware rate |
 | Audio level emitter | Tokio task | Forwards RMS levels to UI every ~50ms |
 | Hotkey listener | OS thread | evdev/Win32 event loop |
-| Inference worker | OS thread | Blocking Whisper computation |
+| Inference worker | OS thread | Blocking Whisper computation; `WhisperState` (KV cache + attention buffers) is allocated once at load and reused across all calls |
 | Status ticker | Tokio task | Emits `status-tick` events every 250ms |
 | Config watcher | Tokio task | `inotify`/`kqueue` on config files |
 | MCP server | Tokio task | Unix socket accept loop |
