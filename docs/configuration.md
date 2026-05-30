@@ -44,6 +44,7 @@ Full schema with defaults:
   "ui": {
     "show_overlay": true,
     "overlay_style": "blue_wave",
+    "overlay_position": "center",
     "auto_show_settings": true,
     "show_notification": false,
     "history_enabled": false
@@ -134,6 +135,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 |---|---|---|---|---|
 | `show_overlay` | bool | | `true` | Whether the overlay window is currently visible |
 | `overlay_style` | string | `"voice_card"`, `"waveform"`, `"pulse"`, `"blue_wave"`, `"none"` | `"blue_wave"` | HUD visualization style |
+| `overlay_position` | string | `"top"`, `"center"`, `"bottom"` | `"center"` | Screen positioning of the overlay window |
 | `auto_show_settings` | bool | | `true` | Auto-show Settings window on startup |
 | `show_notification` | bool | | `false` | Desktop toast notification after text delivery |
 | `history_enabled` | bool | | `false` | Enable transcription history tracking |

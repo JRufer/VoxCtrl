@@ -49,6 +49,15 @@
         {/each}
       </select>
     </label>
+
+    <label class="field">
+      <span>Overlay position</span>
+      <select bind:value={cfg.ui.overlay_position} onchange={markDirty}>
+        <option value="top">Top of screen</option>
+        <option value="center">Center of screen</option>
+        <option value="bottom">Bottom of screen</option>
+      </select>
+    </label>
   </div>
 
   <div class="field-group">

@@ -137,10 +137,16 @@ fn default_show_notification() -> bool {
     false
 }
 
+fn default_overlay_position() -> String {
+    "center".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub show_overlay: bool,
     pub overlay_style: String,
+    #[serde(default = "default_overlay_position")]
+    pub overlay_position: String,
     #[serde(default = "default_auto_show_settings")]
     pub auto_show_settings: bool,
     #[serde(default = "default_show_notification")]
@@ -154,6 +160,7 @@ impl Default for UiConfig {
         Self {
             show_overlay: true,
             overlay_style: "blue_wave".into(),
+            overlay_position: "center".into(),
             auto_show_settings: true,
             show_notification: false,
             history_enabled: false,
@@ -469,6 +476,7 @@ mod tests {
         assert!(cfg.ui.auto_show_settings);
         assert!(!cfg.ui.show_notification);
         assert_eq!(cfg.ui.overlay_style, "blue_wave");
+        assert_eq!(cfg.ui.overlay_position, "center");
         assert!(cfg.features.show_notification.is_none());
     }
 

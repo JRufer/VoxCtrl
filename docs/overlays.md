@@ -19,6 +19,21 @@ The active style is determined by `config.ui.overlay_style`. The window switches
 
 ---
 
+## Screen Positioning
+
+The visual presentation overlay window can be positioned dynamically on the active monitor where your mouse cursor or focused application is located. 
+
+Users can configure the screen alignment under **Settings** -> **Visual & Feedback** -> **Overlay position** or manually in `config.json` via `ui.overlay_position`.
+
+Available screen positions:
+- **`"center"` (Default)** — Positions the overlay at the exact horizontal and vertical center of the active monitor.
+- **`"top"`** — Positions the overlay at the horizontal center, aligned `60` logical pixels from the top of the monitor.
+- **`"bottom"`** — Positions the overlay at the horizontal center, aligned `60` logical pixels from the bottom of the monitor.
+
+Tauri dynamically calculates physical pixel values taking into account your display's current high-DPI scaling factor (`scale_factor`), ensuring perfect resolution-independent positioning on 1080p, 1440p, or 4K monitors. Changes to the position setting are instantly applied in real-time if the overlay window is currently visible.
+
+---
+
 ## Built-in Styles
 
 Four built-in styles are available. The default is **Ocean Wave**.

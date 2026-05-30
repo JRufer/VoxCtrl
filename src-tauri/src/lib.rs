@@ -502,13 +502,17 @@ pub fn run() {
                     }
 
                     // Toggle dynamic overlay window visibility based on show_overlay configuration
-                    let should_show_overlay = (is_recording || is_processing) && {
+                    let (should_show_overlay, overlay_position) = {
                         let cfg = state_for_ticker.config.lock().await;
-                        cfg.data.ui.show_overlay
+                        (
+                            (is_recording || is_processing) && cfg.data.ui.show_overlay,
+                            cfg.data.ui.overlay_position.clone(),
+                        )
                     };
 
                     if let Some(window) = handle.get_webview_window("overlay") {
                         if should_show_overlay {
+                            position_overlay_window(&window, &overlay_position);
                             let _ = window.show();
                             let _ = window.set_always_on_top(true);
                         } else {
@@ -660,9 +664,65 @@ impl McpCallbacks for AppState {
     }
 }
 
+pub fn calculate_overlay_y(
+    monitor_y: i32,
+    monitor_height: i32,
+    window_height: i32,
+    scale_factor: f64,
+    position_str: &str,
+) -> i32 {
+    match position_str {
+        "top" => monitor_y + (60.0 * scale_factor) as i32,
+        "bottom" => monitor_y + monitor_height - window_height - (60.0 * scale_factor) as i32,
+        _ => monitor_y + (monitor_height - window_height) / 2, // "center" is default
+    }
+}
+
+pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str) {
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let monitor_size = monitor.size();
+        let monitor_pos = monitor.position();
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        
+        if let Ok(window_size) = window.outer_size() {
+            let win_w = window_size.width as i32;
+            let win_h = window_size.height as i32;
+            let mon_w = monitor_size.width as i32;
+            let mon_h = monitor_size.height as i32;
+            let mon_x = monitor_pos.x;
+            let mon_y = monitor_pos.y;
+            
+            let x = mon_x + (mon_w - win_w) / 2;
+            let y = calculate_overlay_y(mon_y, mon_h, win_h, scale_factor, position_str);
+            
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_calculate_overlay_y() {
+        let mon_y = 0;
+        let mon_h = 1080;
+        let win_h = 160;
+
+        let y_top = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "top");
+        assert_eq!(y_top, 60);
+
+        let y_center = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "center");
+        assert_eq!(y_center, (1080 - 160) / 2);
+
+        let y_bottom = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "bottom");
+        assert_eq!(y_bottom, 1080 - 160 - 60);
+
+        // High DPI scaling factor 2.0
+        let y_top_hidpi = calculate_overlay_y(mon_y, mon_h, win_h, 2.0, "top");
+        assert_eq!(y_top_hidpi, 120);
+    }
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32};
     use tokio::sync::Mutex;

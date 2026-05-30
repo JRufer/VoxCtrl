@@ -98,6 +98,12 @@ pub async fn save_config(
     // Emit config-changed event to all windows to enable instant reactivity
     let _ = app.emit("config-changed", new_config);
 
+    if let Some(w) = app.get_webview_window("overlay") {
+        if w.is_visible().unwrap_or(false) {
+            crate::position_overlay_window(&w, &guard.data.ui.overlay_position);
+        }
+    }
+
     Ok(())
 }
 
@@ -239,8 +245,16 @@ pub async fn download_model(model_size: String) -> Result<(), String> {
 // ── Overlay window ────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn show_overlay(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn show_overlay(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("overlay") {
+        let position = {
+            let cfg = state.config.lock().await;
+            cfg.data.ui.overlay_position.clone()
+        };
+        crate::position_overlay_window(&w, &position);
         w.show().map_err(|e| e.to_string())?;
         w.set_always_on_top(true).map_err(|e| e.to_string())?;
     }
