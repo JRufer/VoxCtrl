@@ -393,6 +393,19 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.data)?;
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.path)?;
+            f.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
         std::fs::write(&self.path, json)?;
         Ok(())
     }

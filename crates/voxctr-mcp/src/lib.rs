@@ -101,6 +101,9 @@ async fn run_unix_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()> {
         let _ = std::fs::remove_file(&path);
     }
     let listener = UnixListener::bind(&path)?;
+    // Restrict to the owning user only so other local users cannot
+    // activate the microphone or issue TTS via the MCP socket.
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
     info!("MCP server listening on {SOCKET_PATH}");
 
     loop {

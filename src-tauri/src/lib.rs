@@ -251,19 +251,13 @@ pub fn run() {
                     *state_lt.last_text.lock().await = text_lt;
                 });
 
-                let show_notif = {
+                let (show_notif, history_enabled) = {
                     let cfg_lock = state.config.blocking_lock();
-                    cfg_lock.data.ui.show_notification
+                    (cfg_lock.data.ui.show_notification, cfg_lock.data.ui.history_enabled)
                 };
                 if show_notif {
                     voxctr_inject::show_notification("VoxCtr", &output.text);
                 }
-
-                // Push to history only when the feature is enabled
-                let history_enabled = {
-                    let cfg_lock = state.config.blocking_lock();
-                    cfg_lock.data.ui.history_enabled
-                };
                 if history_enabled {
                     let state2 = state.clone();
                     let entry = HistoryEntry {
@@ -624,16 +618,11 @@ mod tests {
     use voxctr_routing::OutputTargetRouter;
     use crate::state::AppState;
 
-    #[tokio::test]
-    async fn test_app_state_initial_values() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
+    fn make_test_state() -> AppState {
         let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
+        AppState {
+            config: Arc::new(Mutex::new(Config::load())),
+            router: Arc::new(OutputTargetRouter::new(Vec::new())),
             recording: Arc::new(AtomicBool::new(false)),
             processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
@@ -651,8 +640,13 @@ mod tests {
             audio_tx,
             tts_handle: Arc::new(Mutex::new(None)),
             active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
+            hotkey_reloader: Arc::new(Mutex::new(None)),
+        }
+    }
 
+    #[tokio::test]
+    async fn test_app_state_initial_values() {
+        let state = make_test_state();
         assert!(!state.is_recording());
         assert!(!state.is_speaking());
         assert_eq!(state.total_words(), 0);
@@ -661,33 +655,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_state_words_increment() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
-        let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
-            recording: Arc::new(AtomicBool::new(false)),
-            processing: Arc::new(AtomicBool::new(false)),
-            speaking: Arc::new(AtomicBool::new(false)),
-            audio_ready: Arc::new(AtomicBool::new(false)),
-            dynamic_stream: Arc::new(AtomicBool::new(false)),
-            monitoring: Arc::new(AtomicBool::new(false)),
-            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
-            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            word_count: Arc::new(AtomicU32::new(0)),
-            last_text: Arc::new(Mutex::new(String::new())),
-            active_target: Arc::new(Mutex::new("default".to_string())),
-            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
-            targets: Arc::new(Mutex::new(Vec::new())),
-            history: Arc::new(Mutex::new(Vec::new())),
-            audio_tx,
-            tts_handle: Arc::new(Mutex::new(None)),
-            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
-
+        let state = make_test_state();
         state.increment_words(15);
         assert_eq!(state.total_words(), 15);
         state.increment_words(10);
@@ -696,33 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_history_entries() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
-        let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
-            recording: Arc::new(AtomicBool::new(false)),
-            processing: Arc::new(AtomicBool::new(false)),
-            speaking: Arc::new(AtomicBool::new(false)),
-            audio_ready: Arc::new(AtomicBool::new(false)),
-            dynamic_stream: Arc::new(AtomicBool::new(false)),
-            monitoring: Arc::new(AtomicBool::new(false)),
-            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
-            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            word_count: Arc::new(AtomicU32::new(0)),
-            last_text: Arc::new(Mutex::new(String::new())),
-            active_target: Arc::new(Mutex::new("default".to_string())),
-            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
-            targets: Arc::new(Mutex::new(Vec::new())),
-            history: Arc::new(Mutex::new(Vec::new())),
-            audio_tx,
-            tts_handle: Arc::new(Mutex::new(None)),
-            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
-
+        let state = make_test_state();
         {
             let mut hist = state.history.lock().await;
             hist.push(HistoryEntry {
@@ -732,7 +674,6 @@ mod tests {
                 inference_ms: 120,
             });
         }
-
         let hist = state.history.lock().await;
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].text, "hello world");
