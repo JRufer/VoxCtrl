@@ -153,7 +153,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p upload
-          find src-tauri/target/release/bundle \
+          find target/release/bundle \
               \( -name "*.AppImage" -o -name "*.deb" \) \
               ! -name "*.AppImage.zsync" | \
           while read -r f; do
@@ -172,7 +172,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force upload | Out-Null
-          Get-ChildItem src-tauri\target\release\bundle -Recurse -Include "*.exe","*.msi" |
+          Get-ChildItem target\release\bundle -Recurse -Include "*.exe","*.msi" |
             Where-Object { $_.Name -notlike "*-stub*" } |
             ForEach-Object {
               $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
