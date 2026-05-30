@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+
+jobs:
+  # ── Rust compile check ────────────────────────────────────────────────────────
+  cargo-check:
+    name: cargo check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libasound2-dev \
+            libspeechd-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-${{ matrix.os }}
+
+      - name: cargo check (workspace, no features)
+        run: cargo check --workspace
+
+  # ── Unit tests ────────────────────────────────────────────────────────────────
+  cargo-test:
+    name: cargo test
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libasound2-dev \
+            libspeechd-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            build-essential
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-linux
+
+      # Run tests for crates that have unit tests and no heavy system deps
+      - name: cargo test
+        run: cargo test -p voxctr-config -p voxctr-routing
+
+  # ── Frontend type check ───────────────────────────────────────────────────────
+  frontend-check:
+    name: Frontend type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm install
+
+      # svelte-check + tsc
+      - run: npm run check
+        continue-on-error: true  # remove once svelte-check is added to package.json

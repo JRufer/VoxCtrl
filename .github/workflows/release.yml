@@ -1,0 +1,199 @@
+name: Release
+
+# Trigger: push a version tag (e.g. git tag v0.1.4 && git push --tags)
+# Can also be triggered manually from the Actions tab to re-run a failed build.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re-)build (e.g. v0.1.4)"
+        required: true
+        type: string
+
+permissions:
+  contents: write   # needed to create/update GitHub releases
+
+# ── Build matrix ──────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # let all variants finish even if one fails
+      matrix:
+        include:
+          # ── Linux CPU ──────────────────────────────────────────────────────
+          - name: linux-cpu
+            os: ubuntu-22.04
+            features: ""
+            artifact_label: linux-x86_64
+
+          # ── Linux CUDA ─────────────────────────────────────────────────────
+          - name: linux-cuda
+            os: ubuntu-22.04
+            features: "cuda"
+            artifact_label: linux-x86_64-cuda
+
+          # ── Windows CPU ────────────────────────────────────────────────────
+          - name: windows-cpu
+            os: windows-latest
+            features: ""
+            artifact_label: windows-x86_64
+
+          # ── Windows CUDA ───────────────────────────────────────────────────
+          - name: windows-cuda
+            os: windows-latest
+            features: "cuda"
+            artifact_label: windows-x86_64-cuda
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── System deps (Linux) ─────────────────────────────────────────────────
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libasound2-dev \
+            libspeechd-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            build-essential
+
+      # ── CUDA toolkit ────────────────────────────────────────────────────────
+      # Only installs CUDA headers + libraries needed for compilation.
+      # The resulting binary links CUDA dynamically; end-users only need
+      # an NVIDIA driver (not the full CUDA Toolkit) to run it.
+      - name: Install CUDA Toolkit (Linux)
+        if: runner.os == 'Linux' && matrix.features == 'cuda'
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: "12.4.0"
+          linux-local-args: '["--toolkit"]'
+
+      - name: Install CUDA Toolkit (Windows)
+        if: runner.os == 'Windows' && matrix.features == 'cuda'
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: "12.4.0"
+
+      # ── Rust ────────────────────────────────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.name }}
+
+      # ── Node / frontend ─────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm install
+
+      # ── Tauri build ─────────────────────────────────────────────────────────
+      - name: Build (CPU)
+        if: matrix.features == ''
+        run: npm run tauri build
+
+      - name: Build (CUDA)
+        if: matrix.features != ''
+        run: npm run tauri build -- --features ${{ matrix.features }}
+
+      # ── Collect artifacts (Linux) ────────────────────────────────────────────
+      - name: Collect Linux artifacts
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p upload
+          find src-tauri/target/release/bundle \
+            \( -name "*.AppImage" -o -name "*.deb" \) | \
+          while read -r f; do
+            base=$(basename "$f")
+            stem="${base%.*}"
+            ext="${base##*.}"
+            cp "$f" "upload/${stem}-${{ matrix.artifact_label }}.${ext}"
+          done
+          ls -lh upload/
+
+      # ── Collect artifacts (Windows) ──────────────────────────────────────────
+      - name: Collect Windows artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force upload | Out-Null
+          Get-ChildItem src-tauri\target\release\bundle -Recurse -Include "*.exe","*.msi" |
+            Where-Object { $_.Name -notlike "*-stub*" } |
+            ForEach-Object {
+              $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
+              Copy-Item $_.FullName $dest
+              Write-Host "Copied: $dest"
+            }
+
+      # ── Upload to Actions (passed to publish job) ────────────────────────────
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.name }}
+          path: upload/*
+          if-no-files-found: error
+          retention-days: 1
+
+# ── Publish release ───────────────────────────────────────────────────────────
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    # Run even if some build variants failed so partial releases still publish
+    if: always() && contains(needs.build.result, 'success')
+
+    steps:
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Download everything produced by the build matrix
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: ls -lh release-artifacts/
+
+      - name: Create / update draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: "VoxCtr ${{ steps.tag.outputs.name }}"
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-artifacts/*
+          body: |
+            ## Downloads
+
+            | Platform | Variant | File |
+            |---|---|---|
+            | Linux | CPU | `*-linux-x86_64.AppImage` |
+            | Linux | CUDA (NVIDIA GPU) | `*-linux-x86_64-cuda.AppImage` |
+            | Windows | CPU | `*-windows-x86_64-setup.exe` |
+            | Windows | CUDA (NVIDIA GPU) | `*-windows-x86_64-cuda-setup.exe` |
+
+            **CUDA builds** require an NVIDIA GPU and driver 520+. They do not
+            require the CUDA Toolkit — only the driver.
+
+            **CPU builds** run on any hardware.
