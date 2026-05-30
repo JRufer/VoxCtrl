@@ -13,6 +13,7 @@
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let cudaEnabled = $state(false);
 
   async function checkAllModelsDownloaded() {
     checking = true;
@@ -50,8 +51,14 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     checkAllModelsDownloaded();
+    cudaEnabled = await invoke<boolean>("cuda_enabled");
+    // If this is a CPU build but config still says "cuda", reset to "auto"
+    if (!cudaEnabled && cfg.engine.whisper_cpp.device === "cuda") {
+      cfg.engine.whisper_cpp.device = "auto";
+      markDirty();
+    }
   });
 </script>
 
@@ -110,7 +117,9 @@
       <span>Device</span>
       <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
         <option value="auto">Auto</option>
+        {#if cudaEnabled}
         <option value="cuda">CUDA (NVIDIA)</option>
+        {/if}
         <option value="vulkan">Vulkan (AMD/Intel)</option>
         <option value="cpu">CPU</option>
       </select>

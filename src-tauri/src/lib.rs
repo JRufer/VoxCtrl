@@ -537,6 +537,7 @@ pub fn run() {
             check_model_downloaded,
             download_model,
             test_ollama,
+            cuda_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");
