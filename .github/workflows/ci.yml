@@ -42,15 +42,23 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
-      # Initialize MSVC developer environment so cmake can find cl.exe
+      # Initialize MSVC developer environment so cmake (and Ninja) can find cl.exe.
+      # Also adds Ninja to PATH, which is required when CMAKE_GENERATOR=Ninja is set.
       - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # Set LIBCLANG_PATH so bindgen (used by whisper-rs-sys) can find libclang on Windows
-      - name: Set LIBCLANG_PATH (Windows)
+      # Force Ninja generator for whisper-rs-sys cmake build.
+      # The cmake crate 0.1.58 auto-detects VS version (including VS18/2026 on Windows 2025
+      # runners) and passes a "Visual Studio 18 2026" generator string that older cmake
+      # binaries don't recognise. Ninja bypasses that version-detection path entirely and
+      # compiles faster in CI.
+      # Also set LIBCLANG_PATH so bindgen (whisper-rs-sys FFI) can find libclang.dll.
+      - name: Set Windows cmake/bindgen env vars
         if: runner.os == 'Windows'
-        run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+        run: |
+          echo "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: cargo check (workspace, no features)
         run: cargo check --workspace
