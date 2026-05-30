@@ -148,7 +148,7 @@ impl TtsEngineWorker {
             anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
         })?;
 
-        // piper reads from stdin, produces WAV on stdout; pipe to aplay/SoX
+        // piper reads from stdin, produces raw PCM on stdout; played via rodio
         let mut piper = std::process::Command::new(&binary)
             .arg("--model")
             .arg(&voice_path)
