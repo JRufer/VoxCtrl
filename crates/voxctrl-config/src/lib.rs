@@ -269,6 +269,7 @@ pub struct TtsConfig {
     /// Voice name, e.g. "en-us-lessac-medium"
     pub voice: String,
     /// Directory containing Piper voice files. Empty = platform default.
+    #[serde(default)]
     pub voice_dir: String,
     /// Key(s) that stop TTS playback, e.g. ["KEY_ESCAPE"]
     pub stop_key: Vec<String>,

@@ -473,7 +473,13 @@ mod tests {
     #[test]
     fn test_is_model_downloaded_tilde_path() {
         use std::io::Write;
-        let home = dirs::home_dir().expect("home dir");
+        
+        let old_home = std::env::var_os("HOME");
+        let temp_home = tempfile::tempdir().expect("create temp home");
+        let home = temp_home.path().to_path_buf();
+        
+        std::env::set_var("HOME", &home);
+
         let dir = tempfile::tempdir_in(&home).expect("tempdir in home");
         let model_path = dir.path().join("ggml-tiny-q5_1.bin");
         std::fs::File::create(&model_path)
@@ -485,7 +491,15 @@ mod tests {
         let rel = dir.path().strip_prefix(&home).unwrap();
         let tilde_path = format!("~/{}", rel.display());
 
-        assert!(is_model_downloaded("tiny", &tilde_path));
+        let result = is_model_downloaded("tiny", &tilde_path);
+
+        if let Some(old) = old_home {
+            std::env::set_var("HOME", old);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        assert!(result);
     }
 }
 
