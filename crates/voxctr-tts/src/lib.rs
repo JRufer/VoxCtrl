@@ -1,6 +1,4 @@
-#[cfg(target_os = "windows")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -216,40 +214,35 @@ impl TtsEngineWorker {
 }
 
 fn play_raw_audio(raw: &[u8], sample_rate: u32) -> Result<()> {
+    // Write a temp WAV so all players get a self-describing file instead of raw PCM
+    let tmp = tempfile::NamedTempFile::with_suffix(".wav")?;
+    write_wav(tmp.path(), raw, sample_rate)?;
+    let wav_path = tmp.path().to_owned();
+
     #[cfg(target_os = "linux")]
     {
-        let mut child = std::process::Command::new("aplay")
-            .args([
-                "-r",
-                &sample_rate.to_string(),
-                "-f",
-                "S16_LE",
-                "-c",
-                "1",
-                "-",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("spawn aplay")?;
-        use std::io::Write;
-        child.stdin.as_mut().unwrap().write_all(raw)?;
-        child.wait()?;
+        // Try players in preference order: PulseAudio/PipeWire → native PipeWire → ALSA
+        for player in &["paplay", "pw-play", "aplay"] {
+            let result = std::process::Command::new(player)
+                .arg(&wav_path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            match result {
+                Ok(s) if s.success() => return Ok(()),
+                Ok(_) => warn!("{player} exited with failure, trying next player"),
+                Err(_) => {} // not installed, skip
+            }
+        }
+        anyhow::bail!("no audio player succeeded (tried paplay, pw-play, aplay)");
     }
     #[cfg(target_os = "windows")]
     {
-        // Write to a temp WAV file and play with PowerShell
-        let tmp = tempfile::NamedTempFile::with_suffix(".wav")?;
-        write_wav(tmp.path(), raw, sample_rate)?;
         std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
-                &format!(
-                    "(New-Object Media.SoundPlayer '{}').PlaySync()",
-                    tmp.path().display()
-                ),
+                &format!("(New-Object Media.SoundPlayer '{}').PlaySync()", wav_path.display()),
             ])
             .status()
             .context("PowerShell SoundPlayer")?;
@@ -257,7 +250,6 @@ fn play_raw_audio(raw: &[u8], sample_rate: u32) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
 fn write_wav(path: &Path, raw: &[u8], sample_rate: u32) -> Result<()> {
     use std::io::Write;
     let data_len = raw.len() as u32;
@@ -266,12 +258,12 @@ fn write_wav(path: &Path, raw: &[u8], sample_rate: u32) -> Result<()> {
     f.write_all(&(36 + data_len).to_le_bytes())?;
     f.write_all(b"WAVEfmt ")?;
     f.write_all(&16u32.to_le_bytes())?;
-    f.write_all(&1u16.to_le_bytes())?;
-    f.write_all(&1u16.to_le_bytes())?;
+    f.write_all(&1u16.to_le_bytes())?;  // PCM format
+    f.write_all(&1u16.to_le_bytes())?;  // mono
     f.write_all(&sample_rate.to_le_bytes())?;
-    f.write_all(&(sample_rate * 2).to_le_bytes())?;
-    f.write_all(&2u16.to_le_bytes())?;
-    f.write_all(&16u16.to_le_bytes())?;
+    f.write_all(&(sample_rate * 2).to_le_bytes())?;  // byte rate
+    f.write_all(&2u16.to_le_bytes())?;  // block align
+    f.write_all(&16u16.to_le_bytes())?; // bits per sample
     f.write_all(b"data")?;
     f.write_all(&data_len.to_le_bytes())?;
     f.write_all(raw)?;
