@@ -13,13 +13,17 @@
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let modelDirError = $state<string | null>(null);
 
   async function checkAllModelsDownloaded() {
     checking = true;
     const newMap: Record<string, boolean> = {};
     for (const m of MODEL_SIZES) {
       try {
-        newMap[m] = await invoke<boolean>("check_model_downloaded", { modelSize: m });
+        newMap[m] = await invoke<boolean>("check_model_downloaded", {
+          modelSize: m,
+          modelDir: cfg.engine.whisper_cpp.model_dir,
+        });
       } catch (e) {
         console.error("Failed to check download status for model " + m, e);
         newMap[m] = false;
@@ -33,7 +37,10 @@
     if (downloading) return;
     downloading = true;
     try {
-      await invoke("download_model", { modelSize: model });
+      await invoke("download_model", {
+        modelSize: model,
+        modelDir: cfg.engine.whisper_cpp.model_dir,
+      });
       downloadedMap[model] = true;
     } catch (e) {
       alert(`Failed to download model: ${e}`);
@@ -47,6 +54,29 @@
     const selected = cfg.engine.whisper_cpp.model_size;
     if (!downloadedMap[selected]) {
       await triggerDownload(selected);
+    }
+  }
+
+  async function validateModelDir() {
+    const path = cfg.engine.whisper_cpp.model_dir;
+    if (!path) {
+      modelDirError = null;
+      return;
+    }
+    const exists = await invoke<boolean>("check_directory_exists", { path });
+    modelDirError = exists ? null : "This folder does not exist. Please create it first or leave blank for the default location.";
+    if (!modelDirError) {
+      await checkAllModelsDownloaded();
+    }
+  }
+
+  function onModelDirChange() {
+    markDirty();
+  }
+
+  function onModelDirKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      (e.currentTarget as HTMLInputElement).blur();
     }
   }
 
@@ -115,10 +145,20 @@
         <option value="cpu">CPU</option>
       </select>
     </label>
-    <label class="field">
+    <div class="field">
       <span>Model directory (leave blank for default)</span>
-      <input type="text" bind:value={cfg.engine.whisper_cpp.model_dir} onchange={markDirty} />
-    </label>
+      <input
+        type="text"
+        bind:value={cfg.engine.whisper_cpp.model_dir}
+        onchange={onModelDirChange}
+        onblur={validateModelDir}
+        onkeydown={onModelDirKeydown}
+        class={modelDirError ? "border-red-500 focus:ring-red-500" : ""}
+      />
+      {#if modelDirError}
+        <p class="mt-1 text-sm text-red-500">{modelDirError}</p>
+      {/if}
+    </div>
     <label class="field">
       <span>Threads (0 = auto)</span>
       <input type="number" min="0" max="64" bind:value={cfg.engine.whisper_cpp.threads} onchange={markDirty} />

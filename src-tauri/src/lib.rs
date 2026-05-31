@@ -542,6 +542,7 @@ pub fn run() {
             download_voice,
             check_model_downloaded,
             download_model,
+            check_directory_exists,
             test_ollama,
         ])
         .run(tauri::generate_context!())
