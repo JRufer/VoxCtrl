@@ -71,7 +71,7 @@ impl WhisperCppBackend {
         let model_dir = if self.cfg.model_dir.is_empty() {
             Self::default_model_dir()
         } else {
-            PathBuf::from(&self.cfg.model_dir)
+            expand_tilde(&self.cfg.model_dir)
         };
 
         let candidates = GGUF_MAP
@@ -206,6 +206,18 @@ fn num_cpus() -> u32 {
         .unwrap_or(4)
 }
 
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
 pub fn is_model_downloaded(size: &str, model_dir: &str) -> bool {
     let candidates = match GGUF_MAP.iter().find(|(name, _)| *name == size) {
         Some((_, files)) => *files,
@@ -214,7 +226,7 @@ pub fn is_model_downloaded(size: &str, model_dir: &str) -> bool {
     let dir = if model_dir.is_empty() {
         WhisperCppBackend::default_model_dir()
     } else {
-        PathBuf::from(model_dir)
+        expand_tilde(model_dir)
     };
     candidates.iter().any(|filename| dir.join(filename).exists())
 }
@@ -229,7 +241,7 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     let model_dir = if model_dir.is_empty() {
         WhisperCppBackend::default_model_dir()
     } else {
-        PathBuf::from(model_dir)
+        expand_tilde(model_dir)
     };
     tokio::fs::create_dir_all(&model_dir).await?;
 
@@ -420,6 +432,51 @@ mod tests {
                 assert!(p.starts_with(&default_dir));
             }
         }
+    }
+
+    // ── tilde expansion tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_expand_tilde_home() {
+        let home = dirs::home_dir().expect("home dir must be available");
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn test_expand_tilde_subdir() {
+        let home = dirs::home_dir().expect("home dir must be available");
+        let expanded = expand_tilde("~/.models");
+        assert_eq!(expanded, home.join(".models"));
+    }
+
+    #[test]
+    fn test_expand_tilde_absolute_unchanged() {
+        let p = expand_tilde("/tmp/models");
+        assert_eq!(p, std::path::PathBuf::from("/tmp/models"));
+    }
+
+    #[test]
+    fn test_expand_tilde_relative_unchanged() {
+        let p = expand_tilde("relative/path");
+        assert_eq!(p, std::path::PathBuf::from("relative/path"));
+    }
+
+    #[test]
+    fn test_is_model_downloaded_tilde_path() {
+        use std::io::Write;
+        let home = dirs::home_dir().expect("home dir");
+        let dir = tempfile::tempdir_in(&home).expect("tempdir in home");
+        let model_path = dir.path().join("ggml-tiny-q5_1.bin");
+        std::fs::File::create(&model_path)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap();
+
+        // Construct a ~/... path pointing at the temp dir
+        let rel = dir.path().strip_prefix(&home).unwrap();
+        let tilde_path = format!("~/{}", rel.display());
+
+        assert!(is_model_downloaded("tiny", &tilde_path));
     }
 }
 

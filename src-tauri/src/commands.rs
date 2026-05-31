@@ -232,7 +232,19 @@ pub async fn check_directory_exists(path: String) -> Result<bool, String> {
     if path.is_empty() {
         return Ok(true);
     }
-    Ok(std::path::Path::new(&path).is_dir())
+    Ok(expand_tilde(&path).is_dir())
+}
+
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
 }
 
 // ── Overlay window ────────────────────────────────────────────────────────────
