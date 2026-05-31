@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  let { cfg = $bindable() }: { cfg: AppConfig } = $props();
+  let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
   const MODEL_SIZES = ["tiny","tiny.en","base","base.en","small","small.en",
@@ -153,10 +153,10 @@
         onchange={onModelDirChange}
         onblur={validateModelDir}
         onkeydown={onModelDirKeydown}
-        class={modelDirError ? "border-red-500 focus:ring-red-500" : ""}
+        class:field-input-error={!!modelDirError}
       />
       {#if modelDirError}
-        <p class="mt-1 text-sm text-red-500">{modelDirError}</p>
+        <p class="field-error-msg">{modelDirError}</p>
       {/if}
     </div>
     <label class="field">
@@ -229,5 +229,18 @@
   }
   .btn-download:hover {
     background: var(--accent2);
+  }
+  .field-input-error {
+    border-color: #ef4444 !important;
+  }
+  .field-input-error:focus {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  .field-error-msg {
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #ef4444;
   }
 </style>
