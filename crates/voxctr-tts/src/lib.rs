@@ -33,8 +33,8 @@ pub static PIPER_VOICES: &[VoiceInfo] = &[
     VoiceInfo { name: "en-gb-alan-low",        quality: "low",     sample_rate: 16000, filename: "en_GB-alan-low.onnx" },
 ];
 
-pub fn is_voice_downloaded(voice_name: &str) -> bool {
-    get_voice_path(voice_name).is_some()
+pub fn is_voice_downloaded(voice_name: &str, voice_dir: &str) -> bool {
+    get_voice_path(voice_name, voice_dir).is_some()
 }
 
 pub fn piper_voices_dir() -> PathBuf {
@@ -42,6 +42,26 @@ pub fn piper_voices_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("voxctl")
         .join("piper-voices")
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn resolve_voices_dir(voice_dir: &str) -> PathBuf {
+    if voice_dir.is_empty() {
+        piper_voices_dir()
+    } else {
+        expand_tilde(voice_dir)
+    }
 }
 
 pub fn piper_binary() -> Option<PathBuf> {
@@ -155,7 +175,7 @@ impl TtsEngineWorker {
             .as_deref()
             .unwrap_or(&self.config.voice);
 
-        let voice_path = get_voice_path(voice_name).ok_or_else(|| {
+        let voice_path = get_voice_path(voice_name, &self.config.voice_dir).ok_or_else(|| {
             anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
         })?;
 
@@ -278,11 +298,11 @@ fn sample_rate_for_voice(name: &str) -> u32 {
 const PIPER_RELEASE_BASE: &str =
     "https://github.com/rhasspy/piper/releases/download/v0.0.2/";
 
-pub fn get_voice_path(voice_name: &str) -> Option<PathBuf> {
+pub fn get_voice_path(voice_name: &str, voice_dir: &str) -> Option<PathBuf> {
     let filename = voice_name_to_filename(voice_name)
         .unwrap_or_else(|| format!("{voice_name}.onnx"));
 
-    let voices_dir = piper_voices_dir();
+    let voices_dir = resolve_voices_dir(voice_dir);
 
     // Check exact case
     let path_onnx = voices_dir.join(&filename);
@@ -309,11 +329,11 @@ pub fn get_voice_path(voice_name: &str) -> Option<PathBuf> {
     None
 }
 
-pub async fn download_voice(voice_name: &str) -> Result<()> {
-    let voices_dir = piper_voices_dir();
+pub async fn download_voice(voice_name: &str, voice_dir: &str) -> Result<()> {
+    let voices_dir = resolve_voices_dir(voice_dir);
     tokio::fs::create_dir_all(&voices_dir).await?;
 
-    if get_voice_path(voice_name).is_some() {
+    if get_voice_path(voice_name, voice_dir).is_some() {
         info!("Voice {} is already downloaded.", voice_name);
         return Ok(());
     }

@@ -272,6 +272,8 @@ pub struct TtsConfig {
     pub engine: TtsEngine,
     /// Voice name, e.g. "en-us-lessac-medium"
     pub voice: String,
+    /// Directory containing Piper voice files. Empty = platform default.
+    pub voice_dir: String,
     /// Key(s) that stop TTS playback, e.g. ["KEY_ESCAPE"]
     pub stop_key: Vec<String>,
     pub response_overlay: bool,
@@ -283,6 +285,7 @@ impl Default for TtsConfig {
             enabled: false,
             engine: TtsEngine::Piper,
             voice: "en-us-lessac-medium".into(),
+            voice_dir: String::new(),
             stop_key: vec!["KEY_ESCAPE".into()],
             response_overlay: true,
         }

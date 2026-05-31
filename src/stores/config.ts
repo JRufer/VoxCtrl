@@ -72,6 +72,7 @@ export interface TtsConfig {
   enabled: boolean;
   engine: "piper" | "espeak";
   voice: string;
+  voice_dir: string;
   stop_key: string[];
   response_overlay: boolean;
 }
@@ -135,6 +136,7 @@ const defaultConfig: AppConfig = {
     enabled: false,
     engine: "piper",
     voice: "en-us-lessac-medium",
+    voice_dir: "",
     stop_key: ["KEY_ESCAPE"],
     response_overlay: true,
   },

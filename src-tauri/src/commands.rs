@@ -204,13 +204,13 @@ pub async fn speak_text(
 }
 
 #[tauri::command]
-pub async fn check_voice_downloaded(voice_name: String) -> Result<bool, String> {
-    Ok(voxctr_tts::is_voice_downloaded(&voice_name))
+pub async fn check_voice_downloaded(voice_name: String, voice_dir: String) -> Result<bool, String> {
+    Ok(voxctr_tts::is_voice_downloaded(&voice_name, &voice_dir))
 }
 
 #[tauri::command]
-pub async fn download_voice(voice_name: String) -> Result<(), String> {
-    voxctr_tts::download_voice(&voice_name)
+pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(), String> {
+    voxctr_tts::download_voice(&voice_name, &voice_dir)
         .await
         .map_err(|e| e.to_string())
 }
