@@ -370,6 +370,183 @@ pub async fn download_voice(voice_name: &str, voice_dir: &str) -> Result<()> {
     Ok(())
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn create_fake_voice(dir: &std::path::Path, filename: &str) {
+        fs::write(dir.join(filename), b"fake onnx model").unwrap();
+        fs::write(dir.join(format!("{filename}.json")), b"{}").unwrap();
+    }
+
+    // ── resolve_voices_dir ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_voices_dir_empty_uses_default() {
+        let result = resolve_voices_dir("");
+        assert_eq!(result, piper_voices_dir());
+    }
+
+    #[test]
+    fn test_resolve_voices_dir_absolute_path() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let result = resolve_voices_dir(path);
+        assert_eq!(result, dir.path());
+    }
+
+    #[test]
+    fn test_resolve_voices_dir_tilde_expands() {
+        let result = resolve_voices_dir("~/my-voices");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home.join("my-voices"));
+    }
+
+    #[test]
+    fn test_resolve_voices_dir_tilde_alone_expands() {
+        let result = resolve_voices_dir("~");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home);
+    }
+
+    // ── expand_tilde ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_expand_tilde_home() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn test_expand_tilde_subdir() {
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(expand_tilde("~/.piper-voices"), home.join(".piper-voices"));
+    }
+
+    #[test]
+    fn test_expand_tilde_absolute_unchanged() {
+        let result = expand_tilde("/usr/share/voices");
+        assert_eq!(result, std::path::PathBuf::from("/usr/share/voices"));
+    }
+
+    #[test]
+    fn test_expand_tilde_relative_unchanged() {
+        let result = expand_tilde("relative/path");
+        assert_eq!(result, std::path::PathBuf::from("relative/path"));
+    }
+
+    // ── is_voice_downloaded ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_voice_downloaded_default_dir_not_present() {
+        // Uses the real default dir; the voice is unlikely to be present in CI.
+        // The call must not panic; the return value is environment-dependent.
+        let _ = is_voice_downloaded("en-us-lessac-medium", "");
+    }
+
+    #[test]
+    fn test_is_voice_downloaded_returns_true_when_files_exist() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        // en-us-amy-low maps to en_US-amy-low.onnx
+        create_fake_voice(dir.path(), "en_US-amy-low.onnx");
+        assert!(is_voice_downloaded("en-us-amy-low", path));
+    }
+
+    #[test]
+    fn test_is_voice_downloaded_returns_false_when_files_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        assert!(!is_voice_downloaded("en-us-amy-low", path));
+    }
+
+    #[test]
+    fn test_is_voice_downloaded_returns_false_for_nonexistent_dir() {
+        assert!(!is_voice_downloaded("en-us-amy-low", "/nonexistent/path/xyz"));
+    }
+
+    #[test]
+    fn test_is_voice_downloaded_tilde_path() {
+        // Tilde-prefixed path must not panic; result depends on whether the
+        // home dir contains voice files (unlikely in CI so we just check no panic).
+        let _ = is_voice_downloaded("en-us-lessac-medium", "~/.local/share/voxctl/piper-voices");
+    }
+
+    #[test]
+    fn test_is_voice_downloaded_only_onnx_not_sufficient() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        // Write only the .onnx, omit the .json — should still return false
+        fs::write(dir.path().join("en_US-amy-low.onnx"), b"fake").unwrap();
+        assert!(!is_voice_downloaded("en-us-amy-low", path));
+    }
+
+    // ── get_voice_path ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_voice_path_returns_none_when_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        assert!(get_voice_path("en-us-ryan-high", path).is_none());
+    }
+
+    #[test]
+    fn test_get_voice_path_returns_some_when_present() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        create_fake_voice(dir.path(), "en_US-ryan-high.onnx");
+        let result = get_voice_path("en-us-ryan-high", path);
+        assert!(result.is_some());
+        assert!(result.unwrap().exists());
+    }
+
+    #[test]
+    fn test_get_voice_path_accepts_custom_dir() {
+        let dir = tempdir().unwrap();
+        let other_dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        let other_path = other_dir.path().to_str().unwrap();
+
+        // Put voice in `other_dir`, not in `dir`
+        create_fake_voice(other_dir.path(), "en_US-danny-low.onnx");
+
+        assert!(get_voice_path("en-us-danny-low", path).is_none());
+        assert!(get_voice_path("en-us-danny-low", other_path).is_some());
+    }
+
+    #[test]
+    fn test_get_voice_path_lowercase_fallback() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        // Write file with fully lowercase name
+        let lc_name = "en_us-lessac-medium.onnx";
+        fs::write(dir.path().join(lc_name), b"fake").unwrap();
+        fs::write(dir.path().join(format!("{lc_name}.json")), b"{}").unwrap();
+        // Should be found via the lowercase fallback branch
+        let result = get_voice_path("en-us-lessac-medium", path);
+        assert!(result.is_some());
+    }
+
+    // ── voice_name_to_filename ────────────────────────────────────────────────
+
+    #[test]
+    fn test_voice_name_to_filename_known() {
+        assert_eq!(
+            voice_name_to_filename("en-us-lessac-medium"),
+            Some("en_US-lessac-medium.onnx".to_string())
+        );
+    }
+
+    #[test]
+    fn test_voice_name_to_filename_unknown_returns_none() {
+        assert_eq!(voice_name_to_filename("xx-unknown-voice"), None);
+    }
+}
+
 // ── FIFO response listener ────────────────────────────────────────────────────
 
 /// Watches a FIFO for newline-delimited text and speaks each line via TTS.

@@ -68,6 +68,7 @@ Full schema with defaults:
     "enabled": false,
     "engine": "piper",
     "voice": "en-us-lessac-medium",
+    "voice_dir": "",
     "stop_key": ["KEY_ESCAPE"],
     "response_overlay": true
   },
@@ -101,7 +102,7 @@ The engine config is nested into two backend sub-objects.
 | `model_size` | string | `"large-v3"` | Whisper model to load (see valid values below) |
 | `device` | string | `"auto"` | Compute device: `auto`/`cpu`/`cuda`/`vulkan` |
 | `threads` | integer | `0` | CPU thread count; 0 = half of logical cores |
-| `model_dir` | string | `""` | Custom model directory; empty = platform default |
+| `model_dir` | string | `""` | Custom model directory; empty = `~/.local/share/voxctl/models/`. Supports `~` expansion. The directory must already exist. |
 
 Valid `model_size` values: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v2`, `large-v3`, `large-v3-turbo`
 
@@ -179,6 +180,7 @@ Example with snippets:
 | `enabled` | bool | `false` | Enable TTS subsystem |
 | `engine` | string | `"piper"` | Synthesis engine: `"piper"` or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
+| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
 
