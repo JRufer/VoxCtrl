@@ -21,6 +21,7 @@ tauri-plugin-shell     = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-fs        = "2"
 tauri-plugin-dialog    = "2"
+dirs                   = { workspace = true }
 
 # Internal crates
 voxctr-config    = { workspace = true }
@@ -52,3 +53,4 @@ zbus = { workspace = true }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+cuda = ["voxctr-inference/cuda"]

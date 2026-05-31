@@ -57,6 +57,7 @@ fn test_mcp_config_roundtrip() {
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_mcp_delivery_handshake() {
     use tokio::net::UnixListener;

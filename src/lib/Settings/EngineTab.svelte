@@ -13,6 +13,7 @@
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let cudaEnabled = $state(false);
 
   async function checkAllModelsDownloaded() {
     checking = true;
@@ -50,13 +51,31 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     checkAllModelsDownloaded();
+    cudaEnabled = await invoke<boolean>("cuda_enabled");
+    // If this is a CPU build but config still says "cuda", reset to "auto"
+    if (!cudaEnabled && cfg.engine.whisper_cpp.device === "cuda") {
+      cfg.engine.whisper_cpp.device = "auto";
+      markDirty();
+    }
   });
 </script>
 
 <section>
   <h2>Inference Engine</h2>
+
+  {#if cfg.engine.backend !== "moonshine" && !checking && !downloadedMap[cfg.engine.whisper_cpp.model_size]}
+    <div class="flex items-center gap-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 mb-5 animate-in fade-in slide-in-from-top-1 duration-300">
+      <span class="text-2xl leading-none text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.3)]">⚠️</span>
+      <div class="flex-1">
+        <strong class="block text-yellow-200 font-semibold text-sm mb-1">Voice Model Not Downloaded</strong>
+        <p class="m-0 text-slate-200 text-xs leading-relaxed">
+          The configuration specifies a voice model (<strong>{cfg.engine.whisper_cpp.model_size}</strong>) that is not currently downloaded. Please select the model size to use and download it below, or choose another model.
+        </p>
+      </div>
+    </div>
+  {/if}
 
   <div class="field-group">
     <h3>Backend</h3>
@@ -110,7 +129,9 @@
       <span>Device</span>
       <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
         <option value="auto">Auto</option>
+        {#if cudaEnabled}
         <option value="cuda">CUDA (NVIDIA)</option>
+        {/if}
         <option value="vulkan">Vulkan (AMD/Intel)</option>
         <option value="cpu">CPU</option>
       </select>

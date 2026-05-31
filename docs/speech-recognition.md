@@ -35,11 +35,17 @@ Change the active model via `engine.whisper_cpp.model_size` in config. Changing 
 | Value | Description |
 |---|---|
 | `auto` | Auto-detect: tries CUDA (nvidia-smi / /dev/nvidia0), then Vulkan (vulkaninfo / ICD dirs), then CPU |
-| `cuda` | NVIDIA GPU via CUDA |
+| `cuda` | NVIDIA GPU via CUDA *(requires CUDA build — see below)* |
 | `vulkan` | Any GPU via Vulkan (AMD/Intel/NVIDIA) |
 | `cpu` | Force CPU |
 
 On startup, VoxCtr probes for CUDA (via `nvidia-smi`, `/proc/driver/nvidia/version`, `/dev/nvidia0`) and Vulkan (via `vulkaninfo`, `/usr/share/vulkan/icd.d`) to select the best backend.
+
+> **CUDA is opt-in at compile time.** The default build runs on any machine without a GPU. To enable NVIDIA GPU acceleration, build with the `cuda` cargo feature:
+> ```bash
+> npm run tauri build -- --features cuda
+> ```
+> The `cuda` option only appears in the Settings → Engine device selector when the binary was compiled with this flag. If a previously saved config specifies `"cuda"` but the running binary is a CPU-only build, the app automatically resets the device to `"auto"` on launch.
 
 ---
 
@@ -72,6 +78,7 @@ The worker runs:
    → Merged into a single prompt string for Whisper
 
 4. whisper-rs transcription
+   └─ Reuses pre-allocated WhisperState (KV cache + attention buffers loaded once at startup)
    └─ Returns raw_text with inference_ms and language
 
 5. Post-processing pipeline (in order):

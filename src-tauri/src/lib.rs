@@ -10,7 +10,6 @@ use tauri::{
     Emitter, Manager,
 };
 use tokio::sync::Mutex;
-use tracing::error;
 use voxctr_config::Config;
 use voxctr_routing::{load_bindings, load_targets, config_dir, OutputTargetRouter};
 use voxctr_mcp::McpCallbacks;
@@ -22,12 +21,13 @@ use crate::{
 
 mod commands;
 mod state;
+mod default_overlays;
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
     let w = window.clone();
     tauri::async_runtime::spawn(async move {
-        let mut pos = None;
+        let mut pos: Option<tauri::PhysicalPosition<i32>> = None;
         #[cfg(target_os = "linux")]
         {
             // If the window is already open/visible, we must hide it first and wait a short period
@@ -251,19 +251,13 @@ pub fn run() {
                     *state_lt.last_text.lock().await = text_lt;
                 });
 
-                let show_notif = {
+                let (show_notif, history_enabled) = {
                     let cfg_lock = state.config.blocking_lock();
-                    cfg_lock.data.ui.show_notification
+                    (cfg_lock.data.ui.show_notification, cfg_lock.data.ui.history_enabled)
                 };
                 if show_notif {
                     voxctr_inject::show_notification("VoxCtr", &output.text);
                 }
-
-                // Push to history only when the feature is enabled
-                let history_enabled = {
-                    let cfg_lock = state.config.blocking_lock();
-                    cfg_lock.data.ui.history_enabled
-                };
                 if history_enabled {
                     let state2 = state.clone();
                     let entry = HistoryEntry {
@@ -313,7 +307,7 @@ pub fn run() {
         });
         tokio::spawn(async move {
             if let Err(e) = voxctr_dbus::start_service(dbus_state, start_tx, stop_tx).await {
-                error!("DBus service error: {e}");
+                tracing::error!("DBus service error: {e}");
             }
         });
     }
@@ -352,6 +346,46 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // ── Startup udev Diagnostics ──────────────────────────────────────
+            #[cfg(target_os = "linux")]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut check_failed = false;
+
+                    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+                        match override_val.as_str() {
+                            "missing" | "relogin" => check_failed = true,
+                            _ => {}
+                        }
+                    } else {
+                        // Check if /etc/udev/rules.d/99-voxctr.rules exists
+                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+
+                        // Check if the current user session has the "input" group by running `id -Gn`
+                        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                            Ok(output) => {
+                                let groups_str = String::from_utf8_lossy(&output.stdout);
+                                groups_str.split_whitespace().any(|g| g == "input")
+                            }
+                            Err(_) => false,
+                        };
+
+                        if !rule_exists || !in_group {
+                            check_failed = true;
+                        }
+                    }
+
+                    if check_failed {
+                        if let Some(w) = app_handle.get_webview_window("udev-warning") {
+                            let _ = w.show();
+                            let _ = w.set_always_on_top(true);
+                            let _ = w.set_focus();
+                        }
+                    }
+                });
+            }
+
             // ── Forward audio levels to settings window ───────────────────────
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -424,8 +458,16 @@ pub fn run() {
             // Note: Windows ("overlay", "settings", "history") are automatically created by Tauri
             // via the declarations in `tauri.conf.json`. Manual creation here is omitted to prevent duplicates.
 
-            // Automatically show the settings window on startup if configured to do so
-            if cfg_data.ui.auto_show_settings {
+            // Force show the settings window on startup if the voice model is missing
+            let mut show_settings = cfg_data.ui.auto_show_settings;
+            if cfg_data.engine.backend != voxctr_config::BackendChoice::Moonshine {
+                let model_size = &cfg_data.engine.whisper_cpp.model_size;
+                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size) {
+                    show_settings = true;
+                }
+            }
+
+            if show_settings {
                 if let Some(window) = app.get_webview_window("settings") {
                     show_and_focus_window(&window);
                 }
@@ -459,13 +501,18 @@ pub fn run() {
                     }
 
                     // Toggle dynamic overlay window visibility based on show_overlay configuration
-                    let should_show_overlay = (is_recording || is_processing) && {
+                    let (should_show_overlay, overlay_position, overlay_monitor) = {
                         let cfg = state_for_ticker.config.lock().await;
-                        cfg.data.ui.show_overlay
+                        (
+                            (is_recording || is_processing) && cfg.data.ui.show_overlay,
+                            cfg.data.ui.overlay_position.clone(),
+                            cfg.data.ui.overlay_monitor.clone(),
+                        )
                     };
 
                     if let Some(window) = handle.get_webview_window("overlay") {
                         if should_show_overlay {
+                            position_overlay_window(&window, &overlay_position, &overlay_monitor);
                             let _ = window.show();
                             let _ = window.set_always_on_top(true);
                         } else {
@@ -521,6 +568,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_available_monitors,
             start_recording,
             stop_recording,
             toggle_recording,
@@ -535,6 +583,7 @@ pub fn run() {
             speak_text,
             show_overlay,
             hide_overlay,
+            get_custom_overlays,
             list_audio_devices,
             start_monitoring_audio,
             stop_monitoring_audio,
@@ -543,6 +592,8 @@ pub fn run() {
             check_model_downloaded,
             download_model,
             test_ollama,
+            cuda_enabled,
+            check_udev_status,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");
@@ -614,9 +665,97 @@ impl McpCallbacks for AppState {
     }
 }
 
+pub fn calculate_overlay_y(
+    monitor_y: i32,
+    monitor_height: i32,
+    window_height: i32,
+    scale_factor: f64,
+    position_str: &str,
+) -> i32 {
+    match position_str {
+        "top" => monitor_y + (60.0 * scale_factor) as i32,
+        "bottom" => monitor_y + monitor_height - window_height - (60.0 * scale_factor) as i32,
+        _ => monitor_y + (monitor_height - window_height) / 2, // "center" is default
+    }
+}
+
+pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str, monitor_pref: &str) {
+    let target_monitor = match monitor_pref {
+        "primary" => window.primary_monitor().ok().flatten(),
+        _ => {
+            if let Ok(monitors) = window.available_monitors() {
+                monitors.into_iter().find(|m| m.name().map(|s| s.as_ref()) == Some(monitor_pref))
+            } else {
+                None
+            }
+        }
+    };
+
+    let monitor = target_monitor
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten());
+
+    if let Some(monitor) = monitor {
+        let monitor_size = monitor.size();
+        let monitor_pos = monitor.position();
+        let scale_factor = window.scale_factor().unwrap_or(1.0);
+        
+        if let Ok(window_size) = window.outer_size() {
+            let win_w = window_size.width as i32;
+            let win_h = window_size.height as i32;
+            let mon_w = monitor_size.width as i32;
+            let mon_h = monitor_size.height as i32;
+            let mon_x = monitor_pos.x;
+            let mon_y = monitor_pos.y;
+            
+            let x = mon_x + (mon_w - win_w) / 2;
+            let y = calculate_overlay_y(mon_y, mon_h, win_h, scale_factor, position_str);
+            
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_calculate_overlay_y() {
+        let mon_y = 0;
+        let mon_h = 1080;
+        let win_h = 160;
+
+        let y_top = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "top");
+        assert_eq!(y_top, 60);
+
+        let y_center = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "center");
+        assert_eq!(y_center, (1080 - 160) / 2);
+
+        let y_bottom = calculate_overlay_y(mon_y, mon_h, win_h, 1.0, "bottom");
+        assert_eq!(y_bottom, 1080 - 160 - 60);
+
+        // High DPI scaling factor 2.0
+        let y_top_hidpi = calculate_overlay_y(mon_y, mon_h, win_h, 2.0, "top");
+        assert_eq!(y_top_hidpi, 120);
+
+        // Fractional scaling factor 1.5
+        let y_bottom_fractional = calculate_overlay_y(mon_y, mon_h, win_h, 1.5, "bottom");
+        assert_eq!(y_bottom_fractional, 1080 - 160 - 90);
+
+        // Secondary monitor positioned above primary display (negative Y coordinates)
+        let mon_y_negative = -1080;
+        let y_top_negative = calculate_overlay_y(mon_y_negative, mon_h, win_h, 1.0, "top");
+        assert_eq!(y_top_negative, -1080 + 60);
+
+        let y_bottom_negative = calculate_overlay_y(mon_y_negative, mon_h, win_h, 1.0, "bottom");
+        assert_eq!(y_bottom_negative, -1080 + 1080 - 160 - 60);
+
+        // 4K Monitor
+        let mon_h_4k = 2160;
+        let y_center_4k = calculate_overlay_y(mon_y, mon_h_4k, win_h, 1.0, "center");
+        assert_eq!(y_center_4k, (2160 - 160) / 2);
+    }
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32};
     use tokio::sync::Mutex;
@@ -624,16 +763,11 @@ mod tests {
     use voxctr_routing::OutputTargetRouter;
     use crate::state::AppState;
 
-    #[tokio::test]
-    async fn test_app_state_initial_values() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
+    fn make_test_state() -> AppState {
         let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
+        AppState {
+            config: Arc::new(Mutex::new(Config::load())),
+            router: Arc::new(OutputTargetRouter::new(Vec::new())),
             recording: Arc::new(AtomicBool::new(false)),
             processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
@@ -651,8 +785,13 @@ mod tests {
             audio_tx,
             tts_handle: Arc::new(Mutex::new(None)),
             active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
+            hotkey_reloader: Arc::new(Mutex::new(None)),
+        }
+    }
 
+    #[tokio::test]
+    async fn test_app_state_initial_values() {
+        let state = make_test_state();
         assert!(!state.is_recording());
         assert!(!state.is_speaking());
         assert_eq!(state.total_words(), 0);
@@ -661,33 +800,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_state_words_increment() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
-        let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
-            recording: Arc::new(AtomicBool::new(false)),
-            processing: Arc::new(AtomicBool::new(false)),
-            speaking: Arc::new(AtomicBool::new(false)),
-            audio_ready: Arc::new(AtomicBool::new(false)),
-            dynamic_stream: Arc::new(AtomicBool::new(false)),
-            monitoring: Arc::new(AtomicBool::new(false)),
-            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
-            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            word_count: Arc::new(AtomicU32::new(0)),
-            last_text: Arc::new(Mutex::new(String::new())),
-            active_target: Arc::new(Mutex::new("default".to_string())),
-            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
-            targets: Arc::new(Mutex::new(Vec::new())),
-            history: Arc::new(Mutex::new(Vec::new())),
-            audio_tx,
-            tts_handle: Arc::new(Mutex::new(None)),
-            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
-
+        let state = make_test_state();
         state.increment_words(15);
         assert_eq!(state.total_words(), 15);
         state.increment_words(10);
@@ -696,33 +809,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_history_entries() {
-        let config = Config::load();
-        let config = Arc::new(Mutex::new(config));
-        let router = Arc::new(OutputTargetRouter::new(Vec::new()));
-        let (audio_tx, _) = crossbeam_channel::bounded(1);
-
-        let state = AppState {
-            config,
-            router,
-            recording: Arc::new(AtomicBool::new(false)),
-            processing: Arc::new(AtomicBool::new(false)),
-            speaking: Arc::new(AtomicBool::new(false)),
-            audio_ready: Arc::new(AtomicBool::new(false)),
-            dynamic_stream: Arc::new(AtomicBool::new(false)),
-            monitoring: Arc::new(AtomicBool::new(false)),
-            input_device_index: Arc::new(AtomicU32::new(u32::MAX)),
-            gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            word_count: Arc::new(AtomicU32::new(0)),
-            last_text: Arc::new(Mutex::new(String::new())),
-            active_target: Arc::new(Mutex::new("default".to_string())),
-            active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
-            targets: Arc::new(Mutex::new(Vec::new())),
-            history: Arc::new(Mutex::new(Vec::new())),
-            audio_tx,
-            tts_handle: Arc::new(Mutex::new(None)),
-            active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        };
-
+        let state = make_test_state();
         {
             let mut hist = state.history.lock().await;
             hist.push(HistoryEntry {
@@ -732,7 +819,6 @@ mod tests {
                 inference_ms: 120,
             });
         }
-
         let hist = state.history.lock().await;
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].text, "hello world");
@@ -833,6 +919,32 @@ mod tests {
         for res in results {
             assert!(res.success);
         }
+    }
+
+    #[tokio::test]
+    async fn test_check_udev_status_env_overrides() {
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "missing");
+        let res = check_udev_status().await.unwrap();
+        assert!(!res.is_configured);
+        assert!(!res.rule_exists);
+        assert!(!res.in_group);
+        assert!(!res.needs_relogin);
+
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "relogin");
+        let res = check_udev_status().await.unwrap();
+        assert!(!res.is_configured);
+        assert!(res.rule_exists);
+        assert!(!res.in_group);
+        assert!(res.needs_relogin);
+
+        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "ok");
+        let res = check_udev_status().await.unwrap();
+        assert!(res.is_configured);
+        assert!(res.rule_exists);
+        assert!(res.in_group);
+        assert!(!res.needs_relogin);
+
+        std::env::remove_var("VOXCTR_TEST_UDEV_STATUS");
     }
 }
 

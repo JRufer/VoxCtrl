@@ -112,9 +112,9 @@ A default binding (`Super + Space`, hold gesture → inject to focused window) i
 ## Optional Setup
 
 ### GPU Acceleration
-If you have an NVIDIA GPU, install the CUDA toolkit and set `engine.device = "cuda"` in config. VoxCtr will auto-detect it with `"auto"`.
 
-For AMD/Intel GPUs, Vulkan support (`engine.device = "vulkan"`) requires:
+**Vulkan (AMD / Intel / NVIDIA):** Set `engine.whisper_cpp.device = "vulkan"` in config, or choose "Vulkan" in Settings → Engine. Install driver support if needed:
+
 ```bash
 # Ubuntu
 sudo apt install vulkan-tools libvulkan1
@@ -122,6 +122,15 @@ sudo apt install vulkan-tools libvulkan1
 # Arch
 sudo pacman -S vulkan-icd-loader
 ```
+
+**NVIDIA CUDA:** CUDA acceleration requires a CUDA-enabled build of VoxCtr — it is not available in the standard pre-built AppImage. You must compile from source with:
+
+```bash
+npm run tauri build -- --features cuda
+```
+
+Once running a CUDA build, set `engine.whisper_cpp.device = "auto"` (or `"cuda"`) and VoxCtr will use the GPU automatically. The "CUDA (NVIDIA)" option in Settings → Engine is only shown when the binary was compiled with CUDA support.
+
 
 ### Ollama Post-Processing
 If you want LLM grammar correction:

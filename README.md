@@ -21,7 +21,7 @@ In an era of cloud processing, VoxCtr is built from the ground up to guarantee a
 
 ## 🌟 Key Features
 
-* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution and NVIDIA CUDA GPU acceleration.
+* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution. NVIDIA CUDA GPU acceleration is available as an opt-in compile-time feature (`--features cuda`); Vulkan acceleration (AMD/Intel/NVIDIA) works in the standard build.
 * **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
@@ -132,6 +132,20 @@ VoxCtr features a dynamic transparent overlay window that renders floating real-
 
 5. **Disabled (None) ❌**
    Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
+
+### 🛠️ User-Creatable Custom Overlay Templates (Dynamic HTML/CSS/JS)
+
+In addition to the built-in visualizer styles, VoxCtr features a **programmable runtime overlay system** that dynamically loads custom visualizers created by you! 
+
+* **Local Folder Scanning:** Create a folder inside `~/.local/share/voxctl/overlays/` containing `index.html` and `style.css`. It will instantly register as a selectable choice in the **Visual Tab** settings dropdown list.
+* **Placeholder Replacements:** Place `{{trigger}}` and `{{target}}` variables in your HTML; VoxCtr automatically replaces them with your active hotkey trigger and routing destination labels dynamically.
+* **High-Speed CSS Custom Variables:** Binds real-time parameters directly to your elements (such as `--voxctr-audio-level` mapped 0.0–1.0 at 60fps, `--voxctr-recording`, `--voxctr-processing`, and `--voxctr-speaking`) for pure, GPU-accelerated CSS keyframe animations.
+* **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctr-audio-level` and `voxctr-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
+* **Dynamic Script Execution:** Solves browser script blocking by parsing and executing standard `<script>` tags inside templates safely upon component mount.
+* **Built-in Naming Conflict Resolution:** Automatically intercepts reserved built-in keywords (`pulse`, `waveform`, etc.) and appends `_custom` suffixes to keep both visual styles working perfectly.
+* **Bundled Starter Example:** On first launch, VoxCtr automatically extracts a premium, pre-configured `gradient-wave` custom visualizer folder to your local directory. You can copy, modify, and study this folder to start building your own visualizers immediately!
+
+For a complete layout schema, step-by-step tutorial, and canvas animation guidelines, read the [Overlay UI Guide](docs/overlays.md).
 
 ### ⚙️ Window Management & Focus Raising
 * **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.

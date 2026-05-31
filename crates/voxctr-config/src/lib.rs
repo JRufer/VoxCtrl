@@ -129,24 +129,6 @@ impl Default for AudioConfig {
     }
 }
 
-// ── UI ────────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum OverlayStyle {
-    VoiceCard,
-    Waveform,
-    Pulse,
-    BlueWave,
-    None,
-}
-
-impl Default for OverlayStyle {
-    fn default() -> Self {
-        Self::BlueWave
-    }
-}
-
 fn default_auto_show_settings() -> bool {
     true
 }
@@ -155,10 +137,22 @@ fn default_show_notification() -> bool {
     false
 }
 
+fn default_overlay_position() -> String {
+    "center".into()
+}
+
+fn default_overlay_monitor() -> String {
+    "primary".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub show_overlay: bool,
-    pub overlay_style: OverlayStyle,
+    pub overlay_style: String,
+    #[serde(default = "default_overlay_position")]
+    pub overlay_position: String,
+    #[serde(default = "default_overlay_monitor")]
+    pub overlay_monitor: String,
     #[serde(default = "default_auto_show_settings")]
     pub auto_show_settings: bool,
     #[serde(default = "default_show_notification")]
@@ -171,7 +165,9 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_overlay: true,
-            overlay_style: OverlayStyle::BlueWave,
+            overlay_style: "blue_wave".into(),
+            overlay_position: "center".into(),
+            overlay_monitor: "primary".into(),
             auto_show_settings: true,
             show_notification: false,
             history_enabled: false,
@@ -393,6 +389,19 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.data)?;
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&self.path)?;
+            f.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
         std::fs::write(&self.path, json)?;
         Ok(())
     }
@@ -406,6 +415,23 @@ impl Default for Config {
     fn default() -> Self {
         Self::load()
     }
+}
+
+// ── Path utilities ────────────────────────────────────────────────────────────
+
+/// Search `$PATH` for an executable named `name`, returning its full path if found.
+/// On Windows, appends `.exe` automatically when `name` has no extension.
+pub fn find_in_path(name: &str) -> Option<PathBuf> {
+    let search_name: std::borrow::Cow<str> = if cfg!(target_os = "windows") && !name.contains('.') {
+        format!("{name}.exe").into()
+    } else {
+        name.into()
+    };
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(search_name.as_ref()))
+            .find(|p| p.is_file())
+    })
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -456,7 +482,9 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.ui.auto_show_settings);
         assert!(!cfg.ui.show_notification);
-        assert_eq!(cfg.ui.overlay_style, OverlayStyle::BlueWave);
+        assert_eq!(cfg.ui.overlay_style, "blue_wave");
+        assert_eq!(cfg.ui.overlay_position, "center");
+        assert_eq!(cfg.ui.overlay_monitor, "primary");
         assert!(cfg.features.show_notification.is_none());
     }
 
@@ -566,6 +594,21 @@ mod tests {
     "auto_format_lists": true,
     "quiet_mode": false,
     "show_notification": true"#));
+    }
+
+    #[test]
+    fn test_ui_config_position_monitor_defaults() {
+        let partial_json = r#"{
+            "show_overlay": true,
+            "overlay_style": "waveform",
+            "auto_show_settings": true,
+            "show_notification": false,
+            "history_enabled": false
+        }"#;
+
+        let parsed: UiConfig = serde_json::from_str(partial_json).unwrap();
+        assert_eq!(parsed.overlay_position, "center");
+        assert_eq!(parsed.overlay_monitor, "primary");
     }
 }
 

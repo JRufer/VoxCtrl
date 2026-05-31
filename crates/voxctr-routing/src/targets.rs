@@ -1,8 +1,21 @@
 use anyhow::Context;
 use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpStream, UnixStream};
+use tokio::net::TcpStream;
+#[cfg(unix)]
+use tokio::net::UnixStream;
 
 use crate::models::{DeliveryResult, DeliveryType, OutputTarget, TestResult};
+
+// Shared HTTP client — built once, reused for connection pooling.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("build reqwest client")
+    })
+}
 
 // ── Trait ─────────────────────────────────────────────────────────────────────
 
@@ -73,12 +86,24 @@ impl DeliveryTarget for InjectTarget {
 
         #[cfg(target_os = "windows")]
         {
+            // Use -EncodedCommand to pass the script as Base64 so that no shell
+            // metacharacter in the transcribed text ($, `, {}, etc.) can escape
+            // the string boundary and be interpreted by PowerShell.
             let script = format!(
-                r#"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{}")"#,
-                payload.replace('"', "\"\"")
+                r#"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("{}")))"#,
+                {
+                    // Encode the payload as UTF-8 Base64 so it is opaque to PowerShell parsing.
+                    use base64::{Engine as _, engine::general_purpose::STANDARD};
+                    STANDARD.encode(payload.as_bytes())
+                }
             );
+            // Encode the whole script itself as UTF-16LE Base64 for -EncodedCommand.
+            let utf16: Vec<u16> = script.encode_utf16().collect();
+            let bytes: Vec<u8> = utf16.iter().flat_map(|c| c.to_le_bytes()).collect();
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            let encoded = STANDARD.encode(&bytes);
             let ok = tokio::process::Command::new("powershell")
-                .args(["-NoProfile", "-Command", &script])
+                .args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
                 .status()
                 .await
                 .map(|s| s.success())
@@ -160,18 +185,30 @@ pub struct ExecTarget(OutputTarget);
 #[async_trait::async_trait]
 impl DeliveryTarget for ExecTarget {
     async fn deliver(&self, text: &str) -> DeliveryResult {
-        let cmd_str = match &self.0.command {
-            Some(c) => c.replace("{TEXT}", text),
+        let template = match &self.0.command {
+            Some(c) => c.clone(),
             None => return DeliveryResult::err("No command configured"),
         };
-        let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-        if parts.is_empty() {
+        // Split the template (without substitution) so that multi-word transcribed
+        // text is never split across argument boundaries. {TEXT} is replaced with
+        // the full text as a single argument after the split.
+        let raw_parts: Vec<&str> = template.split_whitespace().collect();
+        if raw_parts.is_empty() {
             return DeliveryResult::err("Empty command");
         }
-        match tokio::process::Command::new(parts[0])
-            .args(&parts[1..])
-            .spawn()
-        {
+        let mut cmd = tokio::process::Command::new(raw_parts[0]);
+        for part in &raw_parts[1..] {
+            if *part == "{TEXT}" {
+                cmd.arg(text);
+            } else {
+                cmd.arg(part);
+            }
+        }
+        // If {TEXT} was not present in the template, append text as a trailing arg.
+        if !raw_parts.iter().any(|p| *p == "{TEXT}") {
+            cmd.arg(text);
+        }
+        match cmd.spawn() {
             Ok(_) => DeliveryResult::ok(text.into()),
             Err(e) => DeliveryResult::err(e.to_string()),
         }
@@ -238,40 +275,45 @@ pub struct SocketTarget(OutputTarget);
 impl DeliveryTarget for SocketTarget {
     async fn deliver(&self, text: &str) -> DeliveryResult {
         let payload = format!("{text}\n").into_bytes();
-        let result = if let Some(unix) = &self.0.socket_unix {
+
+        #[cfg(unix)]
+        if let Some(unix) = &self.0.socket_unix {
             let mut s = match UnixStream::connect(unix).await {
                 Ok(s) => s,
                 Err(e) => return DeliveryResult::err(e.to_string()),
             };
-            s.write_all(&payload).await
-        } else {
-            let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
-            let port = self.0.socket_port.unwrap_or(9000);
-            let mut s = match TcpStream::connect((host, port)).await {
-                Ok(s) => s,
-                Err(e) => return DeliveryResult::err(e.to_string()),
+            return match s.write_all(&payload).await {
+                Ok(_) => DeliveryResult::ok(text.into()),
+                Err(e) => DeliveryResult::err(e.to_string()),
             };
-            s.write_all(&payload).await
+        }
+
+        let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
+        let port = self.0.socket_port.unwrap_or(9000);
+        let mut s = match TcpStream::connect((host, port)).await {
+            Ok(s) => s,
+            Err(e) => return DeliveryResult::err(e.to_string()),
         };
-        match result {
+        match s.write_all(&payload).await {
             Ok(_) => DeliveryResult::ok(text.into()),
             Err(e) => DeliveryResult::err(e.to_string()),
         }
     }
 
     async fn test(&self) -> TestResult {
+        #[cfg(unix)]
         if let Some(unix) = &self.0.socket_unix {
-            match UnixStream::connect(unix).await {
+            return match UnixStream::connect(unix).await {
                 Ok(_) => TestResult { reachable: true, detail: format!("Unix socket {unix} reachable") },
                 Err(e) => TestResult { reachable: false, detail: e.to_string() },
-            }
-        } else {
-            let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
-            let port = self.0.socket_port.unwrap_or(9000);
-            match TcpStream::connect((host, port)).await {
-                Ok(_) => TestResult { reachable: true, detail: format!("TCP {host}:{port} reachable") },
-                Err(e) => TestResult { reachable: false, detail: e.to_string() },
-            }
+            };
+        }
+
+        let host = self.0.socket_host.as_deref().unwrap_or("127.0.0.1");
+        let port = self.0.socket_port.unwrap_or(9000);
+        match TcpStream::connect((host, port)).await {
+            Ok(_) => TestResult { reachable: true, detail: format!("TCP {host}:{port} reachable") },
+            Err(e) => TestResult { reachable: false, detail: e.to_string() },
         }
     }
 }
@@ -374,8 +416,18 @@ impl DeliveryTarget for DbusTarget {
 }
 
 #[cfg(target_os = "linux")]
+fn is_valid_dbus_name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+#[cfg(target_os = "linux")]
 async fn emit_dbus_signal(signal_name: &str, text: &str) -> anyhow::Result<()> {
     use zbus::Connection;
+
+    if !is_valid_dbus_name(signal_name) {
+        anyhow::bail!("Invalid D-Bus signal name '{signal_name}': only [A-Za-z0-9_.] allowed");
+    }
+
     let conn = Connection::session().await?;
     let parts: Vec<&str> = signal_name.rsplitn(2, '.').collect();
     let (member, iface) = if parts.len() == 2 {
@@ -400,10 +452,7 @@ impl DeliveryTarget for HttpTarget {
             return DeliveryResult::err("No http_url configured");
         };
         let payload = build_json_payload(&self.0.http_json_template, text);
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
+        let client = http_client();
         let mut req = client.request(
             self.0.http_method.parse().unwrap_or(reqwest::Method::POST),
             url,
@@ -459,11 +508,7 @@ impl DeliveryTarget for WebhookTarget {
         mac.update(&body);
         let sig = hex::encode(mac.finalize().into_bytes());
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap();
-        match client
+        match http_client()
             .post(url)
             .header("Content-Type", "application/json")
             .header("X-Webhook-Signature", sig)
@@ -641,10 +686,8 @@ impl DeliveryTarget for McpTarget {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn which(bin: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(bin)
-        .output()
-        .map(|o| o.status.success())
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(bin).is_file()))
         .unwrap_or(false)
 }
 

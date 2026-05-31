@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { recording, speaking, status } from "../../stores/status";
   import { config } from "../../stores/config";
   import VoiceCard from "./VoiceCard.svelte";
@@ -7,7 +9,32 @@
   import Pulse from "./Pulse.svelte";
   import BlueWave from "./BlueWave.svelte";
 
+  interface CustomOverlay {
+    name: string;
+    html: string;
+    css: string;
+  }
+
   let visible = $state(true);
+  let customOverlays = $state<CustomOverlay[]>([]);
+  let activeCustomOverlay = $derived(
+    customOverlays.find(o => o.name === $config.ui.overlay_style)
+  );
+
+  const triggerLabel = $derived($status.active_target_label || "Focused Window");
+  const targetLabel = $derived($status.active_target_label || "Focused Window");
+
+  let processedHtml = $derived.by(() => {
+    if (!activeCustomOverlay) return "";
+    return activeCustomOverlay.html
+      .replace(/\{\{trigger\}\}/g, triggerLabel)
+      .replace(/\{\{target\}\}/g, targetLabel);
+  });
+
+  let targetVolume = 0;
+  let currentVolume = $state(0);
+  let unlistenAudioLevel: (() => void) | null = null;
+  let animationFrameId: number;
 
   $effect(() => {
     // Whenever the overlay style changes, temporarily unmount the visualizer for 1 tick
@@ -18,6 +45,17 @@
       visible = true;
     }, 25); // 25ms ensures a full repaint frame ticks in WebKitGTK
     return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    const root = document.querySelector(".overlay-root") as HTMLElement;
+    if (root) {
+      root.style.setProperty("--voxctr-audio-level", String(currentVolume));
+      root.style.setProperty("--voxctr-recording", $recording ? "1" : "0");
+      root.style.setProperty("--voxctr-processing", $status.processing ? "1" : "0");
+      root.style.setProperty("--voxctr-speaking", $speaking ? "1" : "0");
+      root.style.setProperty("--voxctr-audio-ready", $status.audio_ready !== false ? "1" : "0");
+    }
   });
 
   onMount(() => {
@@ -34,11 +72,69 @@
       appEl.style.setProperty("background", "transparent", "important");
     }
 
+    // Fetch custom overlays from local sharing folder
+    invoke<CustomOverlay[]>("get_custom_overlays")
+      .then((res) => {
+        customOverlays = res;
+      })
+      .catch((e) => {
+        console.error("Failed to load custom overlays:", e);
+      });
+
+    // Listen to real-time audio levels from Rust backend
+    listen<number>("audio-level", (event) => {
+      targetVolume = Math.min(1.0, event.payload * 100.0);
+      window.dispatchEvent(new CustomEvent("voxctr-audio-level", { detail: event.payload }));
+    }).then((unlisten) => {
+      unlistenAudioLevel = unlisten;
+    });
+
+    let time = 0;
+    function updateAnimation() {
+      // Smooth interpolation for visual reaction
+      currentVolume += (targetVolume - currentVolume) * 0.42;
+      targetVolume *= 0.82;
+
+      // Dispatch high-performance window-level custom events
+      if (activeCustomOverlay) {
+        window.dispatchEvent(new CustomEvent("voxctr-status", {
+          detail: {
+            recording: $recording,
+            processing: $status.processing,
+            speaking: $speaking,
+            audio_ready: $status.audio_ready !== false,
+            active_target_label: $status.active_target_label || "Focused Window",
+            audio_level: currentVolume,
+          }
+        }));
+      }
+
+      animationFrameId = requestAnimationFrame(updateAnimation);
+    }
+    animationFrameId = requestAnimationFrame(updateAnimation);
+
     return () => {
       document.documentElement.classList.remove("overlay-window");
       document.body.classList.remove("overlay-window");
+      if (unlistenAudioLevel) unlistenAudioLevel();
+      cancelAnimationFrame(animationFrameId);
     };
   });
+
+  // Action to execute scripts dynamically in inserted html
+  function executeScripts(node: HTMLElement) {
+    const scripts = node.querySelectorAll("script");
+    scripts.forEach((oldScript) => {
+      const newScript = document.createElement("script");
+      Array.from(oldScript.attributes).forEach((attr) => {
+        newScript.setAttribute(attr.name, attr.value);
+      });
+      newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+      if (oldScript.parentNode) {
+        oldScript.parentNode.replaceChild(newScript, oldScript);
+      }
+    });
+  }
 </script>
 
 <div class="overlay-root" data-recording={$recording} data-speaking={$speaking} data-processing={$status.processing}>
@@ -50,10 +146,15 @@
         <Pulse recording={$recording} />
       {:else if $config.ui.overlay_style === "blue_wave"}
         <BlueWave recording={$recording} speaking={$speaking} />
+      {:else if activeCustomOverlay}
+        {@html `<style>${activeCustomOverlay.css}</style>`}
+        <div class="custom-overlay-content" use:executeScripts>
+          {@html processedHtml}
+        </div>
       {:else if $config.ui.overlay_style !== "none"}
         <VoiceCard recording={$recording} speaking={$speaking} />
       {/if}
-    {/key}
+      {/key}
   {/if}
 </div>
 

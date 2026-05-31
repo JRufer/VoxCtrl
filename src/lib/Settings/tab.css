@@ -166,3 +166,18 @@ h3 {
   color: #fff;
   box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
 }
+
+.warning-alert {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  animation: slideIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards;
+}

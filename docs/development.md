@@ -30,8 +30,11 @@ sudo dnf install \
 ```
 
 ### Windows
-- Visual Studio Build Tools 2019+
-- WebView2 SDK (usually pre-installed)
+- Visual Studio Build Tools 2019+ (select the "Desktop development with C++" workload)
+- WebView2 Runtime (pre-installed on Windows 10 21H2+ and Windows 11)
+- Rust MSVC toolchain: `rustup default stable-x86_64-pc-windows-msvc`
+
+For full Windows build instructions and a PowerShell helper script, see **[docs/windows_build.md](windows_build.md)**.
 
 ---
 
@@ -132,6 +135,22 @@ npm run tauri build
 #   Windows: .msi, .exe (NSIS)
 ```
 
+### CUDA GPU Acceleration (opt-in)
+
+CUDA inference acceleration is disabled by default so the app builds on any machine. Enable it with the `cuda` cargo feature:
+
+```bash
+# Linux / macOS
+npm run tauri build -- --features cuda
+
+# Windows (PowerShell)
+npm run tauri build -- --features cuda
+# Or use the helper script:
+.\scripts\build_windows.ps1 -Cuda
+```
+
+The `cuda` feature propagates: `voxctr-app/cuda` → `voxctr-inference/cuda` → `whisper-rs/cuda`.
+
 ---
 
 ## Crate Development Guide
@@ -199,19 +218,204 @@ Defines `OutputTarget`, `HotkeyBinding`, `DeliveryType`, `TargetProcessingConfig
 
 ## Testing
 
+VoxCtr utilizes a multi-tiered, unified testing suite spanning Svelte frontend components, Rust backend crates, and end-to-end integration tests over local socket connections.
+
+### Master Test Orchestrator
+
+The easiest way to run the entire test suite (Rust, Svelte, and Pytest Integration) is via the master test runner script:
+
 ```bash
-# Run all tests
-cargo test --workspace
-
-# Run tests for a specific crate
-cargo test -p voxctr-config
-cargo test -p voxctr-routing
-
-# Frontend type checking
-npm run check    # svelte-check + tsc
+npm test
 ```
 
-There are currently no end-to-end tests. The audio pipeline is tested manually via the dev server.
+This runs `python3 scripts/run_tests.py`, which sequences the following three test suites and returns a consolidated exit code (cleanly skipping the integration tests with a warning if `pytest` is not installed on the system):
+1. **Rust Backend tests** (`cargo test`)
+2. **Svelte Frontend tests** (`npm run test:unit`)
+3. **Python Integration tests** (`pytest tests/integration/`)
+
+---
+
+### Rust Backend Crate Tests
+
+Backend logic, including settings schemas, migrations, routing models, and utilities, is tested using standard Rust/Cargo unit tests.
+
+#### Running Backend Tests
+```bash
+# Run all tests across the entire workspace
+cargo test --workspace
+
+# Run tests for a specific backend crate
+cargo test -p voxctr-config
+cargo test -p voxctr-routing
+```
+
+#### Writing Backend Tests
+Backend unit tests are written inside their respective crate files within a `#[cfg(test)]` module block.
+Example from `crates/voxctr-config/src/lib.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_values() {
+        let cfg = AppConfig::default();
+        assert!(cfg.ui.auto_show_settings);
+        assert_eq!(cfg.ui.overlay_style, OverlayStyle::BlueWave);
+    }
+}
+```
+
+---
+
+### Svelte Frontend Unit & Component Tests
+
+Frontend Svelte 5 components, settings views, and warning overlays are tested using **Vitest**, **JSDOM**, and **Svelte Testing Library**.
+
+* **Test Location**: `tests/svelte/` (files ending in `.test.ts`)
+* **Framework Stack**: Vitest (runner), jsdom (DOM environment), `@testing-library/svelte` (rendering & selectors)
+
+#### Running Frontend Tests
+```bash
+# Run all frontend tests once
+npm run test:unit
+
+# Run frontend tests in interactive watch mode
+npx vitest
+```
+
+#### Mocking Tauri APIs
+Tauri commands (`invoke`) and events (`listen`) are mocked inside Svelte tests using Vitest's `vi.mock` to ensure they run successfully in headless/JSDOM environments without a live Webview context.
+
+Example from `tests/svelte/EngineTab.test.ts`:
+```typescript
+import { describe, test, expect, vi } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import EngineTab from "../../src/lib/Settings/EngineTab.svelte";
+
+// Mock Tauri core commands
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (cmd, args) => {
+    if (cmd === "check_model_downloaded") {
+      return args.modelSize === "base"; // mock "base" downloaded, others missing
+    }
+    return true;
+  }),
+}));
+
+// Mock Tauri events
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => {
+    return () => {}; // return clean unsubscribe function
+  }),
+}));
+```
+
+#### Writing Svelte Tests
+When testing Svelte components:
+1. Render the component using `render(Component, { props })`.
+2. Locate elements using Svelte Testing Library selectors (e.g., `screen.findByText` or `screen.queryByText`).
+3. Assert behaviors using Vitest's `expect()`.
+
+Example:
+```typescript
+describe("EngineTab.svelte Warning Banner", () => {
+  test("shows warning banner if Whisper voice model is not downloaded", async () => {
+    const mockConfig = {
+      engine: {
+        backend: "whisper-cpp",
+        whisper_cpp: { model_size: "large-v3" },
+      }
+    } as any;
+
+    render(EngineTab, { cfg: mockConfig });
+    
+    // Assert warning banner is found
+    const title = await screen.findByText("Voice Model Not Downloaded");
+    expect(title).not.toBeNull();
+  });
+});
+```
+
+---
+
+### Python Socket Integration Tests
+
+Integration tests verify end-to-end communication channels such as the Model Context Protocol (MCP) server over Unix domain sockets (`/tmp/voxctl-mcp.sock`).
+
+* **Test Location**: `tests/integration/` (files prefixed with `test_`)
+* **Framework**: Pytest
+
+#### Running Integration Tests
+```bash
+# Ensure pytest is installed
+pip install pytest
+
+# Run integration tests
+pytest tests/integration/
+```
+*Note: These tests check for the live socket connection. If VoxCtr is not currently running, these tests will gracefully skip to prevent false failure reports.*
+
+#### Writing Integration Tests
+Integration tests use the standard `pytest` framework, creating client socket connections to communicate with `/tmp/voxctl-mcp.sock` over JSON-RPC.
+
+Example:
+```python
+import socket
+import json
+import pytest
+import os
+
+SOCKET_PATH = "/tmp/voxctl-mcp.sock"
+
+@pytest.mark.skipif(not os.path.exists(SOCKET_PATH), reason="MCP Socket not running")
+def test_mcp_handshake_and_tools():
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(SOCKET_PATH)
+    try:
+        # Send a standard JSON-RPC request to the MCP server
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        sock.sendall((json.dumps(payload) + "\n").encode('utf-8'))
+        
+        # Read and parse response
+        resp = json.loads(sock.recv(1024).decode('utf-8').strip())
+        assert "result" in resp
+        assert "tools" in resp["result"]
+    finally:
+        sock.close()
+```
+
+### Simulating and Testing udev Diagnostics
+
+Linux global hotkeys require specific udev permissions and user group memberships configured by `install.sh`. To make testing these startup states safe and easy, developers can use the `VOXCTR_TEST_UDEV_STATUS` environment variable to mock various diagnostic outcomes without mutating their own user accounts or system rules.
+
+#### Why Test This?
+* **Onboarding Verification**: Ensure that new users are clearly prompted to install required dependencies.
+* **Troubleshooting Relogins**: Verify the specific advice prompting the user to reboot or log out if they ran `install.sh` but didn't refresh their session.
+* **Layout Integrity**: Make sure the modal overlays perfectly on the dark obsidian theme on launch.
+
+#### Mock Configurations
+
+* **Simulate Missing Setup (Installer never run)**:
+  Simulates `/etc/udev/rules.d/99-voxctr.rules` does not exist:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=missing npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) in the foreground detailing the need for hardware udev rules, providing a direct **📥 Download install.sh** button to GitHub, and a **Continue Anyway** native window close pathway.
+
+* **Simulate Relogin Required (Installer run but session not updated)**:
+  Simulates that rules exist but the current shell process is missing `input` group permissions:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=relogin npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) displaying the explicit logout/relogin guidance (hiding the installer download CTA since the rules are already present).
+
+* **Simulate Normal/Configured State (Bypasses checks)**:
+  ```bash
+  VOXCTR_TEST_UDEV_STATUS=ok npm run tauri dev
+  ```
+  * **UI Outcome**: Spawns only the standard settings window; the diagnostic warning window remains completely hidden.
+
 
 ---
 

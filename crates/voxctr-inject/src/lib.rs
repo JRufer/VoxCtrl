@@ -21,7 +21,7 @@ async fn inject_linux(text: &str) -> Result<()> {
     let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
 
     // 1. wtype (Wayland native)
-    if wayland && which("wtype") {
+    if wayland && voxctr_config::find_in_path("wtype").is_some() {
         if run_cmd("wtype", &["--", text]).await {
             debug!("Injected via wtype");
             return Ok(());
@@ -30,7 +30,7 @@ async fn inject_linux(text: &str) -> Result<()> {
     }
 
     // 2. xdotool (X11 / XWayland)
-    if which("xdotool") {
+    if voxctr_config::find_in_path("xdotool").is_some() {
         if run_cmd("xdotool", &["type", "--clearmodifiers", "--delay", "12", "--", text]).await {
             debug!("Injected via xdotool");
             return Ok(());
@@ -41,15 +41,6 @@ async fn inject_linux(text: &str) -> Result<()> {
     // 3. Clipboard + paste (last resort)
     clipboard_paste(text).await?;
     Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn which(bin: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(bin)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 #[cfg(target_os = "linux")]
@@ -73,9 +64,9 @@ async fn clipboard_paste(text: &str) -> Result<()> {
     })
     .await??;
 
-    if std::env::var("WAYLAND_DISPLAY").is_ok() && which("wtype") {
+    if std::env::var("WAYLAND_DISPLAY").is_ok() && voxctr_config::find_in_path("wtype").is_some() {
         run_cmd("wtype", &["-M", "ctrl", "v", "-m", "ctrl"]).await;
-    } else if which("xdotool") {
+    } else if voxctr_config::find_in_path("xdotool").is_some() {
         run_cmd("xdotool", &["key", "--clearmodifiers", "ctrl+v"]).await;
     }
     Ok(())

@@ -1,0 +1,286 @@
+name: Release
+
+# Trigger: push a version tag (e.g. git tag v0.1.4 && git push --tags)
+# Can also be triggered manually from the Actions tab to re-run a failed build.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re-)build (e.g. v0.1.4)"
+        required: true
+        type: string
+
+permissions:
+  contents: write   # needed to create/update GitHub releases
+
+# ── Build matrix ──────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # let all variants finish even if one fails
+      matrix:
+        include:
+          # ── Linux CPU ──────────────────────────────────────────────────────
+          - name: linux-cpu
+            os: ubuntu-22.04
+            features: ""
+            artifact_label: linux-x86_64
+            cuda: false
+
+          # ── Linux CUDA ─────────────────────────────────────────────────────
+          - name: linux-cuda
+            os: ubuntu-22.04
+            features: "cuda"
+            artifact_label: linux-x86_64-cuda
+            cuda: true
+
+          # ── Windows CPU ────────────────────────────────────────────────────
+          - name: windows-cpu
+            os: windows-latest
+            features: ""
+            artifact_label: windows-x86_64
+            cuda: false
+
+          # ── Windows CUDA ───────────────────────────────────────────────────
+          - name: windows-cuda
+            os: windows-latest
+            features: "cuda"
+            artifact_label: windows-x86_64-cuda
+            cuda: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── System deps (Linux) ─────────────────────────────────────────────────
+      # squashfs-tools (unsquashfs) is required for APPIMAGE_EXTRACT_AND_RUN=1
+      # which lets appimagetool/linuxdeploy run without FUSE on CI runners.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libasound2-dev \
+            libspeechd-dev \
+            libxdo-dev \
+            patchelf \
+            squashfs-tools \
+            pkg-config \
+            build-essential
+
+      # ── CUDA toolkit ────────────────────────────────────────────────────────
+      # Installs CUDA headers + libraries for compilation only.
+      # End-users need an NVIDIA driver (not the Toolkit) to run CUDA builds.
+
+      # CUDA toolkit + Rust CUDA build artifacts consume ~10-12 GB. Free up the
+      # large pre-installed packages that the GitHub-hosted runner ships with but
+      # that this build does not need (Android SDK, CodeQL, Haskell GHC, etc.)
+      # before installing CUDA so linuxdeploy has enough /tmp space to extract.
+      - name: Free disk space for CUDA build (Linux)
+        if: runner.os == 'Linux' && matrix.cuda
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Install CUDA Toolkit (Linux)
+        if: runner.os == 'Linux' && matrix.cuda
+        uses: Jimver/cuda-toolkit@v0.2.16
+        id: cuda-linux
+        with:
+          cuda: "12.4.0"
+          linux-local-args: '["--toolkit"]'
+
+      # Export the extra CMake variables that whisper.cpp's CUDA build needs.
+      # Jimver sets CUDA_PATH; we also need CUDACXX and the root aliases.
+      - name: Set CUDA CMake variables (Linux)
+        if: runner.os == 'Linux' && matrix.cuda
+        run: |
+          CUDA_ROOT="${{ steps.cuda-linux.outputs.CUDA_PATH }}"
+          echo "CUDA_PATH=${CUDA_ROOT}"              >> "$GITHUB_ENV"
+          echo "CUDA_TOOLKIT_ROOT_DIR=${CUDA_ROOT}"  >> "$GITHUB_ENV"
+          echo "CUDAToolkit_ROOT=${CUDA_ROOT}"        >> "$GITHUB_ENV"
+          echo "CUDACXX=${CUDA_ROOT}/bin/nvcc"        >> "$GITHUB_ENV"
+
+      - name: Install CUDA Toolkit (Windows)
+        if: runner.os == 'Windows' && matrix.cuda
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: "12.4.0"
+
+      # ── Rust ────────────────────────────────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.name }}
+
+      # ── Node / frontend ─────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm install
+
+      # ── Tauri build (Linux) ─────────────────────────────────────────────────
+      # APPIMAGE_EXTRACT_AND_RUN=1 tells linuxdeploy/appimagetool to extract
+      # and run without FUSE (uses unsquashfs from squashfs-tools instead).
+      # QT_QPA_PLATFORM=offscreen prevents Qt platform errors in headless CI.
+      - name: Build AppImage + deb (Linux, CPU)
+        if: runner.os == 'Linux' && !matrix.cuda
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          QT_QPA_PLATFORM: offscreen
+        run: npm run tauri build
+
+      # CUDA build uses --bundles deb only: the CUDA toolkit populates system
+      # library paths with hundreds of CUDA .so files that linuxdeploy tries to
+      # bundle into the AppImage, causing it to OOM or fail. deb packaging does
+      # not use linuxdeploy and works reliably. CUDA users on Linux are almost
+      # always on Debian/Ubuntu and can install the .deb directly.
+      - name: Build deb (Linux, CUDA)
+        if: runner.os == 'Linux' && matrix.cuda
+        env:
+          QT_QPA_PLATFORM: offscreen
+        # Call tauri directly so --bundles lands before the cargo -- separator;
+        # `npm run tauri build -- --bundles deb` wrongly sends --bundles to cargo.
+        run: node_modules/.bin/tauri build --bundles deb -- --features cuda
+
+      # ── Tauri build (Windows) ───────────────────────────────────────────────
+      - name: Build installer (Windows, CPU)
+        if: runner.os == 'Windows' && !matrix.cuda
+        run: npm run tauri build
+
+      - name: Build installer (Windows, CUDA)
+        if: runner.os == 'Windows' && matrix.cuda
+        run: npm run tauri build -- --features cuda
+
+      # ── Collect and rename Linux artifacts ──────────────────────────────────
+      # Search the whole workspace so the path is correct regardless of whether
+      # cargo uses a workspace-level or package-level target directory.
+      - name: Collect Linux artifacts
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p upload
+          find . \( -name "*.AppImage" -o -name "*.deb" \) \
+              ! -name "*.AppImage.zsync" \
+              ! -path "*/.cargo/*" | \
+          while read -r f; do
+            base=$(basename "$f")
+            stem="${base%.*}"
+            ext="${base##*.}"
+            dest="upload/${stem}-${{ matrix.artifact_label }}.${ext}"
+            cp "$f" "$dest"
+            echo "Collected: $dest ($(du -sh "$f" | cut -f1))"
+          done
+          ls -lh upload/
+
+      # ── Collect and rename Windows artifacts ────────────────────────────────
+      # Search the whole workspace so the path is correct regardless of where
+      # Tauri/cargo places the bundle directory.
+      - name: Collect Windows artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force upload | Out-Null
+          Get-ChildItem -Path . -Recurse -Include "*.exe","*.msi" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*\bundle\*" -and $_.Name -notlike "*-stub*" } |
+            ForEach-Object {
+              $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
+              Copy-Item $_.FullName $dest
+              $size = "{0:N1} MB" -f ($_.Length / 1MB)
+              Write-Host "Collected: $dest ($size)"
+            }
+          if ((Get-ChildItem upload).Count -eq 0) {
+            Write-Host "ERROR: No bundle files found. Searching for any .exe/.msi to diagnose:"
+            Get-ChildItem -Path . -Recurse -Include "*.exe","*.msi" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notlike "*\.cargo*" } |
+              Select-Object -ExpandProperty FullName
+            exit 1
+          }
+
+      # ── Upload to Actions (picked up by publish job) ─────────────────────────
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.name }}
+          path: upload/*
+          if-no-files-found: error
+          retention-days: 1
+
+# ── Publish release ───────────────────────────────────────────────────────────
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    # Run even if some build variants failed so partial releases still publish
+    if: always() && contains(needs.build.result, 'success')
+
+    steps:
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Download everything produced by the build matrix
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: ls -lh release-artifacts/
+
+      - name: Create / update draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: "VoxCtr ${{ steps.tag.outputs.name }}"
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-artifacts/*
+          body: |
+            ## Downloads
+
+            Pick the build for your platform and GPU:
+
+            | Platform | File suffix | GPU required |
+            |---|---|---|
+            | Linux | `-linux-x86_64.AppImage` | None |
+            | Linux (NVIDIA) | `-linux-x86_64-cuda.deb` | NVIDIA driver 520+ |
+            | Windows | `-windows-x86_64-setup.exe` | None |
+            | Windows (NVIDIA) | `-windows-x86_64-cuda-setup.exe` | NVIDIA driver 520+ |
+
+            **CUDA builds** use your GPU for Whisper inference (~3–10× faster).
+            They require an NVIDIA driver but **not** the CUDA Toolkit.
+
+            **CPU builds** run on any hardware, including AMD, Intel, and ARM.
+
+            ### Linux CPU — first run
+            ```bash
+            chmod +x VoxCtr_*-linux-x86_64.AppImage
+            ./VoxCtr_*-linux-x86_64.AppImage
+            ```
+
+            ### Linux CUDA — install
+            ```bash
+            sudo dpkg -i VoxCtr_*-linux-x86_64-cuda.deb
+            ```
