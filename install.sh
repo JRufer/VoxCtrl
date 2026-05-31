@@ -208,10 +208,14 @@ else
     ok "User is already in the 'input' group."
 fi
 
-# Remove legacy rule if it exists to keep system clean
-if [ -f "/etc/udev/rules.d/99-voxctrl.rules" ]; then
-    info "Removing legacy udev rule path..."
-    sudo rm -f "/etc/udev/rules.d/99-voxctrl.rules"
+# Remove legacy rules if they exist to keep system clean
+if [ -f "/etc/udev/rules.d/99-voxctr.rules" ]; then
+    info "Removing legacy udev rule path (99-voxctr.rules)..."
+    sudo rm -f "/etc/udev/rules.d/99-voxctr.rules"
+fi
+if [ -f "/etc/udev/rules.d/99-voxctl.rules" ]; then
+    info "Removing legacy udev rule path (99-voxctl.rules)..."
+    sudo rm -f "/etc/udev/rules.d/99-voxctl.rules"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
