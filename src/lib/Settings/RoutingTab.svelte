@@ -699,7 +699,7 @@
             <h5>Linux DBus emitter settings</h5>
             <label class="field">
               <span>Signal Method ID</span>
-              <input type="text" bind:value={editingTarget.dbus_signal} placeholder="com.voxctl.TextReady" />
+              <input type="text" bind:value={editingTarget.dbus_signal} placeholder="com.voxctrl.TextReady" />
             </label>
           </div>
         {/if}
@@ -802,10 +802,10 @@
               <input
                 type="text"
                 bind:value={editingTarget.mcp_path}
-                placeholder="e.g. /tmp/voxctl-mcp.sock"
+                placeholder="e.g. /tmp/voxctrl-mcp.sock"
                 class="full-width-input"
               />
-              <p class="hint">Leave empty to use defaults (<code>/tmp/voxctl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctl-mcp</code> on Windows).</p>
+              <p class="hint">Leave empty to use defaults (<code>/tmp/voxctrl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctrl-mcp</code> on Windows).</p>
             </div>
 
             <div class="field col">

@@ -3,9 +3,11 @@
   "identifier": "default",
   "description": "Default capability set for VoxCtr windows",
   "platforms": ["linux", "windows", "macOS"],
-  "windows": ["settings", "overlay", "history"],
+  "windows": ["settings", "overlay", "history", "udev-warning"],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
     "shell:allow-open",
     "notification:default",
     "fs:default",

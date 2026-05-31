@@ -1,10 +1,10 @@
 # Text-to-Speech
 
-**Crate:** `crates/voxctr-tts/`
+**Crate:** `crates/voxctrl-tts/`
 
 ## Overview
 
-VoxCtr includes a neural TTS engine for voice output. This is useful for reading back transcriptions, confirming commands, or building conversational voice interactions via the MCP server.
+VoxCtrl includes a neural TTS engine for voice output. This is useful for reading back transcriptions, confirming commands, or building conversational voice interactions via the MCP server.
 
 ---
 
@@ -13,16 +13,16 @@ VoxCtr includes a neural TTS engine for voice output. This is useful for reading
 ### Piper (Primary)
 [Piper](https://github.com/rhasspy/piper) is a fast, local neural TTS system using ONNX models. It produces high-quality natural-sounding speech entirely offline.
 
-VoxCtr invokes the `piper` binary directly (looks first in `~/.local/share/voxctl/piper/piper`, then on PATH). It pipes text to Piper's stdin, receives raw 16-bit PCM on stdout, and plays via `aplay` (Linux) or a temp WAV file + PowerShell `SoundPlayer` (Windows).
+VoxCtrl invokes the `piper` binary directly (looks first in `~/.local/share/voxctrl/piper/piper`, then on PATH). It pipes text to Piper's stdin, receives raw 16-bit PCM on stdout, and plays via `aplay` (Linux) or a temp WAV file + PowerShell `SoundPlayer` (Windows).
 
 ### Espeak-ng (Fallback)
-If Piper is unavailable or no voice is downloaded, VoxCtr falls back to `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
+If Piper is unavailable or no voice is downloaded, VoxCtrl falls back to `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
 
 ---
 
 ## Voice Catalogue
 
-Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored in the configured voice directory (see [Configuration Options](#configuration-options) below). The default is `~/.local/share/voxctl/piper-voices/`.
+Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored in the configured voice directory (see [Configuration Options](#configuration-options) below). The default is `~/.local/share/voxctrl/piper-voices/`.
 
 | Voice name | Quality | Sample rate |
 |---|---|---|
@@ -93,13 +93,13 @@ await invoke('speak_text', { text: 'Hello world', voice: 'en-us-ryan-high' });
 The `voice` parameter is optional; if omitted, the configured default voice is used.
 
 ### From a FIFO Response Pipe
-If a target has a `response_pipe` path configured, VoxCtr watches that FIFO for newline-terminated text and speaks each line:
+If a target has a `response_pipe` path configured, VoxCtrl watches that FIFO for newline-terminated text and speaks each line:
 
 ```bash
-echo "Recording started" > /tmp/voxctl-tts.fifo
+echo "Recording started" > /tmp/voxctrl-tts.fifo
 ```
 
-Multiple targets can have different `response_pipe` paths. VoxCtr spawns a FIFO watcher task for each unique path when targets are loaded or updated.
+Multiple targets can have different `response_pipe` paths. VoxCtrl spawns a FIFO watcher task for each unique path when targets are loaded or updated.
 
 ---
 
@@ -126,11 +126,11 @@ Under `tts` in `config.json`:
 | `enabled` | bool | `false` | Enable TTS functionality |
 | `engine` | string | `"piper"` | `"piper"` or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Voice name (hyphen-delimited) |
-| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctl/piper-voices/`. Supports `~` expansion. |
+| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
 
-The `voice_dir` field affects both where VoxCtr looks for existing voice files and where newly downloaded voices are saved. If the specified directory does not exist, the Settings UI will display a validation error.
+The `voice_dir` field affects both where VoxCtrl looks for existing voice files and where newly downloaded voices are saved. If the specified directory does not exist, the Settings UI will display a validation error.
 
 ---
 

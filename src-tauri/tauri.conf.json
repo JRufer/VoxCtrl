@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VoxCtr",
+  "productName": "VoxCtrl",
   "version": "0.1.7",
-  "identifier": "ai.voxctl.app",
+  "identifier": "ai.voxctrl.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -16,7 +16,7 @@
     "windows": [
       {
         "label": "settings",
-        "title": "VoxCtr Settings",
+        "title": "VoxCtrl Settings",
         "width": 700,
         "height": 850,
         "minWidth": 700,
@@ -28,7 +28,7 @@
       },
       {
         "label": "overlay",
-        "title": "VoxCtr Overlay",
+        "title": "VoxCtrl Overlay",
         "width": 560,
         "height": 160,
         "visible": false,
@@ -41,7 +41,7 @@
       },
       {
         "label": "history",
-        "title": "VoxCtr — Transcript History",
+        "title": "VoxCtrl — Transcript History",
         "width": 600,
         "height": 500,
         "visible": false,
@@ -49,7 +49,7 @@
       },
       {
         "label": "udev-warning",
-        "title": "VoxCtr Diagnostics",
+        "title": "VoxCtrl Diagnostics",
         "width": 460,
         "height": 380,
         "visible": false,

@@ -9,6 +9,6 @@ fn main() {
         .build()
         .expect("build tokio runtime")
         .block_on(async {
-            voxctr_app_lib::run();
+            voxctrl_app_lib::run();
         });
 }

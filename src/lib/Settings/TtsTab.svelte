@@ -105,7 +105,7 @@
 
   async function previewVoice() {
     await invoke("speak_text", {
-      text: "Hello, this is a voice preview from VoxCtr.",
+      text: "Hello, this is a voice preview from VoxCtrl.",
       voice: cfg.tts.voice
     });
   }
@@ -183,7 +183,7 @@
         <p class="field-error-msg">{voiceDirError}</p>
       {/if}
     </div>
-    <p class="hint">Default voice directory: <code>~/.local/share/voxctl/piper-voices/</code></p>
+    <p class="hint">Default voice directory: <code>~/.local/share/voxctrl/piper-voices/</code></p>
 
     <div class="row">
       <button class="btn-preview" onclick={previewVoice} disabled={!cfg.tts.enabled || downloading || !downloadedMap[cfg.tts.voice]}>

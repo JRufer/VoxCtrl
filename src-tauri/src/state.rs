@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}};
 
 use tokio::sync::Mutex;
-use voxctr_config::Config;
-use voxctr_routing::OutputTargetRouter;
+use voxctrl_config::Config;
+use voxctrl_routing::OutputTargetRouter;
 
 /// All shared mutable state, behind Arc so it can be handed to Tauri commands.
 pub struct AppState {
@@ -40,7 +40,7 @@ pub struct AppState {
     pub active_binding_label: Arc<Mutex<String>>,
 
     /// Currently configured target definitions (in-memory cache for fast lookups)
-    pub targets: Arc<Mutex<Vec<voxctr_routing::OutputTarget>>>,
+    pub targets: Arc<Mutex<Vec<voxctrl_routing::OutputTarget>>>,
 
     /// Transcript history — most recent first
     pub history: Arc<Mutex<Vec<HistoryEntry>>>,
@@ -49,13 +49,13 @@ pub struct AppState {
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
 
     /// Playback engine handle
-    pub tts_handle: Arc<Mutex<Option<voxctr_tts::TtsEngineHandle>>>,
+    pub tts_handle: Arc<Mutex<Option<voxctrl_tts::TtsEngineHandle>>>,
 
     /// Set of active FIFO response pipes currently being listened to
     pub active_fifos: Arc<Mutex<HashSet<String>>>,
 
     /// Channel for sending hotkey configurations directly to background threads
-    pub hotkey_reloader: Arc<Mutex<Option<crossbeam_channel::Sender<Vec<voxctr_routing::HotkeyBinding>>>>>,
+    pub hotkey_reloader: Arc<Mutex<Option<crossbeam_channel::Sender<Vec<voxctrl_routing::HotkeyBinding>>>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -146,7 +146,7 @@ impl AppState {
         self.word_count.load(Ordering::SeqCst)
     }
 
-    pub async fn spawn_fifo_responders(&self, tts: voxctr_tts::TtsEngineHandle) {
+    pub async fn spawn_fifo_responders(&self, tts: voxctrl_tts::TtsEngineHandle) {
         let targets_guard = self.targets.lock().await;
         let mut active_fifos_guard = self.active_fifos.lock().await;
 
@@ -157,7 +157,7 @@ impl AppState {
                     let tts_clone = tts.clone();
                     let pipe_path_clone = pipe_path.clone();
                     tokio::spawn(async move {
-                        voxctr_tts::run_fifo_responder(pipe_path_clone, tts_clone).await;
+                        voxctrl_tts::run_fifo_responder(pipe_path_clone, tts_clone).await;
                     });
                 }
             }

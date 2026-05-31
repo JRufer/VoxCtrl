@@ -224,7 +224,7 @@
         />
       </label>
       <p class="hint">
-        Default model directory: <code>~/.local/share/voxctl/models/</code>
+        Default model directory: <code>~/.local/share/voxctrl/models/</code>
       </p>
     </div>
   {:else}

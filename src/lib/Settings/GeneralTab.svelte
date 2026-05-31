@@ -39,7 +39,7 @@
         onchange={markDirty}
       />
     </label>
-    <p class="hint">Socket: <code>/tmp/voxctl-mcp.sock</code> (Linux) / <code>\\.\pipe\voxctl-mcp</code> (Windows)</p>
+    <p class="hint">Socket: <code>/tmp/voxctrl-mcp.sock</code> (Linux) / <code>\\.\pipe\voxctrl-mcp</code> (Windows)</p>
   </div>
 
   <div class="field-group">

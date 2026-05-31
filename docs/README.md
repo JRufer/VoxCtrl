@@ -1,6 +1,6 @@
-# VoxCtr Documentation
+# VoxCtrl Documentation
 
-VoxCtr is a high-performance, privacy-first voice-to-text dictation application and programmable voice input broker. All processing happens 100% on-device with zero telemetry or cloud dependencies.
+VoxCtrl is a high-performance, privacy-first voice-to-text dictation application and programmable voice input broker. All processing happens 100% on-device with zero telemetry or cloud dependencies.
 
 ---
 
@@ -8,7 +8,7 @@ VoxCtr is a high-performance, privacy-first voice-to-text dictation application 
 
 | Document | Description |
 |---|---|
-| [Overview](./overview.md) | What VoxCtr does, key features, and design principles |
+| [Overview](./overview.md) | What VoxCtrl does, key features, and design principles |
 | [Architecture](./architecture.md) | System design, crate layout, data flow, concurrency model |
 | [Audio Pipeline](./audio.md) | Audio capture, device management, VAD, resampling |
 | [Speech Recognition](./speech-recognition.md) | Whisper engine, models, inference pipeline, post-processing |

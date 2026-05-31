@@ -50,11 +50,11 @@
   $effect(() => {
     const root = document.querySelector(".overlay-root") as HTMLElement;
     if (root) {
-      root.style.setProperty("--voxctr-audio-level", String(currentVolume));
-      root.style.setProperty("--voxctr-recording", $recording ? "1" : "0");
-      root.style.setProperty("--voxctr-processing", $status.processing ? "1" : "0");
-      root.style.setProperty("--voxctr-speaking", $speaking ? "1" : "0");
-      root.style.setProperty("--voxctr-audio-ready", $status.audio_ready !== false ? "1" : "0");
+      root.style.setProperty("--voxctrl-audio-level", String(currentVolume));
+      root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
+      root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
+      root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
+      root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
     }
   });
 
@@ -84,7 +84,7 @@
     // Listen to real-time audio levels from Rust backend
     listen<number>("audio-level", (event) => {
       targetVolume = Math.min(1.0, event.payload * 100.0);
-      window.dispatchEvent(new CustomEvent("voxctr-audio-level", { detail: event.payload }));
+      window.dispatchEvent(new CustomEvent("voxctrl-audio-level", { detail: event.payload }));
     }).then((unlisten) => {
       unlistenAudioLevel = unlisten;
     });
@@ -97,7 +97,7 @@
 
       // Dispatch high-performance window-level custom events
       if (activeCustomOverlay) {
-        window.dispatchEvent(new CustomEvent("voxctr-status", {
+        window.dispatchEvent(new CustomEvent("voxctrl-status", {
           detail: {
             recording: $recording,
             processing: $status.processing,

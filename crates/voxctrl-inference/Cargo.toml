@@ -1,0 +1,40 @@
+[package]
+name = "voxctrl-inference"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+voxctrl-config  = { workspace = true }
+voxctrl-routing = { workspace = true }
+voxctrl-llm    = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+crossbeam-channel = { workspace = true }
+regex = { workspace = true }
+dirs = { workspace = true }
+reqwest = { workspace = true }
+whisper-rs = { version = "0.16" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+
+# Moonshine ONNX backend via onnxruntime
+moonshine = ["dep:ort", "dep:ndarray"]
+
+[dependencies.ort]
+version = "2.0.0-rc.12"
+optional = true
+features = ["download-binaries"]
+
+[dependencies.ndarray]
+version = "0.16"
+optional = true
+

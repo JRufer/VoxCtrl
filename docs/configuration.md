@@ -1,6 +1,6 @@
 # Configuration Reference
 
-VoxCtr uses three configuration files, all stored under `~/.config/voxctl/`.
+VoxCtrl uses three configuration files, all stored under `~/.config/voxctrl/`.
 
 | File | Format | Purpose |
 |---|---|---|
@@ -104,7 +104,7 @@ The engine config is nested into two backend sub-objects.
 | `model_size` | string | `"large-v3"` | Whisper model to load (see valid values below) |
 | `device` | string | `"auto"` | Compute device: `auto`/`cpu`/`cuda`/`vulkan` |
 | `threads` | integer | `0` | CPU thread count; 0 = half of logical cores |
-| `model_dir` | string | `""` | Custom model directory; empty = `~/.local/share/voxctl/models/`. Supports `~` expansion. The directory must already exist. |
+| `model_dir` | string | `""` | Custom model directory; empty = `~/.local/share/voxctrl/models/`. Supports `~` expansion. The directory must already exist. |
 
 Valid `model_size` values: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v2`, `large-v3`, `large-v3-turbo`
 
@@ -151,7 +151,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `spoken_punctuation` | bool | `true` | Convert spoken punctuation words to symbols (e.g. "period" → ".") |
 | `auto_format_lists` | bool | `true` | Detect "first/second/third" patterns and reformat as a numbered list |
 | `quiet_mode` | bool | `false` | Suppress overlay notifications during transcription |
-| `custom_vocabulary` | string[] | `[]` | Custom words; VoxCtr uses fuzzy Levenshtein matching to correct near-matches post-transcription |
+| `custom_vocabulary` | string[] | `[]` | Custom words; VoxCtrl uses fuzzy Levenshtein matching to correct near-matches post-transcription |
 | `snippets` | object | `{}` | Short code → expansion map |
 
 Example with snippets:
@@ -184,7 +184,7 @@ Example with snippets:
 | `enabled` | bool | `false` | Enable TTS subsystem |
 | `engine` | string | `"piper"` | Synthesis engine: `"piper"` or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
-| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctl/piper-voices/`. Supports `~` expansion. |
+| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
 
@@ -352,7 +352,7 @@ target_ids = ["code_editor"]
 
 ## Config Migration
 
-VoxCtr auto-migrates older config formats on load. Known migrations:
+VoxCtrl auto-migrates older config formats on load. Known migrations:
 
 - `features.show_notification` → `ui.show_notification` (moved in an early release; the migrated config is immediately re-saved to disk to clean up the old key)
 

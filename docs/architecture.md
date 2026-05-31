@@ -2,7 +2,7 @@
 
 ## High-Level Design
 
-VoxCtr is a **Tauri 2** application: a compiled Rust backend that spawns a WebView window running a Svelte SPA. The two halves communicate via Tauri's IPC bridge (invoke commands + event emitters).
+VoxCtrl is a **Tauri 2** application: a compiled Rust backend that spawns a WebView window running a Svelte SPA. The two halves communicate via Tauri's IPC bridge (invoke commands + event emitters).
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -26,7 +26,7 @@ VoxCtr is a **Tauri 2** application: a compiled Rust backend that spawns a WebVi
 The backend is organized as a Cargo workspace of focused, single-responsibility crates:
 
 ```
-VoxCtr/
+VoxCtrl/
 ├── src-tauri/         # Tauri app entry + IPC command handlers
 │   └── src/
 │       ├── main.rs    # App bootstrap
@@ -35,16 +35,16 @@ VoxCtr/
 │       └── state.rs   # Shared AppState
 │
 └── crates/
-    ├── voxctr-config/     # AppConfig struct, TOML/JSON persistence
-    ├── voxctr-audio/      # Microphone capture, resampling, VU meter
-    ├── voxctr-hotkeys/    # Global key listener (evdev / Win32)
-    ├── voxctr-inference/  # Whisper transcription + post-processing
-    ├── voxctr-routing/    # OutputTarget + HotkeyBinding data models, router
-    ├── voxctr-inject/     # Text injection via wtype/xdotool/clipboard
-    ├── voxctr-tts/        # Piper/Espeak TTS engine
-    ├── voxctr-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
-    ├── voxctr-dbus/       # DBus service (Linux session bus)
-    └── voxctr-llm/        # Ollama HTTP client
+    ├── voxctrl-config/     # AppConfig struct, TOML/JSON persistence
+    ├── voxctrl-audio/      # Microphone capture, resampling, VU meter
+    ├── voxctrl-hotkeys/    # Global key listener (evdev / Win32)
+    ├── voxctrl-inference/  # Whisper transcription + post-processing
+    ├── voxctrl-routing/    # OutputTarget + HotkeyBinding data models, router
+    ├── voxctrl-inject/     # Text injection via wtype/xdotool/clipboard
+    ├── voxctrl-tts/        # Piper/Espeak TTS engine
+    ├── voxctrl-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
+    ├── voxctrl-dbus/       # DBus service (Linux session bus)
+    └── voxctrl-llm/        # Ollama HTTP client
 ```
 
 ---
@@ -55,12 +55,12 @@ VoxCtr/
 Hotkey press
      │
      ▼
-voxctr-hotkeys ──gesture_tx──► lib.rs coordinator
+voxctrl-hotkeys ──gesture_tx──► lib.rs coordinator
                                       │
                          ┌────────────┤
                          │            │
                   Start AudioRecorder  Determine target from binding
-                  (voxctr-audio)
+                  (voxctrl-audio)
                          │
                     audio_tx chunks
                          │
@@ -74,7 +74,7 @@ voxctr-hotkeys ──gesture_tx──► lib.rs coordinator
                          │
                          ▼
                   InferenceEngine.process()
-                  (voxctr-inference)
+                  (voxctrl-inference)
                     │  Noise gate (VAD)
                     │  Whisper transcription
                     │  Filler removal
@@ -90,15 +90,15 @@ voxctr-hotkeys ──gesture_tx──► lib.rs coordinator
                          │
                          ▼
                   OutputTargetRouter.route()
-                  (voxctr-routing)
-                    ├── inject → voxctr-inject
+                  (voxctrl-routing)
+                    ├── inject → voxctrl-inject
                     ├── clipboard → arboard
                     ├── file → tokio::fs
                     ├── http/webhook → reqwest
                     ├── exec → std::process
                     ├── socket → UnixStream
-                    ├── dbus → voxctr-dbus
-                    ├── mcp → voxctr-mcp response queue
+                    ├── dbus → voxctrl-dbus
+                    ├── mcp → voxctrl-mcp response queue
                     └── pipe → named FIFO
                          │
                     Tauri event → frontend
@@ -109,7 +109,7 @@ voxctr-hotkeys ──gesture_tx──► lib.rs coordinator
 
 ## Concurrency Model
 
-VoxCtr uses Tokio for async I/O plus dedicated OS threads for latency-sensitive work:
+VoxCtrl uses Tokio for async I/O plus dedicated OS threads for latency-sensitive work:
 
 | Thread / Task | Type | Purpose |
 |---|---|---|
@@ -172,10 +172,10 @@ App.svelte  (route switcher)
 
 | Path | Contents |
 |---|---|
-| `~/.config/voxctl/config.json` | Main application config |
-| `~/.config/voxctl/targets.toml` | Output target definitions |
-| `~/.config/voxctl/bindings.toml` | Hotkey binding definitions |
-| `~/.local/share/voxctl/models/` | Downloaded Whisper GGUF models |
-| `~/.local/share/voxctl/piper-voices/` | Downloaded Piper voice packs |
-| `/tmp/voxctl-mcp.sock` | MCP Unix domain socket (Linux) |
-| `\\.\pipe\voxctl-mcp` | MCP named pipe (Windows) |
+| `~/.config/voxctrl/config.json` | Main application config |
+| `~/.config/voxctrl/targets.toml` | Output target definitions |
+| `~/.config/voxctrl/bindings.toml` | Hotkey binding definitions |
+| `~/.local/share/voxctrl/models/` | Downloaded Whisper GGUF models |
+| `~/.local/share/voxctrl/piper-voices/` | Downloaded Piper voice packs |
+| `/tmp/voxctrl-mcp.sock` | MCP Unix domain socket (Linux) |
+| `\\.\pipe\voxctrl-mcp` | MCP named pipe (Windows) |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VoxCtr Installer & Host Setup Script
+# VoxCtrl Installer & Host Setup Script
 #
 # Configures the host environment to run the portable AppImage natively:
 # 1. Installs system runtime dependencies (PortAudio, WebKitGTK, tools).
@@ -86,14 +86,14 @@ step "Retrieving Portable AppImage"
 
 # Helper function to dynamically scan and resolve the best local AppImage
 resolve_local_appimage() {
-    # Scan for any semver-compliant versioned AppImages (e.g. VoxCtr-0.1.0-x86_64.AppImage)
-    local found=( $(find . -maxdepth 1 -name "VoxCtr-*-x86_64.AppImage" 2>/dev/null | sort -V || true) )
+    # Scan for any semver-compliant versioned AppImages (e.g. VoxCtrl-0.1.0-x86_64.AppImage)
+    local found=( $(find . -maxdepth 1 -name "VoxCtrl-*-x86_64.AppImage" 2>/dev/null | sort -V || true) )
     if [ ${#found[@]} -gt 0 ]; then
         echo "${found[-1]}"
-    elif [ -f "./VoxCtr-latest-x86_64.AppImage" ]; then
-        echo "./VoxCtr-latest-x86_64.AppImage"
-    elif [ -f "./VoxCtl-x86_64.AppImage" ]; then
-        echo "./VoxCtl-x86_64.AppImage"
+    elif [ -f "./VoxCtrl-latest-x86_64.AppImage" ]; then
+        echo "./VoxCtrl-latest-x86_64.AppImage"
+    elif [ -f "./VoxCtrl-x86_64.AppImage" ]; then
+        echo "./VoxCtrl-x86_64.AppImage"
     else
         echo ""
     fi
@@ -105,10 +105,10 @@ if [ -n "$PORTABLE_APPIMAGE" ] && [ -f "$PORTABLE_APPIMAGE" ]; then
     ok "Portable AppImage found in workspace: $PORTABLE_APPIMAGE"
 else
     # Default target filename for downloads
-    PORTABLE_APPIMAGE="./VoxCtr-latest-x86_64.AppImage"
+    PORTABLE_APPIMAGE="./VoxCtrl-latest-x86_64.AppImage"
     info "Portable AppImage not found in root. Attempting to fetch pre-compiled binary..."
     
-    DOWNLOAD_URL="https://github.com/JRufer/VoxCtr/releases/latest/download/VoxCtr-latest-x86_64.AppImage"
+    DOWNLOAD_URL="https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-latest-x86_64.AppImage"
     FETCHED=0
     
     if command -v curl &>/dev/null; then
@@ -173,11 +173,11 @@ fi
 
 # Extract dynamic variables from the resolved AppImage path for brand consistency
 FILENAME=$(basename "$PORTABLE_APPIMAGE")
-if [[ "$FILENAME" =~ VoxCtr-(.*)-x86_64.AppImage ]]; then
-    APP_NAME="VoxCtr"
+if [[ "$FILENAME" =~ VoxCtrl-(.*)-x86_64.AppImage ]]; then
+    APP_NAME="VoxCtrl"
     APP_VERSION="${BASH_REMATCH[1]}"
 else
-    APP_NAME="VoxCtr"
+    APP_NAME="VoxCtrl"
     APP_VERSION="latest"
 fi
 
@@ -186,7 +186,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 step "Configuring Hardware Permissions (udev)"
 
-UDEV_RULE_PATH="/etc/udev/rules.d/99-voxctr.rules"
+UDEV_RULE_PATH="/etc/udev/rules.d/99-voxctrl.rules"
 if [ ! -f "$UDEV_RULE_PATH" ]; then
     info "Setting up udev rules for global hotkeys (requires sudo)..."
     sudo tee "$UDEV_RULE_PATH" > /dev/null <<EOF
@@ -209,9 +209,9 @@ else
 fi
 
 # Remove legacy rule if it exists to keep system clean
-if [ -f "/etc/udev/rules.d/99-voxctl.rules" ]; then
+if [ -f "/etc/udev/rules.d/99-voxctrl.rules" ]; then
     info "Removing legacy udev rule path..."
-    sudo rm -f "/etc/udev/rules.d/99-voxctl.rules"
+    sudo rm -f "/etc/udev/rules.d/99-voxctrl.rules"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -225,7 +225,7 @@ LAUNCHER_DEST_DIR="$HOME/.local/share/applications"
 mkdir -p "$ICON_DEST_DIR"
 mkdir -p "$LAUNCHER_DEST_DIR"
 
-ICON_DEST_PATH="$ICON_DEST_DIR/voxctr.png"
+ICON_DEST_PATH="$ICON_DEST_DIR/voxctrl.png"
 ICON_COPIED=0
 
 # Install high-res desktop icon
@@ -237,13 +237,13 @@ else
     # Try to extract the icon dynamically from the AppImage (resolves raw deployment bug)
     info "Attempting to extract application icon from portable AppImage..."
     if command -v unsquashfs &>/dev/null; then
-        if "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/128x128/apps/voxctr.png &>/dev/null; then
-            cp squashfs-root/usr/share/icons/hicolor/128x128/apps/voxctr.png "$ICON_DEST_PATH"
+        if "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/128x128/apps/voxctrl.png &>/dev/null; then
+            cp squashfs-root/usr/share/icons/hicolor/128x128/apps/voxctrl.png "$ICON_DEST_PATH"
             rm -rf squashfs-root
             ICON_COPIED=1
             ok "Application icon extracted and installed successfully: $ICON_DEST_PATH"
-        elif "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/512x512/apps/voxctr.png &>/dev/null; then
-            cp squashfs-root/usr/share/icons/hicolor/512x512/apps/voxctr.png "$ICON_DEST_PATH"
+        elif "$PORTABLE_APPIMAGE" --appimage-extract usr/share/icons/hicolor/512x512/apps/voxctrl.png &>/dev/null; then
+            cp squashfs-root/usr/share/icons/hicolor/512x512/apps/voxctrl.png "$ICON_DEST_PATH"
             rm -rf squashfs-root
             ICON_COPIED=1
             ok "Application icon extracted (512px) and installed successfully: $ICON_DEST_PATH"
@@ -256,15 +256,15 @@ if [ $ICON_COPIED -eq 0 ]; then
 fi
 
 # Write desktop entry linked directly to the portable AppImage
-LAUNCHER_PATH="$LAUNCHER_DEST_DIR/voxctr.desktop"
+LAUNCHER_PATH="$LAUNCHER_DEST_DIR/voxctrl.desktop"
 ABS_APPIMAGE_PATH="$(readlink -f "$PORTABLE_APPIMAGE")"
 
 cat > "$LAUNCHER_PATH" <<EOF
 [Desktop Entry]
-Name=VoxCtr
+Name=VoxCtrl
 Comment=Private Global Voice Dictation Gateway
 Exec=$ABS_APPIMAGE_PATH
-Icon=voxctr
+Icon=voxctrl
 Terminal=false
 Type=Application
 Categories=Utility;AudioVideo;
@@ -276,8 +276,8 @@ chmod +x "$LAUNCHER_PATH"
 ok "Desktop launcher integrated successfully: $LAUNCHER_PATH"
 
 # Clean up legacy launcher if it exists
-if [ -f "$LAUNCHER_DEST_DIR/voxctl.desktop" ]; then
-    rm -f "$LAUNCHER_DEST_DIR/voxctl.desktop"
+if [ -f "$LAUNCHER_DEST_DIR/voxctrl.desktop" ]; then
+    rm -f "$LAUNCHER_DEST_DIR/voxctrl.desktop"
 fi
 
 echo ""
@@ -285,7 +285,7 @@ echo -e "${BOLD}==================================================${NC}"
 echo -e "${BOLD}  Setup & Integration Complete!${NC}"
 echo -e "${BOLD}==================================================${NC}"
 echo ""
-echo "  VoxCtr ($APP_VERSION) is now fully integrated into your desktop environment!"
+echo "  VoxCtrl ($APP_VERSION) is now fully integrated into your desktop environment!"
 echo "  You can launch it directly from your applications menu or run:"
 echo -e "    ${GREEN}$PORTABLE_APPIMAGE${NC}"
 echo ""

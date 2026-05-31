@@ -21,13 +21,13 @@ The recommended distribution format is an AppImage — a single portable executa
 
 ```bash
 # Download the latest AppImage
-curl -LO https://github.com/jrufer/voxctr/releases/latest/download/VoxCtr.AppImage
+curl -LO https://github.com/jrufer/voxctrl/releases/latest/download/VoxCtrl.AppImage
 
 # Make executable
-chmod +x VoxCtr.AppImage
+chmod +x VoxCtrl.AppImage
 
 # Run
-./VoxCtr.AppImage
+./VoxCtrl.AppImage
 ```
 
 Or use the install script for system integration (desktop entry, udev rules):
@@ -36,7 +36,7 @@ bash install.sh
 ```
 
 The install script:
-1. Copies the AppImage to `~/.local/bin/voxctr`
+1. Copies the AppImage to `~/.local/bin/voxctrl`
 2. Installs a `.desktop` file for application launchers
 3. Creates udev rules for `/dev/input` access (required for global hotkeys)
 4. Adds the current user to the `input` group
@@ -48,7 +48,7 @@ The install script:
 ## Permissions Setup (Linux)
 
 ### Global Hotkeys
-VoxCtr uses evdev to listen for global keyboard events. Your user must be in the `input` group:
+VoxCtrl uses evdev to listen for global keyboard events. Your user must be in the `input` group:
 
 ```bash
 sudo usermod -aG input $USER
@@ -87,9 +87,9 @@ sudo pacman -S xdotool
 
 ## First Run
 
-On first launch, VoxCtr will:
-1. Create `~/.config/voxctl/` with default `config.json`, `targets.toml`, and `bindings.toml`
-2. Create `~/.local/share/voxctl/` for model and voice storage
+On first launch, VoxCtrl will:
+1. Create `~/.config/voxctrl/` with default `config.json`, `targets.toml`, and `bindings.toml`
+2. Create `~/.local/share/voxctrl/` for model and voice storage
 3. Open the Settings window
 
 ### Download a Whisper Model
@@ -123,13 +123,13 @@ sudo apt install vulkan-tools libvulkan1
 sudo pacman -S vulkan-icd-loader
 ```
 
-**NVIDIA CUDA:** CUDA acceleration requires a CUDA-enabled build of VoxCtr — it is not available in the standard pre-built AppImage. You must compile from source with:
+**NVIDIA CUDA:** CUDA acceleration requires a CUDA-enabled build of VoxCtrl — it is not available in the standard pre-built AppImage. You must compile from source with:
 
 ```bash
 npm run tauri build -- --features cuda
 ```
 
-Once running a CUDA build, set `engine.whisper_cpp.device = "auto"` (or `"cuda"`) and VoxCtr will use the GPU automatically. The "CUDA (NVIDIA)" option in Settings → Engine is only shown when the binary was compiled with CUDA support.
+Once running a CUDA build, set `engine.whisper_cpp.device = "auto"` (or `"cuda"`) and VoxCtrl will use the GPU automatically. The "CUDA (NVIDIA)" option in Settings → Engine is only shown when the binary was compiled with CUDA support.
 
 
 ### Ollama Post-Processing
@@ -140,7 +140,7 @@ If you want LLM grammar correction:
 
 ### MCP Server (Claude Desktop / Cursor)
 1. Enable in Settings → Engine → MCP Server
-2. Configure your MCP client to connect to `/tmp/voxctl-mcp.sock`
+2. Configure your MCP client to connect to `/tmp/voxctrl-mcp.sock`
 
 ---
 
@@ -173,4 +173,4 @@ See [Development Guide](./development.md).
 
 ### AppImage won't launch
 - Install FUSE: `sudo apt install fuse libfuse2`
-- Or extract and run directly: `./VoxCtr.AppImage --appimage-extract && squashfs-root/AppRun`
+- Or extract and run directly: `./VoxCtrl.AppImage --appimage-extract && squashfs-root/AppRun`

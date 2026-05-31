@@ -1,0 +1,27 @@
+[package]
+name = "voxctrl-routing"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+dirs = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+arboard = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+async-trait = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+base64 = { workspace = true }

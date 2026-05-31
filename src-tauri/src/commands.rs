@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager, State};
 use tracing::info;
-use voxctr_config::AppConfig;
-use voxctr_routing::{HotkeyBinding, OutputTarget};
+use voxctrl_config::AppConfig;
+use voxctrl_routing::{HotkeyBinding, OutputTarget};
 
 use crate::state::{AppState, HistoryEntry};
 
@@ -90,6 +90,21 @@ pub async fn save_config(
     state.set_input_device_index(new_config.audio.input_device_index);
     state.set_gain(new_config.audio.gain);
 
+    // Dynamic TTS engine lifecycle management
+    {
+        let mut handle = state.tts_handle.lock().await;
+        if let Some(ref tts) = *handle {
+            tts.stop();
+        }
+        if new_config.tts.enabled {
+            let new_tts = voxctrl_tts::TtsEngineWorker::start(new_config.tts.clone());
+            *handle = Some(new_tts.clone());
+            state.spawn_fifo_responders(new_tts).await;
+        } else {
+            *handle = None;
+        }
+    }
+
     let mut guard = state.config.lock().await;
     guard.data = new_config.clone();
     guard.save().map_err(|e| e.to_string())?;
@@ -122,8 +137,8 @@ pub fn cuda_enabled() -> bool {
 pub async fn get_targets(
     _state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<OutputTarget>, String> {
-    let dir = voxctr_routing::config_dir();
-    voxctr_routing::load_targets(&dir).map_err(|e| e.to_string())
+    let dir = voxctrl_routing::config_dir();
+    voxctrl_routing::load_targets(&dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -131,8 +146,8 @@ pub async fn save_targets(
     state: State<'_, Arc<AppState>>,
     targets: Vec<OutputTarget>,
 ) -> Result<(), String> {
-    let dir = voxctr_routing::config_dir();
-    voxctr_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
+    let dir = voxctrl_routing::config_dir();
+    voxctrl_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
     
     // Update the in-memory targets cache
     *state.targets.lock().await = targets.clone();
@@ -157,8 +172,8 @@ pub async fn save_targets(
 pub async fn get_bindings(
     _state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<HotkeyBinding>, String> {
-    let dir = voxctr_routing::config_dir();
-    voxctr_routing::load_bindings(&dir).map_err(|e| e.to_string())
+    let dir = voxctrl_routing::config_dir();
+    voxctrl_routing::load_bindings(&dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -166,8 +181,8 @@ pub async fn save_bindings(
     state: State<'_, Arc<AppState>>,
     bindings: Vec<HotkeyBinding>,
 ) -> Result<(), String> {
-    let dir = voxctr_routing::config_dir();
-    voxctr_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
+    let dir = voxctrl_routing::config_dir();
+    voxctrl_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
     info!("Bindings saved");
     
     // Hot reload the bindings in the active listener threads
@@ -209,7 +224,7 @@ pub async fn speak_text(
     info!("TTS speak_text via command: {text}");
     let handle = state.tts_handle.lock().await;
     if let Some(ref tts) = *handle {
-        tts.speak_utterance(voxctr_tts::Utterance {
+        tts.speak_utterance(voxctrl_tts::Utterance {
             text,
             voice,
             source_label: None,
@@ -220,24 +235,24 @@ pub async fn speak_text(
 
 #[tauri::command]
 pub async fn check_voice_downloaded(voice_name: String, voice_dir: String) -> Result<bool, String> {
-    Ok(voxctr_tts::is_voice_downloaded(&voice_name, &voice_dir))
+    Ok(voxctrl_tts::is_voice_downloaded(&voice_name, &voice_dir))
 }
 
 #[tauri::command]
 pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(), String> {
-    voxctr_tts::download_voice(&voice_name, &voice_dir)
+    voxctrl_tts::download_voice(&voice_name, &voice_dir)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn check_model_downloaded(model_size: String, model_dir: String) -> Result<bool, String> {
-    Ok(voxctr_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir))
+    Ok(voxctrl_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir))
 }
 
 #[tauri::command]
 pub async fn download_model(model_size: String, model_dir: String) -> Result<(), String> {
-    voxctr_inference::whisper_cpp::download_model(&model_size, &model_dir)
+    voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir)
         .await
         .map_err(|e| e.to_string())
 }
@@ -300,7 +315,7 @@ pub struct CustomOverlayInfo {
 pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
     let overlays_dir = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("voxctl")
+        .join("voxctrl")
         .join("overlays");
 
     if !overlays_dir.exists() {
@@ -368,7 +383,7 @@ pub async fn stop_monitoring_audio(state: State<'_, Arc<AppState>>) -> Result<()
 
 #[tauri::command]
 pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
-    let devices = voxctr_audio::list_input_devices();
+    let devices = voxctrl_audio::list_input_devices();
     Ok(devices
         .into_iter()
         .map(|d| AudioDeviceInfo { index: d.index, name: d.name })
@@ -393,7 +408,7 @@ pub async fn test_ollama(
     endpoint: String,
     timeout_secs: u64,
 ) -> Result<OllamaTestResult, String> {
-    use voxctr_config::{OllamaConfig, OllamaMode};
+    use voxctrl_config::{OllamaConfig, OllamaMode};
     let cfg = OllamaConfig {
         enabled: true,
         endpoint: endpoint.clone(),
@@ -402,7 +417,7 @@ pub async fn test_ollama(
         custom_prompt: None,
         timeout_secs,
     };
-    let client = voxctr_llm::OllamaClient::new(cfg);
+    let client = voxctrl_llm::OllamaClient::new(cfg);
     if client.is_available().await {
         match client.list_models().await {
             Ok(models) => {
@@ -440,7 +455,7 @@ pub struct UdevStatusPayload {
 #[tauri::command]
 pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
     // 1. Check for developer override via environment variable
-    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+    if let Ok(override_val) = std::env::var("VOXCTRL_TEST_UDEV_STATUS") {
         match override_val.as_str() {
             "missing" => {
                 return Ok(UdevStatusPayload {
@@ -483,8 +498,8 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
 
     #[cfg(target_os = "linux")]
     {
-        // Check if /etc/udev/rules.d/99-voxctr.rules exists
-        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
+        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
 
         // Check if the current user session has the "input" group by running `id -Gn`
         let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {

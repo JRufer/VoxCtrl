@@ -1,20 +1,20 @@
-# VoxCtr
+# VoxCtrl
 
-![VoxCtr Banner](assets/banner.png)
+![VoxCtrl Banner](assets/banner.png)
 
 A high-performance, private, on-device voice-to-text dictation application and programmable **voice input broker** built natively in Rust and Tauri with a Svelte frontend. 
 
 **Zero Telemetry. Zero Cloud. 100% On-Device.**
-VoxCtr acts as an intelligent desktop voice gateway, routing your speech to any destination—whether typing directly into a focused window, invoking terminal agents, appending to journals, triggering shell commands, or feeding local AI assistants.
+VoxCtrl acts as an intelligent desktop voice gateway, routing your speech to any destination—whether typing directly into a focused window, invoking terminal agents, appending to journals, triggering shell commands, or feeding local AI assistants.
 
 ---
 
 ## 🔒 Privacy First & Fully On-Device
 
-In an era of cloud processing, VoxCtr is built from the ground up to guarantee absolute data sovereignty:
-* **No Cloud API Keys Required**: VoxCtr relies exclusively on OpenAI's Whisper models (via native CPU/GPU accelerated `whisper-rs`) running directly on your local hardware.
+In an era of cloud processing, VoxCtrl is built from the ground up to guarantee absolute data sovereignty:
+* **No Cloud API Keys Required**: VoxCtrl relies exclusively on OpenAI's Whisper models (via native CPU/GPU accelerated `whisper-rs`) running directly on your local hardware.
 * **No Telemetry**: Your ambient microphone data never leaves your machine. There are no hidden tracking scripts or analytical pings.
-* **Air-Gapped Ready**: Once the application and models are downloaded, VoxCtr requires zero internet access to function.
+* **Air-Gapped Ready**: Once the application and models are downloaded, VoxCtrl requires zero internet access to function.
 * **Local Neural Voices**: All text-to-speech feedback is generated offline via a local Piper engine.
 
 ---
@@ -26,7 +26,7 @@ In an era of cloud processing, VoxCtr is built from the ground up to guarantee a
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
 * **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, or double-tap gestures directly to any keyboard.
-* **DBus Dictation Service**: Exposes `ai.voxctl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
+* **DBus Dictation Service**: Exposes `ai.voxctrl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
 * **Neural Text-to-Speech (TTS)**: Built-in local neural voice feedback powered by Piper, with automatic local package installation and a voice downloader interface.
 * **Intelligent Post-Processing & Ollama**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional **local Ollama integration** (supporting Llama 3.2, Phi-3, or Mistral) for real-time grammar correction, tone rewriting, or custom formatting.
 
@@ -34,11 +34,11 @@ In an era of cloud processing, VoxCtr is built from the ground up to guarantee a
 
 ## 🎯 The Deep Targeting System
 
-The core of VoxCtr is its **Output Target Router**. Rather than simply pasting text where your cursor is, VoxCtr allows you to declare **named output targets** in `targets.toml` and bind them to different global keyboard gestures. This turns your voice into a programmable router.
+The core of VoxCtrl is its **Output Target Router**. Rather than simply pasting text where your cursor is, VoxCtrl allows you to declare **named output targets** in `targets.toml` and bind them to different global keyboard gestures. This turns your voice into a programmable router.
 
 **New in v0.1:** You can now bind **multiple targets** to a single hotkey gesture! When activated, your text is broadcast concurrently to all bound targets. Configurations also **hot-reload instantly** in the background, without requiring an app restart.
 
-Below are the 9 target types supported by VoxCtr and what they are used for:
+Below are the 9 target types supported by VoxCtrl and what they are used for:
 
 | Delivery Type | Mechanism | Perfect Use Case |
 | :--- | :--- | :--- |
@@ -97,7 +97,7 @@ Below are the 9 target types supported by VoxCtr and what they are used for:
 
 ## 🖥️ User Interface
 
-VoxCtr provides a clean, native settings window and overlay environment:
+VoxCtrl provides a clean, native settings window and overlay environment:
 
 ![Settings Panel](assets/settings.png)
 
@@ -111,7 +111,7 @@ VoxCtr provides a clean, native settings window and overlay environment:
 
 ### 🎨 Heads-Up HUD Overlay Styles
 
-VoxCtr features a dynamic transparent overlay window that renders floating real-time audio visualization above your desktop during dictation. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
+VoxCtrl features a dynamic transparent overlay window that renders floating real-time audio visualization above your desktop during dictation. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
 
 1. **Ocean Wave (Default) 🌊**
    A premium, liquid fluid animation utilizing three overlapping, semi-transparent SVG wave layers (Deep Blue, Aqua Cyan, and Ice Teal) that execute dynamic parallax sliding.
@@ -135,15 +135,15 @@ VoxCtr features a dynamic transparent overlay window that renders floating real-
 
 ### 🛠️ User-Creatable Custom Overlay Templates (Dynamic HTML/CSS/JS)
 
-In addition to the built-in visualizer styles, VoxCtr features a **programmable runtime overlay system** that dynamically loads custom visualizers created by you! 
+In addition to the built-in visualizer styles, VoxCtrl features a **programmable runtime overlay system** that dynamically loads custom visualizers created by you! 
 
-* **Local Folder Scanning:** Create a folder inside `~/.local/share/voxctl/overlays/` containing `index.html` and `style.css`. It will instantly register as a selectable choice in the **Visual Tab** settings dropdown list.
-* **Placeholder Replacements:** Place `{{trigger}}` and `{{target}}` variables in your HTML; VoxCtr automatically replaces them with your active hotkey trigger and routing destination labels dynamically.
-* **High-Speed CSS Custom Variables:** Binds real-time parameters directly to your elements (such as `--voxctr-audio-level` mapped 0.0–1.0 at 60fps, `--voxctr-recording`, `--voxctr-processing`, and `--voxctr-speaking`) for pure, GPU-accelerated CSS keyframe animations.
-* **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctr-audio-level` and `voxctr-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
+* **Local Folder Scanning:** Create a folder inside `~/.local/share/voxctrl/overlays/` containing `index.html` and `style.css`. It will instantly register as a selectable choice in the **Visual Tab** settings dropdown list.
+* **Placeholder Replacements:** Place `{{trigger}}` and `{{target}}` variables in your HTML; VoxCtrl automatically replaces them with your active hotkey trigger and routing destination labels dynamically.
+* **High-Speed CSS Custom Variables:** Binds real-time parameters directly to your elements (such as `--voxctrl-audio-level` mapped 0.0–1.0 at 60fps, `--voxctrl-recording`, `--voxctrl-processing`, and `--voxctrl-speaking`) for pure, GPU-accelerated CSS keyframe animations.
+* **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctrl-audio-level` and `voxctrl-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
 * **Dynamic Script Execution:** Solves browser script blocking by parsing and executing standard `<script>` tags inside templates safely upon component mount.
 * **Built-in Naming Conflict Resolution:** Automatically intercepts reserved built-in keywords (`pulse`, `waveform`, etc.) and appends `_custom` suffixes to keep both visual styles working perfectly.
-* **Bundled Starter Example:** On first launch, VoxCtr automatically extracts a premium, pre-configured `gradient-wave` custom visualizer folder to your local directory. You can copy, modify, and study this folder to start building your own visualizers immediately!
+* **Bundled Starter Example:** On first launch, VoxCtrl automatically extracts a premium, pre-configured `gradient-wave` custom visualizer folder to your local directory. You can copy, modify, and study this folder to start building your own visualizers immediately!
 
 For a complete layout schema, step-by-step tutorial, and canvas animation guidelines, read the [Overlay UI Guide](docs/overlays.md).
 
@@ -154,7 +154,7 @@ For a complete layout schema, step-by-step tutorial, and canvas animation guidel
 
 ## 🔌 Built-in Model Context Protocol (MCP) Server
 
-VoxCtr features a native Model Context Protocol (MCP) server listening on a local Unix socket at `/tmp/voxctl-mcp.sock`. This allows advanced LLM agents (such as **Claude Desktop** or **Cursor**) to interface directly with your voice and speak responses back to you.
+VoxCtrl features a native Model Context Protocol (MCP) server listening on a local Unix socket at `/tmp/voxctrl-mcp.sock`. This allows advanced LLM agents (such as **Claude Desktop** or **Cursor**) to interface directly with your voice and speak responses back to you.
 
 ### Exposed MCP Tools
 1. **`transcribe_voice(timeout_secs)`**: Prompts the application to open your default recording device, capture speech, transcribe it using the Whisper engine, and return the raw text to the model.
@@ -162,7 +162,7 @@ VoxCtr features a native Model Context Protocol (MCP) server listening on a loca
 3. **`get_status()`**: Returns a JSON object with boolean states indicating whether the microphone is currently recording or the TTS engine is currently speaking.
 
 ### 🎯 Generic MCP Routing Target
-VoxCtr supports routing transcribed text directly to any local or networked MCP server via its **Output Target Router** using the `mcp` delivery type in `targets.toml`. 
+VoxCtrl supports routing transcribed text directly to any local or networked MCP server via its **Output Target Router** using the `mcp` delivery type in `targets.toml`. 
 
 The client is fully standard-compliant (Option B, performing `initialize` -> `notifications/initialized` -> `tools/call` handshakes on socket connect) to guarantee maximum compatibility with strict third-party MCP servers.
 
@@ -174,7 +174,7 @@ You can declare generic MCP targets in your `targets.toml` or configure them thr
 id = "self_speak"
 label = "Synthesize Speech Loopback"
 delivery = "mcp"
-mcp_path = "/tmp/voxctl-mcp.sock"   # Optional custom socket or pipe path (defaults to standard socket/pipe)
+mcp_path = "/tmp/voxctrl-mcp.sock"   # Optional custom socket or pipe path (defaults to standard socket/pipe)
 mcp_tool = "speak_text"            # The name of the MCP tool to call (defaults to 'speak_text')
 
 [target.mcp_args]
@@ -185,11 +185,11 @@ text = "{TEXT}"                    # Custom arguments template (substitutes the 
 
 ## 📦 Portable AppImage & Installation
 
-VoxCtr runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, combined with an automation script that handles system integration and hotkey permissions.
+VoxCtrl runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, combined with an automation script that handles system integration and hotkey permissions.
 
 ### 1. Unified Setup & System Integration
 
-To install runtime dependencies, fetch/configure the AppImage, and integrate VoxCtr into your desktop environment, run the unified `install.sh` script:
+To install runtime dependencies, fetch/configure the AppImage, and integrate VoxCtrl into your desktop environment, run the unified `install.sh` script:
 
 ```bash
 chmod +x install.sh
@@ -198,9 +198,9 @@ chmod +x install.sh
 
 #### What `install.sh` accomplishes automatically:
 * **System Runtime Packages**: Detects your package manager (`apt`, `pacman`, `dnf`, `zypper`) and installs WebKitGTK, OpenSSL, PortAudio, `wtype`, `xdotool`, and clipboard utilities.
-* **AppImage Retrieval**: Checks for `VoxCtl-x86_64.AppImage` locally. If missing, it attempts to fetch the latest pre-compiled binary from GitHub. If not found or offline, it falls back to building it from source.
-* **Low-Level Hardware Hotkeys**: Creates the `/etc/udev/rules.d/99-voxctl.rules` rule to permit access to `uinput`, and adds your user to the `input` group so the evdev key listener works globally without running the application as root.
-* **Desktop Menu Integration**: Registers a modern `.desktop` entry in `~/.local/share/applications/` and copies application icons so VoxCtr appears in your desktop application menus.
+* **AppImage Retrieval**: Checks for `VoxCtrl-x86_64.AppImage` locally. If missing, it attempts to fetch the latest pre-compiled binary from GitHub. If not found or offline, it falls back to building it from source.
+* **Low-Level Hardware Hotkeys**: Creates the `/etc/udev/rules.d/99-voxctrl.rules` rule to permit access to `uinput`, and adds your user to the `input` group so the evdev key listener works globally without running the application as root.
+* **Desktop Menu Integration**: Registers a modern `.desktop` entry in `~/.local/share/applications/` and copies application icons so VoxCtrl appears in your desktop application menus.
 
 > [!IMPORTANT]
 > If `install.sh` adds your user account to the `input` group, you **must log out and log back in** (or reboot) for hardware global hotkeys to function correctly.
@@ -220,7 +220,7 @@ This compilation script:
 * Restructures the workspace compiler toolchain, wrapping the local `appimagetool` to execute inside headless and FUSE-less build/sandbox environments using `--appimage-extract-and-run`.
 * Runs frontend compilation via Vite/Svelte and compiles the Rust Tauri backend.
 * Automatically injects system GPU/CUDA library paths into the compiler environment for hardware-accelerated transcription (if compatible NVIDIA cards are present).
-* Moves and exposes the final, standalone, portable AppImage directly to the root of the workspace as `VoxCtl-x86_64.AppImage`.
+* Moves and exposes the final, standalone, portable AppImage directly to the root of the workspace as `VoxCtrl-x86_64.AppImage`.
 
 ---
 
@@ -228,21 +228,21 @@ This compilation script:
 
 Once set up, you can execute the application in three ways:
 
-* **From Desktop Menu**: Launch **VoxCtr** directly from your desktop launcher or application drawer.
+* **From Desktop Menu**: Launch **VoxCtrl** directly from your desktop launcher or application drawer.
 * **Standalone Portable AppImage**: Run the standalone AppImage executable in the root directory:
   ```bash
-  ./VoxCtl-x86_64.AppImage
+  ./VoxCtrl-x86_64.AppImage
   ```
 * **Helper Script Wrapper**: Run the workspace helper script:
   ```bash
-  ./voxctr.sh
+  ./voxctrl.sh
   ```
 
 ---
 
 ## ⚙️ Configuration File Schema
 
-All configurations are stored locally inside `~/.config/voxctl/`.
+All configurations are stored locally inside `~/.config/voxctrl/`.
 
 ### `targets.toml`
 Defines the output target router destinations:
@@ -286,7 +286,7 @@ target_ids = ["default", "notes"]            # Sequential delivery to both targe
 ```
 
 ### Multi-Target Hotkey Bindings
-VoxCtr supports routing your speech to **multiple output targets simultaneously** using a single hotkey gesture! 
+VoxCtrl supports routing your speech to **multiple output targets simultaneously** using a single hotkey gesture! 
 
 When a multi-target binding is activated:
 1. Your speech is captured and transcribed **once**.

@@ -39,8 +39,8 @@ pub const GRADIENT_WAVE_HTML: &str = r##"<div class="custom-ocean-card">
     let targetVolume = 0;
     let currentVolume = 0;
 
-    // Listen to dynamic voxctr level events
-    window.addEventListener("voxctr-audio-level", (e) => {
+    // Listen to dynamic voxctrl level events
+    window.addEventListener("voxctrl-audio-level", (e) => {
       targetVolume = Math.min(1.0, e.detail * 100.0);
     });
 

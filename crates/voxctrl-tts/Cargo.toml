@@ -1,0 +1,20 @@
+[package]
+name = "voxctrl-tts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+voxctrl-config = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
+dirs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+crossbeam-channel = { workspace = true }
+rodio = { workspace = true }

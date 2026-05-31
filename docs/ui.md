@@ -4,7 +4,7 @@
 
 ## Window Layout
 
-VoxCtr opens three separate native windows managed by Tauri:
+VoxCtrl opens three separate native windows managed by Tauri:
 
 | Window | Route | Default Size | Properties |
 |---|---|---|---|

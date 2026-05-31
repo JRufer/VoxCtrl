@@ -1,10 +1,10 @@
 # Overview
 
-## What is VoxCtr?
+## What is VoxCtrl?
 
-VoxCtr ("Voice Controller") is a desktop dictation application that turns your voice into text and routes it wherever you need it — injected directly into the focused window, saved to a file, sent to an HTTP endpoint, or handed off to an LLM agent via the MCP protocol.
+VoxCtrl ("Voice Controller") is a desktop dictation application that turns your voice into text and routes it wherever you need it — injected directly into the focused window, saved to a file, sent to an HTTP endpoint, or handed off to an LLM agent via the MCP protocol.
 
-It is designed as a **programmable voice input broker**: you define output targets (where text goes) and hotkey bindings (what keys trigger recording for which targets), and VoxCtr handles the rest.
+It is designed as a **programmable voice input broker**: you define output targets (where text goes) and hotkey bindings (what keys trigger recording for which targets), and VoxCtrl handles the rest.
 
 Everything runs locally. No audio ever leaves your machine.
 
@@ -21,7 +21,7 @@ Everything runs locally. No audio ever leaves your machine.
 ### Privacy & Offline Operation
 - Zero network requests during normal operation
 - No analytics, crash reporting, or telemetry
-- All models and voices stored locally under `~/.local/share/voxctl/`
+- All models and voices stored locally under `~/.local/share/voxctrl/`
 
 ### Flexible Output Routing
 Nine output delivery types:
@@ -61,13 +61,13 @@ Applied after transcription before delivery:
 - `speak_text` callable from hotkeys, MCP, or routing targets
 
 ### LLM Integration (MCP Server)
-VoxCtr exposes a Model Context Protocol server so LLM agents (Claude Desktop, Cursor, etc.) can:
+VoxCtrl exposes a Model Context Protocol server so LLM agents (Claude Desktop, Cursor, etc.) can:
 - Trigger voice recording and receive the transcription
 - Queue TTS playback
 - Query live recording/speaking status
 
 ### DBus Service (Linux)
-Exposes `ai.voxctl.Dictation` on the session bus for shell scripts and desktop integrations to start/stop recording and receive text output as signals.
+Exposes `ai.voxctrl.Dictation` on the session bus for shell scripts and desktop integrations to start/stop recording and receive text output as signals.
 
 ### History
 Maintains an in-memory transcript log with word count, timestamps, and source target. Viewable in a dedicated history window.
@@ -80,7 +80,7 @@ Maintains an in-memory transcript log with word count, timestamps, and source ta
 
 **Composable routing.** Targets and bindings are data files (TOML), not hardcoded behavior. You can change where your voice goes without touching the app.
 
-**Hot-reloadable config.** The app watches its config files. Edit `targets.toml` or `config.json` in your editor and VoxCtr picks up changes instantly.
+**Hot-reloadable config.** The app watches its config files. Edit `targets.toml` or `config.json` in your editor and VoxCtrl picks up changes instantly.
 
 **Minimal footprint.** No Electron, no Node runtime. Tauri gives you a native WebView shell around a compiled Rust backend. The installed binary is ~tens of MB vs ~hundreds for Electron equivalents.
 

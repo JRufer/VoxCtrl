@@ -100,9 +100,9 @@
   <!-- Unified Premium Sidebar -->
   <aside class="sidebar">
     <div class="brand">
-      <img src={appIcon} class="brand-logo" alt="VoxCtr Icon" />
+      <img src={appIcon} class="brand-logo" alt="VoxCtrl Icon" />
       <div class="brand-text">
-        <span class="brand-name">VoxCtr</span>
+        <span class="brand-name">VoxCtrl</span>
         <span class="brand-tag">DEKTOP PANEL</span>
       </div>
     </div>

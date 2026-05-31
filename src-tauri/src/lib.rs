@@ -1,4 +1,4 @@
-// Force Tauri rebuild with latest voxctr-routing changes
+// Force Tauri rebuild with latest voxctrl-routing changes
 use std::sync::{
     atomic::{AtomicBool, AtomicU32},
     Arc,
@@ -10,9 +10,9 @@ use tauri::{
     Emitter, Manager,
 };
 use tokio::sync::Mutex;
-use voxctr_config::Config;
-use voxctr_routing::{load_bindings, load_targets, config_dir, OutputTargetRouter};
-use voxctr_mcp::McpCallbacks;
+use voxctrl_config::Config;
+use voxctrl_routing::{load_bindings, load_targets, config_dir, OutputTargetRouter};
+use voxctrl_mcp::McpCallbacks;
 
 use crate::{
     commands::*,
@@ -67,7 +67,7 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "voxctr=info".parse().unwrap()),
+                .unwrap_or_else(|_| "voxctrl=info".parse().unwrap()),
         )
         .init();
 
@@ -82,10 +82,10 @@ pub fn run() {
     let router = Arc::new(OutputTargetRouter::new(targets.clone()));
 
     // ── Audio pipeline ────────────────────────────────────────────────────────
-    let (audio_tx, audio_rx) = crossbeam_channel::bounded::<voxctr_audio::AudioChunk>(64);
-    let (text_tx, text_rx) = crossbeam_channel::bounded::<voxctr_inference::InferenceOutput>(32);
+    let (audio_tx, audio_rx) = crossbeam_channel::bounded::<voxctrl_audio::AudioChunk>(64);
+    let (text_tx, text_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceOutput>(32);
 
-    let (inference_tx, inference_rx) = crossbeam_channel::bounded::<voxctr_inference::InferenceRequest>(4);
+    let (inference_tx, inference_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
 
     let app_state = Arc::new(AppState {
         config: config.clone(),
@@ -114,7 +114,7 @@ pub fn run() {
 
     {
         let audio_cfg = cfg_data.audio.clone();
-        let recorder = voxctr_audio::AudioRecorder::new(
+        let recorder = voxctrl_audio::AudioRecorder::new(
             audio_cfg,
             app_state.recording.clone(),
             app_state.monitoring.clone(),
@@ -145,7 +145,7 @@ pub fn run() {
             } else {
                 if was_recording {
                     if !accumulated_audio.is_empty() {
-                        let req = voxctr_inference::InferenceRequest {
+                        let req = voxctrl_inference::InferenceRequest {
                             audio: std::mem::take(&mut accumulated_audio),
                             target_id: target_id.clone(),
                             context_text: None,
@@ -160,11 +160,11 @@ pub fn run() {
     });
 
     // Inference worker
-    voxctr_inference::run_worker(cfg_data.clone(), inference_rx, text_tx.clone());
+    voxctrl_inference::run_worker(cfg_data.clone(), inference_rx, text_tx.clone());
 
     // ── TTS ───────────────────────────────────────────────────────────────────
     let _tts_handle = if cfg_data.tts.enabled {
-        Some(voxctr_tts::TtsEngineWorker::start(cfg_data.tts.clone()))
+        Some(voxctrl_tts::TtsEngineWorker::start(cfg_data.tts.clone()))
     } else {
         None
     };
@@ -182,8 +182,8 @@ pub fn run() {
     });
 
     // ── Hotkey listener ───────────────────────────────────────────────────────
-    let (gesture_tx, mut gesture_rx) = voxctr_hotkeys::channel();
-    let listener = voxctr_hotkeys::start_listener(
+    let (gesture_tx, mut gesture_rx) = voxctrl_hotkeys::channel();
+    let listener = voxctrl_hotkeys::start_listener(
         bindings,
         gesture_tx,
         cfg_data.audio.evdev_device.clone(),
@@ -198,7 +198,7 @@ pub fn run() {
     let state_for_gesture = app_state.clone();
     tokio::spawn(async move {
         while let Some(event) = gesture_rx.recv().await {
-            use voxctr_hotkeys::GestureKind;
+            use voxctrl_hotkeys::GestureKind;
             match event.kind {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
@@ -256,7 +256,7 @@ pub fn run() {
                     (cfg_lock.data.ui.show_notification, cfg_lock.data.ui.history_enabled)
                 };
                 if show_notif {
-                    voxctr_inject::show_notification("VoxCtr", &output.text);
+                    voxctrl_inject::show_notification("VoxCtrl", &output.text);
                 }
                 if history_enabled {
                     let state2 = state.clone();
@@ -281,7 +281,7 @@ pub fn run() {
     // ── DBus service (Linux) ──────────────────────────────────────────────────
     #[cfg(target_os = "linux")]
     {
-        let dbus_state = Arc::new(Mutex::new(voxctr_dbus::AppState::default()));
+        let dbus_state = Arc::new(Mutex::new(voxctrl_dbus::AppState::default()));
         let (start_tx, mut start_rx) = tokio::sync::mpsc::channel::<()>(4);
         let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel::<()>(4);
         let app_state_dbus = app_state.clone();
@@ -306,7 +306,7 @@ pub fn run() {
             }
         });
         tokio::spawn(async move {
-            if let Err(e) = voxctr_dbus::start_service(dbus_state, start_tx, stop_tx).await {
+            if let Err(e) = voxctrl_dbus::start_service(dbus_state, start_tx, stop_tx).await {
                 tracing::error!("DBus service error: {e}");
             }
         });
@@ -317,7 +317,7 @@ pub fn run() {
         let callbacks = app_state.clone();
         tokio::spawn(async move {
             tracing::info!("Starting MCP server...");
-            if let Err(e) = voxctr_mcp::run_server(callbacks).await {
+            if let Err(e) = voxctrl_mcp::run_server(callbacks).await {
                 tracing::error!("MCP server error: {:?}", e);
             }
         });
@@ -353,14 +353,14 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let mut check_failed = false;
 
-                    if let Ok(override_val) = std::env::var("VOXCTR_TEST_UDEV_STATUS") {
+                    if let Ok(override_val) = std::env::var("VOXCTRL_TEST_UDEV_STATUS") {
                         match override_val.as_str() {
                             "missing" | "relogin" => check_failed = true,
                             _ => {}
                         }
                     } else {
-                        // Check if /etc/udev/rules.d/99-voxctr.rules exists
-                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
+                        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
+                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
 
                         // Check if the current user session has the "input" group by running `id -Gn`
                         let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
@@ -418,7 +418,7 @@ pub fn run() {
             let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
             let history_i = tauri::menu::MenuItem::with_id(app, "history", "📋  History", true, None::<&str>)?;
             let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtr", true, None::<&str>)?;
+            let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtrl", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(
                 app,
                 &[&settings_i, &history_i, &separator, &quit_i],
@@ -426,7 +426,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
-                .tooltip("VoxCtr")
+                .tooltip("VoxCtrl")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
@@ -460,10 +460,10 @@ pub fn run() {
 
             // Force show the settings window on startup if the voice model is missing
             let mut show_settings = cfg_data.ui.auto_show_settings;
-            if cfg_data.engine.backend != voxctr_config::BackendChoice::Moonshine {
+            if cfg_data.engine.backend != voxctrl_config::BackendChoice::Moonshine {
                 let model_size = &cfg_data.engine.whisper_cpp.model_size;
                 let model_dir = &cfg_data.engine.whisper_cpp.model_dir;
-                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size, model_dir) {
+                if !voxctrl_inference::whisper_cpp::is_model_downloaded(model_size, model_dir) {
                     show_settings = true;
                 }
             }
@@ -761,8 +761,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU32};
     use tokio::sync::Mutex;
-    use voxctr_config::Config;
-    use voxctr_routing::OutputTargetRouter;
+    use voxctrl_config::Config;
+    use voxctrl_routing::OutputTargetRouter;
     use crate::state::AppState;
 
     fn make_test_state() -> AppState {
@@ -830,7 +830,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_multi_target_delivery() {
-        use voxctr_routing::models::{DeliveryType, OutputTarget};
+        use voxctrl_routing::models::{DeliveryType, OutputTarget};
         let target_a = OutputTarget {
             id: "target_a".into(),
             label: "Target A".into(),
@@ -925,28 +925,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_udev_status_env_overrides() {
-        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "missing");
+        std::env::set_var("VOXCTRL_TEST_UDEV_STATUS", "missing");
         let res = check_udev_status().await.unwrap();
         assert!(!res.is_configured);
         assert!(!res.rule_exists);
         assert!(!res.in_group);
         assert!(!res.needs_relogin);
 
-        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "relogin");
+        std::env::set_var("VOXCTRL_TEST_UDEV_STATUS", "relogin");
         let res = check_udev_status().await.unwrap();
         assert!(!res.is_configured);
         assert!(res.rule_exists);
         assert!(!res.in_group);
         assert!(res.needs_relogin);
 
-        std::env::set_var("VOXCTR_TEST_UDEV_STATUS", "ok");
+        std::env::set_var("VOXCTRL_TEST_UDEV_STATUS", "ok");
         let res = check_udev_status().await.unwrap();
         assert!(res.is_configured);
         assert!(res.rule_exists);
         assert!(res.in_group);
         assert!(!res.needs_relogin);
 
-        std::env::remove_var("VOXCTR_TEST_UDEV_STATUS");
+        std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
     }
 }
 

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { open } from "@tauri-apps/plugin-shell";
 
   let udevStatus = $state<{
     is_configured: boolean;
@@ -27,6 +28,14 @@
       console.error("Failed to close window natively:", err);
     }
   }
+
+  async function handleDownload() {
+    try {
+      await open("https://github.com/JRufer/VoxCtr/blob/master/install.sh");
+    } catch (err) {
+      console.error("Failed to open install.sh URL:", err);
+    }
+  }
 </script>
 
 <div class="diagnostic-window">
@@ -38,20 +47,18 @@
         {#if udevStatus.needs_relogin}
           Hardware hotkey rules are installed, but your active session is missing <code>input</code> group permissions. Please **log out and log back in** (or reboot) for these settings to take effect.
         {:else}
-          VoxCtr requires global hotkey setup to capture keyboard shortcuts natively. The <code>install.sh</code> script must be run to configure system hardware permissions.
+          VoxCtrl requires global hotkey setup to capture keyboard shortcuts natively. The <code>install.sh</code> script must be run to configure system hardware permissions.
         {/if}
       </p>
       
       <div class="modal-actions">
         {#if !udevStatus.needs_relogin}
-          <a
+          <button
             class="btn-primary"
-            href="https://github.com/JRufer/VoxCtr/blob/master/install.sh"
-            target="_blank"
-            rel="noopener noreferrer"
+            onclick={handleDownload}
           >
             📥 Download install.sh
-          </a>
+          </button>
         {/if}
         <button class="btn-secondary" onclick={handleClose}>
           Continue Anyway
