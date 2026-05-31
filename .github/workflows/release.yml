@@ -165,6 +165,14 @@ jobs:
         if: runner.os == 'Windows' && !matrix.cuda
         run: npm run tauri build
 
+      - name: Copy real CUDA DLLs (Windows, CUDA)
+        if: runner.os == 'Windows' && matrix.cuda
+        shell: pwsh
+        run: |
+          Copy-Item "$env:CUDA_PATH\bin\cudart64_12.dll" "src-tauri\resources\cudart64_12.dll" -Force
+          Copy-Item "$env:CUDA_PATH\bin\cublas64_12.dll" "src-tauri\resources\cublas64_12.dll" -Force
+          Copy-Item "$env:CUDA_PATH\bin\cublasLt64_12.dll" "src-tauri\resources\cublasLt64_12.dll" -Force
+
       - name: Build installer (Windows, CUDA)
         if: runner.os == 'Windows' && matrix.cuda
         run: npm run tauri build -- --features cuda

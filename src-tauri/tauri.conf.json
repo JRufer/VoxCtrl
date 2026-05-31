@@ -69,7 +69,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "resources/cudart64_12.dll",
+      "resources/cublas64_12.dll",
+      "resources/cublasLt64_12.dll"
+    ],
     "externalBin": [],
     "linux": {
       "deb": {
