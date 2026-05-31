@@ -140,19 +140,23 @@ jobs:
       # APPIMAGE_EXTRACT_AND_RUN=1 tells linuxdeploy/appimagetool to extract
       # and run without FUSE (uses unsquashfs from squashfs-tools instead).
       # QT_QPA_PLATFORM=offscreen prevents Qt platform errors in headless CI.
-      - name: Build AppImage (Linux, CPU)
+      - name: Build AppImage + deb (Linux, CPU)
         if: runner.os == 'Linux' && !matrix.cuda
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
         run: npm run tauri build
 
-      - name: Build AppImage (Linux, CUDA)
+      # CUDA build uses --bundles deb only: the CUDA toolkit populates system
+      # library paths with hundreds of CUDA .so files that linuxdeploy tries to
+      # bundle into the AppImage, causing it to OOM or fail. deb packaging does
+      # not use linuxdeploy and works reliably. CUDA users on Linux are almost
+      # always on Debian/Ubuntu and can install the .deb directly.
+      - name: Build deb (Linux, CUDA)
         if: runner.os == 'Linux' && matrix.cuda
         env:
-          APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
-        run: npm run tauri build -- --features cuda
+        run: npm run tauri build -- --features cuda --bundles deb
 
       # ── Tauri build (Windows) ───────────────────────────────────────────────
       - name: Build installer (Windows, CPU)
@@ -259,7 +263,7 @@ jobs:
             | Platform | File suffix | GPU required |
             |---|---|---|
             | Linux | `-linux-x86_64.AppImage` | None |
-            | Linux (NVIDIA) | `-linux-x86_64-cuda.AppImage` | NVIDIA driver 520+ |
+            | Linux (NVIDIA) | `-linux-x86_64-cuda.deb` | NVIDIA driver 520+ |
             | Windows | `-windows-x86_64-setup.exe` | None |
             | Windows (NVIDIA) | `-windows-x86_64-cuda-setup.exe` | NVIDIA driver 520+ |
 
@@ -268,8 +272,13 @@ jobs:
 
             **CPU builds** run on any hardware, including AMD, Intel, and ARM.
 
-            ### Linux — first run
+            ### Linux CPU — first run
             ```bash
             chmod +x VoxCtr_*-linux-x86_64.AppImage
             ./VoxCtr_*-linux-x86_64.AppImage
+            ```
+
+            ### Linux CUDA — install
+            ```bash
+            sudo dpkg -i VoxCtr_*-linux-x86_64-cuda.deb
             ```
