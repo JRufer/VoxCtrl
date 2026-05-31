@@ -1,4 +1,4 @@
-# Building VoxCtr on Windows
+# Building VoxCtrl on Windows
 
 ## Prerequisites
 
@@ -50,8 +50,8 @@ npm run tauri build
 ```
 
 Output artifacts land in `src-tauri\target\release\bundle\`:
-- `nsis\VoxCtr_<version>_x64-setup.exe` — NSIS installer
-- `msi\VoxCtr_<version>_x64.msi` — MSI package
+- `nsis\VoxCtrl_<version>_x64-setup.exe` — NSIS installer
+- `msi\VoxCtrl_<version>_x64.msi` — MSI package
 
 ### Build with CUDA acceleration
 
@@ -86,14 +86,14 @@ A PowerShell helper script automates prerequisite checks and the build:
 
 ## Whisper Models
 
-Place `.bin` model files in `%LOCALAPPDATA%\voxctl\models\` (created on first run).
+Place `.bin` model files in `%LOCALAPPDATA%\voxctrl\models\` (created on first run).
 
 Download a model manually:
 
 ```powershell
 $model = "ggml-large-v3.bin"
 $url   = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model"
-$dest  = "$env:LOCALAPPDATA\voxctl\models\$model"
+$dest  = "$env:LOCALAPPDATA\voxctrl\models\$model"
 New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
 Invoke-WebRequest $url -OutFile $dest
 ```
@@ -107,18 +107,18 @@ Supported sizes: `tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
 To use Piper neural TTS, download the Windows binary and place it at:
 
 ```
-%LOCALAPPDATA%\voxctl\piper\piper.exe
+%LOCALAPPDATA%\voxctrl\piper\piper.exe
 ```
 
 Download from: https://github.com/rhasspy/piper/releases
 
-Voice models go in `%LOCALAPPDATA%\voxctl\piper-voices\`. The Settings UI has a download button for each supported voice.
+Voice models go in `%LOCALAPPDATA%\voxctrl\piper-voices\`. The Settings UI has a download button for each supported voice.
 
 ---
 
 ## Text Injection
 
-On Windows, VoxCtr injects dictated text by:
+On Windows, VoxCtrl injects dictated text by:
 1. Writing the text to the clipboard via `arboard`
 2. Simulating Ctrl+V via PowerShell `SendKeys`
 
@@ -161,4 +161,4 @@ Download the WebView2 Evergreen Bootstrapper from Microsoft and run it before la
 - Try without `--features cuda` to rule out a non-CUDA issue first.
 
 ### Audio device not detected
-VoxCtr uses WASAPI via `cpal`. If no microphone is listed, check Windows privacy settings: **Settings → Privacy & security → Microphone → Allow apps to access your microphone**.
+VoxCtrl uses WASAPI via `cpal`. If no microphone is listed, check Windows privacy settings: **Settings → Privacy & security → Microphone → Allow apps to access your microphone**.

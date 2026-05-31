@@ -1,13 +1,13 @@
 #!/bin/bash
-# VoxCtl Permissions Setup Script
+# VoxCtrl Permissions Setup Script
 # This script configures udev rules and user groups for global hotkeys and text injection.
 
 set -e
 
-echo "[*] VoxCtl: Setting up system permissions..."
+echo "[*] VoxCtrl: Setting up system permissions..."
 
 # 1. Check for udev rules
-UDEV_RULE="/etc/udev/rules.d/99-voxctl.rules"
+UDEV_RULE="/etc/udev/rules.d/99-voxctrl.rules"
 RULE_CONTENT='KERNEL=="uinput", GROUP="uinput", MODE="0660"'
 
 if [ ! -f "$UDEV_RULE" ]; then

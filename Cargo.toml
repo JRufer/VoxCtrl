@@ -1,23 +1,23 @@
 [workspace]
 members = [
-    "crates/voxctr-config",
-    "crates/voxctr-routing",
-    "crates/voxctr-hotkeys",
-    "crates/voxctr-audio",
-    "crates/voxctr-inference",
-    "crates/voxctr-tts",
-    "crates/voxctr-inject",
-    "crates/voxctr-dbus",
-    "crates/voxctr-mcp",
-    "crates/voxctr-llm",
+    "crates/voxctrl-config",
+    "crates/voxctrl-routing",
+    "crates/voxctrl-hotkeys",
+    "crates/voxctrl-audio",
+    "crates/voxctrl-inference",
+    "crates/voxctrl-tts",
+    "crates/voxctrl-inject",
+    "crates/voxctrl-dbus",
+    "crates/voxctrl-mcp",
+    "crates/voxctrl-llm",
     "src-tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.6"
+version = "0.1.8"
 edition = "2021"
-authors = ["VoxCtr Contributors"]
+authors = ["VoxCtrl Contributors"]
 license = "MIT"
 
 [workspace.dependencies]
@@ -79,16 +79,16 @@ chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.5"
 
 # Internal crates
-voxctr-config   = { path = "crates/voxctr-config" }
-voxctr-routing  = { path = "crates/voxctr-routing" }
-voxctr-hotkeys  = { path = "crates/voxctr-hotkeys" }
-voxctr-audio    = { path = "crates/voxctr-audio" }
-voxctr-inference = { path = "crates/voxctr-inference" }
-voxctr-tts      = { path = "crates/voxctr-tts" }
-voxctr-inject   = { path = "crates/voxctr-inject" }
-voxctr-dbus     = { path = "crates/voxctr-dbus" }
-voxctr-mcp      = { path = "crates/voxctr-mcp" }
-voxctr-llm      = { path = "crates/voxctr-llm" }
+voxctrl-config   = { path = "crates/voxctrl-config" }
+voxctrl-routing  = { path = "crates/voxctrl-routing" }
+voxctrl-hotkeys  = { path = "crates/voxctrl-hotkeys" }
+voxctrl-audio    = { path = "crates/voxctrl-audio" }
+voxctrl-inference = { path = "crates/voxctrl-inference" }
+voxctrl-tts      = { path = "crates/voxctrl-tts" }
+voxctrl-inject   = { path = "crates/voxctrl-inject" }
+voxctrl-dbus     = { path = "crates/voxctrl-dbus" }
+voxctrl-mcp      = { path = "crates/voxctrl-mcp" }
+voxctrl-llm      = { path = "crates/voxctrl-llm" }
 
 [profile.release]
 lto = "fat"

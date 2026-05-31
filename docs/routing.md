@@ -1,10 +1,10 @@
 # Output Routing
 
-**Crate:** `crates/voxctr-routing/`
+**Crate:** `crates/voxctrl-routing/`
 
 ## Overview
 
-VoxCtr's routing system decouples *what you say* from *where it goes*. You define:
+VoxCtrl's routing system decouples *what you say* from *where it goes*. You define:
 
 - **Output Targets** (`targets.toml`) — named delivery destinations
 - **Hotkey Bindings** (`bindings.toml`) — which keys trigger which targets
@@ -15,7 +15,7 @@ Both files are hot-reloaded when changed on disk.
 
 ## Output Targets
 
-Defined in `~/.config/voxctl/targets.toml`. Each `[[target]]` block describes one destination.
+Defined in `~/.config/voxctrl/targets.toml`. Each `[[target]]` block describes one destination.
 
 ### Common Fields
 
@@ -127,7 +127,7 @@ webhook_url = "https://example.com/hook"
 webhook_secret = "your-shared-secret"
 ```
 
-Adds header: `X-VoxCtr-Signature: sha256=<hex>`
+Adds header: `X-VoxCtrl-Signature: sha256=<hex>`
 
 Optional: `webhook_json_template` (JSON value) to customize the payload shape.
 
@@ -175,7 +175,7 @@ pipe_path = "/tmp/voice.fifo"
 ---
 
 #### `dbus` — DBus Signal
-Emits the text as a `text_injected` signal on the `ai.voxctl.Dictation` interface.
+Emits the text as a `text_injected` signal on the `ai.voxctrl.Dictation` interface.
 
 ```toml
 [[target]]
@@ -194,7 +194,7 @@ Enqueues the text as a response to a pending `transcribe_voice` tool call from a
 [[target]]
 id = "mcp_out"
 delivery = "mcp"
-mcp_path = "/tmp/voxctl-mcp.sock"   # Optional socket path override
+mcp_path = "/tmp/voxctrl-mcp.sock"   # Optional socket path override
 mcp_tool = "transcribe_voice"        # Optional tool name hint
 ```
 
@@ -229,7 +229,7 @@ quiet_mode = false
 
 ## Hotkey Bindings
 
-Defined in `~/.config/voxctl/bindings.toml`. Each `[[binding]]` block maps a key combo + gesture to one or more targets.
+Defined in `~/.config/voxctrl/bindings.toml`. Each `[[binding]]` block maps a key combo + gesture to one or more targets.
 
 ### Fields
 
@@ -294,7 +294,7 @@ tap_ms = 300
 
 ### Multi-Target Routing
 
-When `target_ids` contains multiple entries, VoxCtr delivers to each target **sequentially** in the listed order after a single recording session. This lets you, for example, inject text into a window AND log it to a file simultaneously.
+When `target_ids` contains multiple entries, VoxCtrl delivers to each target **sequentially** in the listed order after a single recording session. This lets you, for example, inject text into a window AND log it to a file simultaneously.
 
 ### Superset Shadowing
 

@@ -6028,7 +6028,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "voxctr-app"
+name = "voxctrl-app"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6048,21 +6048,21 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "voxctr-audio",
- "voxctr-config",
- "voxctr-dbus",
- "voxctr-hotkeys",
- "voxctr-inference",
- "voxctr-inject",
- "voxctr-llm",
- "voxctr-mcp",
- "voxctr-routing",
- "voxctr-tts",
+ "voxctrl-audio",
+ "voxctrl-config",
+ "voxctrl-dbus",
+ "voxctrl-hotkeys",
+ "voxctrl-inference",
+ "voxctrl-inject",
+ "voxctrl-llm",
+ "voxctrl-mcp",
+ "voxctrl-routing",
+ "voxctrl-tts",
  "zbus 4.4.0",
 ]
 
 [[package]]
-name = "voxctr-audio"
+name = "voxctrl-audio"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6073,11 +6073,11 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctr-config",
+ "voxctrl-config",
 ]
 
 [[package]]
-name = "voxctr-config"
+name = "voxctrl-config"
 version = "0.1.6"
 dependencies = [
  "dirs 5.0.1",
@@ -6090,7 +6090,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voxctr-dbus"
+name = "voxctrl-dbus"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6102,7 +6102,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voxctr-hotkeys"
+name = "voxctrl-hotkeys"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6114,12 +6114,12 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "voxctr-config",
- "voxctr-routing",
+ "voxctrl-config",
+ "voxctrl-routing",
 ]
 
 [[package]]
-name = "voxctr-inference"
+name = "voxctrl-inference"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6131,17 +6131,18 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctr-config",
- "voxctr-llm",
- "voxctr-routing",
+ "voxctrl-config",
+ "voxctrl-llm",
+ "voxctrl-routing",
  "whisper-rs",
 ]
 
 [[package]]
-name = "voxctr-inject"
+name = "voxctrl-inject"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6151,11 +6152,11 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctr-config",
+ "voxctrl-config",
 ]
 
 [[package]]
-name = "voxctr-llm"
+name = "voxctrl-llm"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6165,11 +6166,11 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctr-config",
+ "voxctrl-config",
 ]
 
 [[package]]
-name = "voxctr-mcp"
+name = "voxctrl-mcp"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6181,7 +6182,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voxctr-routing"
+name = "voxctrl-routing"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6204,7 +6205,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voxctr-tts"
+name = "voxctrl-tts"
 version = "0.1.6"
 dependencies = [
  "anyhow",
@@ -6220,7 +6221,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctr-config",
+ "voxctrl-config",
 ]
 
 [[package]]

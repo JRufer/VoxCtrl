@@ -41,7 +41,7 @@ For full Windows build instructions and a PowerShell helper script, see **[docs/
 ## Repository Layout
 
 ```
-VoxCtr/
+VoxCtrl/
 ├── src/                    # Svelte frontend
 │   ├── main.ts
 │   ├── App.svelte
@@ -63,16 +63,16 @@ VoxCtr/
 │       └── state.rs        # AppState definition
 │
 ├── crates/                 # Backend library crates
-│   ├── voxctr-config/
-│   ├── voxctr-audio/
-│   ├── voxctr-hotkeys/
-│   ├── voxctr-inference/
-│   ├── voxctr-routing/
-│   ├── voxctr-inject/
-│   ├── voxctr-tts/
-│   ├── voxctr-mcp/
-│   ├── voxctr-dbus/
-│   └── voxctr-llm/
+│   ├── voxctrl-config/
+│   ├── voxctrl-audio/
+│   ├── voxctrl-hotkeys/
+│   ├── voxctrl-inference/
+│   ├── voxctrl-routing/
+│   ├── voxctrl-inject/
+│   ├── voxctrl-tts/
+│   ├── voxctrl-mcp/
+│   ├── voxctrl-dbus/
+│   └── voxctrl-llm/
 │
 ├── Cargo.toml              # Workspace definition
 ├── package.json            # Frontend deps
@@ -107,8 +107,8 @@ npm run dev
 
 ### Backend Only
 ```bash
-cargo build -p voxctr-inference  # Build a specific crate
-cargo test -p voxctr-config      # Test a specific crate
+cargo build -p voxctrl-inference  # Build a specific crate
+cargo test -p voxctrl-config      # Test a specific crate
 cargo check --workspace          # Type-check all crates
 ```
 
@@ -119,7 +119,7 @@ cargo check --workspace          # Type-check all crates
 ### AppImage (Linux)
 ```bash
 bash build_appimage.sh
-# Output: VoxCtr.AppImage in project root
+# Output: VoxCtrl.AppImage in project root
 ```
 
 The build script:
@@ -149,7 +149,7 @@ npm run tauri build -- --features cuda
 .\scripts\build_windows.ps1 -Cuda
 ```
 
-The `cuda` feature propagates: `voxctr-app/cuda` → `voxctr-inference/cuda` → `whisper-rs/cuda`.
+The `cuda` feature propagates: `voxctrl-app/cuda` → `voxctrl-inference/cuda` → `whisper-rs/cuda`.
 
 ---
 
@@ -159,17 +159,17 @@ Each crate under `crates/` is self-contained. They are included in the workspace
 
 ### Adding a new crate
 ```bash
-cargo new --lib crates/voxctr-myfeature
+cargo new --lib crates/voxctrl-myfeature
 
 # Add to Cargo.toml workspace members:
 [workspace]
 members = [
   ...
-  "crates/voxctr-myfeature",
+  "crates/voxctrl-myfeature",
 ]
 
 # Reference from src-tauri/Cargo.toml:
-voxctr-myfeature = { path = "../crates/voxctr-myfeature" }
+voxctrl-myfeature = { path = "../crates/voxctrl-myfeature" }
 ```
 
 ### Crate Conventions
@@ -197,19 +197,19 @@ When adding a new integration, this is typically where you wire it in.
 ### `src-tauri/src/commands.rs`
 All `#[tauri::command]` handlers. Each command is a thin wrapper that reads/writes `AppState` or calls into a crate. Keep commands small — business logic belongs in crates.
 
-### `crates/voxctr-config/src/lib.rs`
+### `crates/voxctrl-config/src/lib.rs`
 The `AppConfig` struct is the source of truth for all settings. If you add a config option, add it here first, then expose it in the Settings UI.
 
-### `crates/voxctr-routing/src/models.rs`
+### `crates/voxctrl-routing/src/models.rs`
 Defines `OutputTarget`, `HotkeyBinding`, `DeliveryType`, `TargetProcessingConfig`, and `GestureType`. Add new delivery types or target fields here.
 
 ---
 
 ## Adding a New Output Target Type
 
-1. Add a variant to `DeliveryType` enum in `crates/voxctr-routing/src/models.rs`
-2. Add any target-specific fields to `OutputTarget` in `crates/voxctr-routing/src/models.rs`
-3. Add a match arm in the router dispatch logic in `crates/voxctr-routing/src/router.rs`
+1. Add a variant to `DeliveryType` enum in `crates/voxctrl-routing/src/models.rs`
+2. Add any target-specific fields to `OutputTarget` in `crates/voxctrl-routing/src/models.rs`
+3. Add a match arm in the router dispatch logic in `crates/voxctrl-routing/src/router.rs`
 4. Update the TypeScript `OutputTarget` interface in `src/stores/config.ts`
 5. Add the new type to the delivery type selector in `src/lib/Settings/RoutingTab.svelte`
 6. Document in `docs/routing.md`
@@ -218,7 +218,7 @@ Defines `OutputTarget`, `HotkeyBinding`, `DeliveryType`, `TargetProcessingConfig
 
 ## Testing
 
-VoxCtr utilizes a multi-tiered, unified testing suite spanning Svelte frontend components, Rust backend crates, and end-to-end integration tests over local socket connections.
+VoxCtrl utilizes a multi-tiered, unified testing suite spanning Svelte frontend components, Rust backend crates, and end-to-end integration tests over local socket connections.
 
 ### Master Test Orchestrator
 
@@ -245,13 +245,13 @@ Backend logic, including settings schemas, migrations, routing models, and utili
 cargo test --workspace
 
 # Run tests for a specific backend crate
-cargo test -p voxctr-config
-cargo test -p voxctr-routing
+cargo test -p voxctrl-config
+cargo test -p voxctrl-routing
 ```
 
 #### Writing Backend Tests
 Backend unit tests are written inside their respective crate files within a `#[cfg(test)]` module block.
-Example from `crates/voxctr-config/src/lib.rs`:
+Example from `crates/voxctrl-config/src/lib.rs`:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -341,7 +341,7 @@ describe("EngineTab.svelte Warning Banner", () => {
 
 ### Python Socket Integration Tests
 
-Integration tests verify end-to-end communication channels such as the Model Context Protocol (MCP) server over Unix domain sockets (`/tmp/voxctl-mcp.sock`).
+Integration tests verify end-to-end communication channels such as the Model Context Protocol (MCP) server over Unix domain sockets (`/tmp/voxctrl-mcp.sock`).
 
 * **Test Location**: `tests/integration/` (files prefixed with `test_`)
 * **Framework**: Pytest
@@ -354,10 +354,10 @@ pip install pytest
 # Run integration tests
 pytest tests/integration/
 ```
-*Note: These tests check for the live socket connection. If VoxCtr is not currently running, these tests will gracefully skip to prevent false failure reports.*
+*Note: These tests check for the live socket connection. If VoxCtrl is not currently running, these tests will gracefully skip to prevent false failure reports.*
 
 #### Writing Integration Tests
-Integration tests use the standard `pytest` framework, creating client socket connections to communicate with `/tmp/voxctl-mcp.sock` over JSON-RPC.
+Integration tests use the standard `pytest` framework, creating client socket connections to communicate with `/tmp/voxctrl-mcp.sock` over JSON-RPC.
 
 Example:
 ```python
@@ -366,7 +366,7 @@ import json
 import pytest
 import os
 
-SOCKET_PATH = "/tmp/voxctl-mcp.sock"
+SOCKET_PATH = "/tmp/voxctrl-mcp.sock"
 
 @pytest.mark.skipif(not os.path.exists(SOCKET_PATH), reason="MCP Socket not running")
 def test_mcp_handshake_and_tools():
@@ -387,7 +387,7 @@ def test_mcp_handshake_and_tools():
 
 ### Simulating and Testing udev Diagnostics
 
-Linux global hotkeys require specific udev permissions and user group memberships configured by `install.sh`. To make testing these startup states safe and easy, developers can use the `VOXCTR_TEST_UDEV_STATUS` environment variable to mock various diagnostic outcomes without mutating their own user accounts or system rules.
+Linux global hotkeys require specific udev permissions and user group memberships configured by `install.sh`. To make testing these startup states safe and easy, developers can use the `VOXCTRL_TEST_UDEV_STATUS` environment variable to mock various diagnostic outcomes without mutating their own user accounts or system rules.
 
 #### Why Test This?
 * **Onboarding Verification**: Ensure that new users are clearly prompted to install required dependencies.
@@ -397,22 +397,22 @@ Linux global hotkeys require specific udev permissions and user group membership
 #### Mock Configurations
 
 * **Simulate Missing Setup (Installer never run)**:
-  Simulates `/etc/udev/rules.d/99-voxctr.rules` does not exist:
+  Simulates `/etc/udev/rules.d/99-voxctrl.rules` does not exist:
   ```bash
-  VOXCTR_TEST_UDEV_STATUS=missing npm run tauri dev
+  VOXCTRL_TEST_UDEV_STATUS=missing npm run tauri dev
   ```
   * **UI Outcome**: Spawns a standalone native window (`udev-warning`) in the foreground detailing the need for hardware udev rules, providing a direct **📥 Download install.sh** button to GitHub, and a **Continue Anyway** native window close pathway.
 
 * **Simulate Relogin Required (Installer run but session not updated)**:
   Simulates that rules exist but the current shell process is missing `input` group permissions:
   ```bash
-  VOXCTR_TEST_UDEV_STATUS=relogin npm run tauri dev
+  VOXCTRL_TEST_UDEV_STATUS=relogin npm run tauri dev
   ```
   * **UI Outcome**: Spawns a standalone native window (`udev-warning`) displaying the explicit logout/relogin guidance (hiding the installer download CTA since the rules are already present).
 
 * **Simulate Normal/Configured State (Bypasses checks)**:
   ```bash
-  VOXCTR_TEST_UDEV_STATUS=ok npm run tauri dev
+  VOXCTRL_TEST_UDEV_STATUS=ok npm run tauri dev
   ```
   * **UI Outcome**: Spawns only the standard settings window; the diagnostic warning window remains completely hidden.
 
@@ -422,10 +422,10 @@ Linux global hotkeys require specific udev permissions and user group membership
 ## Debugging
 
 ### Rust Logging
-VoxCtr uses the `log` crate with `env_logger`. Enable verbose output:
+VoxCtrl uses the `log` crate with `env_logger`. Enable verbose output:
 ```bash
 RUST_LOG=debug npm run tauri dev
-RUST_LOG=voxctr_inference=trace npm run tauri dev
+RUST_LOG=voxctrl_inference=trace npm run tauri dev
 ```
 
 ### Frontend DevTools

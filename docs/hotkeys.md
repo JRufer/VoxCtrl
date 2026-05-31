@@ -1,10 +1,10 @@
 # Hotkey System
 
-**Crate:** `crates/voxctr-hotkeys/`
+**Crate:** `crates/voxctrl-hotkeys/`
 
 ## Overview
 
-VoxCtr listens for global keyboard shortcuts that work regardless of which application has focus. The implementation is platform-specific: **evdev** on Linux and **Win32 hooks** on Windows.
+VoxCtrl listens for global keyboard shortcuts that work regardless of which application has focus. The implementation is platform-specific: **evdev** on Linux and **Win32 hooks** on Windows.
 
 ---
 

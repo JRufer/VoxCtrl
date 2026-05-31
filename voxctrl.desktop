@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=VoxCtrl
+Comment=Global Voice-to-Text for Wayland
+Exec=voxctrl
+Icon=voxctrl
+Terminal=false
+Type=Application
+Categories=Utility;AudioVideo;
+StartupNotify=false
+Keywords=whisper;voice;dictation;wayland;

@@ -1,6 +1,6 @@
 # Audio Pipeline
 
-**Crate:** `crates/voxctr-audio/`
+**Crate:** `crates/voxctrl-audio/`
 
 ## Responsibilities
 

@@ -1,14 +1,14 @@
 [package]
-name = "voxctr-app"
+name = "voxctrl-app"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-name = "voxctr_app_lib"
+name = "voxctrl_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "voxctr"
+name = "voxctrl"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -24,16 +24,16 @@ tauri-plugin-dialog    = "2"
 dirs                   = { workspace = true }
 
 # Internal crates
-voxctr-config    = { workspace = true }
-voxctr-routing   = { workspace = true }
-voxctr-hotkeys   = { workspace = true }
-voxctr-audio     = { workspace = true }
-voxctr-inference = { workspace = true }
-voxctr-tts       = { workspace = true }
-voxctr-inject    = { workspace = true }
-voxctr-dbus      = { workspace = true }
-voxctr-mcp       = { workspace = true }
-voxctr-llm       = { workspace = true }
+voxctrl-config    = { workspace = true }
+voxctrl-routing   = { workspace = true }
+voxctrl-hotkeys   = { workspace = true }
+voxctrl-audio     = { workspace = true }
+voxctrl-inference = { workspace = true }
+voxctrl-tts       = { workspace = true }
+voxctrl-inject    = { workspace = true }
+voxctrl-dbus      = { workspace = true }
+voxctrl-mcp       = { workspace = true }
+voxctrl-llm       = { workspace = true }
 
 # Runtime and utilities
 tokio = { workspace = true }
@@ -53,4 +53,4 @@ zbus = { workspace = true }
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-cuda = ["voxctr-inference/cuda"]
+cuda = ["voxctrl-inference/cuda"]

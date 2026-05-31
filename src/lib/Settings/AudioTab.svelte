@@ -5,7 +5,7 @@
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
 
-  let { cfg = $bindable() }: { cfg: AppConfig } = $props();
+  let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
   interface AudioDevice { index: number; name: string; }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Python dependencies for VoxCtl.
+# Install Python dependencies for VoxCtrl.
 #
 # On modern distros (Ubuntu 23.04+, Debian 12+, Arch, etc.) the system Python is
 # "externally managed" and plain `pip install` is blocked. This script handles

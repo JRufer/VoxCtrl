@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build VoxCtr for Windows.
+    Build VoxCtrl for Windows.
 
 .PARAMETER Cuda
     Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit).
@@ -98,7 +98,7 @@ if (-not $SkipNodeInstall) {
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-Write-Step "Building VoxCtr"
+Write-Step "Building VoxCtrl"
 
 $tauriArgs = @()
 

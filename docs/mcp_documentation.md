@@ -1,12 +1,12 @@
-# VoxCtr MCP Server
+# VoxCtrl MCP Server
 
-VoxCtr ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
+VoxCtrl ships a built-in **Model Context Protocol (MCP)** server that exposes the app's voice I/O pipeline as tools any MCP-capable AI can call. An agent can trigger the microphone, receive the transcript, and queue a spoken response — all through a standardised JSON-RPC 2.0 interface.
 
 ---
 
 ## Overview
 
-When the MCP server is enabled, VoxCtr listens on a local transport and presents three tools:
+When the MCP server is enabled, VoxCtrl listens on a local transport and presents three tools:
 
 | Tool | What it does |
 |---|---|
@@ -18,7 +18,7 @@ This lets an AI agent have a full voice conversation:
 
 ```
 Agent → transcribe_voice()  → user speaks → transcript returned
-Agent → speak_text("…")     → VoxCtr speaks the response aloud
+Agent → speak_text("…")     → VoxCtrl speaks the response aloud
 Agent → transcribe_voice()  → next turn …
 ```
 
@@ -46,7 +46,7 @@ sudo pacman -S espeak-ng
 Voice models are downloaded from inside the app. Go to **Settings → TTS**, select a voice from the picker, and click **⬇ Download**. Models are stored locally in:
 
 ```
-~/.local/share/voxctl/piper-voices/
+~/.local/share/voxctrl/piper-voices/
 ```
 
 ---
@@ -62,7 +62,7 @@ Voice models are downloaded from inside the app. Go to **Settings → TTS**, sel
 
 ### Via config.json
 
-Add the `mcp` config block to your active `config.json` configuration file located at `~/.config/voxctl/config.json`:
+Add the `mcp` config block to your active `config.json` configuration file located at `~/.config/voxctrl/config.json`:
 
 ```json
 {
@@ -83,11 +83,11 @@ The transport layer is platform-dependent:
 
 * **Linux**: A **Unix domain socket** located at:
   ```
-  /tmp/voxctl-mcp.sock
+  /tmp/voxctrl-mcp.sock
   ```
 * **Windows**: A **Named Pipe** located at:
   ```
-  \\.\pipe\voxctl-mcp
+  \\.\pipe\voxctrl-mcp
   ```
 
 Each connection is spawned as an asynchronous `tokio` task. The protocol is newline-delimited JSON-RPC 2.0: one JSON object per line, terminated with `\n`.
@@ -105,7 +105,7 @@ Standard MCP / JSON-RPC 2.0. Every request must include `"jsonrpc": "2.0"`.
 ← {"jsonrpc":"2.0","id":1,"result":{
      "protocolVersion":"2024-11-05",
      "capabilities":{"tools":{}},
-     "serverInfo":{"name":"voxctl","version":"1.0.0"}
+     "serverInfo":{"name":"voxctrl","version":"1.0.0"}
    }}
 ```
 
@@ -178,7 +178,7 @@ Opens the microphone and returns a transcript when speech ends.
 
 * While recording, the active waveform or recording overlay is shown — the user always has a visual indicator that the mic is live.
 * The microphone is released automatically once VAD detects silence or `timeout_seconds` elapses.
-* VoxCtr's full post-processing pipeline (including Ollama formatting/cleaning if enabled) is applied before the transcript is returned.
+* VoxCtrl's full post-processing pipeline (including Ollama formatting/cleaning if enabled) is applied before the transcript is returned.
 
 ---
 
@@ -290,9 +290,9 @@ Add the following to `~/.config/claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "voxctl": {
+    "voxctrl": {
       "command": "socat",
-      "args": ["STDIO", "UNIX-CONNECT:/tmp/voxctl-mcp.sock"]
+      "args": ["STDIO", "UNIX-CONNECT:/tmp/voxctrl-mcp.sock"]
     }
   }
 }
@@ -300,7 +300,7 @@ Add the following to `~/.config/claude/claude_desktop_config.json`:
 
 Restart Claude Desktop. The tools `transcribe_voice`, `speak_text`, and `get_status` appear automatically in the tool picker.
 
-> **Note:** VoxCtr must already be running before Claude Desktop connects.
+> **Note:** VoxCtrl must already be running before Claude Desktop connects.
 
 ---
 
@@ -311,8 +311,8 @@ import socket
 import json
 import platform
 
-SOCK = "/tmp/voxctl-mcp.sock"
-PIPE = r"\\.\pipe\voxctl-mcp"
+SOCK = "/tmp/voxctrl-mcp.sock"
+PIPE = r"\\.\pipe\voxctrl-mcp"
 
 def rpc(sock, method, params=None, rpc_id=1):
     req = {"jsonrpc": "2.0", "id": rpc_id, "method": method, "params": params or {}}
@@ -352,7 +352,7 @@ if platform.system() != "Windows":
 ```bash
 # One-shot: list tools
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | socat - UNIX-CONNECT:/tmp/voxctl-mcp.sock \
+  | socat - UNIX-CONNECT:/tmp/voxctrl-mcp.sock \
   | head -1 | python3 -m json.tool
 ```
 
@@ -360,15 +360,15 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
 
 ## Response Loopback (FIFO pipe)
 
-For agents that generate responses to a named FIFO, VoxCtr can dynamically read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
+For agents that generate responses to a named FIFO, VoxCtrl can dynamically read those responses and speak them automatically — without needing the agent to call `speak_text` directly.
 
 ### How it works
 
 1. The user configures an output target specifying a `response_pipe` path.
 2. The Tauri application spawns an asynchronous `run_fifo_responder` task that watches this FIFO file.
-3. When the agent writes its response text to the FIFO, VoxCtl reads each line and pushes it to the TTS Engine worker queue.
+3. When the agent writes its response text to the FIFO, VoxCtrl reads each line and pushes it to the TTS Engine worker queue.
 4. Playback proceeds automatically, showing the visual speaking overlay.
-5. The task automatically handles agent disconnects (EOF) and will reconnect on the next session without restarting VoxCtl.
+5. The task automatically handles agent disconnects (EOF) and will reconnect on the next session without restarting VoxCtrl.
 
 ### Configuration in `targets.toml`
 
@@ -386,7 +386,7 @@ append_newline = true
 
 ## TTS Configuration
 
-All TTS settings live in `~/.config/voxctl/config.json` under the `tts` key (**Settings → TTS**). MCP settings live under the `mcp` key (**Settings → Ollama**).
+All TTS settings live in `~/.config/voxctrl/config.json` under the `tts` key (**Settings → TTS**). MCP settings live under the `mcp` key (**Settings → Ollama**).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -422,8 +422,8 @@ Download voices in **Settings → TTS → Voice Picker → ⬇ Download**.
 
 ### Socket and pipe paths
 
-* **Linux**: `/tmp/voxctl-mcp.sock`
-* **Windows**: `\\.\pipe\voxctl-mcp`
+* **Linux**: `/tmp/voxctrl-mcp.sock`
+* **Windows**: `\\.\pipe\voxctrl-mcp`
 
 ### Threading model
 
@@ -448,16 +448,16 @@ Download voices in **Settings → TTS → Voice Picker → ⬇ Download**.
 
 **Socket does not exist**
 
-VoxCtr is not running, or the MCP server is disabled. Enable it in **Settings → Ollama** or set `"mcp": { "server_enabled": true }` in `config.json` and restart.
+VoxCtrl is not running, or the MCP server is disabled. Enable it in **Settings → Ollama** or set `"mcp": { "server_enabled": true }` in `config.json` and restart.
 
 **`socat` connection refused**
 
-The socket exists but the server is not listening yet. Wait a moment after VoxCtr starts, or check the app's console output for errors.
+The socket exists but the server is not listening yet. Wait a moment after VoxCtrl starts, or check the app's console output for errors.
 
 **TTS plays but no audio**
 
 * **Linux**: Check that `aplay` is installed (`which aplay`).
-* Verify the voice model is downloaded: models live in `~/.local/share/voxctl/piper-voices/`.
+* Verify the voice model is downloaded: models live in `~/.local/share/voxctrl/piper-voices/`.
 * Try `tts_engine = "espeak"` as a fallback choice.
 
 **`transcribe_voice` returns `(no speech detected)`**
@@ -469,6 +469,6 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 **Claude Desktop does not see the tools**
 
 * Restart Claude Desktop after editing `claude_desktop_config.json`.
-* Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctl-mcp.sock` connects successfully from a terminal.
-* Check that `voxctl-mcp.sock` exists (`ls -la /tmp/*.sock`).
-* Ensure VoxCtr is running and the MCP server is enabled in **Settings → Ollama**.
+* Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctrl-mcp.sock` connects successfully from a terminal.
+* Check that `voxctrl-mcp.sock` exists (`ls -la /tmp/*.sock`).
+* Ensure VoxCtrl is running and the MCP server is enabled in **Settings → Ollama**.

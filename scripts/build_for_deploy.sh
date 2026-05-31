@@ -1,17 +1,17 @@
 #!/bin/bash
-# VoxCtl Deploy Bundle Builder
+# VoxCtrl Deploy Bundle Builder
 #
 # Builds the AppImage and packages it with everything a user needs to install
-# VoxCtl: the AppImage, install.sh, and supporting files.
+# VoxCtrl: the AppImage, install.sh, and supporting files.
 #
 # Usage:
 #   bash scripts/build_for_deploy.sh [--output <path>]
 #
 # Output:
-#   VoxCtl-deploy-<version>.zip  (default: project root)
+#   VoxCtrl-deploy-<version>.zip  (default: project root)
 #
 # Unzip on target machine, then run:
-#   cd VoxCtl-deploy-<version>/
+#   cd VoxCtrl-deploy-<version>/
 #   bash install.sh
 
 set -euo pipefail
@@ -43,13 +43,13 @@ done
 cd "${PROJECT_ROOT}"
 
 echo -e "${BOLD}==========================================${NC}"
-echo -e "${BOLD}  VoxCtl Deploy Bundle Builder${NC}"
+echo -e "${BOLD}  VoxCtrl Deploy Bundle Builder${NC}"
 echo -e "${BOLD}==========================================${NC}"
 
 # ── Determine version ─────────────────────────────────────────────────────────
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-BUNDLE_NAME="VoxCtl-deploy-${VERSION}"
-APPIMAGE_FILE="VoxCtl-x86_64.AppImage"
+BUNDLE_NAME="VoxCtrl-deploy-${VERSION}"
+APPIMAGE_FILE="VoxCtrl-x86_64.AppImage"
 ZIP_FILE="${OUTPUT_DIR}/${BUNDLE_NAME}.zip"
 
 info "Version   : ${VERSION}"
@@ -88,7 +88,7 @@ cp "assets/app_icon.png" "${BUNDLE_DIR}/assets/"
 
 # Desktop entry template (install.sh writes it programmatically, but include it
 # so advanced users can inspect it)
-cp "voxctl.desktop" "${BUNDLE_DIR}/" 2>/dev/null || true
+cp "voxctrl.desktop" "${BUNDLE_DIR}/" 2>/dev/null || true
 
 ok "Staged to ${BUNDLE_DIR}"
 

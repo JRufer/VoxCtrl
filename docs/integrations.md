@@ -1,23 +1,23 @@
 # Integrations
 
-VoxCtr exposes several interfaces for external tools and services to interact with it.
+VoxCtrl exposes several interfaces for external tools and services to interact with it.
 
 ---
 
 ## MCP Server
 
-**Crate:** `crates/voxctr-mcp/`
+**Crate:** `crates/voxctrl-mcp/`
 
 ### What is MCP?
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard for LLM agents to call tools on local servers. VoxCtr implements an MCP server that lets AI assistants like **Claude Desktop** or **Cursor IDE** trigger voice recording and TTS.
+The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard for LLM agents to call tools on local servers. VoxCtrl implements an MCP server that lets AI assistants like **Claude Desktop** or **Cursor IDE** trigger voice recording and TTS.
 
 ### Transport
 
 | Platform | Socket |
 |---|---|
-| Linux | `/tmp/voxctl-mcp.sock` (Unix domain socket) |
-| Windows | `\\.\pipe\voxctl-mcp` (named pipe) |
+| Linux | `/tmp/voxctrl-mcp.sock` (Unix domain socket) |
+| Windows | `\\.\pipe\voxctrl-mcp` (named pipe) |
 
 ### Protocol
 
@@ -29,7 +29,7 @@ JSON-RPC 2.0 over the socket. Follows MCP spec v2024-11-05.
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"claude-desktop"}}}
 
 // Server responds:
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"voxctl","version":"1.0.0"}}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"voxctrl","version":"1.0.0"}}}
 
 // Client sends (notification, no id):
 {"jsonrpc":"2.0","method":"notifications/initialized"}
@@ -105,9 +105,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "voxctr": {
+    "voxctrl": {
       "command": "nc",
-      "args": ["-U", "/tmp/voxctl-mcp.sock"]
+      "args": ["-U", "/tmp/voxctrl-mcp.sock"]
     }
   }
 }
@@ -117,14 +117,14 @@ Add to `claude_desktop_config.json`:
 
 ## DBus Service (Linux)
 
-**Crate:** `crates/voxctr-dbus/`
+**Crate:** `crates/voxctrl-dbus/`
 
 ### Interface
 
-VoxCtr registers on the session bus as:
-- **Bus name:** `ai.voxctl.Dictation`
-- **Object path:** `/ai/voxctl/Dictation`
-- **Interface:** `ai.voxctl.Dictation`
+VoxCtrl registers on the session bus as:
+- **Bus name:** `ai.voxctrl.Dictation`
+- **Object path:** `/ai/voxctrl/Dictation`
+- **Interface:** `ai.voxctrl.Dictation`
 
 ### Methods
 
@@ -147,18 +147,18 @@ VoxCtr registers on the session bus as:
 
 ```bash
 # Start recording
-dbus-send --session --dest=ai.voxctl.Dictation \
-  /ai/voxctl/Dictation \
-  ai.voxctl.Dictation.start_recording
+dbus-send --session --dest=ai.voxctrl.Dictation \
+  /ai/voxctrl/Dictation \
+  ai.voxctrl.Dictation.start_recording
 
 # Watch for injected text
-dbus-monitor --session "type='signal',interface='ai.voxctl.Dictation'"
+dbus-monitor --session "type='signal',interface='ai.voxctrl.Dictation'"
 
 # Get current status ("idle", "recording", or "transcribing")
 dbus-send --session --print-reply \
-  --dest=ai.voxctl.Dictation \
-  /ai/voxctl/Dictation \
-  ai.voxctl.Dictation.get_status
+  --dest=ai.voxctrl.Dictation \
+  /ai/voxctrl/Dictation \
+  ai.voxctrl.Dictation.get_status
 ```
 
 The DBus service is a stub on non-Linux platforms (compiles but does nothing).
@@ -167,7 +167,7 @@ The DBus service is a stub on non-Linux platforms (compiles but does nothing).
 
 ## Ollama Integration
 
-**Crate:** `crates/voxctr-llm/`
+**Crate:** `crates/voxctrl-llm/`
 
 ### Purpose
 
@@ -209,7 +209,7 @@ With `mode = "custom"`, the `custom_prompt` field is used as the LLM instruction
 
 ### Graceful Fallback
 
-If Ollama is unreachable, the HTTP request times out, or the response cannot be parsed, VoxCtr logs the failure and delivers the **original** Whisper transcription unchanged. Text is never dropped.
+If Ollama is unreachable, the HTTP request times out, or the response cannot be parsed, VoxCtrl logs the failure and delivers the **original** Whisper transcription unchanged. Text is never dropped.
 
 ### Testing the Connection
 
@@ -240,16 +240,16 @@ Configurable: `http_method`, `http_headers`, `http_json_template`.
 ### Signed Webhooks (`webhook` type)
 Same POST (to `webhook_url`) but with HMAC-SHA256 signature:
 ```
-X-VoxCtr-Signature: sha256=abc123...
+X-VoxCtrl-Signature: sha256=abc123...
 ```
 
 ---
 
 ## AT-SPI2 Context Integration (Linux)
 
-When `atspi.context_prompt = true`, VoxCtr uses the Linux Accessibility API (AT-SPI2) to read the surrounding text from the focused text field. This text is included in the Whisper initial prompt to improve transcription continuity and vocabulary consistency.
+When `atspi.context_prompt = true`, VoxCtrl uses the Linux Accessibility API (AT-SPI2) to read the surrounding text from the focused text field. This text is included in the Whisper initial prompt to improve transcription continuity and vocabulary consistency.
 
-When `atspi.auto_code_mode = true`, VoxCtr detects when the focused application is a code editor or terminal and automatically enables code-mode post-processing.
+When `atspi.auto_code_mode = true`, VoxCtrl detects when the focused application is a code editor or terminal and automatically enables code-mode post-processing.
 
 When `atspi.injection = true`, AT-SPI2 is used as the primary text injection method (before falling back to wtype/xdotool).
 

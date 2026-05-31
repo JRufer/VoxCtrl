@@ -3,7 +3,7 @@ import json
 import pytest
 import os
 
-SOCKET_PATH = "/tmp/voxctl-mcp.sock"
+SOCKET_PATH = "/tmp/voxctrl-mcp.sock"
 
 def send_rpc(sock, method, params=None, rpc_id=1):
     payload = {

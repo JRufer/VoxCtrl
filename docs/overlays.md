@@ -1,6 +1,6 @@
 # Overlay UI Guide
 
-VoxCtr displays a visual overlay while the microphone is active or while TTS is speaking. The overlay is a dedicated, borderless, transparent Tauri window (560×160 px, transparent background, always-on-top, click-through) that renders a Svelte component over whatever application is in focus.
+VoxCtrl displays a visual overlay while the microphone is active or while TTS is speaking. The overlay is a dedicated, borderless, transparent Tauri window (560×160 px, transparent background, always-on-top, click-through) that renders a Svelte component over whatever application is in focus.
 
 ---
 
@@ -36,7 +36,7 @@ Tauri dynamically calculates physical pixel values taking into account your disp
 
 ## Target Display / Multi-Monitor Support
 
-In multi-monitor setups, VoxCtr allows you to specify exactly which display screen the visual overlay should appear on.
+In multi-monitor setups, VoxCtrl allows you to specify exactly which display screen the visual overlay should appear on.
 
 You can configure the target display under **Settings** -> **Visual & Feedback** -> **Overlay display** or manually in `config.json` via `ui.overlay_monitor`.
 
@@ -82,14 +82,14 @@ A minimalist target-tracking indicator.
 
 ## 🎨 User-Creatable Custom Overlay Templates
 
-VoxCtr supports **user-creatable, customizable visual overlays** loaded dynamically from a local directory at runtime. You can build visualizers using plain HTML templates, vanilla CSS styling, and standard JavaScript, with high-performance access to the real-time audio stream.
+VoxCtrl supports **user-creatable, customizable visual overlays** loaded dynamically from a local directory at runtime. You can build visualizers using plain HTML templates, vanilla CSS styling, and standard JavaScript, with high-performance access to the real-time audio stream.
 
 ### 1. File Structure & Path
 
 Custom overlays are scanned dynamically at launch from your local share directory:
-* **Linux**: `~/.local/share/voxctl/overlays/`
-* **macOS**: `~/Library/Application Support/ai.voxctl.app/overlays/`
-* **Windows**: `AppData\Local\ai.voxctl.app\overlays\`
+* **Linux**: `~/.local/share/voxctrl/overlays/`
+* **macOS**: `~/Library/Application Support/ai.voxctrl.app/overlays/`
+* **Windows**: `AppData\Local\ai.voxctrl.app\overlays\`
 
 To create your own overlay, create a new subfolder under `overlays/`. The folder name serves as the overlay's ID. Inside the folder, place two files:
 ```
@@ -100,13 +100,13 @@ overlays/
 ```
 
 > [!NOTE]
-> **Bundled Example:** VoxCtr automatically bundles and extracts a premium `gradient-wave` custom overlay folder inside your local directory at launch. Use this folder as a live reference!
+> **Bundled Example:** VoxCtrl automatically bundles and extracts a premium `gradient-wave` custom overlay folder inside your local directory at launch. Use this folder as a live reference!
 
 ---
 
 ### 2. HTML Templates & Placeholders
 
-Your `index.html` template can include HTML layouts, inline SVG vectors, and local scripts. VoxCtr automatically scans and replaces the following reactive placeholders at runtime:
+Your `index.html` template can include HTML layouts, inline SVG vectors, and local scripts. VoxCtrl automatically scans and replaces the following reactive placeholders at runtime:
 
 - `{{trigger}}` — Replaced with the active global hotkey trigger label (e.g. `Meta + Space`).
 - `{{target}}` — Replaced with the active target delivery name (e.g. `Focused Window`).
@@ -115,23 +115,23 @@ Your `index.html` template can include HTML layouts, inline SVG vectors, and loc
 
 ### 3. High-Performance CSS Custom Variables
 
-VoxCtr binds high-speed, reactive CSS custom properties directly to the `.overlay-root` container at 60fps. You can use these variables inside your `style.css` to build pure, GPU-accelerated CSS animations:
+VoxCtrl binds high-speed, reactive CSS custom properties directly to the `.overlay-root` container at 60fps. You can use these variables inside your `style.css` to build pure, GPU-accelerated CSS animations:
 
 | CSS Custom Variable | Value Range | Purpose |
 | :--- | :--- | :--- |
-| `--voxctr-audio-level` | `0.0` to `1.0` | Real-time interpolated microphone amplitude level. |
-| `--voxctr-recording` | `0` or `1` | Indication if the microphone is actively recording. |
-| `--voxctr-processing` | `0` or `1` | Indication if the backend is actively performing inference/thinking. |
-| `--voxctr-speaking` | `0` or `1` | Indication if the Piper neural TTS voice is speaking. |
-| `--voxctr-audio-ready` | `0` or `1` | Indication if the audio system is fully initialized. |
+| `--voxctrl-audio-level` | `0.0` to `1.0` | Real-time interpolated microphone amplitude level. |
+| `--voxctrl-recording` | `0` or `1` | Indication if the microphone is actively recording. |
+| `--voxctrl-processing` | `0` or `1` | Indication if the backend is actively performing inference/thinking. |
+| `--voxctrl-speaking` | `0` or `1` | Indication if the Piper neural TTS voice is speaking. |
+| `--voxctrl-audio-ready` | `0` or `1` | Indication if the audio system is fully initialized. |
 
 #### CSS Usage Example:
 ```css
 .indicator {
   /* Scale element size dynamically on microphone volume level */
-  transform: scale(calc(1.0 + var(--voxctr-audio-level) * 0.5));
+  transform: scale(calc(1.0 + var(--voxctrl-audio-level) * 0.5));
   /* Transition color based on recording status */
-  background: color-mix(in srgb, #ff6b35 calc(var(--voxctr-recording) * 100%), #38bdf8);
+  background: color-mix(in srgb, #ff6b35 calc(var(--voxctrl-recording) * 100%), #38bdf8);
 }
 ```
 
@@ -141,18 +141,18 @@ VoxCtr binds high-speed, reactive CSS custom properties directly to the `.overla
 
 For advanced visualizers using HTML5 `<canvas>`, WebGL, or SVG path morphing, standard vanilla custom DOM events are dispatched on the `window` object:
 
-#### `voxctr-audio-level`
+#### `voxctrl-audio-level`
 Dispatched in real-time when fresh amplitude inputs are received.
 * **Payload (`event.detail`)**: `number` (raw RMS audio energy, roughly `0.0` to `1.0`).
 
 ```javascript
-window.addEventListener("voxctr-audio-level", (e) => {
+window.addEventListener("voxctrl-audio-level", (e) => {
   const rawVolume = e.detail;
   // Drive custom visual animations
 });
 ```
 
-#### `voxctr-status`
+#### `voxctrl-status`
 Dispatched at 60fps containing a full state object.
 * **Payload (`event.detail`)**:
   ```json
@@ -167,7 +167,7 @@ Dispatched at 60fps containing a full state object.
   ```
 
 ```javascript
-window.addEventListener("voxctr-status", (e) => {
+window.addEventListener("voxctrl-status", (e) => {
   const { recording, audio_level, active_target_label } = e.detail;
   if (recording) {
     // update canvas loop
@@ -179,7 +179,7 @@ window.addEventListener("voxctr-status", (e) => {
 
 ### 5. Dynamic Script Execution
 
-Svelte's standard template injector blocks `<script>` blocks for security reasons. To make user-creatable visualizers fully programmable, VoxCtr runs a custom action on mount:
+Svelte's standard template injector blocks `<script>` blocks for security reasons. To make user-creatable visualizers fully programmable, VoxCtrl runs a custom action on mount:
 * It extracts all script blocks inside your `index.html`.
 * Re-compiles them dynamically.
 * Re-injects them into the DOM frame to force secure execution.
@@ -203,11 +203,11 @@ Below is a complete, copy-pasteable example of a custom visualizer card featurin
 ### Step 1: Create the Folder
 Create a folder inside your local directory named `glow-ring`:
 ```bash
-mkdir -p ~/.local/share/voxctl/overlays/glow-ring
+mkdir -p ~/.local/share/voxctrl/overlays/glow-ring
 ```
 
 ### Step 2: Write `index.html`
-Save this file as `~/.local/share/voxctl/overlays/glow-ring/index.html`:
+Save this file as `~/.local/share/voxctrl/overlays/glow-ring/index.html`:
 ```html
 <div class="custom-card">
   <div class="meta-row">
@@ -223,7 +223,7 @@ Save this file as `~/.local/share/voxctl/overlays/glow-ring/index.html`:
     let currentVolume = 0;
     let targetVolume = 0;
 
-    window.addEventListener("voxctr-audio-level", (e) => {
+    window.addEventListener("voxctrl-audio-level", (e) => {
       // Scale level up for visual display
       targetVolume = Math.min(1.0, e.detail * 100.0);
     });
@@ -250,7 +250,7 @@ Save this file as `~/.local/share/voxctl/overlays/glow-ring/index.html`:
 ```
 
 ### Step 3: Write `style.css`
-Save this file as `~/.local/share/voxctl/overlays/glow-ring/style.css`:
+Save this file as `~/.local/share/voxctrl/overlays/glow-ring/style.css`:
 ```css
 .custom-card {
   width: 300px;
@@ -310,6 +310,6 @@ Save this file as `~/.local/share/voxctl/overlays/glow-ring/style.css`:
 ```
 
 ### Step 4: Load the Overlay
-1. Open VoxCtr **Settings** -> **Visual & Feedback** -> **Overlay style** dropdown.
+1. Open VoxCtrl **Settings** -> **Visual & Feedback** -> **Overlay style** dropdown.
 2. Select your newly registered `"glow-ring"` overlay!
 3. Trigger dictation and watch your custom glow visualizer react smoothly to your voice.

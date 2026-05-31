@@ -4,15 +4,29 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  let { cfg = $bindable() }: { cfg: AppConfig } = $props();
-  function markDirty() { configDirty.set(true); }
+  let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
+  function markDirty() {
+    configDirty.set(true);
+  }
 
-  const MODEL_SIZES = ["tiny","tiny.en","base","base.en","small","small.en",
-    "medium","medium.en","large-v2","large-v3","large-v3-turbo"];
+  const MODEL_SIZES = [
+    "tiny",
+    "tiny.en",
+    "base",
+    "base.en",
+    "small",
+    "small.en",
+    "medium",
+    "medium.en",
+    "large-v2",
+    "large-v3",
+    "large-v3-turbo",
+  ];
 
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let modelDirError = $state<string | null>(null);
   let cudaEnabled = $state(false);
 
   async function checkAllModelsDownloaded() {
@@ -20,7 +34,10 @@
     const newMap: Record<string, boolean> = {};
     for (const m of MODEL_SIZES) {
       try {
-        newMap[m] = await invoke<boolean>("check_model_downloaded", { modelSize: m });
+        newMap[m] = await invoke<boolean>("check_model_downloaded", {
+          modelSize: m,
+          modelDir: cfg.engine.whisper_cpp.model_dir,
+        });
       } catch (e) {
         console.error("Failed to check download status for model " + m, e);
         newMap[m] = false;
@@ -34,7 +51,10 @@
     if (downloading) return;
     downloading = true;
     try {
-      await invoke("download_model", { modelSize: model });
+      await invoke("download_model", {
+        modelSize: model,
+        modelDir: cfg.engine.whisper_cpp.model_dir,
+      });
       downloadedMap[model] = true;
     } catch (e) {
       alert(`Failed to download model: ${e}`);
@@ -48,6 +68,31 @@
     const selected = cfg.engine.whisper_cpp.model_size;
     if (!downloadedMap[selected]) {
       await triggerDownload(selected);
+    }
+  }
+
+  async function validateModelDir() {
+    const path = cfg.engine.whisper_cpp.model_dir;
+    if (!path) {
+      modelDirError = null;
+      return;
+    }
+    const exists = await invoke<boolean>("check_directory_exists", { path });
+    modelDirError = exists
+      ? null
+      : "This folder does not exist. Please create it first or leave blank for the default location.";
+    if (!modelDirError) {
+      await checkAllModelsDownloaded();
+    }
+  }
+
+  function onModelDirChange() {
+    markDirty();
+  }
+
+  function onModelDirKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      (e.currentTarget as HTMLInputElement).blur();
     }
   }
 
@@ -66,12 +111,22 @@
   <h2>Inference Engine</h2>
 
   {#if cfg.engine.backend !== "moonshine" && !checking && !downloadedMap[cfg.engine.whisper_cpp.model_size]}
-    <div class="flex items-center gap-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 mb-5 animate-in fade-in slide-in-from-top-1 duration-300">
-      <span class="text-2xl leading-none text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.3)]">⚠️</span>
+    <div
+      class="flex items-center gap-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 mb-5 animate-in fade-in slide-in-from-top-1 duration-300"
+    >
+      <span
+        class="text-2xl leading-none text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.3)]"
+        >⚠️</span
+      >
       <div class="flex-1">
-        <strong class="block text-yellow-200 font-semibold text-sm mb-1">Voice Model Not Downloaded</strong>
+        <strong class="block text-yellow-200 font-semibold text-sm mb-1"
+          >Voice Model Not Downloaded</strong
+        >
         <p class="m-0 text-slate-200 text-xs leading-relaxed">
-          The configuration specifies a voice model (<strong>{cfg.engine.whisper_cpp.model_size}</strong>) that is not currently downloaded. Please select the model size to use and download it below, or choose another model.
+          The configuration specifies a voice model (<strong
+            >{cfg.engine.whisper_cpp.model_size}</strong
+          >) that is not currently downloaded. Please select the model size to
+          use and download it below, or choose another model.
         </p>
       </div>
     </div>
@@ -97,70 +152,103 @@
   </div>
 
   {#if cfg.engine.backend !== "moonshine"}
-  <div class="field-group">
-    <h3>Whisper.cpp Settings</h3>
-    <label class="field">
-      <span>Model size</span>
-      <select bind:value={cfg.engine.whisper_cpp.model_size} onchange={onModelChanged}>
-        {#each MODEL_SIZES as s}
-          <option value={s}>{s}{downloadedMap[s] ? " ✔" : ""}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="field-group">
+      <h3>Whisper.cpp Settings</h3>
+      <label class="field">
+        <span>Model size</span>
+        <select
+          bind:value={cfg.engine.whisper_cpp.model_size}
+          onchange={onModelChanged}
+        >
+          {#each MODEL_SIZES as s}
+            <option value={s}>{s}{downloadedMap[s] ? " ✔" : ""}</option>
+          {/each}
+        </select>
+      </label>
 
-    <div class="model-status-container">
-      {#if checking}
-        <span class="status-checking">⏳ Checking local model files...</span>
-      {:else if downloading}
-        <span class="status-downloading">⏳ Downloading {cfg.engine.whisper_cpp.model_size} (GGUF format)...</span>
-      {:else if downloadedMap[cfg.engine.whisper_cpp.model_size]}
-        <span class="status-downloaded">✔ Model downloaded and ready</span>
-      {:else}
-        <div class="status-missing-wrapper">
-          <span class="status-missing">❌ Model file missing</span>
-          <button class="btn-download" onclick={() => triggerDownload(cfg.engine.whisper_cpp.model_size)}>
-            📥 Download Model
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <label class="field">
-      <span>Device</span>
-      <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
-        <option value="auto">Auto</option>
-        {#if cudaEnabled}
-        <option value="cuda">CUDA (NVIDIA)</option>
+      <div class="model-status-container">
+        {#if checking}
+          <span class="status-checking">⏳ Checking local model files...</span>
+        {:else if downloading}
+          <span class="status-downloading"
+            >⏳ Downloading {cfg.engine.whisper_cpp.model_size} (GGUF format)...</span
+          >
+        {:else if downloadedMap[cfg.engine.whisper_cpp.model_size]}
+          <span class="status-downloaded">✔ Model downloaded and ready</span>
+        {:else}
+          <div class="status-missing-wrapper">
+            <span class="status-missing">❌ Model file missing</span>
+            <button
+              class="btn-download"
+              onclick={() => triggerDownload(cfg.engine.whisper_cpp.model_size)}
+            >
+              📥 Download Model
+            </button>
+          </div>
         {/if}
-        <option value="vulkan">Vulkan (AMD/Intel)</option>
-        <option value="cpu">CPU</option>
-      </select>
-    </label>
-    <label class="field">
-      <span>Model directory (leave blank for default)</span>
-      <input type="text" bind:value={cfg.engine.whisper_cpp.model_dir} onchange={markDirty} />
-    </label>
-    <label class="field">
-      <span>Threads (0 = auto)</span>
-      <input type="number" min="0" max="64" bind:value={cfg.engine.whisper_cpp.threads} onchange={markDirty} />
-    </label>
-    <p class="hint">Default model directory: <code>~/.local/share/voxctl/models/</code></p>
-  </div>
+      </div>
+
+      <label class="field">
+        <span>Device</span>
+        <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
+          <option value="auto">Auto</option>
+          {#if cudaEnabled}
+            <option value="cuda">CUDA (NVIDIA)</option>
+          {/if}
+          <option value="vulkan">Vulkan (AMD/Intel)</option>
+          <option value="cpu">CPU</option>
+        </select>
+      </label>
+      <div class="field">
+        <span>Model directory (leave blank for default)</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.whisper_cpp.model_dir}
+          onchange={onModelDirChange}
+          onblur={validateModelDir}
+          onkeydown={onModelDirKeydown}
+          class:field-input-error={!!modelDirError}
+        />
+        {#if modelDirError}
+          <p class="field-error-msg">{modelDirError}</p>
+        {/if}
+      </div>
+      <label class="field">
+        <span>Threads (0 = auto)</span>
+        <input
+          type="number"
+          min="0"
+          max="64"
+          bind:value={cfg.engine.whisper_cpp.threads}
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        Default model directory: <code>~/.local/share/voxctrl/models/</code>
+      </p>
+    </div>
   {:else}
-  <div class="field-group">
-    <h3>Moonshine Settings</h3>
-    <label class="field">
-      <span>Model size</span>
-      <select bind:value={cfg.engine.moonshine.model_size} onchange={markDirty}>
-        <option value="base">Base</option>
-        <option value="tiny">Tiny</option>
-      </select>
-    </label>
-    <label class="field">
-      <span>Language</span>
-      <input type="text" bind:value={cfg.engine.moonshine.language} onchange={markDirty} />
-    </label>
-  </div>
+    <div class="field-group">
+      <h3>Moonshine Settings</h3>
+      <label class="field">
+        <span>Model size</span>
+        <select
+          bind:value={cfg.engine.moonshine.model_size}
+          onchange={markDirty}
+        >
+          <option value="base">Base</option>
+          <option value="tiny">Tiny</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Language</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.moonshine.language}
+          onchange={markDirty}
+        />
+      </label>
+    </div>
   {/if}
 </section>
 
@@ -210,5 +298,20 @@
   }
   .btn-download:hover {
     background: var(--accent2);
+  }
+  .field-input-error {
+    border-color: #ef4444 !important;
+  }
+  .field-input-error:focus {
+    border-color: #ef4444;
+    box-shadow:
+      0 0 0 2px rgba(239, 68, 68, 0.15),
+      inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  .field-error-msg {
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #ef4444;
   }
 </style>

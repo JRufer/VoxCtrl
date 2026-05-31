@@ -1,10 +1,10 @@
 {
-  "name": "voxctr",
+  "name": "voxctrl",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.8",
   "type": "module",
   "scripts": {
-    "predev": "pkill -x voxctr || true",
+    "predev": "pkill -x voxctrl || true",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

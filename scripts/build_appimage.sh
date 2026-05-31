@@ -1,5 +1,5 @@
 #!/bin/bash
-# VoxCtl AppImage Build Script
+# VoxCtrl AppImage Build Script
 #
 # Bundles the Python application and all pip dependencies into a portable AppImage.
 #
@@ -27,7 +27,7 @@
 
 set -e
 
-APP_NAME="VoxCtl"
+APP_NAME="VoxCtrl"
 APP_DIR="AppDir"
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 
@@ -36,23 +36,23 @@ echo "Building AppImage for ${APP_NAME} (Python ${PYTHON_VERSION})..."
 # 1. Clean and set up AppDir structure
 rm -rf "${APP_DIR}" ./*.AppImage
 mkdir -p "${APP_DIR}/usr/bin"
-mkdir -p "${APP_DIR}/usr/share/voxctl"
+mkdir -p "${APP_DIR}/usr/share/voxctrl"
 mkdir -p "${APP_DIR}/usr/share/metainfo"
 mkdir -p "${APP_DIR}/usr/share/applications"
 mkdir -p "${APP_DIR}/usr/share/icons/hicolor/256x256/apps"
 
 # 2. Copy application files
 echo "[*] Copying application source and assets..."
-cp -r src/    "${APP_DIR}/usr/share/voxctl/"
-cp -r assets/ "${APP_DIR}/usr/share/voxctl/"
+cp -r src/    "${APP_DIR}/usr/share/voxctrl/"
+cp -r assets/ "${APP_DIR}/usr/share/voxctrl/"
 
-cp voxctl.desktop "${APP_DIR}/usr/share/applications/"
-sed -i "s|^Exec=.*|Exec=voxctl|"   "${APP_DIR}/usr/share/applications/voxctl.desktop"
-sed -i "s|^Icon=.*|Icon=voxctl|"   "${APP_DIR}/usr/share/applications/voxctl.desktop"
+cp voxctrl.desktop "${APP_DIR}/usr/share/applications/"
+sed -i "s|^Exec=.*|Exec=voxctrl|"   "${APP_DIR}/usr/share/applications/voxctrl.desktop"
+sed -i "s|^Icon=.*|Icon=voxctrl|"   "${APP_DIR}/usr/share/applications/voxctrl.desktop"
 
-cp assets/app_icon.png "${APP_DIR}/usr/share/icons/hicolor/256x256/apps/voxctl.png"
-cp assets/app_icon.png "${APP_DIR}/voxctl.png"
-ln -sf usr/share/applications/voxctl.desktop "${APP_DIR}/voxctl.desktop"
+cp assets/app_icon.png "${APP_DIR}/usr/share/icons/hicolor/256x256/apps/voxctrl.png"
+cp assets/app_icon.png "${APP_DIR}/voxctrl.png"
+ln -sf usr/share/applications/voxctrl.desktop "${APP_DIR}/voxctrl.desktop"
 
 # 3. Install all pip dependencies into a self-contained venv
 echo "[*] Creating virtual environment inside AppDir..."
@@ -79,9 +79,9 @@ export XDG_DATA_DIRS="${USR_DIR}/share:${XDG_DATA_DIRS}"
 # pyatspi is a system package (python3-pyatspi) that cannot be bundled via pip.
 # Add the host system site-packages so pyatspi is found if installed on the host.
 SYS_SITE=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || true)
-export PYTHONPATH="${USR_DIR}/share/voxctl:${SYS_SITE}:${PYTHONPATH}"
+export PYTHONPATH="${USR_DIR}/share/voxctrl:${SYS_SITE}:${PYTHONPATH}"
 
-exec "${VENV_DIR}/bin/python3" "${USR_DIR}/share/voxctl/src/main.py" "$@"
+exec "${VENV_DIR}/bin/python3" "${USR_DIR}/share/voxctrl/src/main.py" "$@"
 EOF
 chmod +x "${APP_DIR}/AppRun"
 

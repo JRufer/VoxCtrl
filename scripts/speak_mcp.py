@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple script to send a speak_text tool call to the VoxCtr Rust MCP server.
+Simple script to send a speak_text tool call to the VoxCtrl Rust MCP server.
 Usage:
     python scripts/speak_mcp.py "Hello, this is a custom sentence spoken back to you!"
 """
@@ -9,7 +9,7 @@ import socket
 import json
 import sys
 
-SOCKET_PATH = "/tmp/voxctl-mcp.sock"
+SOCKET_PATH = "/tmp/voxctrl-mcp.sock"
 
 def speak(text):
     print(f"Connecting to MCP Server at {SOCKET_PATH}...")
@@ -19,7 +19,7 @@ def speak(text):
         sock.settimeout(5.0)
     except Exception as e:
         print(f"Error connecting: {e}")
-        print("Please ensure the VoxCtr Tauri app is running with MCP enabled.")
+        print("Please ensure the VoxCtrl Tauri app is running with MCP enabled.")
         sys.exit(1)
 
     # Step 1: Initialize MCP Session

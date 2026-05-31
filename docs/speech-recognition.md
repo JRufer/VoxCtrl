@@ -1,10 +1,10 @@
 # Speech Recognition
 
-**Crate:** `crates/voxctr-inference/`
+**Crate:** `crates/voxctrl-inference/`
 
 ## Overview
 
-VoxCtr uses **Whisper** (via `whisper-rs`, native bindings to whisper.cpp) for speech-to-text. Whisper runs entirely on-device using downloaded GGUF model files. No audio is ever sent to a remote server.
+VoxCtrl uses **Whisper** (via `whisper-rs`, native bindings to whisper.cpp) for speech-to-text. Whisper runs entirely on-device using downloaded GGUF model files. No audio is ever sent to a remote server.
 
 ---
 
@@ -22,7 +22,7 @@ VoxCtr uses **Whisper** (via `whisper-rs`, native bindings to whisper.cpp) for s
 
 The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a distilled model offering near large-v3 quality at medium speed.
 
-The default model is **`large-v3`**. Models are downloaded from Hugging Face as GGUF files on first use, cached at `~/.local/share/voxctl/models/`.
+The default model is **`large-v3`**. Models are downloaded from Hugging Face as GGUF files on first use. By default they are cached at `~/.local/share/voxctrl/models/`; this path is configurable via `engine.whisper_cpp.model_dir`.
 
 Change the active model via `engine.whisper_cpp.model_size` in config. Changing it takes effect on next recording.
 
@@ -39,7 +39,7 @@ Change the active model via `engine.whisper_cpp.model_size` in config. Changing 
 | `vulkan` | Any GPU via Vulkan (AMD/Intel/NVIDIA) |
 | `cpu` | Force CPU |
 
-On startup, VoxCtr probes for CUDA (via `nvidia-smi`, `/proc/driver/nvidia/version`, `/dev/nvidia0`) and Vulkan (via `vulkaninfo`, `/usr/share/vulkan/icd.d`) to select the best backend.
+On startup, VoxCtrl probes for CUDA (via `nvidia-smi`, `/proc/driver/nvidia/version`, `/dev/nvidia0`) and Vulkan (via `vulkaninfo`, `/usr/share/vulkan/icd.d`) to select the best backend.
 
 > **CUDA is opt-in at compile time.** The default build runs on any machine without a GPU. To enable NVIDIA GPU acceleration, build with the `cuda` cargo feature:
 > ```bash
@@ -184,7 +184,7 @@ Converts spoken phrases to code-style syntax:
 
 ## Silence Hallucination Filter
 
-Whisper generates text like "Thank you." or "Thanks for watching." when given near-silent input. VoxCtr applies a filter after post-processing:
+Whisper generates text like "Thank you." or "Thanks for watching." when given near-silent input. VoxCtrl applies a filter after post-processing:
 
 ```
 IF rms_energy < 0.003 (absolute room silence)
@@ -216,6 +216,6 @@ Under `engine.whisper_cpp` in `config.json`:
 | `model_size` | string | `"large-v3"` | Whisper model |
 | `device` | string | `"auto"` | Compute device |
 | `threads` | integer | `0` | CPU threads (0 = auto) |
-| `model_dir` | string | `""` | Custom model storage path |
+| `model_dir` | string | `""` | Custom model storage path; empty = `~/.local/share/voxctrl/models/`. Supports `~` expansion (e.g. `~/.whisper-models`). The directory must already exist. |
 
 Language detection is automatic when using whisper-cpp; use the `engine.moonshine.language` field for the Moonshine backend.

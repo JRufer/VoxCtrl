@@ -74,7 +74,7 @@ const config = await invoke<AppConfig>('get_config');
 ---
 
 #### `save_config(newConfig: AppConfig) → void`
-Persists configuration to `~/.config/voxctl/config.json` and emits a `config-changed` event to all windows.
+Persists configuration to `~/.config/voxctrl/config.json` and emits a `config-changed` event to all windows.
 
 ```typescript
 await invoke('save_config', { newConfig: myConfig });

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
-  import appIcon from "../../assets/voxctr.gif";
+  import appIcon from "../../assets/voxctrl.gif";
 
   let version = $state("0.1.0");
 
@@ -15,12 +15,12 @@
 </script>
 
 <section>
-  <h2>About VoxCtr</h2>
+  <h2>About VoxCtrl</h2>
 
   <div class="field-group about-card">
-    <img src={appIcon} class="logo animated-logo" alt="VoxCtr Logo" />
+    <img src={appIcon} class="logo animated-logo" alt="VoxCtrl Logo" />
     <div>
-      <div class="app-name">VoxCtr</div>
+      <div class="app-name">VoxCtrl</div>
       <div class="app-version">Version {version} — Rust + Tauri Edition</div>
       <p>
         Native, on-device voice-to-text for Linux and Windows.
@@ -36,9 +36,9 @@
     <div class="kv"><span>Frontend</span><span>Svelte 5 + Tauri 2</span></div>
     <div class="kv"><span>Backend</span><span>Rust (Tokio async)</span></div>
     <div class="kv"><span>Inference</span><span>whisper.cpp & Moonshine</span></div>
-    <div class="kv"><span>Config</span><span><code>~/.config/voxctl/</code></span></div>
-    <div class="kv"><span>Models</span><span><code>~/.local/share/voxctl/models/</code></span></div>
-    <div class="kv"><span>MCP socket</span><span><code>/tmp/voxctl-mcp.sock</code></span></div>
+    <div class="kv"><span>Config</span><span><code>~/.config/voxctrl/</code></span></div>
+    <div class="kv"><span>Models</span><span><code>~/.local/share/voxctrl/models/</code></span></div>
+    <div class="kv"><span>MCP socket</span><span><code>/tmp/voxctrl-mcp.sock</code></span></div>
   </div>
 
   <div class="field-group">
@@ -74,7 +74,7 @@
 
   <div class="field-group">
     <h3>Links</h3>
-    <a href="https://github.com/jrufer/voxctr" target="_blank">GitHub Repository</a>
+    <a href="https://github.com/jrufer/voxctrl" target="_blank">GitHub Repository</a>
   </div>
 </section>
 
