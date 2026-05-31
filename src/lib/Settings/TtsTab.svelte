@@ -24,6 +24,7 @@
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let testing = $state(false);
   let voiceDirError = $state<string | null>(null);
 
   async function checkAllVoicesDownloaded() {
@@ -87,10 +88,25 @@
     }
   }
 
+  async function testTts() {
+    if (testing) return;
+    testing = true;
+    try {
+      await invoke("speak_text", {
+        text: "Hi, how can I help you today?",
+        voice: cfg.tts.engine === "piper" ? cfg.tts.voice : null,
+      });
+    } catch (e) {
+      alert(`TTS test failed: ${e}`);
+    } finally {
+      testing = false;
+    }
+  }
+
   async function previewVoice() {
-    await invoke("speak_text", { 
+    await invoke("speak_text", {
       text: "Hello, this is a voice preview from VoxCtr.",
-      voice: cfg.tts.voice 
+      voice: cfg.tts.voice
     });
   }
 
@@ -115,6 +131,11 @@
         <option value="espeak">eSpeak-NG (lightweight)</option>
       </select>
     </label>
+    <div class="row">
+      <button class="btn-preview" onclick={testTts} disabled={!cfg.tts.enabled || testing}>
+        {testing ? "Speaking..." : "Test TTS"}
+      </button>
+    </div>
   </div>
 
   {#if cfg.tts.engine === "piper"}
