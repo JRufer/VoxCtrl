@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  let { cfg = $bindable() }: { cfg: AppConfig } = $props();
+  let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
   const PIPER_VOICES = [
@@ -24,13 +24,18 @@
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
+  let testing = $state(false);
+  let voiceDirError = $state<string | null>(null);
 
   async function checkAllVoicesDownloaded() {
     checking = true;
     const newMap: Record<string, boolean> = {};
     for (const v of PIPER_VOICES) {
       try {
-        newMap[v] = await invoke<boolean>("check_voice_downloaded", { voiceName: v });
+        newMap[v] = await invoke<boolean>("check_voice_downloaded", {
+          voiceName: v,
+          voiceDir: cfg.tts.voice_dir,
+        });
       } catch (e) {
         console.error("Failed to check download status for voice " + v, e);
         newMap[v] = false;
@@ -44,13 +49,35 @@
     if (downloading) return;
     downloading = true;
     try {
-      await invoke("download_voice", { voiceName: voice });
+      await invoke("download_voice", {
+        voiceName: voice,
+        voiceDir: cfg.tts.voice_dir,
+      });
       downloadedMap[voice] = true;
     } catch (e) {
       alert(`Failed to download voice: ${e}`);
     } finally {
       downloading = false;
     }
+  }
+
+  async function validateVoiceDir() {
+    const path = cfg.tts.voice_dir;
+    if (!path) {
+      voiceDirError = null;
+      return;
+    }
+    const exists = await invoke<boolean>("check_directory_exists", { path });
+    voiceDirError = exists ? null : "This folder does not exist. Please create it first or leave blank for the default location.";
+    if (!voiceDirError) {
+      await checkAllVoicesDownloaded();
+    }
+  }
+
+  function onVoiceDirChange() { markDirty(); }
+
+  function onVoiceDirKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
   }
 
   async function onVoiceChanged() {
@@ -61,10 +88,25 @@
     }
   }
 
+  async function testTts() {
+    if (testing) return;
+    testing = true;
+    try {
+      await invoke("speak_text", {
+        text: "Hi, how can I help you today?",
+        voice: cfg.tts.engine === "piper" ? cfg.tts.voice : null,
+      });
+    } catch (e) {
+      alert(`TTS test failed: ${e}`);
+    } finally {
+      testing = false;
+    }
+  }
+
   async function previewVoice() {
-    await invoke("speak_text", { 
+    await invoke("speak_text", {
       text: "Hello, this is a voice preview from VoxCtr.",
-      voice: cfg.tts.voice 
+      voice: cfg.tts.voice
     });
   }
 
@@ -89,6 +131,11 @@
         <option value="espeak">eSpeak-NG (lightweight)</option>
       </select>
     </label>
+    <div class="row">
+      <button class="btn-preview" onclick={testTts} disabled={!cfg.tts.enabled || testing}>
+        {testing ? "Speaking..." : "Test TTS"}
+      </button>
+    </div>
   </div>
 
   {#if cfg.tts.engine === "piper"}
@@ -121,6 +168,22 @@
         </div>
       {/if}
     </div>
+
+    <div class="field">
+      <span>Voice directory (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.voice_dir}
+        onchange={onVoiceDirChange}
+        onblur={validateVoiceDir}
+        onkeydown={onVoiceDirKeydown}
+        class:field-input-error={!!voiceDirError}
+      />
+      {#if voiceDirError}
+        <p class="field-error-msg">{voiceDirError}</p>
+      {/if}
+    </div>
+    <p class="hint">Default voice directory: <code>~/.local/share/voxctl/piper-voices/</code></p>
 
     <div class="row">
       <button class="btn-preview" onclick={previewVoice} disabled={!cfg.tts.enabled || downloading || !downloadedMap[cfg.tts.voice]}>
@@ -210,5 +273,18 @@
   }
   .btn-download:hover {
     background: var(--accent2);
+  }
+  .field-input-error {
+    border-color: #ef4444 !important;
+  }
+  .field-input-error:focus {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  .field-error-msg {
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #ef4444;
   }
 </style>

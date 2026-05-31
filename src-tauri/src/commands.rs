@@ -219,27 +219,47 @@ pub async fn speak_text(
 }
 
 #[tauri::command]
-pub async fn check_voice_downloaded(voice_name: String) -> Result<bool, String> {
-    Ok(voxctr_tts::is_voice_downloaded(&voice_name))
+pub async fn check_voice_downloaded(voice_name: String, voice_dir: String) -> Result<bool, String> {
+    Ok(voxctr_tts::is_voice_downloaded(&voice_name, &voice_dir))
 }
 
 #[tauri::command]
-pub async fn download_voice(voice_name: String) -> Result<(), String> {
-    voxctr_tts::download_voice(&voice_name)
+pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(), String> {
+    voxctr_tts::download_voice(&voice_name, &voice_dir)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn check_model_downloaded(model_size: String) -> Result<bool, String> {
-    Ok(voxctr_inference::whisper_cpp::is_model_downloaded(&model_size))
+pub async fn check_model_downloaded(model_size: String, model_dir: String) -> Result<bool, String> {
+    Ok(voxctr_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir))
 }
 
 #[tauri::command]
-pub async fn download_model(model_size: String) -> Result<(), String> {
-    voxctr_inference::whisper_cpp::download_model(&model_size)
+pub async fn download_model(model_size: String, model_dir: String) -> Result<(), String> {
+    voxctr_inference::whisper_cpp::download_model(&model_size, &model_dir)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn check_directory_exists(path: String) -> Result<bool, String> {
+    if path.is_empty() {
+        return Ok(true);
+    }
+    Ok(expand_tilde(&path).is_dir())
+}
+
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
 }
 
 // ── Overlay window ────────────────────────────────────────────────────────────

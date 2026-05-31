@@ -19,6 +19,9 @@ dirs = { workspace = true }
 reqwest = { workspace = true }
 whisper-rs = { version = "0.16" }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = []
 cuda = ["whisper-rs/cuda"]

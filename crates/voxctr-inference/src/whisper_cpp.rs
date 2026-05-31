@@ -79,7 +79,7 @@ impl WhisperCppBackend {
         let model_dir = if self.cfg.model_dir.is_empty() {
             Self::default_model_dir()
         } else {
-            PathBuf::from(&self.cfg.model_dir)
+            expand_tilde(&self.cfg.model_dir)
         };
 
         let candidates = GGUF_MAP
@@ -215,23 +215,43 @@ fn num_cpus() -> u32 {
         .unwrap_or(4)
 }
 
-pub fn is_model_downloaded(size: &str) -> bool {
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+pub fn is_model_downloaded(size: &str, model_dir: &str) -> bool {
     let candidates = match GGUF_MAP.iter().find(|(name, _)| *name == size) {
         Some((_, files)) => *files,
         None => return false,
     };
-    let model_dir = WhisperCppBackend::default_model_dir();
-    candidates.iter().any(|filename| model_dir.join(filename).exists())
+    let dir = if model_dir.is_empty() {
+        WhisperCppBackend::default_model_dir()
+    } else {
+        expand_tilde(model_dir)
+    };
+    candidates.iter().any(|filename| dir.join(filename).exists())
 }
 
-pub async fn download_model(size: &str) -> Result<()> {
+pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     let candidates = GGUF_MAP
         .iter()
         .find(|(name, _)| *name == size)
         .map(|(_, files)| *files)
         .ok_or_else(|| anyhow::anyhow!("Unknown model size '{size}'"))?;
 
-    let model_dir = WhisperCppBackend::default_model_dir();
+    let model_dir = if model_dir.is_empty() {
+        WhisperCppBackend::default_model_dir()
+    } else {
+        expand_tilde(model_dir)
+    };
     tokio::fs::create_dir_all(&model_dir).await?;
 
     let filename = candidates[0];
@@ -337,6 +357,135 @@ mod tests {
             initial_prompt: None,
         };
         assert!(backend.transcribe(&req).is_err());
+    }
+
+    // ── model_dir tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_model_downloaded_default_dir_not_present() {
+        // With empty model_dir (default) and no models on disk, returns false.
+        assert!(!is_model_downloaded("tiny", ""));
+    }
+
+    #[test]
+    fn test_is_model_downloaded_custom_dir_with_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model_path = dir.path().join("ggml-tiny-q5_1.bin");
+        std::fs::File::create(&model_path)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap();
+
+        assert!(is_model_downloaded(
+            "tiny",
+            dir.path().to_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn test_is_model_downloaded_nonexistent_path() {
+        // A path that does not exist on disk: no models found there.
+        assert!(!is_model_downloaded("tiny", "/nonexistent/path/that/does/not/exist"));
+    }
+
+    #[test]
+    fn test_is_model_downloaded_unknown_size() {
+        // Unknown model size always returns false regardless of dir.
+        assert!(!is_model_downloaded("unknown-size", ""));
+        assert!(!is_model_downloaded("unknown-size", "/tmp"));
+    }
+
+    #[test]
+    fn test_resolve_model_path_uses_custom_dir() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model_path = dir.path().join("ggml-tiny-q5_1.bin");
+        std::fs::File::create(&model_path)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap();
+
+        let cfg = WhisperCppConfig {
+            model_dir: dir.path().to_str().unwrap().to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        let resolved = backend.resolve_model_path().expect("should resolve");
+        assert_eq!(resolved, model_path);
+    }
+
+    #[test]
+    fn test_resolve_model_path_falls_back_to_default_when_dir_empty() {
+        // When model_dir is empty, resolve_model_path uses the default dir.
+        // The default dir almost certainly does not contain models in CI, so we
+        // just verify the error message mentions the default path rather than a
+        // custom one.
+        let cfg = WhisperCppConfig {
+            model_dir: "".to_string(),
+            model_size: "tiny".to_string(),
+            device: "cpu".to_string(),
+            threads: 0,
+        };
+        let backend = WhisperCppBackend::new(cfg);
+        let default_dir = WhisperCppBackend::default_model_dir();
+        match backend.resolve_model_path() {
+            Err(e) => assert!(
+                e.to_string().contains(default_dir.to_str().unwrap()),
+                "error should mention default dir: {e}"
+            ),
+            Ok(p) => {
+                // If there happens to be a model on this machine, just check it's under the default dir.
+                assert!(p.starts_with(&default_dir));
+            }
+        }
+    }
+
+    // ── tilde expansion tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_expand_tilde_home() {
+        let home = dirs::home_dir().expect("home dir must be available");
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn test_expand_tilde_subdir() {
+        let home = dirs::home_dir().expect("home dir must be available");
+        let expanded = expand_tilde("~/.models");
+        assert_eq!(expanded, home.join(".models"));
+    }
+
+    #[test]
+    fn test_expand_tilde_absolute_unchanged() {
+        let p = expand_tilde("/tmp/models");
+        assert_eq!(p, std::path::PathBuf::from("/tmp/models"));
+    }
+
+    #[test]
+    fn test_expand_tilde_relative_unchanged() {
+        let p = expand_tilde("relative/path");
+        assert_eq!(p, std::path::PathBuf::from("relative/path"));
+    }
+
+    #[test]
+    fn test_is_model_downloaded_tilde_path() {
+        use std::io::Write;
+        let home = dirs::home_dir().expect("home dir");
+        let dir = tempfile::tempdir_in(&home).expect("tempdir in home");
+        let model_path = dir.path().join("ggml-tiny-q5_1.bin");
+        std::fs::File::create(&model_path)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap();
+
+        // Construct a ~/... path pointing at the temp dir
+        let rel = dir.path().strip_prefix(&home).unwrap();
+        let tilde_path = format!("~/{}", rel.display());
+
+        assert!(is_model_downloaded("tiny", &tilde_path));
     }
 }
 

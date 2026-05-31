@@ -22,7 +22,7 @@ If Piper is unavailable or no voice is downloaded, VoxCtr falls back to `espeak-
 
 ## Voice Catalogue
 
-Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored at `~/.local/share/voxctl/piper-voices/`.
+Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored in the configured voice directory (see [Configuration Options](#configuration-options) below). The default is `~/.local/share/voxctl/piper-voices/`.
 
 | Voice name | Quality | Sample rate |
 |---|---|---|
@@ -47,7 +47,8 @@ The default voice is **`en-us-lessac-medium`**.
 ### Checking if a voice is downloaded
 ```typescript
 const downloaded = await invoke<boolean>('check_voice_downloaded', {
-  voiceName: 'en-us-lessac-medium'
+  voiceName: 'en-us-lessac-medium',
+  voiceDir: '',           // '' = use default directory
 });
 ```
 
@@ -56,7 +57,10 @@ Via the UI: Settings → TTS → select a voice → click Download.
 
 Via IPC:
 ```typescript
-await invoke('download_voice', { voiceName: 'en-us-ryan-high' });
+await invoke('download_voice', {
+  voiceName: 'en-us-ryan-high',
+  voiceDir: '',           // '' = default; or a custom path, e.g. '~/my-voices'
+});
 ```
 
 The download fetches `voice-<name>.tar.gz` from the Piper GitHub release, extracts the `.onnx` and `.onnx.json` files into the voices directory, and uses atomic temp-file writes to avoid partial downloads.
@@ -122,8 +126,11 @@ Under `tts` in `config.json`:
 | `enabled` | bool | `false` | Enable TTS functionality |
 | `engine` | string | `"piper"` | `"piper"` or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Voice name (hyphen-delimited) |
+| `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
+
+The `voice_dir` field affects both where VoxCtr looks for existing voice files and where newly downloaded voices are saved. If the specified directory does not exist, the Settings UI will display a validation error.
 
 ---
 

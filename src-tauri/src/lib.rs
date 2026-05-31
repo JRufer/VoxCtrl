@@ -462,7 +462,8 @@ pub fn run() {
             let mut show_settings = cfg_data.ui.auto_show_settings;
             if cfg_data.engine.backend != voxctr_config::BackendChoice::Moonshine {
                 let model_size = &cfg_data.engine.whisper_cpp.model_size;
-                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size) {
+                let model_dir = &cfg_data.engine.whisper_cpp.model_dir;
+                if !voxctr_inference::whisper_cpp::is_model_downloaded(model_size, model_dir) {
                     show_settings = true;
                 }
             }
@@ -591,6 +592,7 @@ pub fn run() {
             download_voice,
             check_model_downloaded,
             download_model,
+            check_directory_exists,
             test_ollama,
             cuda_enabled,
             check_udev_status,
