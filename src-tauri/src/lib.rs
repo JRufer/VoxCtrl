@@ -831,16 +831,24 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_multi_target_delivery() {
         use voxctrl_routing::models::{DeliveryType, OutputTarget};
+
+        let temp_dir = std::env::temp_dir();
+        let path_a = temp_dir.join("voxctrl_test_target_a.log").to_string_lossy().to_string();
+        let path_b = temp_dir.join("voxctrl_test_target_b.log").to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&path_a);
+        let _ = std::fs::remove_file(&path_b);
+
         let target_a = OutputTarget {
             id: "target_a".into(),
             label: "Target A".into(),
-            delivery: DeliveryType::Clipboard,
+            delivery: DeliveryType::File,
             command: None,
             pipe_path: None,
             socket_host: None,
             socket_port: None,
             socket_unix: None,
-            file_path: None,
+            file_path: Some(path_a.clone()),
             file_prefix: "".into(),
             file_timestamp: false,
             file_mode: "append".into(),
@@ -867,13 +875,13 @@ mod tests {
         let target_b = OutputTarget {
             id: "target_b".into(),
             label: "Target B".into(),
-            delivery: DeliveryType::Clipboard,
+            delivery: DeliveryType::File,
             command: None,
             pipe_path: None,
             socket_host: None,
             socket_port: None,
             socket_unix: None,
-            file_path: None,
+            file_path: Some(path_b.clone()),
             file_prefix: "".into(),
             file_timestamp: false,
             file_mode: "append".into(),
@@ -919,8 +927,16 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         for res in results {
-            assert!(res.success);
+            assert!(res.success, "Delivery failed: {:?}", res.error);
         }
+
+        let content_a = std::fs::read_to_string(&path_a).unwrap_or_default();
+        let content_b = std::fs::read_to_string(&path_b).unwrap_or_default();
+        assert!(content_a.contains("Concurrent delivery text"));
+        assert!(content_b.contains("Concurrent delivery text"));
+
+        let _ = std::fs::remove_file(&path_a);
+        let _ = std::fs::remove_file(&path_b);
     }
 
     #[tokio::test]
