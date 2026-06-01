@@ -21,7 +21,7 @@ VoxCtrl invokes the `piper` binary directly (looks first in `~/.local/share/voxc
 **Prerequisites:**
 - `espeak-ng` installed on the system (`apt install espeak-ng` on Debian/Ubuntu)
 
-Model files are downloaded from GitHub releases to `~/.local/share/voxctrl/kokoro/`. Audio is played via rodio using the raw PCM output from the ONNX model.
+Model files are downloaded from GitHub releases to `~/.local/share/voxctrl/kokoro/`. During download, the voices pack is automatically unzipped into the `voices/` subdirectory, and the zip archive is deleted to save space and avoid ZIP-parsing disk overhead at runtime. Audio is played via rodio using the raw PCM output from the ONNX model.
 
 **Model quality levels:**
 
@@ -145,21 +145,20 @@ await invoke('download_voice', {
 
 ### Kokoro — Checking and downloading
 
-Kokoro requires one download for the model file + voices pack. All voices are included in a single `voices-v1.0.bin` file.
+Kokoro downloads the model file and the voices pack ZIP file. It automatically extracts the ZIP into a `voices/` directory (containing standalone `{voice}.npy` files) and deletes the ZIP archive to save space.
 
 ```typescript
-// Check if model files are present
+// Check if model files and unzipped voices folder are present
 const ready = await invoke<boolean>('check_kokoro_ready', {
   quality: 'fp16',        // "f32" | "fp16"
   dataDir: '',            // '' = ~/.local/share/voxctrl/kokoro/
 });
 
-// Download model and voices pack
+// Download and automatically extract model and voices pack
 await invoke('download_kokoro', {
   quality: 'fp16',
   dataDir: '',
 });
-
 ```
 
 ---
@@ -273,7 +272,7 @@ Under `tts` in `config.json`:
 
 ## TtsEngineHandle
 
-The TTS handle is stored in `AppState` and shared with the MCP server, routing system, and IPC commands:
+The TTS handle is stored in `AppState` and shared with the MCP server, routing system, and IPC commands. It uses a robust, generation-based queue cancellation architecture so that calling `stop()` instantly interrupts active audio and safely discards all pending queued utterances without killing the worker thread:
 
 ```rust
 pub struct Utterance {
@@ -282,14 +281,24 @@ pub struct Utterance {
     pub source_label: Option<String>, // "prewarm" = suppress audio output
 }
 
+pub enum TtsCommand {
+    Play {
+        utterance: Utterance,
+        generation: u32,
+    },
+    Shutdown,
+}
+
 pub struct TtsEngineHandle {
-    tx: Sender<Option<Utterance>>,    // None = stop signal
+    tx: Sender<TtsCommand>,
+    generation: Arc<AtomicU32>,
 }
 
 impl TtsEngineHandle {
     pub fn speak(&self, text: impl Into<String>);
     pub fn speak_utterance(&self, u: Utterance);
-    pub fn stop(&self);               // sends None, clears current playback
+    pub fn stop(&self);               // Increments generation, interrupts active audio and discards queue
+    pub fn shutdown(&self);           // Sends Shutdown command, terminating the worker thread
 }
 ```
 
@@ -311,20 +320,20 @@ User speaks → transcription → speak_text IPC
               ┌─────────────────────┼──────────────────────┐
               │                     │                       │
     phonemize_espeak()      load_voice_embedding()    ort::Session
-    espeak-ng --ipa -q       NPZ ZIP → NPY row         (lazy init,
+    espeak-ng --ipa -q       NPY File → Cached mem     (lazy init,
     (subprocess)             [num_tokens, 256]          cached per
               │                     │                  worker thread)
               │              kokoro_tokenize()               │
               └──────────────────── │ ──────────────────────┘
                                     │
-                          run_kokoro_inference()
-                          input_ids (int64, 1×T)
-                          style     (float32, 1×256)
-                          speed     (float32, 1)
+                           run_kokoro_inference()
+                           input_ids (int64, 1×T)
+                           style     (float32, 1×256)
+                           speed     (float32, 1)
                                     │
-                          f32 audio samples @ 24 kHz
+                           f32 audio samples @ 24 kHz
                                     │
-                       i16 PCM → rodio::SamplesBuffer
+                     i16 PCM → rodio::SamplesBuffer (persistent sink)
                                     │
-                          Sink::sleep_until_end()
+                           Sink::sleep_until_end()
 ```

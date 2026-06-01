@@ -94,7 +94,7 @@ pub async fn save_config(
     {
         let mut handle = state.tts_handle.lock().await;
         if let Some(ref tts) = *handle {
-            tts.stop();
+            tts.shutdown();
         }
         if new_config.tts.enabled {
             let app_handle = app.clone();
@@ -159,31 +159,11 @@ pub async fn save_config(
 #[tauri::command]
 pub async fn stop_tts(
     state: State<'_, Arc<AppState>>,
-    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    info!("TTS stop/restart requested via command");
-    let mut handle = state.tts_handle.lock().await;
+    info!("TTS stop requested via command");
+    let handle = state.tts_handle.lock().await;
     if let Some(ref tts) = *handle {
         tts.stop();
-    }
-    
-    let cfg = state.config.lock().await.data.clone();
-    if cfg.tts.enabled {
-        let app_handle = app.clone();
-        let app_handle_end = app.clone();
-        let new_tts = voxctrl_tts::TtsEngineWorker::start(
-            cfg.tts.clone(),
-            Some(std::sync::Arc::new(move || {
-                let _ = app_handle.emit("tts-playback-start", ());
-            })),
-            Some(std::sync::Arc::new(move || {
-                let _ = app_handle_end.emit("tts-playback-end", ());
-            })),
-        );
-        *handle = Some(new_tts.clone());
-        state.spawn_fifo_responders(new_tts).await;
-    } else {
-        *handle = None;
     }
     Ok(())
 }

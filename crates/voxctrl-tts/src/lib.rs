@@ -187,15 +187,16 @@ const MAX_PHONEME_LENGTH: usize = 510;
 /// `num_inner_tokens` is the count without the boundary 0s; used to index the style row.
 pub fn kokoro_tokenize(phonemes: &str) -> (Vec<i64>, usize) {
     let vocab = kokoro_vocab();
-    let inner: Vec<i64> = phonemes
-        .chars()
-        .filter_map(|ch| vocab.get(&ch).map(|&id| id as i64))
-        .take(MAX_PHONEME_LENGTH)
-        .collect();
-    let num_inner = inner.len();
-    let mut tokens = Vec::with_capacity(inner.len() + 2);
+    let cap = phonemes.len().min(MAX_PHONEME_LENGTH) + 2;
+    let mut tokens = Vec::with_capacity(cap);
     tokens.push(0i64);
-    tokens.extend_from_slice(&inner);
+    tokens.extend(
+        phonemes
+            .chars()
+            .filter_map(|ch| vocab.get(&ch).map(|&id| id as i64))
+            .take(MAX_PHONEME_LENGTH),
+    );
+    let num_inner = tokens.len() - 1;
     tokens.push(0i64);
     (tokens, num_inner)
 }
@@ -229,55 +230,62 @@ pub fn phonemize_espeak(text: &str, lang: &str) -> Result<String> {
 
 // ── Kokoro voice embedding (NPZ / NPY) ───────────────────────────────────────
 
-/// Load one row from a voice's NPY array inside the voices NPZ pack.
+static EMBEDDING_CACHE: OnceLock<std::sync::Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
+
+/// Load one row from a voice's NPY array. It reads the standalone `.npy` file from the unzipped directory
+/// and caches the full array in-memory for sub-microsecond retrieval on subsequent calls.
 ///
-/// `row` is `num_inner_tokens` (i.e. `len(tokens)` before boundary padding).
 /// Each row is 256 float32 values forming the style embedding for that sequence length.
-pub fn load_voice_embedding(voices_path: &Path, voice: &str, row: usize) -> Result<Vec<f32>> {
-    use std::io::Read;
+pub fn load_voice_embedding(voices_dir: &Path, voice: &str, row: usize) -> Result<Vec<f32>> {
+    let cache_lock = EMBEDDING_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+    let mut cache = cache_lock.lock().unwrap();
 
-    let file = std::fs::File::open(voices_path)
-        .with_context(|| format!("open voices file: {}", voices_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file).context("open voices NPZ archive")?;
-
-    let entry_name = format!("{voice}.npy");
-    let mut entry = archive
-        .by_name(&entry_name)
-        .with_context(|| format!("voice '{voice}' not found in voices pack"))?;
-
-    let mut data = Vec::new();
-    entry.read_to_end(&mut data)?;
-    drop(entry);
-
-    if data.len() < 10 || &data[0..6] != b"\x93NUMPY" {
-        anyhow::bail!("invalid NPY format for voice '{voice}'");
-    }
-
-    let major = data[6];
-    let (header_len, header_offset): (usize, usize) = if major == 1 {
-        (u16::from_le_bytes([data[8], data[9]]) as usize, 10)
+    let full_data = if let Some(cached) = cache.get(voice) {
+        cached
     } else {
-        (u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize, 12)
+        let voice_file_path = voices_dir.join(format!("{voice}.npy"));
+        let mut file = std::fs::File::open(&voice_file_path)
+            .with_context(|| format!("open voice file: {}", voice_file_path.display()))?;
+
+        let mut data = Vec::new();
+        use std::io::Read;
+        file.read_to_end(&mut data)?;
+
+        if data.len() < 10 || &data[0..6] != b"\x93NUMPY" {
+            anyhow::bail!("invalid NPY format for voice '{voice}'");
+        }
+
+        let major = data[6];
+        let (header_len, header_offset): (usize, usize) = if major == 1 {
+            (u16::from_le_bytes([data[8], data[9]]) as usize, 10)
+        } else {
+            (u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize, 12)
+        };
+        let data_start = header_offset + header_len;
+        let payload = &data[data_start..];
+
+        let floats: Vec<f32> = payload
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+
+        cache.insert(voice.to_string(), floats);
+        cache.get(voice).unwrap()
     };
-    let data_start = header_offset + header_len;
 
     const COLS: usize = 256;
-    let payload = &data[data_start..];
-    let num_rows = payload.len() / (COLS * 4);
+    let num_rows = full_data.len() / COLS;
     if num_rows == 0 {
         anyhow::bail!("NPY data empty for voice '{voice}'");
     }
     let clamped_row = row.min(num_rows - 1);
-    let offset = clamped_row * COLS * 4;
+    let offset = clamped_row * COLS;
 
-    if payload.len() < offset + COLS * 4 {
+    if full_data.len() < offset + COLS {
         anyhow::bail!("NPY data too short for voice '{voice}' row {clamped_row}");
     }
 
-    Ok(payload[offset..offset + COLS * 4]
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect())
+    Ok(full_data[offset..offset + COLS].to_vec())
 }
 
 // ── ONNX Runtime initialisation ───────────────────────────────────────────────
@@ -417,13 +425,30 @@ fn kokoro_model_url(quality: &str) -> String {
 const KOKORO_VOICES_URL: &str =
     "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
 
-/// True when both the selected model file and the voices pack are present on disk.
+/// True when both the selected model file and the voices directory with voices are present on disk.
 pub fn is_kokoro_ready(quality: &str, data_dir: &str) -> bool {
     let dir = kokoro_data_dir(data_dir);
-    dir.join(kokoro_model_filename(quality)).exists() && dir.join("voices-v1.0.bin").exists()
+    dir.join(kokoro_model_filename(quality)).exists() && dir.join("voices").join("af_heart.npy").exists()
 }
 
 // ── Kokoro download ───────────────────────────────────────────────────────────
+
+fn extract_voices_zip(zip_path: &Path, dest_dir: &Path) -> Result<()> {
+    let file = std::fs::File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+    std::fs::create_dir_all(dest_dir)?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let name = entry.name().to_string();
+        if name.ends_with(".npy") {
+            let out_path = dest_dir.join(name);
+            let mut out_file = std::fs::File::create(&out_path)?;
+            std::io::copy(&mut entry, &mut out_file)?;
+        }
+    }
+    Ok(())
+}
 
 pub async fn download_kokoro_assets(quality: &str, data_dir: &str) -> Result<()> {
     let dir = kokoro_data_dir(data_dir);
@@ -440,13 +465,28 @@ pub async fn download_kokoro_assets(quality: &str, data_dir: &str) -> Result<()>
         info!("Kokoro model already present: {}", model_path.display());
     }
 
-    let voices_path = dir.join("voices-v1.0.bin");
-    if !voices_path.exists() {
-        info!("Downloading Kokoro voices pack: {KOKORO_VOICES_URL}");
-        download_file(KOKORO_VOICES_URL, &voices_path).await?;
-        info!("Kokoro voices saved to {}", voices_path.display());
+    let voices_zip_path = dir.join("voices-v1.0.bin");
+    let voices_dir = dir.join("voices");
+
+    if !voices_dir.join("af_heart.npy").exists() {
+        if !voices_zip_path.exists() {
+            info!("Downloading Kokoro voices pack: {KOKORO_VOICES_URL}");
+            download_file(KOKORO_VOICES_URL, &voices_zip_path).await?;
+            info!("Kokoro voices saved to {}", voices_zip_path.display());
+        }
+
+        info!("Extracting Kokoro voices ZIP to {}...", voices_dir.display());
+        extract_voices_zip(&voices_zip_path, &voices_dir)?;
+
+        if voices_zip_path.exists() {
+            let _ = std::fs::remove_file(&voices_zip_path);
+            info!("Deleted voices ZIP archive to free space.");
+        }
     } else {
-        info!("Kokoro voices already present: {}", voices_path.display());
+        info!("Kokoro unzipped voices already present in {}", voices_dir.display());
+        if voices_zip_path.exists() {
+            let _ = std::fs::remove_file(&voices_zip_path);
+        }
     }
 
     info!("Kokoro assets ready in {}", dir.display());
@@ -513,6 +553,15 @@ pub struct Utterance {
     pub source_label: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum TtsCommand {
+    Play {
+        utterance: Utterance,
+        generation: u32,
+    },
+    Shutdown,
+}
+
 static ACTIVE_SINK: std::sync::Mutex<Option<std::sync::Arc<rodio::Sink>>> = std::sync::Mutex::new(None);
 
 pub fn stop_current_playback() {
@@ -525,25 +574,38 @@ pub fn stop_current_playback() {
 
 #[derive(Clone)]
 pub struct TtsEngineHandle {
-    tx: Sender<Option<Utterance>>,
+    tx: Sender<TtsCommand>,
+    generation: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl TtsEngineHandle {
     pub fn speak(&self, text: impl Into<String>) {
-        let _ = self.tx.send(Some(Utterance {
-            text: text.into(),
-            voice: None,
-            source_label: None,
-        }));
+        let gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
+        let _ = self.tx.send(TtsCommand::Play {
+            utterance: Utterance {
+                text: text.into(),
+                voice: None,
+                source_label: None,
+            },
+            generation: gen,
+        });
     }
 
     pub fn speak_utterance(&self, u: Utterance) {
-        let _ = self.tx.send(Some(u));
+        let gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
+        let _ = self.tx.send(TtsCommand::Play {
+            utterance: u,
+            generation: gen,
+        });
     }
 
     pub fn stop(&self) {
-        let _ = self.tx.send(None);
+        self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         stop_current_playback();
+    }
+
+    pub fn shutdown(&self) {
+        let _ = self.tx.send(TtsCommand::Shutdown);
     }
 }
 
@@ -553,7 +615,8 @@ pub type PlaybackCallback = Arc<dyn Fn() + Send + Sync + 'static>;
 
 pub struct TtsEngineWorker {
     config: TtsConfig,
-    rx: Receiver<Option<Utterance>>,
+    rx: Receiver<TtsCommand>,
+    generation: Arc<std::sync::atomic::AtomicU32>,
     on_playback_start: Option<PlaybackCallback>,
     on_playback_end: Option<PlaybackCallback>,
 }
@@ -565,17 +628,21 @@ impl TtsEngineWorker {
         on_playback_end: Option<PlaybackCallback>,
     ) -> TtsEngineHandle {
         let (tx, rx) = bounded(32);
-        let handle = TtsEngineHandle { tx };
+        let generation = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let handle = TtsEngineHandle { tx, generation: generation.clone() };
 
         if config.engine == TtsEngine::Kokoro && config.kokoro.prewarm {
-            let _ = handle.tx.send(Some(Utterance {
-                text: " ".into(),
-                voice: None,
-                source_label: Some("prewarm".into()),
-            }));
+            let _ = handle.tx.send(TtsCommand::Play {
+                utterance: Utterance {
+                    text: " ".into(),
+                    voice: None,
+                    source_label: Some("prewarm".into()),
+                },
+                generation: 0,
+            });
         }
 
-        let worker = Self { config, rx, on_playback_start, on_playback_end };
+        let worker = Self { config, rx, generation, on_playback_start, on_playback_end };
         std::thread::Builder::new()
             .name("voxctrl-tts".into())
             .spawn(move || worker.run())
@@ -589,17 +656,57 @@ impl TtsEngineWorker {
         // Kokoro ONNX session cached for the lifetime of this worker thread.
         let mut kokoro_session: Option<ort::session::Session> = None;
 
-        while let Ok(msg) = self.rx.recv() {
-            match msg {
-                Some(utterance) => {
+        // Persistent Rodio Output Stream - kept alive for the lifetime of this thread!
+        let mut audio_context: Option<(rodio::OutputStream, rodio::OutputStreamHandle, Arc<rodio::Sink>)> = None;
+
+        let init_audio = |ctx: &mut Option<(rodio::OutputStream, rodio::OutputStreamHandle, Arc<rodio::Sink>)>| -> Result<Arc<rodio::Sink>> {
+            if let Some((_, _, ref sink)) = ctx {
+                return Ok(sink.clone());
+            }
+            let (stream, handle) = rodio::OutputStream::try_default()
+                .map_err(|e| anyhow::anyhow!("audio output device: {e}"))?;
+            let sink = Arc::new(rodio::Sink::try_new(&handle)
+                .map_err(|e| anyhow::anyhow!("audio sink: {e}"))?);
+            *ctx = Some((stream, handle, sink.clone()));
+            Ok(sink)
+        };
+
+        while let Ok(cmd) = self.rx.recv() {
+            match cmd {
+                TtsCommand::Play { utterance, generation } => {
+                    let current_gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
+                    if generation < current_gen {
+                        debug!("Discarding stale utterance: generation={generation} (current={current_gen})");
+                        continue;
+                    }
+
                     let is_prewarm = utterance.source_label.as_deref() == Some("prewarm");
+
+                    let sink_res = init_audio(&mut audio_context);
+                    if let Err(e) = sink_res {
+                        warn!("TTS audio init error: {e}");
+                        continue;
+                    }
+                    let sink = sink_res.unwrap();
+
+                    {
+                        let mut guard = ACTIVE_SINK.lock().unwrap();
+                        *guard = Some(sink.clone());
+                    }
+
                     let result = match self.config.engine {
-                        TtsEngine::Piper => self.speak_piper(&utterance),
+                        TtsEngine::Piper => self.speak_piper(&utterance, &sink),
                         TtsEngine::Espeak => self.speak_espeak(&utterance),
                         TtsEngine::Kokoro => {
-                            speak_kokoro(&self.config, &utterance, &mut kokoro_session, &self.on_playback_start)
+                            speak_kokoro(&self.config, &utterance, &mut kokoro_session, &self.on_playback_start, &sink)
                         }
                     };
+
+                    {
+                        let mut guard = ACTIVE_SINK.lock().unwrap();
+                        *guard = None;
+                    }
+
                     if let Err(e) = result {
                         warn!("TTS speak error: {e}");
                     }
@@ -609,15 +716,16 @@ impl TtsEngineWorker {
                         }
                     }
                 }
-                None => {
-                    debug!("TTS stop/shutdown signal received");
+                TtsCommand::Shutdown => {
+                    debug!("TTS shutdown signal received");
+                    stop_current_playback();
                     break;
                 }
             }
         }
     }
 
-    fn speak_piper(&self, u: &Utterance) -> Result<()> {
+    fn speak_piper(&self, u: &Utterance, sink: &rodio::Sink) -> Result<()> {
         let binary = piper_binary().context("piper binary not found")?;
         let voice_name = u.voice.as_deref().unwrap_or(&self.config.voice);
 
@@ -674,7 +782,7 @@ impl TtsEngineWorker {
             }
         }
 
-        play_raw_audio(&output.stdout, sample_rate_for_voice(voice_name))?;
+        play_raw_audio(sink, &output.stdout, sample_rate_for_voice(voice_name))?;
         Ok(())
     }
 
@@ -703,12 +811,13 @@ fn speak_kokoro(
     u: &Utterance,
     session: &mut Option<ort::session::Session>,
     on_playback_start: &Option<PlaybackCallback>,
+    sink: &rodio::Sink,
 ) -> Result<()> {
     let is_prewarm = u.source_label.as_deref() == Some("prewarm");
 
     let dir = kokoro_data_dir(&config.kokoro.data_dir);
     let model_path = dir.join(kokoro_model_filename(&config.kokoro.quality));
-    let voices_path = dir.join("voices-v1.0.bin");
+    let voices_dir = dir.join("voices");
 
     if !model_path.exists() {
         anyhow::bail!(
@@ -716,8 +825,8 @@ fn speak_kokoro(
             model_path.display()
         );
     }
-    if !voices_path.exists() {
-        anyhow::bail!("Kokoro voices-v1.0.bin not found. Download it from TTS settings.");
+    if !voices_dir.join("af_heart.npy").exists() {
+        anyhow::bail!("Kokoro voices folder not found or incomplete. Download it from TTS settings.");
     }
 
     // Lazily load the ONNX session — stays alive for the worker thread lifetime.
@@ -763,7 +872,7 @@ fn speak_kokoro(
     }
 
     let (tokens, num_inner) = kokoro_tokenize(&phonemes);
-    let style = load_voice_embedding(&voices_path, voice, num_inner)?;
+    let style = load_voice_embedding(&voices_dir, voice, num_inner)?;
     let audio = run_kokoro_inference(sess, &tokens, &style, speed)?;
 
     if is_prewarm {
@@ -780,33 +889,19 @@ fn speak_kokoro(
         .flat_map(|&s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
         .collect();
 
-    play_raw_audio(&bytes, KOKORO_SAMPLE_RATE)
+    play_raw_audio(sink, &bytes, KOKORO_SAMPLE_RATE)
 }
 
 // ── Audio playback ────────────────────────────────────────────────────────────
 
-fn play_raw_audio(raw: &[u8], sample_rate: u32) -> Result<()> {
+fn play_raw_audio(sink: &rodio::Sink, raw: &[u8], sample_rate: u32) -> Result<()> {
     let samples: Vec<i16> = raw
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
         .collect();
-    let (_stream, handle) = rodio::OutputStream::try_default()
-        .map_err(|e| anyhow::anyhow!("audio output device: {e}"))?;
-    let sink = std::sync::Arc::new(rodio::Sink::try_new(&handle)
-        .map_err(|e| anyhow::anyhow!("audio sink: {e}"))?);
-    
-    {
-        let mut guard = ACTIVE_SINK.lock().unwrap();
-        *guard = Some(sink.clone());
-    }
 
     sink.append(rodio::buffer::SamplesBuffer::new(1, sample_rate, samples));
     sink.sleep_until_end();
-
-    {
-        let mut guard = ACTIVE_SINK.lock().unwrap();
-        *guard = None;
-    }
     Ok(())
 }
 
@@ -965,7 +1060,6 @@ pub async fn download_voice(voice_name: &str, voice_dir: &str) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
     use tempfile::tempdir;
 
     fn create_fake_voice(dir: &std::path::Path, filename: &str) {
@@ -973,7 +1067,7 @@ mod tests {
         fs::write(dir.join(format!("{filename}.json")), b"{}").unwrap();
     }
 
-    // ── Helpers for NPZ / NPY test data ──────────────────────────────────────
+    // ── Helpers for NPY test data ──────────────────────────────────────
 
     fn make_npy_data(rows: usize, cols: usize) -> Vec<u8> {
         let header_str = format!(
@@ -1001,17 +1095,9 @@ mod tests {
         out
     }
 
-    fn make_npz_with_voice(voice: &str, rows: usize, cols: usize) -> Vec<u8> {
+    fn write_npy_file(dir: &std::path::Path, voice: &str, rows: usize, cols: usize) {
         let npy = make_npy_data(rows, cols);
-        let buf = Vec::new();
-        let cursor = std::io::Cursor::new(buf);
-        let mut zip = zip::ZipWriter::new(cursor);
-        let opts = zip::write::FileOptions::<()>::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file(format!("{voice}.npy"), opts).unwrap();
-        zip.write_all(&npy).unwrap();
-        let cursor = zip.finish().unwrap();
-        cursor.into_inner()
+        fs::write(dir.join(format!("{voice}.npy")), npy).unwrap();
     }
 
     // ── resolve_voices_dir ────────────────────────────────────────────────────
@@ -1453,7 +1539,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
         fs::write(dir.path().join("kokoro-v1.0.fp16.onnx"), b"fake model").unwrap();
-        fs::write(dir.path().join("voices-v1.0.bin"), b"fake voices").unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        fs::write(voices_dir.join("af_heart.npy"), b"fake voices").unwrap();
         assert!(is_kokoro_ready("fp16", path));
     }
 
@@ -1469,7 +1557,9 @@ mod tests {
     fn test_is_kokoro_ready_false_when_only_voices_present() {
         let dir = tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        fs::write(dir.path().join("voices-v1.0.bin"), b"fake voices").unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        fs::write(voices_dir.join("af_heart.npy"), b"fake voices").unwrap();
         assert!(!is_kokoro_ready("f32", path));
     }
 
@@ -1477,68 +1567,61 @@ mod tests {
     fn test_is_kokoro_ready_checks_correct_model_for_quality() {
         let dir = tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        fs::write(dir.path().join("voices-v1.0.bin"), b"fake voices").unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        fs::write(voices_dir.join("af_heart.npy"), b"fake").unwrap();
         fs::write(dir.path().join("kokoro-v1.0.fp16.onnx"), b"fake").unwrap();
         assert!(is_kokoro_ready("fp16", path));
         assert!(!is_kokoro_ready("f32", path));
         assert!(!is_kokoro_ready("int8", path));
     }
 
-    // ── load_voice_embedding (NPY / NPZ) ─────────────────────────────────────
+    // ── load_voice_embedding (NPY) ─────────────────────────────────────
 
     #[test]
     fn test_load_voice_embedding_invalid_magic_returns_error() {
         let dir = tempdir().unwrap();
-        let npz_path = dir.path().join("voices.bin");
-        // Write NPZ with a garbage NPY (wrong magic)
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
         let bad_npy = b"NOTANPY\x01\x00\x00";
-        let buf = Vec::new();
-        let cursor = std::io::Cursor::new(buf);
-        let mut zip = zip::ZipWriter::new(cursor);
-        let opts = zip::write::FileOptions::<()>::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("af_heart.npy", opts).unwrap();
-        zip.write_all(bad_npy).unwrap();
-        let cursor = zip.finish().unwrap();
-        fs::write(&npz_path, cursor.into_inner()).unwrap();
+        fs::write(voices_dir.join("af_heart.npy"), bad_npy).unwrap();
 
-        let result = load_voice_embedding(&npz_path, "af_heart", 0);
+        let result = load_voice_embedding(&voices_dir, "af_heart", 0);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_load_voice_embedding_missing_voice_returns_error() {
         let dir = tempdir().unwrap();
-        let npz_path = dir.path().join("voices.bin");
-        let npz = make_npz_with_voice("af_heart", 10, 256);
-        fs::write(&npz_path, npz).unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        write_npy_file(&voices_dir, "af_heart", 10, 256);
 
-        // Requesting a voice not in the pack should error.
-        let result = load_voice_embedding(&npz_path, "af_bella", 0);
+        // Requesting a voice not in the directory should error.
+        let result = load_voice_embedding(&voices_dir, "af_bella", 0);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_load_voice_embedding_returns_256_floats() {
         let dir = tempdir().unwrap();
-        let npz_path = dir.path().join("voices.bin");
-        let npz = make_npz_with_voice("af_heart", 20, 256);
-        fs::write(&npz_path, npz).unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        write_npy_file(&voices_dir, "af_heart", 20, 256);
 
-        let result = load_voice_embedding(&npz_path, "af_heart", 5).unwrap();
+        let result = load_voice_embedding(&voices_dir, "af_heart", 5).unwrap();
         assert_eq!(result.len(), 256);
     }
 
     #[test]
     fn test_load_voice_embedding_row_indexing() {
         let dir = tempdir().unwrap();
-        let npz_path = dir.path().join("voices.bin");
-        // 10 rows × 256 cols; row i has values [i*256, i*256+1, ..., i*256+255]
-        let npz = make_npz_with_voice("af_heart", 10, 256);
-        fs::write(&npz_path, npz).unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        write_npy_file(&voices_dir, "af_heart", 10, 256);
 
-        let row0 = load_voice_embedding(&npz_path, "af_heart", 0).unwrap();
-        let row1 = load_voice_embedding(&npz_path, "af_heart", 1).unwrap();
+        let row0 = load_voice_embedding(&voices_dir, "af_heart", 0).unwrap();
+        let row1 = load_voice_embedding(&voices_dir, "af_heart", 1).unwrap();
         // Row 0 starts at float 0.0; row 1 starts at float 256.0
         assert!((row0[0] - 0.0f32).abs() < f32::EPSILON);
         assert!((row1[0] - 256.0f32).abs() < f32::EPSILON);
@@ -1547,12 +1630,12 @@ mod tests {
     #[test]
     fn test_load_voice_embedding_clamps_out_of_bounds_row() {
         let dir = tempdir().unwrap();
-        let npz_path = dir.path().join("voices.bin");
-        let npz = make_npz_with_voice("af_heart", 5, 256);
-        fs::write(&npz_path, npz).unwrap();
+        let voices_dir = dir.path().join("voices");
+        fs::create_dir_all(&voices_dir).unwrap();
+        write_npy_file(&voices_dir, "af_heart", 5, 256);
 
         // Row 9999 should clamp to last valid row without panicking.
-        let result = load_voice_embedding(&npz_path, "af_heart", 9999);
+        let result = load_voice_embedding(&voices_dir, "af_heart", 9999);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 256);
     }

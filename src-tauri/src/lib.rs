@@ -389,7 +389,7 @@ pub fn run() {
                     if cfg.tts.enabled {
                         if let Ok(mut handle) = state.tts_handle.try_lock() {
                             if let Some(ref tts) = *handle {
-                                tts.stop();
+                                tts.shutdown();
                             }
                             let app_handle_clone = app_handle.clone();
                             let app_handle_clone_end = app_handle.clone();
