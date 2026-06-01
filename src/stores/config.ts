@@ -70,13 +70,23 @@ export interface OllamaConfig {
   timeout_secs: number;
 }
 
+export interface KokoroConfig {
+  voice: string;
+  quality: "f32" | "fp16" | "int8";
+  speed: number;
+  steps: number;
+  prewarm: boolean;
+  data_dir: string;
+}
+
 export interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak";
+  engine: "piper" | "espeak" | "kokoro";
   voice: string;
   voice_dir: string;
   stop_key: string[];
   response_overlay: boolean;
+  kokoro: KokoroConfig;
 }
 
 export interface McpConfig {
@@ -143,6 +153,14 @@ const defaultConfig: AppConfig = {
     voice_dir: "",
     stop_key: ["KEY_ESCAPE"],
     response_overlay: true,
+    kokoro: {
+      voice: "af_heart",
+      quality: "fp16",
+      speed: 1.0,
+      steps: 4,
+      prewarm: false,
+      data_dir: "",
+    },
   },
   mcp: { server_enabled: false, record_timeout: 15.0 },
   atspi: { injection: true, context_prompt: true, auto_code_mode: true },
