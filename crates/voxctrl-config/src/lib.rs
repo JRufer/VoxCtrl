@@ -254,6 +254,7 @@ impl Default for OllamaConfig {
 pub enum TtsEngine {
     Piper,
     Espeak,
+    Kokoro,
 }
 
 impl Default for TtsEngine {
@@ -262,11 +263,62 @@ impl Default for TtsEngine {
     }
 }
 
+fn default_kokoro_voice() -> String {
+    "af_heart".into()
+}
+
+fn default_kokoro_speed() -> f32 {
+    1.0
+}
+
+fn default_kokoro_quality() -> String {
+    "fp16".into()
+}
+
+fn default_kokoro_steps() -> u32 {
+    4
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KokoroConfig {
+    /// Voice ID, e.g. "af_heart", "am_adam", "bf_emma", "bm_george"
+    #[serde(default = "default_kokoro_voice")]
+    pub voice: String,
+    /// Model precision: "f32" (best, 310 MB), "fp16" (169 MB), "int8" (fastest, 88 MB)
+    #[serde(default = "default_kokoro_quality")]
+    pub quality: String,
+    /// Speech speed multiplier (0.5 – 2.0)
+    #[serde(default = "default_kokoro_speed")]
+    pub speed: f32,
+    /// Inference steps (reserved for future diffusion-mode variants)
+    #[serde(default = "default_kokoro_steps")]
+    pub steps: u32,
+    /// Pre-warm model on startup so the first synthesis is instant
+    #[serde(default)]
+    pub prewarm: bool,
+    /// Directory for model / voices files. Empty = platform default.
+    #[serde(default)]
+    pub data_dir: String,
+}
+
+impl Default for KokoroConfig {
+    fn default() -> Self {
+        Self {
+            voice: default_kokoro_voice(),
+            quality: default_kokoro_quality(),
+            speed: default_kokoro_speed(),
+            steps: default_kokoro_steps(),
+            prewarm: false,
+            data_dir: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsConfig {
     pub enabled: bool,
     pub engine: TtsEngine,
-    /// Voice name, e.g. "en-us-lessac-medium"
+    /// Voice name for Piper, e.g. "en-us-lessac-medium"
     pub voice: String,
     /// Directory containing Piper voice files. Empty = platform default.
     #[serde(default)]
@@ -274,6 +326,8 @@ pub struct TtsConfig {
     /// Key(s) that stop TTS playback, e.g. ["KEY_ESCAPE"]
     pub stop_key: Vec<String>,
     pub response_overlay: bool,
+    #[serde(default)]
+    pub kokoro: KokoroConfig,
 }
 
 impl Default for TtsConfig {
@@ -285,6 +339,7 @@ impl Default for TtsConfig {
             voice_dir: String::new(),
             stop_key: vec!["KEY_ESCAPE".into()],
             response_overlay: true,
+            kokoro: KokoroConfig::default(),
         }
     }
 }

@@ -246,6 +246,18 @@ pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(),
 }
 
 #[tauri::command]
+pub async fn check_kokoro_ready(quality: String, data_dir: String) -> Result<bool, String> {
+    Ok(voxctrl_tts::is_kokoro_ready(&quality, &data_dir))
+}
+
+#[tauri::command]
+pub async fn download_kokoro(quality: String, data_dir: String) -> Result<(), String> {
+    voxctrl_tts::download_kokoro_assets(&quality, &data_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn check_model_downloaded(model_size: String, model_dir: String) -> Result<bool, String> {
     Ok(voxctrl_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir))
 }

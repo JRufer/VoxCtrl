@@ -7,6 +7,8 @@
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
+  // ── Piper ──────────────────────────────────────────────────────────────────
+
   const PIPER_VOICES = [
     "en-us-libritts-high",
     "en-us-amy-low",
@@ -110,8 +112,104 @@
     });
   }
 
+  // ── Kokoro ─────────────────────────────────────────────────────────────────
+
+  const KOKORO_VOICES = [
+    // American Female
+    { id: "af_heart",    label: "Heart",    group: "American Female" },
+    { id: "af_bella",    label: "Bella",    group: "American Female" },
+    { id: "af_sarah",    label: "Sarah",    group: "American Female" },
+    { id: "af_nicole",   label: "Nicole",   group: "American Female" },
+    { id: "af_sky",      label: "Sky",      group: "American Female" },
+    { id: "af_alloy",    label: "Alloy",    group: "American Female" },
+    { id: "af_aoede",    label: "Aoede",    group: "American Female" },
+    { id: "af_jessica",  label: "Jessica",  group: "American Female" },
+    { id: "af_kore",     label: "Kore",     group: "American Female" },
+    { id: "af_nova",     label: "Nova",     group: "American Female" },
+    { id: "af_river",    label: "River",    group: "American Female" },
+    // American Male
+    { id: "am_adam",     label: "Adam",     group: "American Male" },
+    { id: "am_michael",  label: "Michael",  group: "American Male" },
+    { id: "am_puck",     label: "Puck",     group: "American Male" },
+    { id: "am_echo",     label: "Echo",     group: "American Male" },
+    { id: "am_eric",     label: "Eric",     group: "American Male" },
+    { id: "am_fenrir",   label: "Fenrir",   group: "American Male" },
+    { id: "am_liam",     label: "Liam",     group: "American Male" },
+    { id: "am_onyx",     label: "Onyx",     group: "American Male" },
+    { id: "am_santa",    label: "Santa",    group: "American Male" },
+    // British Female
+    { id: "bf_emma",     label: "Emma",     group: "British Female" },
+    { id: "bf_alice",    label: "Alice",    group: "British Female" },
+    { id: "bf_isabella", label: "Isabella", group: "British Female" },
+    { id: "bf_lily",     label: "Lily",     group: "British Female" },
+    // British Male
+    { id: "bm_george",   label: "George",   group: "British Male" },
+    { id: "bm_lewis",    label: "Lewis",    group: "British Male" },
+    { id: "bm_daniel",   label: "Daniel",   group: "British Male" },
+    { id: "bm_fable",    label: "Fable",    group: "British Male" },
+  ];
+
+  const KOKORO_GROUPS = [...new Set(KOKORO_VOICES.map(v => v.group))];
+
+  let kokoroReady = $state(false);
+  let kokoroChecking = $state(false);
+  let kokoroDownloading = $state(false);
+
+  async function checkKokoroReady() {
+    kokoroChecking = true;
+    try {
+      kokoroReady = await invoke<boolean>("check_kokoro_ready", {
+        quality: cfg.tts.kokoro.quality,
+        dataDir: cfg.tts.kokoro.data_dir,
+      });
+    } catch (e) {
+      console.error("check_kokoro_ready:", e);
+      kokoroReady = false;
+    } finally {
+      kokoroChecking = false;
+    }
+  }
+
+  async function downloadKokoro() {
+    if (kokoroDownloading) return;
+    kokoroDownloading = true;
+    try {
+      await invoke("download_kokoro", {
+        quality: cfg.tts.kokoro.quality,
+        dataDir: cfg.tts.kokoro.data_dir,
+      });
+      kokoroReady = true;
+    } catch (e) {
+      alert(`Failed to download Kokoro assets: ${e}`);
+    } finally {
+      kokoroDownloading = false;
+    }
+  }
+
+  async function previewKokoro() {
+    await invoke("speak_text", {
+      text: "Hello, this is Kokoro speaking from VoxCtrl.",
+      voice: cfg.tts.kokoro.voice,
+    });
+  }
+
+  // Re-check Kokoro readiness when quality or data_dir changes
+  async function onKokoroQualityChange() {
+    markDirty();
+    kokoroReady = false;
+    await checkKokoroReady();
+  }
+
   onMount(() => {
     checkAllVoicesDownloaded();
+    if (cfg.tts.engine === "kokoro") checkKokoroReady();
+  });
+
+  // Re-check when switching to Kokoro tab
+  $effect(() => {
+    if (cfg.tts.engine === "kokoro" && !kokoroReady && !kokoroChecking) {
+      checkKokoroReady();
+    }
   });
 </script>
 
@@ -126,8 +224,9 @@
     </label>
     <label class="field">
       <span>Engine</span>
-      <select bind:value={cfg.tts.engine} onchange={markDirty}>
+      <select bind:value={cfg.tts.engine} onchange={() => { markDirty(); if (cfg.tts.engine === "kokoro") checkKokoroReady(); }}>
         <option value="piper">Piper (neural, high quality)</option>
+        <option value="kokoro">Kokoro (neural, natural voices)</option>
         <option value="espeak">eSpeak-NG (lightweight)</option>
       </select>
     </label>
@@ -138,6 +237,7 @@
     </div>
   </div>
 
+  <!-- ── Piper section ──────────────────────────────────────────────────── -->
   {#if cfg.tts.engine === "piper"}
   <div class="field-group">
     <h3>Piper Voice</h3>
@@ -187,6 +287,101 @@
 
     <div class="row">
       <button class="btn-preview" onclick={previewVoice} disabled={!cfg.tts.enabled || downloading || !downloadedMap[cfg.tts.voice]}>
+        Preview Voice
+      </button>
+    </div>
+  </div>
+  {/if}
+
+  <!-- ── Kokoro section ─────────────────────────────────────────────────── -->
+  {#if cfg.tts.engine === "kokoro"}
+  <div class="field-group">
+    <h3>Kokoro Voice</h3>
+
+    <label class="field">
+      <span>Voice</span>
+      <select bind:value={cfg.tts.kokoro.voice} onchange={markDirty}>
+        {#each KOKORO_GROUPS as group}
+          <optgroup label={group}>
+            {#each KOKORO_VOICES.filter(v => v.group === group) as v}
+              <option value={v.id}>{v.label}</option>
+            {/each}
+          </optgroup>
+        {/each}
+      </select>
+    </label>
+
+    <h3>Quality &amp; Speed</h3>
+
+    <label class="field">
+      <span>Model quality</span>
+      <select bind:value={cfg.tts.kokoro.quality} onchange={onKokoroQualityChange}>
+        <option value="f32">Best – f32 (310 MB, highest quality)</option>
+        <option value="fp16">Good – fp16 (169 MB, recommended)</option>
+        <option value="int8">Fast – int8 (88 MB, fastest)</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>Speed ({cfg.tts.kokoro.speed.toFixed(2)}×)</span>
+      <input
+        type="range" min="0.5" max="2.0" step="0.05"
+        bind:value={cfg.tts.kokoro.speed}
+        onchange={markDirty}
+        class="range-input"
+      />
+    </label>
+
+    <label class="field">
+      <span>Inference steps</span>
+      <input
+        type="number" min="1" max="16"
+        bind:value={cfg.tts.kokoro.steps}
+        onchange={markDirty}
+        class="number-input"
+      />
+    </label>
+    <p class="hint">Higher steps = more consistent quality. Default 4 is a good balance.</p>
+
+    <h3>Pre-warm</h3>
+    <label class="field">
+      <span>Pre-warm model on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.kokoro.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint">Runs a silent synthesis at startup so the model is cached when you first speak. Adds ~5 s to startup time.</p>
+
+    <h3>Model Files</h3>
+
+    <div class="voice-status-container">
+      {#if kokoroChecking}
+        <span class="status-checking">⏳ Checking model files...</span>
+      {:else if kokoroDownloading}
+        <span class="status-downloading">⏳ Downloading Kokoro model &amp; voices (may take a few minutes)...</span>
+      {:else if kokoroReady}
+        <span class="status-downloaded">✔ Model and voices downloaded and ready</span>
+      {:else}
+        <div class="status-missing-wrapper">
+          <span class="status-missing">❌ Model files missing</span>
+          <button class="btn-download" onclick={downloadKokoro}>
+            📥 Download
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="field">
+      <span>Data directory (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.kokoro.data_dir}
+        onchange={markDirty}
+        onblur={checkKokoroReady}
+      />
+    </div>
+    <p class="hint">Default: <code>~/.local/share/voxctrl/kokoro/</code></p>
+
+    <div class="row">
+      <button class="btn-preview" onclick={previewKokoro} disabled={!cfg.tts.enabled || !kokoroReady || kokoroDownloading}>
         Preview Voice
       </button>
     </div>
@@ -286,5 +481,12 @@
     font-size: 0.875rem;
     line-height: 1.25rem;
     color: #ef4444;
+  }
+  .range-input {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+  .number-input {
+    width: 80px;
   }
 </style>

@@ -2,10 +2,11 @@
 # VoxCtrl Installer & Host Setup Script
 #
 # Configures the host environment to run the portable AppImage natively:
-# 1. Installs system runtime dependencies (PortAudio, WebKitGTK, tools).
-# 2. Ensures the portable AppImage exists (compiling if missing).
-# 3. Establishes hardware udev permissions for evdev global hotkeys.
-# 4. Integrates the AppImage into the desktop launcher (~/.local/share/applications/).
+# 1. Installs system runtime dependencies (PortAudio, WebKitGTK, espeak-ng, tools).
+# 2. Installs ONNX Runtime for the Kokoro neural TTS engine.
+# 3. Ensures the portable AppImage exists (compiling if missing).
+# 4. Establishes hardware udev permissions for evdev global hotkeys.
+# 5. Integrates the AppImage into the desktop launcher (~/.local/share/applications/).
 
 set -euo pipefail
 
@@ -45,26 +46,30 @@ case "$PKG_MGR" in
         info "Installing portable runtime packages via pacman..."
         sudo pacman -S --noconfirm --needed \
             webkit2gtk-4.1 openssl libayatana-appindicator \
-            wtype xdotool wl-clipboard xclip portaudio squashfs-tools
+            wtype xdotool wl-clipboard xclip portaudio squashfs-tools \
+            espeak-ng
         ;;
     apt)
         info "Installing portable runtime packages via apt..."
         sudo apt-get update -y
         sudo apt-get install -y \
             libwebkit2gtk-4.1-0 libssl3 libayatana-appindicator3-1 \
-            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools
+            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools \
+            espeak-ng
         ;;
     dnf)
         info "Installing portable runtime packages via dnf..."
         sudo dnf install -y \
             webkit2gtk4.1 openssl libayatana-appindicator3 \
-            wtype xdotool wl-clipboard xclip portaudio squashfs-tools
+            wtype xdotool wl-clipboard xclip portaudio squashfs-tools \
+            espeak-ng
         ;;
     zypper)
         info "Installing portable runtime packages via zypper..."
         sudo zypper install -y \
             libwebkit2gtk-4_1-0 libopenssl3 libayatana-appindicator3-1 \
-            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools
+            wtype xdotool wl-clipboard xclip libportaudio2 squashfs-tools \
+            espeak-ng
         ;;
     *)
         warn "Unsupported package manager. Please ensure you have these runtimes installed manually:"
@@ -72,6 +77,7 @@ case "$PKG_MGR" in
         echo "  - openssl (libssl)"
         echo "  - libayatana-appindicator3"
         echo "  - portaudio libraries"
+        echo "  - espeak-ng (phonemisation for Kokoro TTS and TTS fallback)"
         echo "  - wtype (Wayland keystrokes) / xdotool (X11 keystrokes)"
         echo "  - wl-clipboard (Wayland clipboard) / xclip (X11 clipboard)"
         ;;
@@ -80,7 +86,70 @@ esac
 ok "Host runtime dependencies installed."
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. Retrieve / Compile AppImage
+# 2. Install ONNX Runtime (Kokoro Neural TTS Engine)
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing ONNX Runtime (Kokoro TTS)"
+
+info "ONNX Runtime is required for the Kokoro neural TTS engine."
+info "Checking if it is already present..."
+
+ORT_FOUND=0
+for _ort_path in \
+    "/usr/lib/libonnxruntime.so" \
+    "/usr/local/lib/libonnxruntime.so" \
+    "/usr/lib/x86_64-linux-gnu/libonnxruntime.so"; do
+    if [ -f "$_ort_path" ]; then ORT_FOUND=1; break; fi
+done
+if [ "$ORT_FOUND" -eq 0 ] && command -v python3 &>/dev/null; then
+    if python3 -c "import onnxruntime" &>/dev/null 2>&1; then ORT_FOUND=1; fi
+fi
+
+if [ "$ORT_FOUND" -eq 1 ]; then
+    ok "ONNX Runtime is already present."
+else
+    case "$PKG_MGR" in
+        pacman)
+            if command -v yay &>/dev/null; then
+                info "Installing onnxruntime from AUR via yay..."
+                yay -S --noconfirm --needed onnxruntime \
+                    && ok "onnxruntime installed from AUR." \
+                    || warn "AUR install failed; see manual instructions below."
+            elif command -v paru &>/dev/null; then
+                info "Installing onnxruntime from AUR via paru..."
+                paru -S --noconfirm --needed onnxruntime \
+                    && ok "onnxruntime installed from AUR." \
+                    || warn "AUR install failed; see manual instructions below."
+            else
+                warn "No AUR helper (yay/paru) found. Install ONNX Runtime manually for Kokoro TTS:"
+                echo "    yay -S onnxruntime"
+                echo "  Alternatively, set ORT_DYLIB_PATH=/path/to/libonnxruntime.so before launching."
+            fi
+            ;;
+        apt|dnf|zypper)
+            info "Installing onnxruntime via pip (no system package available)..."
+            if ! command -v pip3 &>/dev/null; then
+                case "$PKG_MGR" in
+                    apt)    sudo apt-get install -y python3-pip ;;
+                    dnf)    sudo dnf install -y python3-pip ;;
+                    zypper) sudo zypper install -y python3-pip ;;
+                esac
+            fi
+            if pip3 install --user onnxruntime 2>/dev/null \
+               || pip3 install --break-system-packages --user onnxruntime 2>/dev/null; then
+                ok "onnxruntime installed via pip."
+            else
+                warn "Could not install onnxruntime automatically. Install it manually for Kokoro TTS:"
+                echo "    pip install onnxruntime"
+            fi
+            ;;
+        *)
+            warn "Install ONNX Runtime manually for Kokoro TTS: pip install onnxruntime"
+            ;;
+    esac
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Retrieve / Compile AppImage
 # ══════════════════════════════════════════════════════════════════════════════
 step "Retrieving Portable AppImage"
 
@@ -182,7 +251,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. Udev Rules Setup for evdev Hotkeys
+# 4. Udev Rules Setup for evdev Hotkeys
 # ══════════════════════════════════════════════════════════════════════════════
 step "Configuring Hardware Permissions (udev)"
 
@@ -219,7 +288,7 @@ if [ -f "/etc/udev/rules.d/99-voxctl.rules" ]; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. Desktop Integration launcher
+# 5. Desktop Integration launcher
 # ══════════════════════════════════════════════════════════════════════════════
 step "Registering Desktop Launcher & Application Icon"
 

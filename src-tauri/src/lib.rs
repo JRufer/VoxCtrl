@@ -605,6 +605,8 @@ pub fn run() {
             stop_monitoring_audio,
             check_voice_downloaded,
             download_voice,
+            check_kokoro_ready,
+            download_kokoro,
             check_model_downloaded,
             download_model,
             check_directory_exists,
