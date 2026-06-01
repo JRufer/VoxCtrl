@@ -94,10 +94,20 @@ pub async fn save_config(
     {
         let mut handle = state.tts_handle.lock().await;
         if let Some(ref tts) = *handle {
-            tts.stop();
+            tts.shutdown();
         }
         if new_config.tts.enabled {
-            let new_tts = voxctrl_tts::TtsEngineWorker::start(new_config.tts.clone());
+            let app_handle = app.clone();
+            let app_handle_end = app.clone();
+            let new_tts = voxctrl_tts::TtsEngineWorker::start(
+                new_config.tts.clone(),
+                Some(std::sync::Arc::new(move || {
+                    let _ = app_handle.emit("tts-playback-start", ());
+                })),
+                Some(std::sync::Arc::new(move || {
+                    let _ = app_handle_end.emit("tts-playback-end", ());
+                })),
+            );
             *handle = Some(new_tts.clone());
             state.spawn_fifo_responders(new_tts).await;
         } else {
@@ -110,6 +120,30 @@ pub async fn save_config(
     guard.save().map_err(|e| e.to_string())?;
     info!("Config saved");
 
+    // Hot-reload the stop key binding in the evdev listener
+    {
+        let dir = voxctrl_routing::config_dir();
+        let mut current_bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
+        if !new_config.tts.stop_key.is_empty() {
+            use voxctrl_routing::{HotkeyBinding, GestureType};
+            current_bindings.push(HotkeyBinding {
+                id: "__tts_stop__".to_string(),
+                label: "TTS Stop Key".to_string(),
+                keys: new_config.tts.stop_key.clone(),
+                gesture: GestureType::Hold,
+                target_id: String::new(),
+                target_ids: vec![],
+                tap_ms: 250,
+                hold_threshold_ms: 0,
+                disabled: false,
+            });
+        }
+        let reloader_guard = state.hotkey_reloader.lock().await;
+        if let Some(reloader) = &*reloader_guard {
+            let _ = reloader.send(current_bindings);
+        }
+    }
+
     // Emit config-changed event to all windows to enable instant reactivity
     let _ = app.emit("config-changed", new_config);
 
@@ -119,6 +153,18 @@ pub async fn save_config(
         }
     }
 
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_tts(
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    info!("TTS stop requested via command");
+    let handle = state.tts_handle.lock().await;
+    if let Some(ref tts) = *handle {
+        tts.stop();
+    }
     Ok(())
 }
 
@@ -185,10 +231,28 @@ pub async fn save_bindings(
     voxctrl_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
     info!("Bindings saved");
     
-    // Hot reload the bindings in the active listener threads
+    // Hot reload the bindings in the active listener threads, always re-injecting the stop key.
+    let mut all_bindings = bindings;
+    {
+        let cfg_guard = state.config.lock().await;
+        if !cfg_guard.data.tts.stop_key.is_empty() {
+            use voxctrl_routing::GestureType;
+            all_bindings.push(HotkeyBinding {
+                id: "__tts_stop__".to_string(),
+                label: "TTS Stop Key".to_string(),
+                keys: cfg_guard.data.tts.stop_key.clone(),
+                gesture: GestureType::Hold,
+                target_id: String::new(),
+                target_ids: vec![],
+                tap_ms: 250,
+                hold_threshold_ms: 0,
+                disabled: false,
+            });
+        }
+    }
     let reloader_guard = state.hotkey_reloader.lock().await;
     if let Some(reloader) = &*reloader_guard {
-        if let Err(e) = reloader.send(bindings) {
+        if let Err(e) = reloader.send(all_bindings) {
             tracing::warn!("Failed to hot-reload bindings: {e}");
         } else {
             info!("Hot-reload signal sent to listener");
@@ -241,6 +305,18 @@ pub async fn check_voice_downloaded(voice_name: String, voice_dir: String) -> Re
 #[tauri::command]
 pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(), String> {
     voxctrl_tts::download_voice(&voice_name, &voice_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn check_kokoro_ready(quality: String, data_dir: String) -> Result<bool, String> {
+    Ok(voxctrl_tts::is_kokoro_ready(&quality, &data_dir))
+}
+
+#[tauri::command]
+pub async fn download_kokoro(quality: String, data_dir: String) -> Result<(), String> {
+    voxctrl_tts::download_kokoro_assets(&quality, &data_dir)
         .await
         .map_err(|e| e.to_string())
 }
@@ -498,11 +574,13 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
 
     #[cfg(target_os = "linux")]
     {
-        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
-        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
+        // Check if udev rules exist (support new and legacy names)
+        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists()
+            || std::path::Path::new("/etc/udev/rules.d/99-voxctl.rules").exists()
+            || std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
 
         // Check if the current user session has the "input" group by running `id -Gn`
-        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+        let mut in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
             Ok(output) => {
                 let groups_str = String::from_utf8_lossy(&output.stdout);
                 groups_str.split_whitespace().any(|g| g == "input")
@@ -510,7 +588,20 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
             Err(_) => false,
         };
 
-        // If udev rules exist but user is not in group in active session, they need a relogin
+        // Fallback: If not in group in active session, check system group database (NSS /etc/group).
+        // This is robust against sandboxes/containers where active process groups haven't refreshed.
+        if !in_group {
+            if let Ok(username) = std::env::var("USER") {
+                if let Ok(output) = std::process::Command::new("id").args(&["-Gn", &username]).output() {
+                    let groups_str = String::from_utf8_lossy(&output.stdout);
+                    if groups_str.split_whitespace().any(|g| g == "input") {
+                        in_group = true;
+                    }
+                }
+            }
+        }
+
+        // If udev rules exist but user is not in group in active session/database, they need a relogin
         let needs_relogin = rule_exists && !in_group;
         let is_configured = rule_exists && in_group;
 

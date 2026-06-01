@@ -164,7 +164,7 @@ pub fn run() {
 
     // ── TTS ───────────────────────────────────────────────────────────────────
     let _tts_handle = if cfg_data.tts.enabled {
-        Some(voxctrl_tts::TtsEngineWorker::start(cfg_data.tts.clone()))
+        Some(voxctrl_tts::TtsEngineWorker::start(cfg_data.tts.clone(), None, None))
     } else {
         None
     };
@@ -182,9 +182,27 @@ pub fn run() {
     });
 
     // ── Hotkey listener ───────────────────────────────────────────────────────
+    // Inject a synthetic hold-binding for the TTS stop key so the existing
+    // evdev listener handles it without any additional infrastructure.
+    let mut all_bindings = bindings;
+    if !cfg_data.tts.stop_key.is_empty() {
+        use voxctrl_routing::{HotkeyBinding, GestureType};
+        all_bindings.push(HotkeyBinding {
+            id: "__tts_stop__".to_string(),
+            label: "TTS Stop Key".to_string(),
+            keys: cfg_data.tts.stop_key.clone(),
+            gesture: GestureType::Hold,
+            target_id: String::new(),
+            target_ids: vec![],
+            tap_ms: 250,
+            hold_threshold_ms: 0,
+            disabled: false,
+        });
+    }
+
     let (gesture_tx, mut gesture_rx) = voxctrl_hotkeys::channel();
     let listener = voxctrl_hotkeys::start_listener(
-        bindings,
+        all_bindings,
         gesture_tx,
         cfg_data.audio.evdev_device.clone(),
     );
@@ -199,6 +217,17 @@ pub fn run() {
     tokio::spawn(async move {
         while let Some(event) = gesture_rx.recv().await {
             use voxctrl_hotkeys::GestureKind;
+
+            // TTS stop key: fires on key-down (Start), not release.
+            // Only stop the active Rodio sink — do NOT send None to the worker
+            // channel (that would kill the thread and break all future TTS).
+            if event.binding_id == "__tts_stop__" {
+                if event.kind == GestureKind::Start {
+                    voxctrl_tts::stop_current_playback();
+                }
+                continue;
+            }
+
             match event.kind {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
@@ -346,6 +375,44 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Re-initialize TTS worker with callback to emit tts-playback-start
+            {
+                let app_handle = app.handle().clone();
+                let state = app_handle.state::<Arc<AppState>>().inner().clone();
+                let cfg_opt = if let Ok(config_guard) = state.config.try_lock() {
+                    Some(config_guard.data.clone())
+                } else {
+                    None
+                };
+
+                if let Some(cfg) = cfg_opt {
+                    if cfg.tts.enabled {
+                        if let Ok(mut handle) = state.tts_handle.try_lock() {
+                            if let Some(ref tts) = *handle {
+                                tts.shutdown();
+                            }
+                            let app_handle_clone = app_handle.clone();
+                            let app_handle_clone_end = app_handle.clone();
+                            let new_tts = voxctrl_tts::TtsEngineWorker::start(
+                                cfg.tts.clone(),
+                                Some(std::sync::Arc::new(move || {
+                                    let _ = app_handle_clone.emit("tts-playback-start", ());
+                                })),
+                                Some(std::sync::Arc::new(move || {
+                                    let _ = app_handle_clone_end.emit("tts-playback-end", ());
+                                })),
+                            );
+                            *handle = Some(new_tts.clone());
+                            let state_for_fifos = state.clone();
+                            let tts_for_fifos = new_tts.clone();
+                            tauri::async_runtime::spawn(async move {
+                                state_for_fifos.spawn_fifo_responders(tts_for_fifos).await;
+                            });
+                        }
+                    }
+                }
+            }
+
             // ── Startup udev Diagnostics ──────────────────────────────────────
             #[cfg(target_os = "linux")]
             {
@@ -359,17 +426,32 @@ pub fn run() {
                             _ => {}
                         }
                     } else {
-                        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
-                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
+                        // Check if udev rules exist (support new and legacy names)
+                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists()
+                            || std::path::Path::new("/etc/udev/rules.d/99-voxctl.rules").exists()
+                            || std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
 
                         // Check if the current user session has the "input" group by running `id -Gn`
-                        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                        let mut in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
                             Ok(output) => {
                                 let groups_str = String::from_utf8_lossy(&output.stdout);
                                 groups_str.split_whitespace().any(|g| g == "input")
                             }
                             Err(_) => false,
                         };
+
+                        // Fallback: If not in group in active session, check system group database (NSS /etc/group).
+                        // This is robust against sandboxes/containers where active process groups haven't refreshed.
+                        if !in_group {
+                            if let Ok(username) = std::env::var("USER") {
+                                if let Ok(output) = std::process::Command::new("id").args(&["-Gn", &username]).output() {
+                                    let groups_str = String::from_utf8_lossy(&output.stdout);
+                                    if groups_str.split_whitespace().any(|g| g == "input") {
+                                        in_group = true;
+                                    }
+                                }
+                            }
+                        }
 
                         if !rule_exists || !in_group {
                             check_failed = true;
@@ -590,12 +672,15 @@ pub fn run() {
             stop_monitoring_audio,
             check_voice_downloaded,
             download_voice,
+            check_kokoro_ready,
+            download_kokoro,
             check_model_downloaded,
             download_model,
             check_directory_exists,
             test_ollama,
             cuda_enabled,
             check_udev_status,
+            stop_tts,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");
@@ -963,6 +1048,51 @@ mod tests {
         assert!(!res.needs_relogin);
 
         std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+    }
+
+    #[tokio::test]
+    async fn test_check_udev_status_nss_fallback_logic() {
+        // Query the NSS database manually using the exact logic we implemented to make sure it matches
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(username) = std::env::var("USER") {
+                let output = std::process::Command::new("id").args(&["-Gn", &username]).output();
+                if let Ok(out) = output {
+                    let groups_str = String::from_utf8_lossy(&out.stdout);
+                    let database_has_input = groups_str.split_whitespace().any(|g| g == "input");
+                    
+                    // Verify that if check_udev_status is called, the in_group value
+                    // matches whether the database or active session has the "input" group.
+                    std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+                    let res = check_udev_status().await.unwrap();
+                    
+                    // If either database_has_input is true or active session has it,
+                    // in_group should resolve as true.
+                    let active_session_has_input = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                        Ok(o) => {
+                            let s = String::from_utf8_lossy(&o.stdout);
+                            s.split_whitespace().any(|g| g == "input")
+                        }
+                        Err(_) => false,
+                    };
+                    
+                    if database_has_input || active_session_has_input {
+                        assert!(res.in_group, "User is in input group in database/session, in_group check should be true");
+                    }
+                }
+            }
+        }
+
+        // On non-Linux (e.g. Windows), check should always succeed
+        #[cfg(not(target_os = "linux"))]
+        {
+            std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+            let res = check_udev_status().await.unwrap();
+            assert!(res.is_configured);
+            assert!(res.rule_exists);
+            assert!(res.in_group);
+            assert!(!res.needs_relogin);
+        }
     }
 }
 

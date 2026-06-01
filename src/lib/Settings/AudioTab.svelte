@@ -175,7 +175,6 @@
 </section>
 
 <style>
-  @import "./tab.css";
   .val { font-size: 12px; color: var(--text-muted); min-width: 36px; text-align: right; }
 
   .vu-meter-container {

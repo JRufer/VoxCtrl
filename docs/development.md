@@ -389,6 +389,12 @@ def test_mcp_handshake_and_tools():
 
 Linux global hotkeys require specific udev permissions and user group memberships configured by `install.sh`. To make testing these startup states safe and easy, developers can use the `VOXCTRL_TEST_UDEV_STATUS` environment variable to mock various diagnostic outcomes without mutating their own user accounts or system rules.
 
+#### How Diagnostics Work (Linux)
+The application employs robust permission checks at startup and via the `check_udev_status` Tauri IPC command:
+1. **Rule File Compatibility:** The app checks for the existence of `/etc/udev/rules.d/99-voxctrl.rules`, `/etc/udev/rules.d/99-voxctl.rules` (legacy name), or `/etc/udev/rules.d/99-voxctr.rules` (legacy name). If any match, rules are recognized as configured.
+2. **Active vs NSS Group Database Verification:** It checks if the active process session belongs to the `input` group. If missing, it queries the NSS system group database (`id -Gn <username>`) as a fallback. This handles persistent containerized development environments (where process group tokens do not refresh) gracefully, preventing false warning windows once the installer has been run.
+3. **Windows Exclusions:** Non-Linux environments (such as Windows builds) completely compile out udev diagnostic checks on startup and return fully bypassed success payloads (`is_configured: true`), ensuring the warning screen never displays on Windows.
+
 #### Why Test This?
 * **Onboarding Verification**: Ensure that new users are clearly prompted to install required dependencies.
 * **Troubleshooting Relogins**: Verify the specific advice prompting the user to reboot or log out if they ran `install.sh` but didn't refresh their session.

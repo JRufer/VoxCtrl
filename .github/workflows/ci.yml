@@ -42,18 +42,18 @@ jobs:
         with:
           key: check-${{ matrix.os }}
 
-      # Full workspace check on Linux (includes voxctr-inference which needs whisper-rs/C++)
+      # Full workspace check on Linux (includes voxctrl-inference which needs whisper-rs/C++)
       - name: cargo check (workspace, no features)
         if: runner.os != 'Windows'
         run: cargo check --workspace
 
       # On Windows, exclude crates that require whisper.cpp C++ compilation
-      # (voxctr-inference, voxctr-app). Their Rust type-safety is covered by
+      # (voxctrl-inference, voxctrl-app). Their Rust type-safety is covered by
       # the Linux check above; this job validates Windows-specific platform code
       # in the remaining pure-Rust crates.
       - name: cargo check (workspace excluding C++ crates, Windows)
         if: runner.os == 'Windows'
-        run: cargo check --workspace --exclude voxctr-inference --exclude voxctr-app
+        run: cargo check --workspace --exclude voxctrl-inference --exclude voxctrl-app
 
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:
@@ -87,7 +87,7 @@ jobs:
 
       # Run tests for crates that have unit tests and no heavy system deps
       - name: cargo test
-        run: cargo test -p voxctr-config -p voxctr-routing
+        run: cargo test -p voxctrl-config -p voxctrl-routing
 
   # ── Frontend type check ───────────────────────────────────────────────────────
   frontend-check:

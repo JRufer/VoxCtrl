@@ -435,6 +435,14 @@
     if (!currentlyPressedKeys.includes(evdevKey)) {
       currentlyPressedKeys = [...currentlyPressedKeys, evdevKey];
     }
+    // Escape triggers browser blur before keyup fires, so commit immediately
+    // on keydown for single-key combos where Escape is the key pressed.
+    // For multi-key combos, keyup still handles commit as normal.
+    if (e.key === "Escape") {
+      editingBinding.keys = [...currentlyPressedKeys];
+      currentlyPressedKeys = [];
+      isRecordingKeys = false;
+    }
   }
 
   function handleRecordKeyUp(e: KeyboardEvent) {
@@ -447,6 +455,16 @@
     }
     currentlyPressedKeys = [];
     isRecordingKeys = false; // Finish capture on release
+  }
+
+  function handleRecordKeyBlur() {
+    // Safety net: if blur fires while we have pending keys (e.g. Escape blur race),
+    // commit whatever was captured rather than discarding it silently.
+    if (currentlyPressedKeys.length > 0 && editingBinding) {
+      editingBinding.keys = [...currentlyPressedKeys];
+      currentlyPressedKeys = [];
+    }
+    isRecordingKeys = false;
   }
 </script>
 
@@ -1021,38 +1039,42 @@
         {/if}
 
         <!-- Premium Hotkey Recording Widget -->
-        <div class="recorder-section">
-          <h5>Hotkey Keybind Selection</h5>
+        <div class="border-t border-white/5 pt-[14px] flex flex-col gap-2">
+          <h5 class="mb-1 text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">Hotkey Keybind Selection</h5>
           <div
-            class="recorder-box"
-            class:recording={isRecordingKeys}
+            class={[
+              "border-2 rounded-desktop p-6 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[80px]",
+              isRecordingKeys
+                ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
+                : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+            ].join(" ")}
             tabindex="0"
             role="button"
             aria-label="Hotkey recorder input"
             onclick={() => isRecordingKeys = true}
             onfocus={() => isRecordingKeys = true}
-            onblur={() => isRecordingKeys = false}
+            onblur={handleRecordKeyBlur}
             onkeydown={handleRecordKeyDown}
             onkeyup={handleRecordKeyUp}
           >
             {#if isRecordingKeys}
-              <div class="pulse-container">
-                <span class="pulse-dot"></span>
-                <span class="recording-text">
+              <div class="flex items-center gap-[10px]">
+                <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
+                <span class="text-[13px] font-semibold text-accent-blue">
                   {currentlyPressedKeys.length > 0
                     ? currentlyPressedKeys.join(" + ").replace(/KEY_/g, "")
                     : "Press your physical shortcut combination now..."}
                 </span>
               </div>
             {:else}
-              <span class="instruction-text">
+              <span class="text-[12px] text-obsidian-300 flex flex-col gap-2 items-center">
                 {#if editingBinding.keys.length > 0}
-                  <div class="recorded-badges">
+                  <div class="flex gap-1.5">
                     {#each editingBinding.keys as k}
-                      <kbd class="kbd-recorder">{k.replace("KEY_", "")}</kbd>
+                      <kbd class="px-1.5! py-0.5! text-[12px]! bg-accent-blue! text-black! border-none! font-extrabold! rounded!">{k.replace("KEY_", "")}</kbd>
                     {/each}
                   </div>
-                  <span class="change-prompt">(Click / Tab here to record a new hotkey combo)</span>
+                  <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to record a new hotkey combo)</span>
                 {:else}
                   ⚠️ Click/Focus here to press keys!
                 {/if}
@@ -1070,8 +1092,6 @@
 {/if}
 
 <style>
-  @import "./tab.css";
-
   .routing-section {
     display: flex;
     flex-direction: column;
@@ -1488,7 +1508,7 @@
     gap: 10px;
   }
 
-  .morph-section h5, .processing-toggles h5, .recorder-section h5 {
+  .morph-section h5, .processing-toggles h5 {
     margin: 0 0 4px 0;
     font-size: 11px;
     font-weight: 700;
@@ -1519,101 +1539,6 @@
 
   .checkbox-field:hover {
     color: var(--text);
-  }
-
-  /* Hotkey Recording Box */
-  .recorder-section {
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .recorder-box {
-    background: rgba(0, 0, 0, 0.25);
-    border: 2px dashed var(--border);
-    border-radius: var(--radius);
-    padding: 24px;
-    text-align: center;
-    cursor: pointer;
-    outline: none;
-    transition: all 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 80px;
-  }
-
-  .recorder-box:hover, .recorder-box:focus {
-    border-color: var(--accent2);
-    background: rgba(0, 0, 0, 0.35);
-  }
-
-  .recorder-box.recording {
-    border-color: var(--accent);
-    background: rgba(244, 63, 94, 0.05);
-    border-style: solid;
-    animation: border-pulse 1.5s infinite;
-  }
-
-  @keyframes border-pulse {
-    0%, 100% { border-color: rgba(244, 63, 94, 0.4); }
-    50% { border-color: rgba(244, 63, 94, 1); }
-  }
-
-  .pulse-container {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .pulse-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
-    animation: flash 1s infinite;
-  }
-
-  @keyframes flash {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  .recording-text {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--accent);
-  }
-
-  .instruction-text {
-    font-size: 12px;
-    color: var(--text-muted);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .recorded-badges {
-    display: flex;
-    gap: 6px;
-  }
-
-  .kbd-recorder {
-    font-size: 12px;
-    background: var(--accent2);
-    color: #000;
-    border: none;
-    font-weight: 800;
-  }
-
-  .change-prompt {
-    font-size: 10px;
-    color: var(--accent2);
-    opacity: 0.8;
   }
 
   .actions {

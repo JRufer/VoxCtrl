@@ -254,6 +254,7 @@ impl Default for OllamaConfig {
 pub enum TtsEngine {
     Piper,
     Espeak,
+    Kokoro,
 }
 
 impl Default for TtsEngine {
@@ -262,18 +263,72 @@ impl Default for TtsEngine {
     }
 }
 
+fn default_kokoro_voice() -> String {
+    "af_heart".into()
+}
+
+fn default_kokoro_speed() -> f32 {
+    1.0
+}
+
+fn default_tts_speed() -> f32 {
+    1.0
+}
+
+fn default_kokoro_quality() -> String {
+    "fp16".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KokoroConfig {
+    /// Voice ID, e.g. "af_heart", "am_adam", "bf_emma", "bm_george"
+    #[serde(default = "default_kokoro_voice")]
+    pub voice: String,
+    /// Model precision: "f32" (best, 310 MB), "fp16" (169 MB), "int8" (fastest, 88 MB)
+    #[serde(default = "default_kokoro_quality")]
+    pub quality: String,
+    /// Speech speed multiplier (0.5 – 2.0)
+    #[serde(default = "default_kokoro_speed")]
+    pub speed: f32,
+    /// Pre-warm model on startup so the first synthesis is instant
+    #[serde(default)]
+    pub prewarm: bool,
+    /// Directory for model / voices files. Empty = platform default.
+    #[serde(default)]
+    pub data_dir: String,
+}
+
+impl Default for KokoroConfig {
+    fn default() -> Self {
+        Self {
+            voice: default_kokoro_voice(),
+            quality: default_kokoro_quality(),
+            speed: default_kokoro_speed(),
+            prewarm: false,
+            data_dir: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsConfig {
     pub enabled: bool,
     pub engine: TtsEngine,
-    /// Voice name, e.g. "en-us-lessac-medium"
+    /// Voice name for Piper, e.g. "en-us-lessac-medium"
     pub voice: String,
     /// Directory containing Piper voice files. Empty = platform default.
     #[serde(default)]
     pub voice_dir: String,
-    /// Key(s) that stop TTS playback, e.g. ["KEY_ESCAPE"]
+    /// Key(s) that stop TTS playback, e.g. ["KEY_ESC"]
     pub stop_key: Vec<String>,
     pub response_overlay: bool,
+    #[serde(default = "default_tts_speed")]
+    pub speed: f32,
+    /// Enable GPU acceleration for ONNX inference (Kokoro and Piper)
+    #[serde(default)]
+    pub gpu: bool,
+    #[serde(default)]
+    pub kokoro: KokoroConfig,
 }
 
 impl Default for TtsConfig {
@@ -283,8 +338,11 @@ impl Default for TtsConfig {
             engine: TtsEngine::Piper,
             voice: "en-us-lessac-medium".into(),
             voice_dir: String::new(),
-            stop_key: vec!["KEY_ESCAPE".into()],
+            stop_key: vec!["KEY_ESC".into()],
             response_overlay: true,
+            speed: 1.0,
+            gpu: false,
+            kokoro: KokoroConfig::default(),
         }
     }
 }
@@ -382,6 +440,20 @@ impl Config {
             let clean_config = Self { data: data.clone(), path: path.clone() };
             if let Err(e) = clean_config.save() {
                 tracing::error!("Failed to save clean migrated config: {e}");
+            }
+        }
+
+        // Migrate legacy "KEY_ESCAPE" → "KEY_ESC" (evdev crate uses KEY_ESC as the
+        // canonical debug name via stringify!(KEY_ESC)).
+        let needs_escape_fix = data.tts.stop_key.iter().any(|k| k == "KEY_ESCAPE");
+        if needs_escape_fix {
+            data.tts.stop_key = data.tts.stop_key
+                .into_iter()
+                .map(|k| if k == "KEY_ESCAPE" { "KEY_ESC".to_string() } else { k })
+                .collect();
+            let clean_config = Self { data: data.clone(), path: path.clone() };
+            if let Err(e) = clean_config.save() {
+                tracing::error!("Failed to save migrated stop_key: {e}");
             }
         }
 
@@ -543,7 +615,7 @@ mod tests {
                 "enabled": false,
                 "engine": "piper",
                 "voice": "en-us-lessac-medium",
-                "stop_key": ["KEY_ESCAPE"],
+                "stop_key": ["KEY_ESC"],
                 "response_overlay": true
             },
             "mcp": {
