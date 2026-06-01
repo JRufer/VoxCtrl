@@ -315,6 +315,30 @@ fn ensure_ort_init() -> Result<()> {
                 }
             }
 
+            // Dynamic discovery via python3 — works for any distro or pip --user install.
+            if let Ok(output) = std::process::Command::new("python3")
+                .args([
+                    "-c",
+                    "import onnxruntime as o, os; \
+                     capi=os.path.join(os.path.dirname(o.__file__),'capi'); \
+                     [print(os.path.join(capi,f)) \
+                      for f in os.listdir(capi) \
+                      if f.startswith('libonnxruntime') and '.so' in f]",
+                ])
+                .output()
+            {
+                if output.status.success() {
+                    for line in String::from_utf8_lossy(&output.stdout).lines() {
+                        let p = line.trim();
+                        if !p.is_empty() && std::path::Path::new(p).exists() {
+                            ort::init_from(p)?;
+                            ort::init().commit();
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
             // Last resort: let ort try standard dlopen lookup.
             ort::init().commit();
             Ok(())
