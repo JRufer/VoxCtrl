@@ -276,7 +276,7 @@ fn default_tts_speed() -> f32 {
 }
 
 fn default_kokoro_quality() -> String {
-    "int8".into()
+    "fp16".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,6 +324,9 @@ pub struct TtsConfig {
     pub response_overlay: bool,
     #[serde(default = "default_tts_speed")]
     pub speed: f32,
+    /// Enable GPU acceleration for ONNX inference (Kokoro and Piper)
+    #[serde(default)]
+    pub gpu: bool,
     #[serde(default)]
     pub kokoro: KokoroConfig,
 }
@@ -338,6 +341,7 @@ impl Default for TtsConfig {
             stop_key: vec!["KEY_ESC".into()],
             response_overlay: true,
             speed: 1.0,
+            gpu: false,
             kokoro: KokoroConfig::default(),
         }
     }

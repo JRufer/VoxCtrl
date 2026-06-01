@@ -16,7 +16,7 @@ VoxCtrl includes a neural TTS engine for voice output. This is useful for readin
 VoxCtrl invokes the `piper` binary directly (looks first in `~/.local/share/voxctrl/piper/piper`, then on PATH). It pipes text to Piper's stdin, receives raw 16-bit PCM on stdout, and plays via rodio (cross-platform).
 
 ### Kokoro (Neural, Natural)
-[Kokoro](https://github.com/hexgrad/kokoro) is a high-quality, natural-sounding neural TTS engine with 28 English voices (American and British accents). VoxCtrl runs Kokoro entirely in Rust: text is phonemised via `espeak-ng`, tokenised against an embedded IPA vocabulary, and synthesised via native ONNX inference (`ort` crate). No Python is required.
+[Kokoro](https://github.com/hexgrad/kokoro) is a high-quality, natural-sounding neural TTS engine with English voices (American and British accents). VoxCtrl runs Kokoro entirely in Rust: text is phonemised via `espeak-ng`, tokenised against an embedded IPA vocabulary, and synthesised via native ONNX inference (`ort` crate). No Python is required.
 
 **Prerequisites:**
 - `espeak-ng` installed on the system (`apt install espeak-ng` on Debian/Ubuntu)
@@ -27,12 +27,29 @@ Model files are downloaded from GitHub releases to `~/.local/share/voxctrl/kokor
 
 | Quality | File | Size | Use case |
 |---|---|---|---|
-| `f32` | `kokoro-v1.0.onnx` | 310 MB | Highest quality |
-| `fp16` | `kokoro-v1.0.fp16.onnx` | 169 MB | Recommended (good quality, smaller) |
-| `int8` | `kokoro-v1.0.int8.onnx` | 88 MB | Fastest, smallest |
+| `f32` | `kokoro-v1.0.onnx` | 310 MB | Highest quality (recommended with GPU acceleration) |
+| `fp16` | `kokoro-v1.0.fp16.onnx` | 169 MB | Default (balanced quality, smaller) |
 
 ### Espeak-ng (Lightweight)
 If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
+
+---
+
+## GPU Acceleration
+
+VoxCtrl supports **GPU Acceleration** for both the **Kokoro** and **Piper** neural engines:
+
+*   **Kokoro:** Enables the ONNX Runtime CUDA Execution Provider natively inside the Rust backend.
+*   **Piper:** Appends the `--cuda` CLI flag to the spawned `piper` subprocess command dynamically at runtime.
+
+### Requirements & Setup:
+1.  A CUDA-compatible NVIDIA GPU and drivers installed.
+2.  Pointing VoxCtrl to a GPU-enabled ONNX Runtime shared library. Because the app loads the shared library dynamically via `load-dynamic`, you can link the GPU library (e.g. from Python's `onnxruntime-gpu`) using the `ORT_DYLIB_PATH` environment variable:
+    ```bash
+    export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
+    cargo tauri dev --features cuda
+    ```
+    If GPU initialization fails, the engines will automatically and gracefully fall back to executing on the **CPU** without causing a crash.
 
 ---
 
@@ -60,7 +77,7 @@ The default voice is **`en-us-lessac-medium`**.
 
 ### Kokoro Voices
 
-Kokoro ships 28 voices split across four accent groups. All voices share the same model and voices pack (`voices-v1.0.bin`). Switching voices requires no additional downloads.
+Kokoro ships voices split across four accent groups. All voices share the same model and voices pack (`voices-v1.0.bin`). Switching voices requires no additional downloads.
 
 **American Female (`af_*`)**
 | ID | Name |
@@ -133,7 +150,7 @@ Kokoro requires one download for the model file + voices pack. All voices are in
 ```typescript
 // Check if model files are present
 const ready = await invoke<boolean>('check_kokoro_ready', {
-  quality: 'fp16',        // "f32" | "fp16" | "int8"
+  quality: 'fp16',        // "f32" | "fp16"
   dataDir: '',            // '' = ~/.local/share/voxctrl/kokoro/
 });
 
@@ -224,8 +241,9 @@ Under `tts` in `config.json`:
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/` |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
+| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Kokoro and Piper |
 | `kokoro.voice` | string | `"af_heart"` | Default Kokoro voice ID |
-| `kokoro.quality` | string | `"fp16"` | Model precision: `"f32"`, `"fp16"`, or `"int8"` |
+| `kokoro.quality` | string | `"fp16"` | Model precision: `"f32"` or `"fp16"` |
 | `kokoro.speed` | float | `1.0` | Speech rate multiplier (0.5 – 2.0) |
 | `kokoro.prewarm` | bool | `false` | Pre-warm model on startup for faster first synthesis |
 | `kokoro.data_dir` | string | `""` | Directory for Kokoro model/voices files; empty = `~/.local/share/voxctrl/kokoro/` |
@@ -240,6 +258,7 @@ Under `tts` in `config.json`:
   "voice_dir": "",
   "stop_key": ["KEY_ESCAPE"],
   "response_overlay": true,
+  "gpu": true,
   "kokoro": {
     "voice": "af_heart",
     "quality": "fp16",

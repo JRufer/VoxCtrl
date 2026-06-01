@@ -406,6 +406,13 @@
         <option value="espeak">eSpeak-NG (lightweight)</option>
       </select>
     </label>
+    {#if cfg.tts.engine === "kokoro" || cfg.tts.engine === "piper"}
+    <label class="field">
+      <span>GPU Acceleration</span>
+      <input type="checkbox" bind:checked={cfg.tts.gpu} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Use CUDA GPU acceleration (ONNX Runtime). Falls back to CPU if unavailable.</p>
+    {/if}
     <label class="field">
       <span>Speed ({cfg.tts.speed.toFixed(2)}×)</span>
       <input
@@ -496,6 +503,16 @@
         {/each}
       </select>
     </label>
+
+    <label class="field">
+      <span>Model Quality</span>
+      <select bind:value={cfg.tts.kokoro.quality} onchange={() => { markDirty(); checkKokoroReady(); }}>
+        <option value="f32">f32 (Best Quality, 310 MB)</option>
+        <option value="fp16">fp16 (Balanced, 169 MB)</option>
+      </select>
+    </label>
+
+
 
     <div class="voice-status-container">
       {#if kokoroChecking}

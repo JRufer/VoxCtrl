@@ -72,7 +72,8 @@ Full schema with defaults:
     "voice": "en-us-lessac-medium",
     "voice_dir": "",
     "stop_key": ["KEY_ESCAPE"],
-    "response_overlay": true
+    "response_overlay": true,
+    "gpu": false
   },
   "mcp": {
     "server_enabled": false,
@@ -182,11 +183,12 @@ Example with snippets:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS subsystem |
-| `engine` | string | `"piper"` | Synthesis engine: `"piper"` or `"espeak"` |
+| `engine` | string | `"piper"` | Synthesis engine: `"piper"`, `"kokoro"`, or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
+| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Kokoro and Piper |
 
 ### `mcp` section
 

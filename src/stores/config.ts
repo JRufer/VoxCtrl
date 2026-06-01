@@ -72,7 +72,7 @@ export interface OllamaConfig {
 
 export interface KokoroConfig {
   voice: string;
-  quality: "f32" | "fp16" | "int8";
+  quality: "f32" | "fp16";
   speed: number;
   prewarm: boolean;
   data_dir: string;
@@ -86,6 +86,7 @@ export interface TtsConfig {
   stop_key: string[];
   response_overlay: boolean;
   speed: number;
+  gpu: boolean;
   kokoro: KokoroConfig;
 }
 
@@ -154,9 +155,10 @@ const defaultConfig: AppConfig = {
     stop_key: ["KEY_ESCAPE"],
     response_overlay: true,
     speed: 1.0,
+    gpu: false,
     kokoro: {
       voice: "af_heart",
-      quality: "int8",
+      quality: "fp16",
       speed: 1.0,
       prewarm: false,
       data_dir: "",

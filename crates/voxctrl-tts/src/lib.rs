@@ -627,12 +627,18 @@ impl TtsEngineWorker {
             })?;
 
         let length_scale = 1.0 / self.config.speed;
-        let mut piper = std::process::Command::new(&binary)
-            .arg("--model")
+        let mut cmd = std::process::Command::new(&binary);
+        cmd.arg("--model")
             .arg(&voice_path)
             .arg("--length-scale")
             .arg(length_scale.to_string())
-            .arg("--output-raw")
+            .arg("--output-raw");
+
+        if self.config.gpu {
+            cmd.arg("--cuda");
+        }
+
+        let mut piper = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -717,9 +723,29 @@ fn speak_kokoro(
     // Lazily load the ONNX session — stays alive for the worker thread lifetime.
     if session.is_none() {
         ensure_ort_init().context("initialise ONNX Runtime")?;
-        info!("Loading Kokoro ONNX session: {}", model_path.display());
+        info!("Loading Kokoro ONNX session: {} (gpu={})", model_path.display(), config.gpu);
         let mut sb = ort::session::Session::builder()
             .context("ONNX session builder")?;
+
+        if config.gpu {
+            sb = match sb.with_execution_providers([ort::execution_providers::CUDAExecutionProvider::default().build()]) {
+                Ok(builder) => {
+                    info!("Successfully registered CUDA Execution Provider for Kokoro");
+                    builder
+                }
+                Err(e) => {
+                    warn!("Failed to register CUDA Execution Provider: {e}. Falling back to CPU.");
+                    match ort::session::Session::builder() {
+                        Ok(fallback_sb) => fallback_sb,
+                        Err(fallback_err) => {
+                            warn!("Failed to create fallback ONNX session builder: {fallback_err}");
+                            return Err(anyhow::anyhow!("fallback builder failure: {fallback_err}"));
+                        }
+                    }
+                }
+            };
+        }
+
         *session = Some(
             sb.commit_from_file(&model_path)
                 .context("load Kokoro ONNX model")?
