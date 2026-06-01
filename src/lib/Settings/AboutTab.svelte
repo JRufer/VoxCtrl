@@ -79,7 +79,6 @@
 </section>
 
 <style>
-  @import "./tab.css";
   .about-card {
     flex-direction: row !important;
     align-items: flex-start;

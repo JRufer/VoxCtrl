@@ -104,7 +104,6 @@
 </section>
 
 <style>
-  @import "./tab.css";
   .field.col { flex-direction: column; align-items: flex-start; gap: 6px; }
   textarea {
     width: 100%;

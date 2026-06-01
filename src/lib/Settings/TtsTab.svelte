@@ -2,10 +2,38 @@
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { onMount, onDestroy } from "svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
+
+  // ── Run Speed Timer ────────────────────────────────────────────────────────
+  let runSpeed = $state<number | null>(null);
+  let elapsed = $state(0);
+  let isCounting = $state(false);
+  let timerId: any = null;
+  let unlistenTtsStart: (() => void) | null = null;
+  let unlistenTtsEnd: (() => void) | null = null;
+  let voiceSpeaking = $state(false);
+  let startTime = 0;
+
+  function startTimer() {
+    isCounting = true;
+    elapsed = 0;
+    runSpeed = null;
+    startTime = performance.now();
+    
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(() => {
+      elapsed = Math.round(performance.now() - startTime);
+      if (elapsed > 10000) {
+        clearInterval(timerId);
+        isCounting = false;
+        runSpeed = null;
+      }
+    }, 10);
+  }
 
   // ── Piper ──────────────────────────────────────────────────────────────────
 
@@ -84,38 +112,71 @@
 
   async function onVoiceChanged() {
     markDirty();
-    const selected = cfg.tts.voice;
-    if (!downloadedMap[selected]) {
-      await triggerDownload(selected);
-    }
   }
 
   async function testTts() {
     if (testing) return;
+    
+    if (voiceSpeaking) {
+      voiceSpeaking = false;
+      try {
+        await invoke("stop_tts");
+      } catch (err) {
+        console.error("Failed to stop TTS:", err);
+      }
+    }
+    
     testing = true;
+    startTimer();
+    
+    let engineName = "TTS";
+    let voice: string | null = null;
+    
+    if (cfg.tts.engine === "piper") {
+      engineName = "Piper";
+      voice = cfg.tts.voice;
+    } else if (cfg.tts.engine === "kokoro") {
+      engineName = "Kokoro";
+      voice = cfg.tts.kokoro.voice;
+    } else if (cfg.tts.engine === "espeak") {
+      engineName = "eSpeak-NG";
+      voice = null;
+    }
+    
+    const textToSpeak = `Hi this is ${engineName} speaking from VoxCtrl`;
+    
     try {
       await invoke("speak_text", {
-        text: "Hi, how can I help you today?",
-        voice: cfg.tts.engine === "piper" ? cfg.tts.voice : null,
+        text: textToSpeak,
+        voice: voice,
       });
     } catch (e) {
       alert(`TTS test failed: ${e}`);
-    } finally {
+      clearInterval(timerId);
+      isCounting = false;
       testing = false;
     }
   }
 
-  async function previewVoice() {
-    await invoke("speak_text", {
-      text: "Hello, this is a voice preview from VoxCtrl.",
-      voice: cfg.tts.voice
-    });
+  let engineSwitching = $state(false);
+
+  function isTestTtsDisabled() {
+    if (!cfg.tts.enabled || engineSwitching) return true;
+    if (voiceSpeaking) return false;
+    if (testing) return true;
+    
+    if (cfg.tts.engine === "piper") {
+      return checking || downloading || !downloadedMap[cfg.tts.voice];
+    }
+    if (cfg.tts.engine === "kokoro") {
+      return kokoroChecking || kokoroDownloading || !kokoroReady;
+    }
+    return false;
   }
 
   // ── Kokoro ─────────────────────────────────────────────────────────────────
 
   const KOKORO_VOICES = [
-    // American Female
     { id: "af_heart",    label: "Heart",    group: "American Female" },
     { id: "af_bella",    label: "Bella",    group: "American Female" },
     { id: "af_sarah",    label: "Sarah",    group: "American Female" },
@@ -127,7 +188,6 @@
     { id: "af_kore",     label: "Kore",     group: "American Female" },
     { id: "af_nova",     label: "Nova",     group: "American Female" },
     { id: "af_river",    label: "River",    group: "American Female" },
-    // American Male
     { id: "am_adam",     label: "Adam",     group: "American Male" },
     { id: "am_michael",  label: "Michael",  group: "American Male" },
     { id: "am_puck",     label: "Puck",     group: "American Male" },
@@ -137,12 +197,10 @@
     { id: "am_liam",     label: "Liam",     group: "American Male" },
     { id: "am_onyx",     label: "Onyx",     group: "American Male" },
     { id: "am_santa",    label: "Santa",    group: "American Male" },
-    // British Female
     { id: "bf_emma",     label: "Emma",     group: "British Female" },
     { id: "bf_alice",    label: "Alice",    group: "British Female" },
     { id: "bf_isabella", label: "Isabella", group: "British Female" },
     { id: "bf_lily",     label: "Lily",     group: "British Female" },
-    // British Male
     { id: "bm_george",   label: "George",   group: "British Male" },
     { id: "bm_lewis",    label: "Lewis",    group: "British Male" },
     { id: "bm_daniel",   label: "Daniel",   group: "British Male" },
@@ -154,6 +212,7 @@
   let kokoroReady = $state(false);
   let kokoroChecking = $state(false);
   let kokoroDownloading = $state(false);
+  let kokoroDirError = $state<string | null>(null);
 
   async function checkKokoroReady() {
     kokoroChecking = true;
@@ -186,31 +245,148 @@
     }
   }
 
-  async function previewKokoro() {
-    await invoke("speak_text", {
-      text: "Hello, this is Kokoro speaking from VoxCtrl.",
-      voice: cfg.tts.kokoro.voice,
-    });
+  function onKokoroDirChange() { markDirty(); }
+
+  async function validateKokoroDir() {
+    const path = cfg.tts.kokoro.data_dir;
+    if (!path) {
+      kokoroDirError = null;
+      return;
+    }
+    const exists = await invoke<boolean>("check_directory_exists", { path });
+    kokoroDirError = exists ? null : "This folder does not exist. Please create it first or leave blank for the default location.";
+    if (!kokoroDirError) {
+      await checkKokoroReady();
+    }
   }
 
-  // Re-check Kokoro readiness when quality or data_dir changes
-  async function onKokoroQualityChange() {
+  async function onEngineChanged() {
     markDirty();
-    kokoroReady = false;
-    await checkKokoroReady();
+    engineSwitching = true;
+    try {
+      if (cfg.tts.engine === "kokoro") {
+        kokoroReady = false;
+        if (cfg.tts.kokoro.data_dir) {
+          await validateKokoroDir();
+        } else {
+          await checkKokoroReady();
+        }
+      } else if (cfg.tts.engine === "piper") {
+        if (cfg.tts.voice_dir) {
+          await validateVoiceDir();
+        } else {
+          await checkAllVoicesDownloaded();
+        }
+      }
+    } finally {
+      // Add a small 400ms delay to allow the backend save_config to run
+      setTimeout(() => {
+        engineSwitching = false;
+      }, 400);
+    }
   }
 
-  onMount(() => {
-    checkAllVoicesDownloaded();
-    if (cfg.tts.engine === "kokoro") checkKokoroReady();
-  });
+  onMount(async () => {
+    if (cfg.tts.voice_dir) {
+      validateVoiceDir();
+    } else {
+      checkAllVoicesDownloaded();
+    }
 
-  // Re-check when switching to Kokoro tab
-  $effect(() => {
-    if (cfg.tts.engine === "kokoro" && !kokoroReady && !kokoroChecking) {
+    if (cfg.tts.kokoro.data_dir) {
+      validateKokoroDir();
+    } else if (cfg.tts.engine === "kokoro") {
       checkKokoroReady();
     }
+
+    unlistenTtsStart = await listen<void>("tts-playback-start", () => {
+      if (isCounting) {
+        clearInterval(timerId);
+        runSpeed = elapsed;
+        isCounting = false;
+      }
+      testing = false;
+      voiceSpeaking = true;
+    });
+
+    unlistenTtsEnd = await listen<void>("tts-playback-end", () => {
+      voiceSpeaking = false;
+    });
   });
+
+  onDestroy(() => {
+    if (timerId) clearInterval(timerId);
+    if (unlistenTtsStart) unlistenTtsStart();
+    if (unlistenTtsEnd) unlistenTtsEnd();
+  });
+
+  // ── Stop Key Recorder ───────────────────────────────────────────────────────────
+
+  let isRecordingStopKey = $state(false);
+  let currentlyPressedStopKeys = $state<string[]>([]);
+
+  function mapBrowserKeyToEvdev(key: string, code: string): string {
+    const codeUpper = code.toUpperCase();
+    if (key === "Control") return "KEY_LEFTCTRL";
+    if (key === "Alt") return "KEY_LEFTALT";
+    if (key === "Shift") return "KEY_LEFTSHIFT";
+    if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
+    if (codeUpper === "SPACE") return "KEY_SPACE";
+    if (codeUpper === "ENTER") return "KEY_ENTER";
+    if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
+    if (codeUpper === "TAB") return "KEY_TAB";
+    if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
+    if (codeUpper === "DELETE") return "KEY_DELETE";
+    if (codeUpper.startsWith("KEY")) return codeUpper;
+    if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
+    if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
+    if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
+    if (key.length === 1) return `KEY_${key.toUpperCase()}`;
+    return `KEY_${codeUpper}`;
+  }
+
+  function handleStopKeyDown(e: KeyboardEvent) {
+    if (!isRecordingStopKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const evdevKey = mapBrowserKeyToEvdev(e.key, e.code);
+    if (!currentlyPressedStopKeys.includes(evdevKey)) {
+      currentlyPressedStopKeys = [...currentlyPressedStopKeys, evdevKey];
+    }
+    // Escape triggers browser blur before keyup fires, so commit immediately
+    // on keydown for single-key combos where Escape is the key pressed.
+    // For multi-key combos, keyup still handles commit as normal.
+    if (e.key === "Escape") {
+      cfg.tts.stop_key = [...currentlyPressedStopKeys];
+      markDirty();
+      currentlyPressedStopKeys = [];
+      isRecordingStopKey = false;
+    }
+  }
+
+  function handleStopKeyUp(e: KeyboardEvent) {
+    if (!isRecordingStopKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (currentlyPressedStopKeys.length > 0) {
+      cfg.tts.stop_key = [...currentlyPressedStopKeys];
+      markDirty();
+    }
+    currentlyPressedStopKeys = [];
+    isRecordingStopKey = false;
+  }
+
+  function handleStopKeyBlur() {
+    // Safety net: if blur fires while we have pending keys (e.g. Escape blur race),
+    // commit whatever was captured rather than discarding it silently.
+    if (currentlyPressedStopKeys.length > 0) {
+      cfg.tts.stop_key = [...currentlyPressedStopKeys];
+      markDirty();
+      currentlyPressedStopKeys = [];
+    }
+    isRecordingStopKey = false;
+  }
+
 </script>
 
 <section>
@@ -224,16 +400,33 @@
     </label>
     <label class="field">
       <span>Engine</span>
-      <select bind:value={cfg.tts.engine} onchange={() => { markDirty(); if (cfg.tts.engine === "kokoro") checkKokoroReady(); }}>
-        <option value="piper">Piper (neural, high quality)</option>
+      <select bind:value={cfg.tts.engine} onchange={onEngineChanged}>
         <option value="kokoro">Kokoro (neural, natural voices)</option>
+        <option value="piper">Piper (neural, high quality)</option>
         <option value="espeak">eSpeak-NG (lightweight)</option>
       </select>
     </label>
-    <div class="row">
-      <button class="btn-preview" onclick={testTts} disabled={!cfg.tts.enabled || testing}>
-        {testing ? "Speaking..." : "Test TTS"}
+    <label class="field">
+      <span>Speed ({cfg.tts.speed.toFixed(2)}×)</span>
+      <input
+        type="range" min="0.5" max="2.0" step="0.05"
+        bind:value={cfg.tts.speed}
+        onchange={markDirty}
+        class="range-input"
+      />
+    </label>
+    <div class="row tts-test-row">
+      <button class="btn-preview" onclick={testTts} disabled={isTestTtsDisabled()}>
+        {testing ? "Speaking..." : voiceSpeaking ? "⏹ Stop & Test" : "Test TTS"}
       </button>
+      {#if isCounting || runSpeed !== null}
+        <div class="run-speed-container">
+          <span class="run-speed-label">Run speed</span>
+          <span class="run-speed-value" class:counting={isCounting}>
+            {isCounting ? `${elapsed} ms` : `${runSpeed} ms`}
+          </span>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -257,13 +450,13 @@
         <span class="status-checking">⏳ Checking local voice files...</span>
       {:else if downloading}
         <span class="status-downloading">⏳ Downloading {cfg.tts.voice} (model + config)...</span>
-      {:else if downloadedMap[cfg.tts.voice]}
-        <span class="status-downloaded">✔ Voice downloaded and ready</span>
       {:else}
         <div class="status-missing-wrapper">
-          <span class="status-missing">❌ Voice files missing</span>
-          <button class="btn-download" onclick={() => triggerDownload(cfg.tts.voice)}>
-            📥 Download Voice
+          <span class={downloadedMap[cfg.tts.voice] ? "status-downloaded" : "status-missing"}>
+            {downloadedMap[cfg.tts.voice] ? "✔ Voice downloaded and ready" : "❌ Voice files missing"}
+          </span>
+          <button class="btn-download" onclick={() => triggerDownload(cfg.tts.voice)} disabled={downloadedMap[cfg.tts.voice] || downloading}>
+            {downloadedMap[cfg.tts.voice] ? "Downloaded" : "📥 Download"}
           </button>
         </div>
       {/if}
@@ -284,12 +477,6 @@
       {/if}
     </div>
     <p class="hint">Default voice directory: <code>~/.local/share/voxctrl/piper-voices/</code></p>
-
-    <div class="row">
-      <button class="btn-preview" onclick={previewVoice} disabled={!cfg.tts.enabled || downloading || !downloadedMap[cfg.tts.voice]}>
-        Preview Voice
-      </button>
-    </div>
   </div>
   {/if}
 
@@ -297,7 +484,6 @@
   {#if cfg.tts.engine === "kokoro"}
   <div class="field-group">
     <h3>Kokoro Voice</h3>
-
     <label class="field">
       <span>Voice</span>
       <select bind:value={cfg.tts.kokoro.voice} onchange={markDirty}>
@@ -311,80 +497,38 @@
       </select>
     </label>
 
-    <h3>Quality &amp; Speed</h3>
-
-    <label class="field">
-      <span>Model quality</span>
-      <select bind:value={cfg.tts.kokoro.quality} onchange={onKokoroQualityChange}>
-        <option value="f32">Best – f32 (310 MB, highest quality)</option>
-        <option value="fp16">Good – fp16 (169 MB, recommended)</option>
-        <option value="int8">Fast – int8 (88 MB, fastest)</option>
-      </select>
-    </label>
-
-    <label class="field">
-      <span>Speed ({cfg.tts.kokoro.speed.toFixed(2)}×)</span>
-      <input
-        type="range" min="0.5" max="2.0" step="0.05"
-        bind:value={cfg.tts.kokoro.speed}
-        onchange={markDirty}
-        class="range-input"
-      />
-    </label>
-
-    <label class="field">
-      <span>Inference steps</span>
-      <input
-        type="number" min="1" max="16"
-        bind:value={cfg.tts.kokoro.steps}
-        onchange={markDirty}
-        class="number-input"
-      />
-    </label>
-    <p class="hint">Higher steps = more consistent quality. Default 4 is a good balance.</p>
-
-    <h3>Pre-warm</h3>
-    <label class="field">
-      <span>Pre-warm model on startup</span>
-      <input type="checkbox" bind:checked={cfg.tts.kokoro.prewarm} onchange={markDirty} />
-    </label>
-    <p class="hint">Runs a silent synthesis at startup so the model is cached when you first speak. Adds ~5 s to startup time.</p>
-
-    <h3>Model Files</h3>
-
     <div class="voice-status-container">
       {#if kokoroChecking}
-        <span class="status-checking">⏳ Checking model files...</span>
+        <span class="status-checking">⏳ Checking local model files...</span>
       {:else if kokoroDownloading}
         <span class="status-downloading">⏳ Downloading Kokoro model &amp; voices (may take a few minutes)...</span>
-      {:else if kokoroReady}
-        <span class="status-downloaded">✔ Model and voices downloaded and ready</span>
       {:else}
         <div class="status-missing-wrapper">
-          <span class="status-missing">❌ Model files missing</span>
-          <button class="btn-download" onclick={downloadKokoro}>
-            📥 Download
+          <span class={kokoroReady ? "status-downloaded" : "status-missing"}>
+            {kokoroReady ? "✔ Model and voices downloaded and ready" : "❌ Model files missing"}
+          </span>
+          <button class="btn-download" onclick={downloadKokoro} disabled={kokoroReady || kokoroDownloading}>
+            {kokoroReady ? "Downloaded" : "📥 Download"}
           </button>
         </div>
       {/if}
     </div>
 
     <div class="field">
-      <span>Data directory (leave blank for default)</span>
+      <span>Voice directory (leave blank for default)</span>
       <input
         type="text"
         bind:value={cfg.tts.kokoro.data_dir}
-        onchange={markDirty}
-        onblur={checkKokoroReady}
+        onchange={onKokoroDirChange}
+        onblur={validateKokoroDir}
+        onkeydown={onVoiceDirKeydown}
+        class:field-input-error={!!kokoroDirError}
       />
+      {#if kokoroDirError}
+        <p class="field-error-msg">{kokoroDirError}</p>
+      {/if}
     </div>
-    <p class="hint">Default: <code>~/.local/share/voxctrl/kokoro/</code></p>
-
-    <div class="row">
-      <button class="btn-preview" onclick={previewKokoro} disabled={!cfg.tts.enabled || !kokoroReady || kokoroDownloading}>
-        Preview Voice
-      </button>
-    </div>
+    <p class="hint">Default voice directory: <code>~/.local/share/voxctrl/kokoro/</code></p>
   </div>
   {/if}
 
@@ -394,21 +538,55 @@
       <span>Show response overlay</span>
       <input type="checkbox" bind:checked={cfg.tts.response_overlay} onchange={markDirty} />
     </label>
-    <label class="field">
-      <span>Stop key(s)</span>
-      <input type="text"
-        value={cfg.tts.stop_key.join(", ")}
-        onchange={(e) => {
-          cfg.tts.stop_key = (e.target as HTMLInputElement).value.split(",").map(s => s.trim());
-          markDirty();
-        }}
-      />
-    </label>
+
+    <div class="border-t border-white/5 pt-[14px] flex flex-col gap-2">
+      <h5 class="mb-1 text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">Stop Key Bind</h5>
+      <p class="hint" style="margin: 0 0 8px 0;">Press a key combo to immediately stop TTS playback — works even when this window is hidden.</p>
+      <div
+        class={[
+          "border-2 rounded-desktop p-6 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[80px]",
+          isRecordingStopKey
+            ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
+            : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+        ].join(" ")}
+        tabindex="0"
+        role="button"
+        aria-label="Stop key recorder"
+        onclick={() => isRecordingStopKey = true}
+        onfocus={() => isRecordingStopKey = true}
+        onblur={handleStopKeyBlur}
+        onkeydown={handleStopKeyDown}
+        onkeyup={handleStopKeyUp}
+      >
+        {#if isRecordingStopKey}
+          <div class="flex items-center gap-[10px]">
+            <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
+            <span class="text-[13px] font-semibold text-accent-blue">
+              {currentlyPressedStopKeys.length > 0
+                ? currentlyPressedStopKeys.join(" + ").replace(/KEY_/g, "")
+                : "Press your physical shortcut combination now..."}
+            </span>
+          </div>
+        {:else}
+          <span class="text-[12px] text-obsidian-300 flex flex-col gap-2 items-center">
+            {#if cfg.tts.stop_key.length > 0}
+              <div class="flex gap-1.5">
+                {#each cfg.tts.stop_key as k}
+                  <kbd class="px-1.5! py-0.5! text-[12px] bg-accent-blue text-black border-0 font-extrabold rounded">{k.replace("KEY_", "")}</kbd>
+                {/each}
+              </div>
+              <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to record a new stop key)</span>
+            {:else}
+              ⚠️ Click/Focus here to press a stop key!
+            {/if}
+          </span>
+        {/if}
+      </div>
+    </div>
   </div>
 </section>
 
 <style>
-  @import "./tab.css";
   .row { display: flex; gap: 8px; margin-top: 8px; }
   .btn-preview {
     background: var(--surface2);
@@ -466,8 +644,15 @@
     font-weight: 600;
     transition: background 0.2s;
   }
-  .btn-download:hover {
+  .btn-download:hover:not(:disabled) {
     background: var(--accent2);
+  }
+  .btn-download:disabled {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .field-input-error {
     border-color: #ef4444 !important;
@@ -489,4 +674,38 @@
   .number-input {
     width: 80px;
   }
+
+  .tts-test-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+  .run-speed-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .run-speed-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .run-speed-value {
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+  }
+  .run-speed-value.counting {
+    color: var(--accent2);
+    text-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+  }
+
 </style>

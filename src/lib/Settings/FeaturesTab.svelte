@@ -138,7 +138,6 @@
 </section>
 
 <style>
-  @import "./tab.css";
 
 
 

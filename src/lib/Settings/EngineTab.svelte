@@ -253,8 +253,6 @@
 </section>
 
 <style>
-  @import "./tab.css";
-
   .model-status-container {
     display: flex;
     align-items: center;

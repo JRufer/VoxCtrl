@@ -97,7 +97,17 @@ pub async fn save_config(
             tts.stop();
         }
         if new_config.tts.enabled {
-            let new_tts = voxctrl_tts::TtsEngineWorker::start(new_config.tts.clone());
+            let app_handle = app.clone();
+            let app_handle_end = app.clone();
+            let new_tts = voxctrl_tts::TtsEngineWorker::start(
+                new_config.tts.clone(),
+                Some(std::sync::Arc::new(move || {
+                    let _ = app_handle.emit("tts-playback-start", ());
+                })),
+                Some(std::sync::Arc::new(move || {
+                    let _ = app_handle_end.emit("tts-playback-end", ());
+                })),
+            );
             *handle = Some(new_tts.clone());
             state.spawn_fifo_responders(new_tts).await;
         } else {
@@ -110,6 +120,30 @@ pub async fn save_config(
     guard.save().map_err(|e| e.to_string())?;
     info!("Config saved");
 
+    // Hot-reload the stop key binding in the evdev listener
+    {
+        let dir = voxctrl_routing::config_dir();
+        let mut current_bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
+        if !new_config.tts.stop_key.is_empty() {
+            use voxctrl_routing::{HotkeyBinding, GestureType};
+            current_bindings.push(HotkeyBinding {
+                id: "__tts_stop__".to_string(),
+                label: "TTS Stop Key".to_string(),
+                keys: new_config.tts.stop_key.clone(),
+                gesture: GestureType::Hold,
+                target_id: String::new(),
+                target_ids: vec![],
+                tap_ms: 250,
+                hold_threshold_ms: 0,
+                disabled: false,
+            });
+        }
+        let reloader_guard = state.hotkey_reloader.lock().await;
+        if let Some(reloader) = &*reloader_guard {
+            let _ = reloader.send(current_bindings);
+        }
+    }
+
     // Emit config-changed event to all windows to enable instant reactivity
     let _ = app.emit("config-changed", new_config);
 
@@ -119,6 +153,38 @@ pub async fn save_config(
         }
     }
 
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_tts(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    info!("TTS stop/restart requested via command");
+    let mut handle = state.tts_handle.lock().await;
+    if let Some(ref tts) = *handle {
+        tts.stop();
+    }
+    
+    let cfg = state.config.lock().await.data.clone();
+    if cfg.tts.enabled {
+        let app_handle = app.clone();
+        let app_handle_end = app.clone();
+        let new_tts = voxctrl_tts::TtsEngineWorker::start(
+            cfg.tts.clone(),
+            Some(std::sync::Arc::new(move || {
+                let _ = app_handle.emit("tts-playback-start", ());
+            })),
+            Some(std::sync::Arc::new(move || {
+                let _ = app_handle_end.emit("tts-playback-end", ());
+            })),
+        );
+        *handle = Some(new_tts.clone());
+        state.spawn_fifo_responders(new_tts).await;
+    } else {
+        *handle = None;
+    }
     Ok(())
 }
 
@@ -185,10 +251,28 @@ pub async fn save_bindings(
     voxctrl_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
     info!("Bindings saved");
     
-    // Hot reload the bindings in the active listener threads
+    // Hot reload the bindings in the active listener threads, always re-injecting the stop key.
+    let mut all_bindings = bindings;
+    {
+        let cfg_guard = state.config.lock().await;
+        if !cfg_guard.data.tts.stop_key.is_empty() {
+            use voxctrl_routing::GestureType;
+            all_bindings.push(HotkeyBinding {
+                id: "__tts_stop__".to_string(),
+                label: "TTS Stop Key".to_string(),
+                keys: cfg_guard.data.tts.stop_key.clone(),
+                gesture: GestureType::Hold,
+                target_id: String::new(),
+                target_ids: vec![],
+                tap_ms: 250,
+                hold_threshold_ms: 0,
+                disabled: false,
+            });
+        }
+    }
     let reloader_guard = state.hotkey_reloader.lock().await;
     if let Some(reloader) = &*reloader_guard {
-        if let Err(e) = reloader.send(bindings) {
+        if let Err(e) = reloader.send(all_bindings) {
             tracing::warn!("Failed to hot-reload bindings: {e}");
         } else {
             info!("Hot-reload signal sent to listener");

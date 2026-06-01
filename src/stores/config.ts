@@ -74,7 +74,6 @@ export interface KokoroConfig {
   voice: string;
   quality: "f32" | "fp16" | "int8";
   speed: number;
-  steps: number;
   prewarm: boolean;
   data_dir: string;
 }
@@ -86,6 +85,7 @@ export interface TtsConfig {
   voice_dir: string;
   stop_key: string[];
   response_overlay: boolean;
+  speed: number;
   kokoro: KokoroConfig;
 }
 
@@ -153,11 +153,11 @@ const defaultConfig: AppConfig = {
     voice_dir: "",
     stop_key: ["KEY_ESCAPE"],
     response_overlay: true,
+    speed: 1.0,
     kokoro: {
       voice: "af_heart",
-      quality: "fp16",
+      quality: "int8",
       speed: 1.0,
-      steps: 4,
       prewarm: false,
       data_dir: "",
     },

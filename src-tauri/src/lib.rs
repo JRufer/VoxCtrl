@@ -164,7 +164,7 @@ pub fn run() {
 
     // ── TTS ───────────────────────────────────────────────────────────────────
     let _tts_handle = if cfg_data.tts.enabled {
-        Some(voxctrl_tts::TtsEngineWorker::start(cfg_data.tts.clone()))
+        Some(voxctrl_tts::TtsEngineWorker::start(cfg_data.tts.clone(), None, None))
     } else {
         None
     };
@@ -182,9 +182,27 @@ pub fn run() {
     });
 
     // ── Hotkey listener ───────────────────────────────────────────────────────
+    // Inject a synthetic hold-binding for the TTS stop key so the existing
+    // evdev listener handles it without any additional infrastructure.
+    let mut all_bindings = bindings;
+    if !cfg_data.tts.stop_key.is_empty() {
+        use voxctrl_routing::{HotkeyBinding, GestureType};
+        all_bindings.push(HotkeyBinding {
+            id: "__tts_stop__".to_string(),
+            label: "TTS Stop Key".to_string(),
+            keys: cfg_data.tts.stop_key.clone(),
+            gesture: GestureType::Hold,
+            target_id: String::new(),
+            target_ids: vec![],
+            tap_ms: 250,
+            hold_threshold_ms: 0,
+            disabled: false,
+        });
+    }
+
     let (gesture_tx, mut gesture_rx) = voxctrl_hotkeys::channel();
     let listener = voxctrl_hotkeys::start_listener(
-        bindings,
+        all_bindings,
         gesture_tx,
         cfg_data.audio.evdev_device.clone(),
     );
@@ -199,6 +217,17 @@ pub fn run() {
     tokio::spawn(async move {
         while let Some(event) = gesture_rx.recv().await {
             use voxctrl_hotkeys::GestureKind;
+
+            // TTS stop key: fires on key-down (Start), not release.
+            // Only stop the active Rodio sink — do NOT send None to the worker
+            // channel (that would kill the thread and break all future TTS).
+            if event.binding_id == "__tts_stop__" {
+                if event.kind == GestureKind::Start {
+                    voxctrl_tts::stop_current_playback();
+                }
+                continue;
+            }
+
             match event.kind {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
@@ -346,6 +375,44 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Re-initialize TTS worker with callback to emit tts-playback-start
+            {
+                let app_handle = app.handle().clone();
+                let state = app_handle.state::<Arc<AppState>>().inner().clone();
+                let cfg_opt = if let Ok(config_guard) = state.config.try_lock() {
+                    Some(config_guard.data.clone())
+                } else {
+                    None
+                };
+
+                if let Some(cfg) = cfg_opt {
+                    if cfg.tts.enabled {
+                        if let Ok(mut handle) = state.tts_handle.try_lock() {
+                            if let Some(ref tts) = *handle {
+                                tts.stop();
+                            }
+                            let app_handle_clone = app_handle.clone();
+                            let app_handle_clone_end = app_handle.clone();
+                            let new_tts = voxctrl_tts::TtsEngineWorker::start(
+                                cfg.tts.clone(),
+                                Some(std::sync::Arc::new(move || {
+                                    let _ = app_handle_clone.emit("tts-playback-start", ());
+                                })),
+                                Some(std::sync::Arc::new(move || {
+                                    let _ = app_handle_clone_end.emit("tts-playback-end", ());
+                                })),
+                            );
+                            *handle = Some(new_tts.clone());
+                            let state_for_fifos = state.clone();
+                            let tts_for_fifos = new_tts.clone();
+                            tauri::async_runtime::spawn(async move {
+                                state_for_fifos.spawn_fifo_responders(tts_for_fifos).await;
+                            });
+                        }
+                    }
+                }
+            }
+
             // ── Startup udev Diagnostics ──────────────────────────────────────
             #[cfg(target_os = "linux")]
             {
@@ -613,6 +680,7 @@ pub fn run() {
             test_ollama,
             cuda_enabled,
             check_udev_status,
+            stop_tts,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri application");

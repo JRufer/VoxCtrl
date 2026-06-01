@@ -227,7 +227,6 @@ Under `tts` in `config.json`:
 | `kokoro.voice` | string | `"af_heart"` | Default Kokoro voice ID |
 | `kokoro.quality` | string | `"fp16"` | Model precision: `"f32"`, `"fp16"`, or `"int8"` |
 | `kokoro.speed` | float | `1.0` | Speech rate multiplier (0.5 – 2.0) |
-| `kokoro.steps` | int | `4` | Inference steps (reserved for future diffusion-mode variants) |
 | `kokoro.prewarm` | bool | `false` | Pre-warm model on startup for faster first synthesis |
 | `kokoro.data_dir` | string | `""` | Directory for Kokoro model/voices files; empty = `~/.local/share/voxctrl/kokoro/` |
 
@@ -245,7 +244,6 @@ Under `tts` in `config.json`:
     "voice": "af_heart",
     "quality": "fp16",
     "speed": 1.0,
-    "steps": 4,
     "prewarm": true,
     "data_dir": ""
   }

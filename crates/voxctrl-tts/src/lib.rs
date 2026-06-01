@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -513,6 +513,16 @@ pub struct Utterance {
     pub source_label: Option<String>,
 }
 
+static ACTIVE_SINK: std::sync::Mutex<Option<std::sync::Arc<rodio::Sink>>> = std::sync::Mutex::new(None);
+
+pub fn stop_current_playback() {
+    let mut guard = ACTIVE_SINK.lock().unwrap();
+    if let Some(ref sink) = *guard {
+        let _ = sink.stop();
+    }
+    *guard = None;
+}
+
 #[derive(Clone)]
 pub struct TtsEngineHandle {
     tx: Sender<Option<Utterance>>,
@@ -533,18 +543,27 @@ impl TtsEngineHandle {
 
     pub fn stop(&self) {
         let _ = self.tx.send(None);
+        stop_current_playback();
     }
 }
 
 // ── TTS engine worker ─────────────────────────────────────────────────────────
 
+pub type PlaybackCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+
 pub struct TtsEngineWorker {
     config: TtsConfig,
     rx: Receiver<Option<Utterance>>,
+    on_playback_start: Option<PlaybackCallback>,
+    on_playback_end: Option<PlaybackCallback>,
 }
 
 impl TtsEngineWorker {
-    pub fn start(config: TtsConfig) -> TtsEngineHandle {
+    pub fn start(
+        config: TtsConfig,
+        on_playback_start: Option<PlaybackCallback>,
+        on_playback_end: Option<PlaybackCallback>,
+    ) -> TtsEngineHandle {
         let (tx, rx) = bounded(32);
         let handle = TtsEngineHandle { tx };
 
@@ -556,7 +575,7 @@ impl TtsEngineWorker {
             }));
         }
 
-        let worker = Self { config, rx };
+        let worker = Self { config, rx, on_playback_start, on_playback_end };
         std::thread::Builder::new()
             .name("voxctrl-tts".into())
             .spawn(move || worker.run())
@@ -573,15 +592,21 @@ impl TtsEngineWorker {
         while let Ok(msg) = self.rx.recv() {
             match msg {
                 Some(utterance) => {
+                    let is_prewarm = utterance.source_label.as_deref() == Some("prewarm");
                     let result = match self.config.engine {
                         TtsEngine::Piper => self.speak_piper(&utterance),
                         TtsEngine::Espeak => self.speak_espeak(&utterance),
                         TtsEngine::Kokoro => {
-                            speak_kokoro(&self.config, &utterance, &mut kokoro_session)
+                            speak_kokoro(&self.config, &utterance, &mut kokoro_session, &self.on_playback_start)
                         }
                     };
                     if let Err(e) = result {
                         warn!("TTS speak error: {e}");
+                    }
+                    if !is_prewarm {
+                        if let Some(ref cb) = self.on_playback_end {
+                            cb();
+                        }
                     }
                 }
                 None => {
@@ -601,9 +626,12 @@ impl TtsEngineWorker {
                 anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
             })?;
 
+        let length_scale = 1.0 / self.config.speed;
         let mut piper = std::process::Command::new(&binary)
             .arg("--model")
             .arg(&voice_path)
+            .arg("--length-scale")
+            .arg(length_scale.to_string())
             .arg("--output-raw")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -634,12 +662,27 @@ impl TtsEngineWorker {
             anyhow::bail!("piper produced empty stdout");
         }
 
+        if u.source_label.as_deref() != Some("prewarm") {
+            if let Some(ref cb) = self.on_playback_start {
+                cb();
+            }
+        }
+
         play_raw_audio(&output.stdout, sample_rate_for_voice(voice_name))?;
         Ok(())
     }
 
     fn speak_espeak(&self, u: &Utterance) -> Result<()> {
+        if u.source_label.as_deref() != Some("prewarm") {
+            if let Some(ref cb) = self.on_playback_start {
+                cb();
+            }
+        }
+
+        let wpm = (175.0 * self.config.speed) as i32;
         std::process::Command::new("espeak-ng")
+            .arg("-s")
+            .arg(wpm.to_string())
             .arg(&u.text)
             .status()
             .context("espeak-ng")?;
@@ -653,6 +696,7 @@ fn speak_kokoro(
     config: &TtsConfig,
     u: &Utterance,
     session: &mut Option<ort::session::Session>,
+    on_playback_start: &Option<PlaybackCallback>,
 ) -> Result<()> {
     let is_prewarm = u.source_label.as_deref() == Some("prewarm");
 
@@ -684,7 +728,7 @@ fn speak_kokoro(
     let sess = session.as_mut().unwrap();
 
     let voice = u.voice.as_deref().unwrap_or(&config.kokoro.voice);
-    let speed = config.kokoro.speed;
+    let speed = config.speed;
     let lang = if voice.starts_with('b') { "en-gb" } else { "en-us" };
 
     let phonemes = phonemize_espeak(&u.text, lang)?;
@@ -698,6 +742,10 @@ fn speak_kokoro(
 
     if is_prewarm {
         return Ok(());
+    }
+
+    if let Some(ref cb) = on_playback_start {
+        cb();
     }
 
     // Convert f32 samples → i16 PCM bytes for rodio playback.
@@ -718,10 +766,21 @@ fn play_raw_audio(raw: &[u8], sample_rate: u32) -> Result<()> {
         .collect();
     let (_stream, handle) = rodio::OutputStream::try_default()
         .map_err(|e| anyhow::anyhow!("audio output device: {e}"))?;
-    let sink = rodio::Sink::try_new(&handle)
-        .map_err(|e| anyhow::anyhow!("audio sink: {e}"))?;
+    let sink = std::sync::Arc::new(rodio::Sink::try_new(&handle)
+        .map_err(|e| anyhow::anyhow!("audio sink: {e}"))?);
+    
+    {
+        let mut guard = ACTIVE_SINK.lock().unwrap();
+        *guard = Some(sink.clone());
+    }
+
     sink.append(rodio::buffer::SamplesBuffer::new(1, sample_rate, samples));
     sink.sleep_until_end();
+
+    {
+        let mut guard = ACTIVE_SINK.lock().unwrap();
+        *guard = None;
+    }
     Ok(())
 }
 
