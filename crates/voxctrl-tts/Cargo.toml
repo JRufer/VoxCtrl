@@ -18,3 +18,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 crossbeam-channel = { workspace = true }
 rodio = { workspace = true }
+ort = { workspace = true }
+ndarray = { workspace = true }
+zip = { workspace = true }

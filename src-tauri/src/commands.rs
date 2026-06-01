@@ -258,11 +258,6 @@ pub async fn download_kokoro(quality: String, data_dir: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub async fn check_python3_available() -> Result<bool, String> {
-    Ok(voxctrl_tts::find_python3().is_some())
-}
-
-#[tauri::command]
 pub async fn check_model_downloaded(model_size: String, model_dir: String) -> Result<bool, String> {
     Ok(voxctrl_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir))
 }

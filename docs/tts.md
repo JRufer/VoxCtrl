@@ -16,14 +16,12 @@ VoxCtrl includes a neural TTS engine for voice output. This is useful for readin
 VoxCtrl invokes the `piper` binary directly (looks first in `~/.local/share/voxctrl/piper/piper`, then on PATH). It pipes text to Piper's stdin, receives raw 16-bit PCM on stdout, and plays via rodio (cross-platform).
 
 ### Kokoro (Neural, Natural)
-[Kokoro](https://github.com/hexgrad/kokoro) is a high-quality, natural-sounding neural TTS engine with 28 English voices (American and British accents). It uses ONNX-based inference via the [`kokoro-onnx`](https://github.com/thewh1teagle/kokoro-onnx) Python library.
+[Kokoro](https://github.com/hexgrad/kokoro) is a high-quality, natural-sounding neural TTS engine with 28 English voices (American and British accents). VoxCtrl runs Kokoro entirely in Rust: text is phonemised via `espeak-ng`, tokenised against an embedded IPA vocabulary, and synthesised via native ONNX inference (`ort` crate). No Python is required.
 
 **Prerequisites:**
-```bash
-pip install kokoro-onnx
-```
+- `espeak-ng` installed on the system (`apt install espeak-ng` on Debian/Ubuntu)
 
-VoxCtrl invokes a bundled Python helper script (`synthesize.py`) via `python3`. Model files are downloaded from GitHub releases to `~/.local/share/voxctrl/kokoro/`. Audio is output as a WAV file and played via rodio.
+Model files are downloaded from GitHub releases to `~/.local/share/voxctrl/kokoro/`. Audio is played via rodio using the raw PCM output from the ONNX model.
 
 **Model quality levels:**
 
@@ -145,8 +143,6 @@ await invoke('download_kokoro', {
   dataDir: '',
 });
 
-// Check if Python 3 is available
-const hasPython = await invoke<boolean>('check_python3_available');
 ```
 
 ---
@@ -156,7 +152,7 @@ const hasPython = await invoke<boolean>('check_python3_available');
 After synthesis, audio is played using `rodio` (cross-platform):
 
 - **Piper** produces raw 16-bit signed LE PCM; rodio plays it directly via `SamplesBuffer`.
-- **Kokoro** produces a WAV file written to a temp path; rodio decodes and plays it via `Decoder`.
+- **Kokoro** produces raw float32 PCM samples from ONNX inference; samples are converted to i16 and played via `SamplesBuffer` at 24 kHz.
 
 The TTS engine queues requests in a bounded channel (capacity 32). Utterances play sequentially — subsequent calls are queued and played in order without overlapping.
 
@@ -293,20 +289,25 @@ User speaks → transcription → speak_text IPC
                                     │
                          (bounded channel, cap 32)
                                     │
-                         TtsEngineWorker::speak_kokoro()
+                         speak_kokoro()  (pure Rust)
                                     │
-                  ┌─────────────────┴──────────────────────┐
-                  │                                         │
-        find python3                                ensure_kokoro_script()
-                  │                                         │
-        spawn python3 synthesize.py                  writes helper .py
-          model voices voice speed output.wav
-                  │
-          kokoro_onnx.Kokoro.create()    ←── kokoro-onnx Python library
-                  │
-          write WAV to /tmp/voxctrl_kokoro_*.wav
-                  │
-          rodio::Decoder + Sink::sleep_until_end()
-                  │
-          delete temp WAV
+              ┌─────────────────────┼──────────────────────┐
+              │                     │                       │
+    phonemize_espeak()      load_voice_embedding()    ort::Session
+    espeak-ng --ipa -q       NPZ ZIP → NPY row         (lazy init,
+    (subprocess)             [num_tokens, 256]          cached per
+              │                     │                  worker thread)
+              │              kokoro_tokenize()               │
+              └──────────────────── │ ──────────────────────┘
+                                    │
+                          run_kokoro_inference()
+                          input_ids (int64, 1×T)
+                          style     (float32, 1×256)
+                          speed     (float32, 1)
+                                    │
+                          f32 audio samples @ 24 kHz
+                                    │
+                       i16 PCM → rodio::SamplesBuffer
+                                    │
+                          Sink::sleep_until_end()
 ```

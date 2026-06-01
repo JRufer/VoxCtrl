@@ -154,18 +154,14 @@
   let kokoroReady = $state(false);
   let kokoroChecking = $state(false);
   let kokoroDownloading = $state(false);
-  let python3Available = $state<boolean | null>(null);
 
   async function checkKokoroReady() {
     kokoroChecking = true;
     try {
-      [kokoroReady, python3Available] = await Promise.all([
-        invoke<boolean>("check_kokoro_ready", {
-          quality: cfg.tts.kokoro.quality,
-          dataDir: cfg.tts.kokoro.data_dir,
-        }),
-        invoke<boolean>("check_python3_available"),
-      ]);
+      kokoroReady = await invoke<boolean>("check_kokoro_ready", {
+        quality: cfg.tts.kokoro.quality,
+        dataDir: cfg.tts.kokoro.data_dir,
+      });
     } catch (e) {
       console.error("check_kokoro_ready:", e);
       kokoroReady = false;
@@ -211,7 +207,7 @@
 
   // Re-check when switching to Kokoro tab
   $effect(() => {
-    if (cfg.tts.engine === "kokoro" && python3Available === null) {
+    if (cfg.tts.engine === "kokoro" && !kokoroReady && !kokoroChecking) {
       checkKokoroReady();
     }
   });
@@ -356,13 +352,6 @@
 
     <h3>Model Files</h3>
 
-    {#if python3Available === false}
-    <div class="kokoro-warning">
-      ⚠ Python 3 not found. Kokoro requires Python 3 with <code>kokoro-onnx</code> installed.<br/>
-      Run: <code>pip install kokoro-onnx</code>
-    </div>
-    {/if}
-
     <div class="voice-status-container">
       {#if kokoroChecking}
         <span class="status-checking">⏳ Checking model files...</span>
@@ -492,16 +481,6 @@
     font-size: 0.875rem;
     line-height: 1.25rem;
     color: #ef4444;
-  }
-  .kokoro-warning {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #e57373;
-    line-height: 1.6;
-    margin-bottom: 8px;
   }
   .range-input {
     width: 100%;

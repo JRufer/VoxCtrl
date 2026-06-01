@@ -592,7 +592,6 @@ pub fn run() {
             download_voice,
             check_kokoro_ready,
             download_kokoro,
-            check_python3_available,
             check_model_downloaded,
             download_model,
             check_directory_exists,
