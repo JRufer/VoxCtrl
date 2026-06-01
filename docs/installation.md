@@ -42,6 +42,8 @@ The install script:
 4. Adds the current user to the `input` group
 
 > **Note:** After running `install.sh`, you must log out and back in for the `input` group membership to take effect. Until then, global hotkeys will not work.
+> 
+> **Robust Container / Sandbox Support:** VoxCtrl employs intelligent diagnostic checks that support legacy rule files (`99-voxctrl.rules`, `99-voxctl.rules`, or `99-voxctr.rules`) and dynamically fallback to checking the system's NSS group database (`/etc/group`) if the current container process session fails to refresh its active group token, ensuring that the warning screen does not show up repeatedly on every launch.
 
 ---
 

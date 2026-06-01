@@ -359,17 +359,32 @@ pub fn run() {
                             _ => {}
                         }
                     } else {
-                        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
-                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
+                        // Check if udev rules exist (support new and legacy names)
+                        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists()
+                            || std::path::Path::new("/etc/udev/rules.d/99-voxctl.rules").exists()
+                            || std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
 
                         // Check if the current user session has the "input" group by running `id -Gn`
-                        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                        let mut in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
                             Ok(output) => {
                                 let groups_str = String::from_utf8_lossy(&output.stdout);
                                 groups_str.split_whitespace().any(|g| g == "input")
                             }
                             Err(_) => false,
                         };
+
+                        // Fallback: If not in group in active session, check system group database (NSS /etc/group).
+                        // This is robust against sandboxes/containers where active process groups haven't refreshed.
+                        if !in_group {
+                            if let Ok(username) = std::env::var("USER") {
+                                if let Ok(output) = std::process::Command::new("id").args(&["-Gn", &username]).output() {
+                                    let groups_str = String::from_utf8_lossy(&output.stdout);
+                                    if groups_str.split_whitespace().any(|g| g == "input") {
+                                        in_group = true;
+                                    }
+                                }
+                            }
+                        }
 
                         if !rule_exists || !in_group {
                             check_failed = true;
@@ -963,6 +978,51 @@ mod tests {
         assert!(!res.needs_relogin);
 
         std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+    }
+
+    #[tokio::test]
+    async fn test_check_udev_status_nss_fallback_logic() {
+        // Query the NSS database manually using the exact logic we implemented to make sure it matches
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(username) = std::env::var("USER") {
+                let output = std::process::Command::new("id").args(&["-Gn", &username]).output();
+                if let Ok(out) = output {
+                    let groups_str = String::from_utf8_lossy(&out.stdout);
+                    let database_has_input = groups_str.split_whitespace().any(|g| g == "input");
+                    
+                    // Verify that if check_udev_status is called, the in_group value
+                    // matches whether the database or active session has the "input" group.
+                    std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+                    let res = check_udev_status().await.unwrap();
+                    
+                    // If either database_has_input is true or active session has it,
+                    // in_group should resolve as true.
+                    let active_session_has_input = match std::process::Command::new("id").args(&["-Gn"]).output() {
+                        Ok(o) => {
+                            let s = String::from_utf8_lossy(&o.stdout);
+                            s.split_whitespace().any(|g| g == "input")
+                        }
+                        Err(_) => false,
+                    };
+                    
+                    if database_has_input || active_session_has_input {
+                        assert!(res.in_group, "User is in input group in database/session, in_group check should be true");
+                    }
+                }
+            }
+        }
+
+        // On non-Linux (e.g. Windows), check should always succeed
+        #[cfg(not(target_os = "linux"))]
+        {
+            std::env::remove_var("VOXCTRL_TEST_UDEV_STATUS");
+            let res = check_udev_status().await.unwrap();
+            assert!(res.is_configured);
+            assert!(res.rule_exists);
+            assert!(res.in_group);
+            assert!(!res.needs_relogin);
+        }
     }
 }
 

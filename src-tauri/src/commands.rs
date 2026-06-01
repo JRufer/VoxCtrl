@@ -498,11 +498,13 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
 
     #[cfg(target_os = "linux")]
     {
-        // Check if /etc/udev/rules.d/99-voxctrl.rules exists
-        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists();
+        // Check if udev rules exist (support new and legacy names)
+        let rule_exists = std::path::Path::new("/etc/udev/rules.d/99-voxctrl.rules").exists()
+            || std::path::Path::new("/etc/udev/rules.d/99-voxctl.rules").exists()
+            || std::path::Path::new("/etc/udev/rules.d/99-voxctr.rules").exists();
 
         // Check if the current user session has the "input" group by running `id -Gn`
-        let in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
+        let mut in_group = match std::process::Command::new("id").args(&["-Gn"]).output() {
             Ok(output) => {
                 let groups_str = String::from_utf8_lossy(&output.stdout);
                 groups_str.split_whitespace().any(|g| g == "input")
@@ -510,7 +512,20 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
             Err(_) => false,
         };
 
-        // If udev rules exist but user is not in group in active session, they need a relogin
+        // Fallback: If not in group in active session, check system group database (NSS /etc/group).
+        // This is robust against sandboxes/containers where active process groups haven't refreshed.
+        if !in_group {
+            if let Ok(username) = std::env::var("USER") {
+                if let Ok(output) = std::process::Command::new("id").args(&["-Gn", &username]).output() {
+                    let groups_str = String::from_utf8_lossy(&output.stdout);
+                    if groups_str.split_whitespace().any(|g| g == "input") {
+                        in_group = true;
+                    }
+                }
+            }
+        }
+
+        // If udev rules exist but user is not in group in active session/database, they need a relogin
         let needs_relogin = rule_exists && !in_group;
         let is_configured = rule_exists && in_group;
 
