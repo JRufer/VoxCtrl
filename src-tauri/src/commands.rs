@@ -30,6 +30,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
         recording: state.is_recording(),
         processing: state.is_processing(),
         speaking: state.is_speaking(),
+        mcp_recording: state.is_mcp_recording(),
         audio_ready: state.is_audio_ready(),
         word_count: state.total_words(),
         active_target_id,
@@ -42,6 +43,7 @@ pub struct StatusPayload {
     pub recording: bool,
     pub processing: bool,
     pub speaking: bool,
+    pub mcp_recording: bool,
     pub audio_ready: bool,
     pub word_count: u32,
     pub active_target_id: String,
@@ -99,12 +101,16 @@ pub async fn save_config(
         if new_config.tts.enabled {
             let app_handle = app.clone();
             let app_handle_end = app.clone();
+            let state_clone = state.inner().clone();
+            let state_clone_end = state.inner().clone();
             let new_tts = voxctrl_tts::TtsEngineWorker::start(
                 new_config.tts.clone(),
                 Some(std::sync::Arc::new(move || {
+                    state_clone.set_speaking(true);
                     let _ = app_handle.emit("tts-playback-start", ());
                 })),
                 Some(std::sync::Arc::new(move || {
+                    state_clone_end.set_speaking(false);
                     let _ = app_handle_end.emit("tts-playback-end", ());
                 })),
             );

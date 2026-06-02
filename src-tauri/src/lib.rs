@@ -93,6 +93,7 @@ pub fn run() {
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
+        mcp_recording: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
         monitoring: Arc::new(AtomicBool::new(false)),
@@ -393,12 +394,16 @@ pub fn run() {
                             }
                             let app_handle_clone = app_handle.clone();
                             let app_handle_clone_end = app_handle.clone();
+                            let state_clone = state.clone();
+                            let state_clone_end = state.clone();
                             let new_tts = voxctrl_tts::TtsEngineWorker::start(
                                 cfg.tts.clone(),
                                 Some(std::sync::Arc::new(move || {
+                                    state_clone.set_speaking(true);
                                     let _ = app_handle_clone.emit("tts-playback-start", ());
                                 })),
                                 Some(std::sync::Arc::new(move || {
+                                    state_clone_end.set_speaking(false);
                                     let _ = app_handle_clone_end.emit("tts-playback-end", ());
                                 })),
                             );
@@ -568,6 +573,7 @@ pub fn run() {
                     interval.tick().await;
                     let is_recording = state_for_ticker.is_recording();
                     let is_processing = state_for_ticker.is_processing();
+                    let is_speaking = state_for_ticker.is_speaking();
 
                     if let Some(tray) = handle.tray_by_id("main-tray") {
                         if is_processing {
@@ -583,11 +589,16 @@ pub fn run() {
                         }
                     }
 
+                    let is_mcp_recording = state_for_ticker.is_mcp_recording();
+
                     // Toggle dynamic overlay window visibility based on show_overlay configuration
                     let (should_show_overlay, overlay_position, overlay_monitor) = {
                         let cfg = state_for_ticker.config.lock().await;
+                        let show_for_dictation = (is_recording || is_processing) && cfg.data.ui.show_overlay;
+                        let show_for_tts = cfg.data.tts.enabled && cfg.data.tts.response_overlay && is_speaking;
+                        let show_for_mcp = cfg.data.mcp.visual_feedback && is_mcp_recording;
                         (
-                            (is_recording || is_processing) && cfg.data.ui.show_overlay,
+                            show_for_dictation || show_for_tts || show_for_mcp,
                             cfg.data.ui.overlay_position.clone(),
                             cfg.data.ui.overlay_monitor.clone(),
                         )
@@ -638,6 +649,7 @@ pub fn run() {
                         "recording": is_recording,
                         "processing": is_processing,
                         "speaking": state_for_ticker.is_speaking(),
+                        "mcp_recording": is_mcp_recording,
                         "audio_ready": state_for_ticker.is_audio_ready(),
                         "word_count": state_for_ticker.total_words(),
                         "active_target_id": active_target_id,
@@ -698,6 +710,8 @@ impl McpCallbacks for AppState {
                 lt.clear();
             }
 
+            self.set_mcp_recording(true);
+
             // 2. Start recording
             self.set_recording(true);
 
@@ -714,6 +728,8 @@ impl McpCallbacks for AppState {
             while self.is_recording() {
                 sleep(Duration::from_millis(50)).await;
             }
+
+            self.set_mcp_recording(false);
 
             // 5. Wait a short time for inference to finish and populate last_text
             let poll_limit = 60; // 60 * 50ms = 3.0 seconds maximum wait for inference
@@ -858,6 +874,7 @@ mod tests {
             recording: Arc::new(AtomicBool::new(false)),
             processing: Arc::new(AtomicBool::new(false)),
             speaking: Arc::new(AtomicBool::new(false)),
+            mcp_recording: Arc::new(AtomicBool::new(false)),
             audio_ready: Arc::new(AtomicBool::new(false)),
             dynamic_stream: Arc::new(AtomicBool::new(false)),
             monitoring: Arc::new(AtomicBool::new(false)),
@@ -955,6 +972,7 @@ mod tests {
             response_pipe: None,
             tts_engine: "piper".into(),
             tts_voice: None,
+            strip_newlines: false,
         };
 
         let target_b = OutputTarget {
@@ -988,6 +1006,7 @@ mod tests {
             response_pipe: None,
             tts_engine: "piper".into(),
             tts_voice: None,
+            strip_newlines: false,
         };
 
         let targets = vec![target_a, target_b];

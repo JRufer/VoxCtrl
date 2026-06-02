@@ -16,6 +16,8 @@ pub struct AppState {
     pub processing: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
+    /// True while MCP server is actively recording/listening to the microphone
+    pub mcp_recording: Arc<AtomicBool>,
     /// True when dynamic stream has successfully opened and is active (Option A)
     pub audio_ready: Arc<AtomicBool>,
     /// Live sync atomic flag for dynamic stream preference
@@ -136,6 +138,14 @@ impl AppState {
 
     pub fn set_speaking(&self, v: bool) {
         self.speaking.store(v, Ordering::SeqCst);
+    }
+
+    pub fn is_mcp_recording(&self) -> bool {
+        self.mcp_recording.load(Ordering::SeqCst)
+    }
+
+    pub fn set_mcp_recording(&self, v: bool) {
+        self.mcp_recording.store(v, Ordering::SeqCst);
     }
 
     pub fn increment_words(&self, n: u32) {

@@ -30,6 +30,10 @@
       <input type="checkbox" bind:checked={cfg.mcp.server_enabled} onchange={markDirty} />
     </label>
     <label class="field">
+      <span>Visual Feedback</span>
+      <input type="checkbox" bind:checked={cfg.mcp.visual_feedback} onchange={markDirty} />
+    </label>
+    <label class="field">
       <span>Record timeout (seconds)</span>
       <input
         type="number"

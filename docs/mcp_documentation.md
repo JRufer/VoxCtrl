@@ -68,7 +68,8 @@ Add the `mcp` config block to your active `config.json` configuration file locat
 {
   "mcp": {
     "server_enabled": true,
-    "record_timeout": 15.0
+    "record_timeout": 15.0,
+    "visual_feedback": true
   }
 }
 ```
@@ -397,6 +398,7 @@ All TTS settings live in `~/.config/voxctrl/config.json` under the `tts` key (**
 | `tts.response_overlay` | `bool` | `true` | Show speaking overlay while TTS plays |
 | `mcp.server_enabled` | `bool` | `false` | Start the MCP server on launch |
 | `mcp.record_timeout` | `number` | `15.0` | Default recording timeout in seconds |
+| `mcp.visual_feedback` | `bool` | `true` | Show overlay indicator while MCP server is listening to microphone |
 
 ### Available voices
 

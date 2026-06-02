@@ -77,7 +77,8 @@ Full schema with defaults:
   },
   "mcp": {
     "server_enabled": false,
-    "record_timeout": 15.0
+    "record_timeout": 15.0,
+    "visual_feedback": true
   },
   "atspi": {
     "injection": true,
@@ -88,6 +89,7 @@ Full schema with defaults:
 ```
 
 ### `engine` section
+
 
 The engine config is nested into two backend sub-objects.
 
@@ -196,6 +198,7 @@ Example with snippets:
 |---|---|---|---|
 | `server_enabled` | bool | `false` | Start the MCP socket server on launch |
 | `record_timeout` | float | `15.0` | Max seconds for `transcribe_voice` to wait for speech |
+| `visual_feedback` | bool | `true` | Show overlay indicator while MCP server is listening to microphone |
 
 ### `atspi` section
 

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { recording, speaking, status } from "../../stores/status";
+  import { recording, speaking, mcpRecording, status } from "../../stores/status";
   import { config } from "../../stores/config";
   import VoiceCard from "./VoiceCard.svelte";
   import Waveform from "./Waveform.svelte";
@@ -54,6 +54,7 @@
       root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
       root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
       root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
+      root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
       root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
     }
   });
@@ -154,7 +155,18 @@
       {:else if $config.ui.overlay_style !== "none"}
         <VoiceCard recording={$recording} speaking={$speaking} />
       {/if}
-      {/key}
+    {/key}
+    {#if $speaking}
+      <div class="system-response-box">
+        <span class="pulse-dot"></span>
+        <span class="label">System Responding...</span>
+      </div>
+    {:else if $mcpRecording}
+      <div class="system-response-box">
+        <span class="pulse-dot"></span>
+        <span class="label">Recording...</span>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -183,5 +195,47 @@
     pointer-events: none;
     user-select: none;
     overflow: hidden !important;
+  }
+
+  .system-response-box {
+    position: absolute;
+    z-index: 10;
+    width: 260px;
+    height: 64px;
+    background: rgba(239, 68, 68, 0.65);
+    border: 2px solid rgba(239, 68, 68, 0.85);
+    box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3), inset 0 0 12px rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #ffffff;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    backdrop-filter: blur(4px);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .pulse-dot {
+    width: 10px;
+    height: 10px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    animation: flash 1.2s infinite ease-in-out;
+  }
+
+  @keyframes popIn {
+    0% { transform: scale(0.85); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes flash {
+    0%, 100% { opacity: 0.3; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.15); }
   }
 </style>

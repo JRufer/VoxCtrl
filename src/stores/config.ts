@@ -93,6 +93,7 @@ export interface TtsConfig {
 export interface McpConfig {
   server_enabled: boolean;
   record_timeout: number;
+  visual_feedback: boolean;
 }
 
 export interface AtspiConfig {
@@ -164,7 +165,7 @@ const defaultConfig: AppConfig = {
       data_dir: "",
     },
   },
-  mcp: { server_enabled: false, record_timeout: 15.0 },
+  mcp: { server_enabled: false, record_timeout: 15.0, visual_feedback: true },
   atspi: { injection: true, context_prompt: true, auto_code_mode: true },
 };
 

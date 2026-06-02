@@ -26,6 +26,7 @@ interface StatusPayload {
   recording: boolean;
   processing: boolean;
   speaking: boolean;
+  mcp_recording: boolean;
   audio_ready: boolean;
   word_count: number;
   active_target_id: string;
@@ -401,6 +402,7 @@ interface TtsConfig {
 interface McpConfig {
   server_enabled: boolean;  // not "enabled"
   record_timeout: number;
+  visual_feedback: boolean;
 }
 
 interface AtspiConfig {
@@ -489,6 +491,7 @@ interface AppStatus {
   recording: boolean;
   processing: boolean;
   speaking: boolean;
+  mcp_recording: boolean;
   audio_ready?: boolean;
   word_count: number;
   active_target_id?: string;

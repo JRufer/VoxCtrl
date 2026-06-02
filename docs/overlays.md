@@ -1,6 +1,6 @@
 # Overlay UI Guide
 
-VoxCtrl displays a visual overlay while the microphone is active or while TTS is speaking. The overlay is a dedicated, borderless, transparent Tauri window (560×160 px, transparent background, always-on-top, click-through) that renders a Svelte component over whatever application is in focus.
+VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The overlay is a dedicated, borderless, transparent Tauri window (560×160 px, transparent background, always-on-top, click-through) that renders a Svelte component over whatever application is in focus.
 
 ---
 
@@ -123,6 +123,7 @@ VoxCtrl binds high-speed, reactive CSS custom properties directly to the `.overl
 | `--voxctrl-recording` | `0` or `1` | Indication if the microphone is actively recording. |
 | `--voxctrl-processing` | `0` or `1` | Indication if the backend is actively performing inference/thinking. |
 | `--voxctrl-speaking` | `0` or `1` | Indication if the Piper neural TTS voice is speaking. |
+| `--voxctrl-mcp-recording` | `0` or `1` | Indication if the MCP server is actively recording/listening to the microphone. |
 | `--voxctrl-audio-ready` | `0` or `1` | Indication if the audio system is fully initialized. |
 
 #### CSS Usage Example:

@@ -6,6 +6,7 @@ export interface AppStatus {
   recording: boolean;
   processing: boolean;
   speaking: boolean;
+  mcp_recording: boolean;
   audio_ready?: boolean;
   word_count: number;
   active_target_id?: string;
@@ -16,6 +17,7 @@ export const status = writable<AppStatus>({
   recording: false,
   processing: false,
   speaking: false,
+  mcp_recording: false,
   audio_ready: true,
   word_count: 0,
   active_target_id: "default",
@@ -24,6 +26,7 @@ export const status = writable<AppStatus>({
 
 export const recording = derived(status, ($s) => $s.recording);
 export const speaking = derived(status, ($s) => $s.speaking);
+export const mcpRecording = derived(status, ($s) => $s.mcp_recording);
 export const wordCount = derived(status, ($s) => $s.word_count);
 export const activeTargetLabel = derived(status, ($s) => $s.active_target_label ?? "Focused Window");
 
