@@ -159,6 +159,8 @@ pub struct OutputTarget {
     pub send_on_release: bool,
     #[serde(default = "bool_true")]
     pub append_newline: bool,
+    #[serde(default)]
+    pub strip_newlines: bool,
     pub initial_prompt: Option<String>,
 
     #[serde(default)]
@@ -212,6 +214,7 @@ impl OutputTarget {
             mcp_args: None,
             send_on_release: true,
             append_newline: false,
+            strip_newlines: false,
             initial_prompt: None,
             processing: TargetProcessingConfig::default(),
             response_pipe: None,

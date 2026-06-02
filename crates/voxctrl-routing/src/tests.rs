@@ -33,6 +33,7 @@ fn test_mcp_config_roundtrip() {
         mcp_args: Some(serde_json::json!({ "message": "{TEXT}" })),
         send_on_release: true,
         append_newline: false,
+        strip_newlines: false,
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
@@ -141,6 +142,7 @@ async fn test_mcp_delivery_handshake() {
         mcp_args: Some(serde_json::json!({ "text": "{TEXT}" })),
         send_on_release: true,
         append_newline: false,
+        strip_newlines: false,
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
@@ -1002,6 +1004,7 @@ async fn test_mcp_delivery_failure_server_error() {
         mcp_args: Some(serde_json::json!({ "text": "{TEXT}" })),
         send_on_release: true,
         append_newline: false,
+        strip_newlines: false,
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
@@ -1018,4 +1021,55 @@ async fn test_mcp_delivery_failure_server_error() {
     server.await.unwrap();
     let _ = std::fs::remove_file(&socket_path);
 }
+
+#[test]
+fn test_strip_newlines_config_roundtrip() {
+    let temp_dir = std::env::temp_dir().join(format!("voxctrl_strip_nl_test_{}", chrono::Utc::now().timestamp_millis()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let target = OutputTarget {
+        id: "strip_test".into(),
+        label: "Test Strip Newlines".into(),
+        delivery: DeliveryType::Inject,
+        command: None,
+        pipe_path: None,
+        socket_host: None,
+        socket_port: None,
+        socket_unix: None,
+        file_path: None,
+        file_prefix: "".into(),
+        file_timestamp: false,
+        file_mode: "append".into(),
+        dbus_signal: None,
+        http_url: None,
+        http_method: "POST".into(),
+        http_headers: None,
+        http_json_template: None,
+        webhook_url: None,
+        webhook_secret: None,
+        webhook_json_template: None,
+        mcp_path: None,
+        mcp_tool: None,
+        mcp_args: None,
+        send_on_release: true,
+        append_newline: false,
+        strip_newlines: true,
+        initial_prompt: None,
+        processing: Default::default(),
+        response_pipe: None,
+        tts_engine: "piper".into(),
+        tts_voice: None,
+    };
+
+    save_targets(&[target.clone()], &temp_dir).unwrap();
+    let loaded = load_targets(&temp_dir).unwrap();
+
+    assert_eq!(loaded.len(), 1);
+    let loaded_target = &loaded[0];
+    assert_eq!(loaded_target.id, "strip_test");
+    assert!(loaded_target.strip_newlines);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
 

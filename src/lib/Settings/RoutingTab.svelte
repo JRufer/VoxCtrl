@@ -158,6 +158,7 @@
       mcp_args: { text: "{TEXT}" },
       send_on_release: false,
       append_newline: true,
+      strip_newlines: false,
       tts_engine: "None",
       processing: {
         apply_snippets: true,
@@ -871,6 +872,12 @@
             <input type="checkbox" bind:checked={editingTarget.send_on_release} />
             <span>Execute only on physical key release (Hold modes)</span>
           </label>
+          {#if editingTarget.delivery === "inject"}
+            <label class="checkbox-field">
+              <input type="checkbox" bind:checked={editingTarget.strip_newlines} />
+              <span>Strip newlines and carriage returns (Single-line mode)</span>
+            </label>
+          {/if}
 
           {#if editingTarget.processing}
             <label class="checkbox-field">

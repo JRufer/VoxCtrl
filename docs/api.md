@@ -448,6 +448,7 @@ interface OutputTarget {
 
   send_on_release: boolean;   // default: true
   append_newline: boolean;    // default: true
+  strip_newlines: boolean;    // default: false
   initial_prompt?: string;
 
   processing: TargetProcessingConfig;

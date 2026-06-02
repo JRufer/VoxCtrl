@@ -228,6 +228,7 @@ delivery = "inject"
 
 # Text formatting
 append_newline = true         # Default: true
+strip_newlines = false        # Default: false. Replaces newlines with spaces and strips \r (Inject only)
 send_on_release = true        # Default: true
 initial_prompt = ""           # Whisper context prompt override for this target
 

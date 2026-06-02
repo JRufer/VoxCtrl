@@ -49,7 +49,25 @@ pub struct InjectTarget(OutputTarget);
 #[async_trait::async_trait]
 impl DeliveryTarget for InjectTarget {
     async fn deliver(&self, text: &str) -> DeliveryResult {
-        let mut payload = text.to_string();
+        let mut payload = if self.0.strip_newlines {
+            let cleaned = text.replace('\r', "").replace('\n', " ");
+            let mut result = String::new();
+            let mut last_was_space = false;
+            for c in cleaned.chars() {
+                if c == ' ' {
+                    if !last_was_space {
+                        result.push(' ');
+                        last_was_space = true;
+                    }
+                } else {
+                    result.push(c);
+                    last_was_space = false;
+                }
+            }
+            result
+        } else {
+            text.to_string()
+        };
         if self.0.append_newline {
             payload.push('\n');
         }

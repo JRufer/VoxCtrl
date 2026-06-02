@@ -25,6 +25,7 @@ Defined in `~/.config/voxctrl/targets.toml`. Each `[[target]]` block describes o
 | `label` | string | required | Display name in the UI |
 | `delivery` | string | required | Delivery type (see below) |
 | `append_newline` | bool | `true` | Append `\n` after injected text |
+| `strip_newlines` | bool | `false` | Replace newlines (`\n`) with spaces and strip carriage returns (`\r`) (Inject only) |
 | `send_on_release` | bool | `true` | Wait for hotkey release before delivering |
 | `initial_prompt` | string | null | Whisper context prompt override for this target |
 | `processing` | object | (inherit) | Per-target post-processing overrides |

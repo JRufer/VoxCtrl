@@ -39,6 +39,7 @@ export interface OutputTarget {
   mcp_args?: Record<string, any>;
   send_on_release: boolean;
   append_newline: boolean;
+  strip_newlines: boolean;
   initial_prompt?: string;
   processing?: TargetProcessingConfig;
   response_pipe?: string;

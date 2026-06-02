@@ -77,6 +77,8 @@ struct RawTarget {
     send_on_release: bool,
     #[serde(default = "bool_true")]
     append_newline: bool,
+    #[serde(default)]
+    strip_newlines: bool,
     initial_prompt: Option<String>,
     #[serde(default)]
     processing: RawProcessing,
@@ -226,6 +228,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         mcp_args,
         send_on_release: r.send_on_release,
         append_newline: r.append_newline,
+        strip_newlines: r.strip_newlines,
         initial_prompt: r.initial_prompt,
         processing,
         response_pipe: r.response_pipe,
@@ -309,6 +312,7 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
             .and_then(|v| serde_json::from_value(v.clone()).ok()),
         send_on_release: t.send_on_release,
         append_newline: t.append_newline,
+        strip_newlines: t.strip_newlines,
         initial_prompt: t.initial_prompt.clone(),
         processing: RawProcessing {
             noise_suppression: p.noise_suppression,
