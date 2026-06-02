@@ -95,7 +95,12 @@ impl DoubleTapMachine {
             }
             DtState::FirstUp => {
                 if let Some(up) = self.last_up {
-                    if up.elapsed() <= self.deadline {
+                    let elapsed = up.elapsed();
+                    if elapsed < Duration::from_millis(50) {
+                        // Ignore key bounce / simulated repeat press events
+                        return false;
+                    }
+                    if elapsed <= self.deadline {
                         self.state = DtState::SecondDown;
                         self.cancel_timer();
                         return true;
@@ -225,5 +230,22 @@ mod tests {
         }
         // State dropped, cancel should be triggered
         assert!(cancel.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_double_tap_debounce() {
+        let mut machine = DoubleTapMachine::new(Duration::from_millis(300));
+        
+        // First tap: press and release
+        assert!(!machine.on_press());
+        assert!(!machine.on_release());
+        
+        // Immediate second press (e.g. bounce, 10ms later) should be debounced/ignored
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert!(!machine.on_press());
+        
+        // If we wait longer (e.g. 100ms), it should successfully trigger
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(machine.on_press());
     }
 }
