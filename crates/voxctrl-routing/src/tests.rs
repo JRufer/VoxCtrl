@@ -1072,4 +1072,48 @@ fn test_strip_newlines_config_roundtrip() {
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_example_configurations_load() {
+    use crate::loader::load_bindings;
+    let temp_dir = std::env::temp_dir().join(format!("voxctrl_examples_test_{}", chrono::Utc::now().timestamp_millis()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let examples_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+
+    // Test bindings-multi.toml
+    let bindings_src = examples_path.join("bindings-multi.toml");
+    let bindings_dest = temp_dir.join("bindings.toml");
+    std::fs::copy(&bindings_src, &bindings_dest).unwrap();
+    let loaded_bindings = load_bindings(&temp_dir);
+    assert!(loaded_bindings.is_ok(), "Failed to load bindings-multi.toml: {:?}", loaded_bindings.err());
+    let loaded_bindings = loaded_bindings.unwrap();
+    assert!(!loaded_bindings.is_empty(), "bindings-multi.toml was parsed empty");
+
+    // Test targets examples
+    let targets_files = vec![
+        "targets-basic.toml",
+        "targets-multi.toml",
+        "targets-ollama-workflows.toml",
+        "targets-tts-agent.toml",
+    ];
+
+    for file_name in targets_files {
+        let targets_src = examples_path.join(file_name);
+        let targets_dest = temp_dir.join("targets.toml");
+        std::fs::copy(&targets_src, &targets_dest).unwrap();
+        let loaded_targets = load_targets(&temp_dir);
+        assert!(
+            loaded_targets.is_ok(),
+            "Failed to load target config file {}: {:?}",
+            file_name,
+            loaded_targets.err()
+        );
+        let loaded_targets = loaded_targets.unwrap();
+        assert!(!loaded_targets.is_empty(), "Target config {} was parsed empty", file_name);
+    }
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+
 
