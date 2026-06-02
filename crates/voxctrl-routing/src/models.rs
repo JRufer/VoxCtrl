@@ -51,7 +51,7 @@ fn default_tap_ms() -> u32 {
     250
 }
 fn default_hold_threshold_ms() -> u32 {
-    200
+    1000
 }
 
 // ── Delivery types ────────────────────────────────────────────────────────────

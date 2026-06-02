@@ -139,7 +139,7 @@ fn default_tap_ms() -> u32 {
     250
 }
 fn default_hold_ms() -> u32 {
-    200
+    1000
 }
 
 // ── Conversion helpers ────────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             target_id: "default".into(),
             target_ids: vec!["default".into()],
             tap_ms: 250,
-            hold_threshold_ms: 200,
+            hold_threshold_ms: 1000,
             disabled: false,
         },
         HotkeyBinding {
@@ -416,7 +416,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             target_id: "default".into(),
             target_ids: vec!["default".into()],
             tap_ms: 250,
-            hold_threshold_ms: 200,
+            hold_threshold_ms: 1000,
             disabled: false,
         },
     ]

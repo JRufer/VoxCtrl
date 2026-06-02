@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
 
@@ -29,7 +30,8 @@ pub enum GestureKind {
 pub struct BindingState {
     pub binding: HotkeyBinding,
     // Hold
-    pub hold_active: bool,
+    pub hold_active: Arc<AtomicBool>,
+    pub hold_cancel: Option<CancellationToken>,
     // Toggle
     pub toggle_on: bool,
     // Double-tap
@@ -41,9 +43,18 @@ impl BindingState {
         let tap_ms = binding.tap_ms;
         Self {
             binding,
-            hold_active: false,
+            hold_active: Arc::new(AtomicBool::new(false)),
+            hold_cancel: None,
             toggle_on: false,
             double_tap: DoubleTapMachine::new(Duration::from_millis(tap_ms as u64)),
+        }
+    }
+}
+
+impl Drop for BindingState {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.hold_cancel.take() {
+            cancel.cancel();
         }
     }
 }
@@ -166,4 +177,53 @@ pub fn shadowed_by_longer(
         }
     }
     shadowed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use voxctrl_routing::GestureType;
+
+    #[test]
+    fn test_binding_state_hold_init() {
+        let binding = HotkeyBinding {
+            id: "test".to_string(),
+            label: "Test".to_string(),
+            keys: vec!["KEY_LEFTMETA".to_string(), "KEY_SPACE".to_string()],
+            gesture: GestureType::Hold,
+            target_id: "target".to_string(),
+            target_ids: vec!["target".to_string()],
+            tap_ms: 300,
+            hold_threshold_ms: 200,
+            disabled: false,
+        };
+
+        let state = BindingState::new(binding);
+        assert!(!state.hold_active.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(state.hold_cancel.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cancellation_on_drop() {
+        let binding = HotkeyBinding {
+            id: "test".to_string(),
+            label: "Test".to_string(),
+            keys: vec!["KEY_LEFTMETA".to_string(), "KEY_SPACE".to_string()],
+            gesture: GestureType::Hold,
+            target_id: "target".to_string(),
+            target_ids: vec!["target".to_string()],
+            tap_ms: 300,
+            hold_threshold_ms: 200,
+            disabled: false,
+        };
+
+        let cancel = CancellationToken::new();
+        {
+            let mut state = BindingState::new(binding);
+            state.hold_cancel = Some(cancel.clone());
+            assert!(!cancel.is_cancelled());
+        }
+        // State dropped, cancel should be triggered
+        assert!(cancel.is_cancelled());
+    }
 }

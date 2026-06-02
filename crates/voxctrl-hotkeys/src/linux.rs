@@ -8,7 +8,7 @@ use voxctrl_routing::{GestureType, HotkeyBinding};
 
 use crate::{
     gestures::{shadowed_by_longer, BindingState, GestureEvent, GestureKind},
-    GestureSender, ListenerHandle,
+    GestureSender,
 };
 
 pub fn start(
@@ -130,13 +130,28 @@ fn handle_press(
 
         match s.binding.gesture {
             GestureType::Hold => {
-                if !s.hold_active {
-                    s.hold_active = true;
-                    let _ = tx.send(GestureEvent {
-                        binding_id: s.binding.id.clone(),
-                        binding_label: s.binding.label.clone(),
-                        target_id: s.binding.target_ids_string(),
-                        kind: GestureKind::Start,
+                if !s.hold_active.load(std::sync::atomic::Ordering::SeqCst) && s.hold_cancel.is_none() {
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    s.hold_cancel = Some(cancel.clone());
+                    let hold_active = s.hold_active.clone();
+                    let tx = tx.clone();
+                    let binding_id = s.binding.id.clone();
+                    let binding_label = s.binding.label.clone();
+                    let target_id = s.binding.target_ids_string();
+                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = tokio::time::sleep(threshold) => {
+                                hold_active.store(true, std::sync::atomic::Ordering::SeqCst);
+                                let _ = tx.send(GestureEvent {
+                                    binding_id,
+                                    binding_label,
+                                    target_id,
+                                    kind: GestureKind::Start,
+                                });
+                            }
+                            _ = cancel.cancelled() => {}
+                        }
                     });
                 }
             }
@@ -198,8 +213,10 @@ fn handle_release(
 
         match s.binding.gesture {
             GestureType::Hold => {
-                if s.hold_active {
-                    s.hold_active = false;
+                if let Some(cancel) = s.hold_cancel.take() {
+                    cancel.cancel();
+                }
+                if s.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
                     let _ = tx.send(GestureEvent {
                         binding_id: s.binding.id.clone(),
                         binding_label: s.binding.label.clone(),

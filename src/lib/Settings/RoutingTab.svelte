@@ -318,7 +318,7 @@
       target_id: targets[0].id,
       target_ids: [targets[0].id],
       tap_ms: 300,
-      hold_threshold_ms: 500,
+      hold_threshold_ms: 1000,
       disabled: false,
     };
   }
@@ -1032,7 +1032,7 @@
         {#if editingBinding.gesture === "hold"}
           <label class="field morph-section">
             <span>Hold Threshold (ms)</span>
-            <input type="number" bind:value={editingBinding.hold_threshold_ms} placeholder="500" />
+            <input type="number" bind:value={editingBinding.hold_threshold_ms} placeholder="1000" />
             <span class="hint">Minimum duration to keep keys pressed to count as a 'hold'.</span>
           </label>
         {/if}

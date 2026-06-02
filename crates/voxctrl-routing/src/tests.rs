@@ -1115,5 +1115,16 @@ fn test_example_configurations_load() {
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_hold_threshold_default() {
+    use crate::loader::default_bindings;
+    
+    // Test that default bindings have hold threshold set to 1000ms
+    let bindings = default_bindings();
+    for binding in bindings {
+        assert_eq!(binding.hold_threshold_ms, 1000);
+    }
+}
+
 
 
