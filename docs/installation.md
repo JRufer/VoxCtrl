@@ -211,3 +211,10 @@ See [Development Guide](./development.md).
 ### AppImage won't launch
 - Install FUSE: `sudo apt install fuse libfuse2`
 - Or extract and run directly: `./VoxCtrl.AppImage --appimage-extract && squashfs-root/AppRun`
+
+### Debugging & Crash Logs
+If the application crashes, fails to launch, or encounters hardware/model errors, you can check the local startup and error log file:
+- **Location:** `~/.local/share/voxctrl/startup_errors.log`
+- **Privacy:** To protect your privacy, this file **never** records or contains any transcribed speech text or LLM prompts. It only logs system configurations (models loaded, input devices, sample rates) and application/compiler errors.
+- **Submitting Reports:** Please attach this log file when opening issues or submitting crash reports on GitHub to help us diagnose the problem.
+

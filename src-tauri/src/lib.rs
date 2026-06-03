@@ -22,6 +22,7 @@ use crate::{
 mod commands;
 mod state;
 mod default_overlays;
+mod startup_log;
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -63,15 +64,68 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    // Initialise logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "voxctrl=info".parse().unwrap()),
-        )
-        .init();
+    // Initialise logging (console + special warning-free/privacy-safe startup and error file log)
+    use tracing_subscriber::prelude::*;
+    let local_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("voxctrl");
+    let _ = std::fs::create_dir_all(&local_dir);
+    let log_path = local_dir.join("startup_errors.log");
+
+    let file_layer = match startup_log::StartupErrorLayer::new(log_path) {
+        Ok(layer) => Some(layer),
+        Err(e) => {
+            eprintln!("Failed to initialize startup error log file: {e}");
+            None
+        }
+    };
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "voxctrl=info".parse().unwrap());
+
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer());
+
+    if let Some(fl) = file_layer {
+        let _ = registry.with(fl).try_init();
+    } else {
+        let _ = registry.try_init();
+    }
 
     let config = Config::load();
+    
+    // Log the sanitized configuration parameters at startup
+    tracing::info!("=== System Startup Config ===");
+    tracing::info!("Backend choice: {:?}", config.data.engine.backend);
+    tracing::info!("Inference mode: {:?}", config.data.engine.inference_mode);
+    tracing::info!("Whisper model size: {}", config.data.engine.whisper_cpp.model_size);
+    tracing::info!("Whisper device: {}", config.data.engine.whisper_cpp.device);
+    tracing::info!("Whisper threads: {}", config.data.engine.whisper_cpp.threads);
+    tracing::info!("Moonshine model size: {}", config.data.engine.moonshine.model_size);
+    tracing::info!("Moonshine language: {}", config.data.engine.moonshine.language);
+    tracing::info!("VAD threshold: {}", config.data.audio.vad_threshold);
+    tracing::info!("Min silence duration ms: {}", config.data.audio.min_silence_duration_ms);
+    tracing::info!("Noise suppression: {}", config.data.audio.noise_suppression);
+    tracing::info!("Input device index: {:?}", config.data.audio.input_device_index);
+    tracing::info!("Gain: {}", config.data.audio.gain);
+    tracing::info!("Dynamic stream: {}", config.data.audio.dynamic_stream);
+    tracing::info!("TTS enabled: {}", config.data.tts.enabled);
+    tracing::info!("TTS engine: {:?}", config.data.tts.engine);
+    tracing::info!("TTS voice: {}", config.data.tts.voice);
+    tracing::info!("TTS speed: {}", config.data.tts.speed);
+    tracing::info!("TTS GPU: {}", config.data.tts.gpu);
+    tracing::info!("Kokoro voice: {}", config.data.tts.kokoro.voice);
+    tracing::info!("Kokoro quality: {}", config.data.tts.kokoro.quality);
+    tracing::info!("Kokoro speed: {}", config.data.tts.kokoro.speed);
+    tracing::info!("Kokoro prewarm: {}", config.data.tts.kokoro.prewarm);
+    tracing::info!("MCP enabled: {}", config.data.mcp.server_enabled);
+    tracing::info!("MCP record timeout: {}", config.data.mcp.record_timeout);
+    tracing::info!("ATSPI injection: {}", config.data.atspi.injection);
+    tracing::info!("ATSPI context prompt: {}", config.data.atspi.context_prompt);
+    tracing::info!("ATSPI auto code mode: {}", config.data.atspi.auto_code_mode);
+    tracing::info!("=============================");
+
     let cfg_data = Arc::new(config.data.clone());
     let config = Arc::new(Mutex::new(config));
 
@@ -659,6 +713,7 @@ pub fn run() {
                 }
             });
 
+            startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -822,6 +877,56 @@ pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_startup_error_layer_privacy_and_levels() {
+        use tracing_subscriber::prelude::*;
+        use std::io::Read;
+        
+        let temp_dir = tempfile::tempdir().unwrap();
+        let log_path = temp_dir.path().join("test_startup_errors.log");
+        
+        let layer = crate::startup_log::StartupErrorLayer::new(log_path.clone()).unwrap();
+        let subscriber = tracing_subscriber::registry().with(layer);
+        
+        crate::startup_log::STARTUP_COMPLETE.store(false, std::sync::atomic::Ordering::SeqCst);
+        
+        tracing::subscriber::with_default(subscriber, || {
+            // 1. Startup INFO log (should be written)
+            tracing::info!("System startup: device init");
+            
+            // 2. Transcription text (should be blocked by privacy filters)
+            tracing::info!("Received transcription: Hello user");
+            
+            // 3. Spoken text warn (should be blocked by privacy filters)
+            tracing::warn!("Failed to speak the text: Hello user");
+            
+            // 4. Ollama payload error (should be blocked by privacy filters)
+            tracing::error!("Ollama request payload: test prompt");
+            
+            // Transition to post-startup
+            crate::startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
+            
+            // 5. Post-startup INFO log (should be ignored by level filter)
+            tracing::info!("Normal runtime info log");
+            
+            // 6. Post-startup ERROR log (should be written)
+            tracing::error!("System audio device connection lost");
+        });
+        
+        // Read file contents
+        let mut file = std::fs::File::open(log_path).unwrap();
+        let mut content = String::new();
+        file.read_to_string(&mut content).unwrap();
+        
+        // Assertions
+        assert!(content.contains("System startup: device init"));
+        assert!(content.contains("System audio device connection lost"));
+        
+        assert!(!content.contains("Hello user"));
+        assert!(!content.contains("Normal runtime info log"));
+        assert!(!content.contains("Ollama"));
+    }
 
     #[test]
     fn test_calculate_overlay_y() {
