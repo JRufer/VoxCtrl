@@ -59,6 +59,13 @@ Rapid press+release twice within tap_ms ──► START RECORDING
 ```
 Two rapid presses trigger recording. The `tap_ms` field (default 250ms) sets the inter-press window. Distinguishes from accidental single presses.
 
+### `double_tap_hold`
+```
+Double-tap within tap_ms, and keep the key held down on the second tap ──► START RECORDING
+Release the key ──► STOP RECORDING
+```
+Triggers recording when the key is double-tapped and held. Recording continues as long as the key remains held, and stops when released. Enforces `hold_threshold_ms` on the second press to distinguish from a standard double-tap, and has a 2-minute safety timeout.
+
 ### `chord`
 All keys in `keys` must be simultaneously held. Uses the same hold-start / release-stop behavior. Superset-shadowing applies: if another binding's key set is a superset of this one and all its keys are also held, only the longer binding fires.
 

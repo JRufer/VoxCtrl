@@ -207,23 +207,62 @@ fn handle_press(
             GestureType::DoubleTap => {
                 let completed = s.double_tap.on_press();
                 if completed {
-                    if !s.toggle_on {
-                        s.toggle_on = true;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Start,
-                        });
-                    } else {
-                        s.toggle_on = false;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Stop,
-                        });
-                    }
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    s.double_tap_hold_cancel = Some(cancel.clone());
+                    let triggered = s.double_tap_hold_triggered.clone();
+                    triggered.store(false, std::sync::atomic::Ordering::SeqCst);
+                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = tokio::time::sleep(threshold) => {
+                                triggered.store(true, std::sync::atomic::Ordering::SeqCst);
+                            }
+                            _ = cancel.cancelled() => {}
+                        }
+                    });
+                }
+            }
+            GestureType::DoubleTapHold => {
+                let completed = s.double_tap.on_press();
+                if completed {
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    s.double_tap_hold_cancel = Some(cancel.clone());
+                    let active = s.double_tap_hold_active.clone();
+                    active.store(false, std::sync::atomic::Ordering::SeqCst);
+                    let tx = tx.clone();
+                    let binding_id = s.binding.id.clone();
+                    let binding_label = s.binding.label.clone();
+                    let target_id = s.binding.target_ids_string();
+                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = tokio::time::sleep(threshold) => {
+                                active.store(true, std::sync::atomic::Ordering::SeqCst);
+                                let _ = tx.send(GestureEvent {
+                                    binding_id: binding_id.clone(),
+                                    binding_label: binding_label.clone(),
+                                    target_id: target_id.clone(),
+                                    kind: GestureKind::Start,
+                                });
+                                
+                                // Spawn the 2-minute safety timeout
+                                tokio::select! {
+                                    _ = tokio::time::sleep(Duration::from_secs(120)) => {
+                                        if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                                            let _ = tx.send(GestureEvent {
+                                                binding_id,
+                                                binding_label,
+                                                target_id,
+                                                kind: GestureKind::Stop,
+                                            });
+                                        }
+                                    }
+                                    _ = cancel.cancelled() => {}
+                                }
+                            }
+                            _ = cancel.cancelled() => {}
+                        }
+                    });
                 }
             }
             GestureType::Chord => {
@@ -267,7 +306,45 @@ fn handle_release(
                 }
             }
             GestureType::DoubleTap => {
-                s.double_tap.on_release();
+                if s.double_tap.on_release() {
+                    if let Some(cancel) = s.double_tap_hold_cancel.take() {
+                        cancel.cancel();
+                    }
+                    if !s.double_tap_hold_triggered.load(std::sync::atomic::Ordering::SeqCst) {
+                        if !s.toggle_on {
+                            s.toggle_on = true;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Start,
+                            });
+                        } else {
+                            s.toggle_on = false;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Stop,
+                            });
+                        }
+                    }
+                }
+            }
+            GestureType::DoubleTapHold => {
+                if s.double_tap.on_release() {
+                    if let Some(cancel) = s.double_tap_hold_cancel.take() {
+                        cancel.cancel();
+                    }
+                    if s.double_tap_hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Stop,
+                        });
+                    }
+                }
             }
             _ => {}
         }
@@ -414,20 +491,18 @@ mod tests {
         // Sleep to avoid debouncing (50ms)
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        // 3. Second Press (Completes double-tap)
+        // 3. Second Press (Spawns hold timer, does not trigger on press)
         pressed.insert("KEY_LEFTMETA".to_string());
         handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
 
-        // Assert we get GestureKind::Start
+        // 4. Second Release (Quickly released, triggers toggle Start)
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
         let event = rx.recv().await.unwrap();
         assert_eq!(event.binding_id, "test_dt");
         assert_eq!(event.kind, GestureKind::Start);
-
-        // 4. Second Release
-        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
-        pressed.remove("KEY_LEFTMETA");
-        // No Stop event on release (it's a toggle)
-        assert!(rx.try_recv().is_err());
 
         // Sleep to avoid debouncing for the next double-tap
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -446,13 +521,166 @@ mod tests {
         // Sleep to avoid debouncing (50ms)
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        // 7. Fourth Press (Completes second double-tap)
+        // 7. Fourth Press (Spawns hold timer)
         pressed.insert("KEY_LEFTMETA".to_string());
         handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
 
-        // Assert we get GestureKind::Stop
+        // 8. Fourth Release (Quickly released, triggers toggle Stop)
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
         let event = rx.recv().await.unwrap();
         assert_eq!(event.binding_id, "test_dt");
         assert_eq!(event.kind, GestureKind::Stop);
+    }
+
+    #[tokio::test]
+    async fn test_double_tap_hold_gesture_flow() {
+        let (tx, mut rx) = crate::channel();
+        let mut states = vec![make_test_binding("test_dth", GestureType::DoubleTapHold, vec!["KEY_LEFTMETA"])];
+        let mut pressed = HashSet::new();
+
+        // 1. First Press
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
+
+        // 2. First Release
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+        assert!(rx.try_recv().is_err());
+
+        // Sleep to avoid debouncing
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // 3. Second Press (Spawns timer)
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
+
+        // Wait for hold threshold
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        // Assert we get GestureKind::Start
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_dth");
+        assert_eq!(event.kind, GestureKind::Start);
+
+        // 4. Release
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        // Assert we get GestureKind::Stop immediately on release
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_dth");
+        assert_eq!(event.kind, GestureKind::Stop);
+    }
+
+    #[tokio::test]
+    async fn test_double_tap_coexistence_flow() {
+        let (tx, mut rx) = crate::channel();
+        // Coexisting bindings on the same key: DoubleTap (Toggle) and DoubleTapHold
+        let mut states = vec![
+            make_test_binding("dt_toggle", GestureType::DoubleTap, vec!["KEY_LEFTMETA"]),
+            make_test_binding("dt_hold", GestureType::DoubleTapHold, vec!["KEY_LEFTMETA"]),
+        ];
+        let mut pressed = HashSet::new();
+
+        // Scenario A: Quick release double tap (should trigger dt_toggle)
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        // Release quickly (before 100ms threshold)
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        // dt_toggle should trigger Start
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "dt_toggle");
+        assert_eq!(event.kind, GestureKind::Start);
+        // dt_hold should not trigger
+        assert!(rx.try_recv().is_err());
+
+        // Sleep to avoid debouncing for the next test
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        // Reset toggled state for dt_toggle
+        states[0].toggle_on = false;
+
+        // Scenario B: Held double tap (should trigger dt_hold)
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        // Wait beyond 100ms threshold
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        // dt_hold should trigger Start
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "dt_hold");
+        assert_eq!(event.kind, GestureKind::Start);
+        // dt_toggle should not trigger
+        assert!(rx.try_recv().is_err());
+
+        // Now release
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        // dt_hold should trigger Stop
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "dt_hold");
+        assert_eq!(event.kind, GestureKind::Stop);
+        // dt_toggle should not trigger on release either
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_double_tap_hold_safety_timeout() {
+        let (tx, mut rx) = crate::channel();
+        let mut states = vec![make_test_binding("test_dth", GestureType::DoubleTapHold, vec!["KEY_LEFTMETA"])];
+        let mut pressed = HashSet::new();
+
+        // Double tap sequence
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+        
+        // Wait 100ms (virtual time)
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+
+        // Wait beyond threshold (100ms virtual time)
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        // Start event should fire
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_dth");
+        assert_eq!(event.kind, GestureKind::Start);
+
+        // Advance virtual time by 121 seconds (safety timeout is 120s)
+        tokio::time::sleep(std::time::Duration::from_secs(121)).await;
+
+        // Stop event should fire automatically due to safety timeout
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_dth");
+        assert_eq!(event.kind, GestureKind::Stop);
+
+        // When the user eventually releases, no further stop event should fire
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+        assert!(rx.try_recv().is_err());
     }
 }

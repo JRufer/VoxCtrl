@@ -131,24 +131,64 @@ fn handle_press(
                 }
             }
             GestureType::DoubleTap => {
-                if s.double_tap.on_press() {
-                    if !s.toggle_on {
-                        s.toggle_on = true;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Start,
-                        });
-                    } else {
-                        s.toggle_on = false;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Stop,
-                        });
-                    }
+                let completed = s.double_tap.on_press();
+                if completed {
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    s.double_tap_hold_cancel = Some(cancel.clone());
+                    let triggered = s.double_tap_hold_triggered.clone();
+                    triggered.store(false, std::sync::atomic::Ordering::SeqCst);
+                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = tokio::time::sleep(threshold) => {
+                                triggered.store(true, std::sync::atomic::Ordering::SeqCst);
+                            }
+                            _ = cancel.cancelled() => {}
+                        }
+                    });
+                }
+            }
+            GestureType::DoubleTapHold => {
+                let completed = s.double_tap.on_press();
+                if completed {
+                    let cancel = tokio_util::sync::CancellationToken::new();
+                    s.double_tap_hold_cancel = Some(cancel.clone());
+                    let active = s.double_tap_hold_active.clone();
+                    active.store(false, std::sync::atomic::Ordering::SeqCst);
+                    let tx = tx.clone();
+                    let binding_id = s.binding.id.clone();
+                    let binding_label = s.binding.label.clone();
+                    let target_id = s.binding.target_ids_string();
+                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = tokio::time::sleep(threshold) => {
+                                active.store(true, std::sync::atomic::Ordering::SeqCst);
+                                let _ = tx.send(GestureEvent {
+                                    binding_id: binding_id.clone(),
+                                    binding_label: binding_label.clone(),
+                                    target_id: target_id.clone(),
+                                    kind: GestureKind::Start,
+                                });
+                                
+                                // Spawn the 2-minute safety timeout
+                                tokio::select! {
+                                    _ = tokio::time::sleep(Duration::from_secs(120)) => {
+                                        if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                                            let _ = tx.send(GestureEvent {
+                                                binding_id,
+                                                binding_label,
+                                                target_id,
+                                                kind: GestureKind::Stop,
+                                            });
+                                        }
+                                    }
+                                    _ = cancel.cancelled() => {}
+                                }
+                            }
+                            _ = cancel.cancelled() => {}
+                        }
+                    });
                 }
             }
             GestureType::Chord => {
@@ -189,7 +229,45 @@ fn handle_release(
                 }
             }
             GestureType::DoubleTap => {
-                s.double_tap.on_release();
+                if s.double_tap.on_release() {
+                    if let Some(cancel) = s.double_tap_hold_cancel.take() {
+                        cancel.cancel();
+                    }
+                    if !s.double_tap_hold_triggered.load(std::sync::atomic::Ordering::SeqCst) {
+                        if !s.toggle_on {
+                            s.toggle_on = true;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Start,
+                            });
+                        } else {
+                            s.toggle_on = false;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Stop,
+                            });
+                        }
+                    }
+                }
+            }
+            GestureType::DoubleTapHold => {
+                if s.double_tap.on_release() {
+                    if let Some(cancel) = s.double_tap_hold_cancel.take() {
+                        cancel.cancel();
+                    }
+                    if s.double_tap_hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Stop,
+                        });
+                    }
+                }
             }
             _ => {}
         }

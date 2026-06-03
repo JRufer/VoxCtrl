@@ -339,6 +339,7 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
     let gesture = match r.gesture.as_str() {
         "toggle" => GestureType::Toggle,
         "double_tap" => GestureType::DoubleTap,
+        "double_tap_hold" => GestureType::DoubleTapHold,
         "chord" => GestureType::Chord,
         _ => GestureType::Hold,
     };
@@ -368,6 +369,7 @@ fn binding_to_raw(b: &HotkeyBinding) -> RawBinding {
     let gesture = match b.gesture {
         GestureType::Toggle => "toggle",
         GestureType::DoubleTap => "double_tap",
+        GestureType::DoubleTapHold => "double_tap_hold",
         GestureType::Chord => "chord",
         GestureType::Hold => "hold",
     };

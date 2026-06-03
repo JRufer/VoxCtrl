@@ -119,7 +119,8 @@
   function gestureLabel(g: string) {
     const map: Record<string, string> = {
       hold: "Hold Keys to Talk", toggle: "Tap to Start / Stop",
-      double_tap: "Double-Tap to Record", chord: "Key Chord Combo",
+      double_tap: "Double-Tap to Record", double_tap_hold: "Double-Tap & Hold to Record",
+      chord: "Key Chord Combo",
     };
     return map[g] ?? g;
   }
@@ -1024,12 +1025,13 @@
             <option value="hold">Hold keys to dictate (Release to transcribe)</option>
             <option value="toggle">Tap once to start recording, tap again to finish</option>
             <option value="double_tap">Double-tap hotkey to trigger recording</option>
+            <option value="double_tap_hold">Double-tap & hold keys to dictate (Release to transcribe)</option>
             <option value="chord">Chord combo (Held base keys + sub key)</option>
           </select>
         </label>
 
         <!-- Timings dynamic displays -->
-        {#if editingBinding.gesture === "hold"}
+        {#if editingBinding.gesture === "hold" || editingBinding.gesture === "double_tap_hold"}
           <label class="field morph-section">
             <span>Hold Threshold (ms)</span>
             <input type="number" bind:value={editingBinding.hold_threshold_ms} placeholder="1000" />
@@ -1037,7 +1039,7 @@
           </label>
         {/if}
 
-        {#if editingBinding.gesture === "double_tap"}
+        {#if editingBinding.gesture === "double_tap" || editingBinding.gesture === "double_tap_hold"}
           <label class="field morph-section">
             <span>Double-Tap Interval (ms)</span>
             <input type="number" bind:value={editingBinding.tap_ms} placeholder="300" />

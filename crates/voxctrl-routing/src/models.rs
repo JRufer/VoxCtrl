@@ -10,6 +10,7 @@ pub enum GestureType {
     Hold,
     Toggle,
     DoubleTap,
+    DoubleTapHold,
     Chord,
 }
 

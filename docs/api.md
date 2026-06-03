@@ -479,7 +479,7 @@ interface HotkeyBinding {
   id: string;
   label: string;
   keys: string[];
-  gesture: "hold" | "toggle" | "double_tap" | "chord";
+  gesture: "hold" | "toggle" | "double_tap" | "double_tap_hold" | "chord";
   target_id: string;
   target_ids: string[];
   tap_ms: number;           // default: 250

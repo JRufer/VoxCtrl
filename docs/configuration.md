@@ -338,6 +338,15 @@ keys = ["KEY_F12"]
 gesture = "double_tap"
 tap_ms = 250                   # Default: 250ms inter-tap window
 target_ids = ["code_editor"]
+
+[[binding]]
+id = "double_tap_hold_dictate"
+label = "Double-Tap & Hold to Dictate"
+keys = ["KEY_LEFTMETA"]
+gesture = "double_tap_hold"
+tap_ms = 250
+hold_threshold_ms = 200        # Hold threshold on the second tap
+target_ids = ["default"]
 ```
 
 ### Field reference
@@ -347,7 +356,7 @@ target_ids = ["code_editor"]
 | `id` | string | Yes | | Unique identifier |
 | `label` | string | Yes | `""` | Display name |
 | `keys` | string[] | Yes | | Key names (evdev format) |
-| `gesture` | string | Yes | | `"hold"`, `"toggle"`, `"double_tap"`, or `"chord"` |
+| `gesture` | string | Yes | | `"hold"`, `"toggle"`, `"double_tap"`, `"double_tap_hold"`, or `"chord"` |
 | `target_ids` | string[] | Yes | | Ordered list of target IDs to route to |
 | `target_id` | string | No | | Single target (legacy; use `target_ids`) |
 | `hold_threshold_ms` | integer | No | `200` | Min hold duration in ms for hold gesture |

@@ -239,7 +239,7 @@ Defined in `~/.config/voxctrl/bindings.toml`. Each `[[binding]]` block maps a ke
 | `id` | string | required | Unique identifier |
 | `label` | string | `""` | Display name in UI |
 | `keys` | string[] | required | Key names (evdev format on Linux) |
-| `gesture` | string | required | `"hold"`, `"toggle"`, `"double_tap"`, or `"chord"` |
+| `gesture` | string | required | `"hold"`, `"toggle"`, `"double_tap"`, `"double_tap_hold"`, or `"chord"` |
 | `target_ids` | string[] | required | Ordered list of targets to route to |
 | `target_id` | string | | Single target (legacy; resolved if `target_ids` is empty) |
 | `hold_threshold_ms` | integer | `200` | Minimum hold duration in ms |
@@ -253,6 +253,7 @@ Defined in `~/.config/voxctrl/bindings.toml`. Each `[[binding]]` block maps a ke
 | `hold` | Recording starts on press, stops on release |
 | `toggle` | First press starts, second press stops |
 | `double_tap` | Two rapid presses within `tap_ms` trigger a toggle session |
+| `double_tap_hold` | Double-tap and keep held on the second press to record, release to stop |
 | `chord` | All keys must be pressed simultaneously (superset-shadowing applies) |
 
 ### Key Names (evdev format)

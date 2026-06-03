@@ -1,8 +1,9 @@
 use std::{
     collections::HashSet,
     sync::{Arc, atomic::AtomicBool},
-    time::{Duration, Instant},
+    time::Duration,
 };
+use tokio::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 use voxctrl_routing::HotkeyBinding;
@@ -36,6 +37,10 @@ pub struct BindingState {
     pub toggle_on: bool,
     // Double-tap
     pub double_tap: DoubleTapMachine,
+    // Double-tap hold
+    pub double_tap_hold_active: Arc<AtomicBool>,
+    pub double_tap_hold_cancel: Option<CancellationToken>,
+    pub double_tap_hold_triggered: Arc<AtomicBool>,
 }
 
 impl BindingState {
@@ -47,6 +52,9 @@ impl BindingState {
             hold_cancel: None,
             toggle_on: false,
             double_tap: DoubleTapMachine::new(Duration::from_millis(tap_ms as u64)),
+            double_tap_hold_active: Arc::new(AtomicBool::new(false)),
+            double_tap_hold_cancel: None,
+            double_tap_hold_triggered: Arc::new(AtomicBool::new(false)),
         }
     }
 }
