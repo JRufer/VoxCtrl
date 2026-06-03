@@ -132,12 +132,23 @@ fn handle_press(
             }
             GestureType::DoubleTap => {
                 if s.double_tap.on_press() {
-                    let _ = tx.send(GestureEvent {
-                        binding_id: s.binding.id.clone(),
-                        binding_label: s.binding.label.clone(),
-                        target_id: s.binding.target_ids_string(),
-                        kind: GestureKind::Start,
-                    });
+                    if !s.toggle_on {
+                        s.toggle_on = true;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Start,
+                        });
+                    } else {
+                        s.toggle_on = false;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Stop,
+                        });
+                    }
                 }
             }
             GestureType::Chord => {

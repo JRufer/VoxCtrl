@@ -248,4 +248,62 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(machine.on_press());
     }
+
+    #[tokio::test]
+    async fn test_double_tap_toggle_state() {
+        let binding = HotkeyBinding {
+            id: "test".to_string(),
+            label: "Test".to_string(),
+            keys: vec!["KEY_LEFTCTRL".to_string()],
+            gesture: GestureType::DoubleTap,
+            target_id: "target".to_string(),
+            target_ids: vec!["target".to_string()],
+            tap_ms: 300,
+            hold_threshold_ms: 200,
+            disabled: false,
+        };
+
+        let mut state = BindingState::new(binding);
+        assert!(!state.toggle_on);
+        
+        // Simulating the flow of double-tap press and release
+        // First press:
+        assert!(!state.double_tap.on_press());
+        assert!(!state.toggle_on);
+        
+        // First release:
+        assert!(!state.double_tap.on_release());
+        assert!(!state.toggle_on);
+        
+        // Sleep to avoid debouncing (needs > 50ms)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Second press (completed double tap):
+        assert!(state.double_tap.on_press());
+        // Since it's completed, in handle_press we would toggle:
+        state.toggle_on = !state.toggle_on;
+        assert!(state.toggle_on);
+        
+        // Second release:
+        assert!(state.double_tap.on_release());
+        // State machine resets to Idle, but toggle_on remains true
+        assert!(state.toggle_on);
+        
+        // Sleep to avoid debouncing for the next double-tap sequence
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Next double tap:
+        // First press:
+        assert!(!state.double_tap.on_press());
+        // First release:
+        assert!(!state.double_tap.on_release());
+
+        // Sleep to avoid debouncing
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Second press (completed double tap):
+        assert!(state.double_tap.on_press());
+        state.toggle_on = !state.toggle_on;
+        assert!(!state.toggle_on); // Toggled off!
+    }
 }
