@@ -197,6 +197,7 @@ pub fn run() {
             target_ids: vec![],
             tap_ms: 250,
             hold_threshold_ms: 0,
+            subkey: None,
             disabled: false,
         });
     }

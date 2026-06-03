@@ -67,7 +67,18 @@ Release the key ──► STOP RECORDING
 Triggers recording when the key is double-tapped and held. Recording continues as long as the key remains held, and stops when released. Enforces `hold_threshold_ms` on the second press to distinguish from a standard double-tap, and has a 2-minute safety timeout.
 
 ### `chord`
-All keys in `keys` must be simultaneously held. Uses the same hold-start / release-stop behavior. Superset-shadowing applies: if another binding's key set is a superset of this one and all its keys are also held, only the longer binding fires.
+```
+Base Keys held down ──► Wait for Subkey press
+Subkey pressed      ──► START RECORDING (GestureKind::Start)
+Any Base Key released ──► STOP RECORDING  (GestureKind::Stop)
+```
+A split configuration where you configure:
+1. **Base Combo**: One or more keys that must be held down simultaneously (e.g. `KEY_LEFTCTRL` and `KEY_LEFTALT`).
+2. **Subkey Trigger**: A single key pressed once base keys are held (e.g. `KEY_SPACE`).
+
+Recording starts immediately when the subkey trigger is pressed while the base keys are held. Recording continues as long as you keep holding the base keys, and stops immediately when you release **any** of the base keys. Releasing the subkey itself does not stop recording.
+
+This is highly useful for advanced shortcut patterns without causing desktop keyboard layout or application conflicts.
 
 ---
 

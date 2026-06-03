@@ -484,6 +484,7 @@ interface HotkeyBinding {
   target_ids: string[];
   tap_ms: number;           // default: 250
   hold_threshold_ms: number;// default: 200
+  subkey?: string;          // Optional subkey trigger for chord gesture
   disabled: boolean;
 }
 

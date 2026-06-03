@@ -149,6 +149,24 @@ fn handle_press(
         if s.binding.disabled || shadowed.contains(&s.binding.id) {
             continue;
         }
+
+        if s.binding.gesture == GestureType::Chord {
+            if let Some(ref subkey) = s.binding.subkey {
+                if key == subkey && s.binding.keys.iter().all(|k| pressed.contains(k)) {
+                    if !s.chord_active {
+                        s.chord_active = true;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Start,
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
         // Only handle if this key is part of the binding and all binding keys
         // are pressed.
         if !s.binding.keys.contains(&key.to_string()) {
@@ -346,6 +364,17 @@ fn handle_release(
                     }
                 }
             }
+            GestureType::Chord => {
+                if s.chord_active {
+                    s.chord_active = false;
+                    let _ = tx.send(GestureEvent {
+                        binding_id: s.binding.id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
+                        kind: GestureKind::Stop,
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -405,6 +434,27 @@ mod tests {
             target_ids: vec!["target".to_string()],
             tap_ms: 250,
             hold_threshold_ms: 100, // short threshold for testing
+            subkey: None,
+            disabled: false,
+        })
+    }
+
+    fn make_test_binding_with_subkey(
+        id: &str,
+        gesture: GestureType,
+        keys: Vec<&str>,
+        subkey: Option<&str>,
+    ) -> BindingState {
+        BindingState::new(HotkeyBinding {
+            id: id.to_string(),
+            label: "Test Label".to_string(),
+            keys: keys.into_iter().map(String::from).collect(),
+            gesture,
+            target_id: "target".to_string(),
+            target_ids: vec!["target".to_string()],
+            tap_ms: 250,
+            hold_threshold_ms: 100,
+            subkey: subkey.map(String::from),
             disabled: false,
         })
     }
@@ -683,4 +733,63 @@ mod tests {
         pressed.remove("KEY_LEFTMETA");
         assert!(rx.try_recv().is_err());
     }
+
+    #[tokio::test]
+    async fn test_chord_gesture_flow() {
+        let (tx, mut rx) = crate::channel();
+        let mut states = vec![make_test_binding_with_subkey(
+            "test_chord",
+            GestureType::Chord,
+            vec!["KEY_LEFTCTRL", "KEY_LEFTALT"],
+            Some("KEY_C"),
+        )];
+        let mut pressed = HashSet::new();
+
+        // 1. Press and hold base key 1
+        pressed.insert("KEY_LEFTCTRL".to_string());
+        handle_press("KEY_LEFTCTRL", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
+
+        // 2. Press and hold base key 2
+        pressed.insert("KEY_LEFTALT".to_string());
+        handle_press("KEY_LEFTALT", &mut states, &pressed, &tx);
+        assert!(rx.try_recv().is_err());
+
+        // 3. Press subkey (should trigger chord Start)
+        pressed.insert("KEY_C".to_string());
+        handle_press("KEY_C", &mut states, &pressed, &tx);
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_chord");
+        assert_eq!(event.kind, GestureKind::Start);
+
+        // 4. Release subkey (Chord does not emit Stop, assert channel is empty)
+        handle_release("KEY_C", &mut states, &pressed, &tx);
+        pressed.remove("KEY_C");
+        assert!(rx.try_recv().is_err());
+
+        // 5. Release one of the base keys (should trigger Stop since it's a chord release)
+        handle_release("KEY_LEFTALT", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTALT");
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_chord");
+        assert_eq!(event.kind, GestureKind::Stop);
+
+        // 6. Press base keys and subkey again to verify we can trigger it a second time
+        pressed.insert("KEY_LEFTALT".to_string());
+        handle_press("KEY_LEFTALT", &mut states, &pressed, &tx);
+        
+        pressed.insert("KEY_C".to_string());
+        handle_press("KEY_C", &mut states, &pressed, &tx);
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_chord");
+        assert_eq!(event.kind, GestureKind::Start);
+
+        // 7. Release one of the base keys again to stop it
+        handle_release("KEY_LEFTCTRL", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTCTRL");
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.binding_id, "test_chord");
+        assert_eq!(event.kind, GestureKind::Stop);
+    }
 }
+

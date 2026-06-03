@@ -31,6 +31,8 @@ pub struct HotkeyBinding {
     #[serde(default)]
     pub label: String,
     #[serde(default)]
+    pub subkey: Option<String>,
+    #[serde(default)]
     pub disabled: bool,
 }
 

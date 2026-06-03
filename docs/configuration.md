@@ -347,6 +347,14 @@ gesture = "double_tap_hold"
 tap_ms = 250
 hold_threshold_ms = 200        # Hold threshold on the second tap
 target_ids = ["default"]
+
+[[binding]]
+id = "chord_dictation"
+label = "Chord Dictation"
+keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA"]
+subkey = "KEY_Z"
+gesture = "chord"
+target_ids = ["default"]
 ```
 
 ### Field reference
@@ -355,11 +363,12 @@ target_ids = ["default"]
 |---|---|---|---|---|
 | `id` | string | Yes | | Unique identifier |
 | `label` | string | Yes | `""` | Display name |
-| `keys` | string[] | Yes | | Key names (evdev format) |
+| `keys` | string[] | Yes | | Key names (evdev format). For chord gestures, this defines the base combo keys. |
+| `subkey` | string | No | | Trigger key for chord gestures (e.g. `"KEY_Z"`). Pressed after base keys are held. |
 | `gesture` | string | Yes | | `"hold"`, `"toggle"`, `"double_tap"`, `"double_tap_hold"`, or `"chord"` |
 | `target_ids` | string[] | Yes | | Ordered list of target IDs to route to |
 | `target_id` | string | No | | Single target (legacy; use `target_ids`) |
-| `hold_threshold_ms` | integer | No | `200` | Min hold duration in ms for hold gesture |
+| `hold_threshold_ms` | integer | No | `200` | Min hold duration in ms for hold / double-tap-hold gesture |
 | `tap_ms` | integer | No | `250` | Double-tap inter-press window in ms |
 | `disabled` | bool | No | `false` | Disable without deleting |
 

@@ -41,6 +41,8 @@ pub struct BindingState {
     pub double_tap_hold_active: Arc<AtomicBool>,
     pub double_tap_hold_cancel: Option<CancellationToken>,
     pub double_tap_hold_triggered: Arc<AtomicBool>,
+    // Chord
+    pub chord_active: bool,
 }
 
 impl BindingState {
@@ -55,6 +57,7 @@ impl BindingState {
             double_tap_hold_active: Arc::new(AtomicBool::new(false)),
             double_tap_hold_cancel: None,
             double_tap_hold_triggered: Arc::new(AtomicBool::new(false)),
+            chord_active: false,
         }
     }
 }
@@ -208,6 +211,7 @@ mod tests {
             target_ids: vec!["target".to_string()],
             tap_ms: 300,
             hold_threshold_ms: 200,
+            subkey: None,
             disabled: false,
         };
 
@@ -227,6 +231,7 @@ mod tests {
             target_ids: vec!["target".to_string()],
             tap_ms: 300,
             hold_threshold_ms: 200,
+            subkey: None,
             disabled: false,
         };
 
@@ -268,6 +273,7 @@ mod tests {
             target_ids: vec!["target".to_string()],
             tap_ms: 300,
             hold_threshold_ms: 200,
+            subkey: None,
             disabled: false,
         };
 

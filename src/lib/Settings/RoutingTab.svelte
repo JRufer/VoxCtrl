@@ -14,7 +14,7 @@
   let originalTargetId = $state<string | null>(null);
   let editingBinding = $state<HotkeyBinding | null>(null);
   let isEditingBindingNew = $state(false);
-  let isRecordingKeys = $state(false);
+  let recordingTarget = $state<"keys" | "subkey" | null>(null);
   let confirmDeleteTargetId = $state<string | null>(null);
   let confirmDeleteBindingId = $state<string | null>(null);
 
@@ -320,6 +320,7 @@
       target_ids: [targets[0].id],
       tap_ms: 300,
       hold_threshold_ms: 1000,
+      subkey: "",
       disabled: false,
     };
   }
@@ -364,6 +365,10 @@
       alert("Please capture at least one hotkey before saving.");
       return;
     }
+    if (editingBinding.gesture === "chord" && (!editingBinding.subkey || editingBinding.subkey.trim() === "")) {
+      alert("Please capture a subkey trigger for the chord combo before saving.");
+      return;
+    }
     if (editingBinding.target_ids && editingBinding.target_ids.length > 0) {
       // Clean up empty entries
       editingBinding.target_ids = editingBinding.target_ids.filter(id => id.trim() !== "");
@@ -393,7 +398,7 @@
       bindings = bindings.map(b => b.id === editingBinding!.id ? editingBinding! : b);
     }
     editingBinding = null;
-    isRecordingKeys = false;
+    recordingTarget = null;
     await persistBindings();
   }
 
@@ -417,6 +422,9 @@
     if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
     if (codeUpper === "DELETE") return "KEY_DELETE";
 
+    if (/^KEY[A-Z]$/.test(codeUpper)) {
+      return `KEY_${codeUpper.slice(3)}`;
+    }
     if (codeUpper.startsWith("KEY")) return codeUpper;
     if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
     if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
@@ -429,44 +437,48 @@
   let currentlyPressedKeys = $state<string[]>([]);
 
   function handleRecordKeyDown(e: KeyboardEvent) {
-    if (!isRecordingKeys || !editingBinding) return;
+    if (!recordingTarget || !editingBinding) return;
     e.preventDefault();
     e.stopPropagation();
 
     const evdevKey = mapBrowserKeyToEvdev(e.key, e.code);
-    if (!currentlyPressedKeys.includes(evdevKey)) {
-      currentlyPressedKeys = [...currentlyPressedKeys, evdevKey];
-    }
-    // Escape triggers browser blur before keyup fires, so commit immediately
-    // on keydown for single-key combos where Escape is the key pressed.
-    // For multi-key combos, keyup still handles commit as normal.
-    if (e.key === "Escape") {
-      editingBinding.keys = [...currentlyPressedKeys];
-      currentlyPressedKeys = [];
-      isRecordingKeys = false;
+    if (recordingTarget === "keys") {
+      if (!currentlyPressedKeys.includes(evdevKey)) {
+        currentlyPressedKeys = [...currentlyPressedKeys, evdevKey];
+      }
+      // Escape triggers browser blur before keyup fires, so commit immediately
+      if (e.key === "Escape") {
+        editingBinding.keys = [...currentlyPressedKeys];
+        currentlyPressedKeys = [];
+        recordingTarget = null;
+      }
+    } else if (recordingTarget === "subkey") {
+      editingBinding.subkey = evdevKey;
+      recordingTarget = null;
     }
   }
 
   function handleRecordKeyUp(e: KeyboardEvent) {
-    if (!isRecordingKeys || !editingBinding) return;
+    if (!recordingTarget || !editingBinding) return;
     e.preventDefault();
     e.stopPropagation();
 
-    if (currentlyPressedKeys.length > 0) {
-      editingBinding.keys = [...currentlyPressedKeys];
+    if (recordingTarget === "keys") {
+      if (currentlyPressedKeys.length > 0) {
+        editingBinding.keys = [...currentlyPressedKeys];
+      }
+      currentlyPressedKeys = [];
+      recordingTarget = null; // Finish capture on release
     }
-    currentlyPressedKeys = [];
-    isRecordingKeys = false; // Finish capture on release
   }
 
   function handleRecordKeyBlur() {
-    // Safety net: if blur fires while we have pending keys (e.g. Escape blur race),
-    // commit whatever was captured rather than discarding it silently.
-    if (currentlyPressedKeys.length > 0 && editingBinding) {
+    if (!recordingTarget) return;
+    if (recordingTarget === "keys" && currentlyPressedKeys.length > 0 && editingBinding) {
       editingBinding.keys = [...currentlyPressedKeys];
       currentlyPressedKeys = [];
     }
-    isRecordingKeys = false;
+    recordingTarget = null;
   }
 </script>
 
@@ -567,6 +579,10 @@
                 {#each b.keys as k}
                   <kbd>{k.replace("KEY_", "")}</kbd>
                 {/each}
+                {#if b.gesture === "chord" && b.subkey}
+                  <span style="color: rgba(255, 255, 255, 0.4); font-weight: bold; margin: 0 4px; align-self: center;">＋</span>
+                  <kbd style="border-color: var(--accent2); color: var(--accent2); font-weight: bold;">{b.subkey.replace("KEY_", "")}</kbd>
+                {/if}
               </div>
               <span class="badge gesture">{b.gesture}</span>
             </div>
@@ -960,7 +976,7 @@
     <div class="modal glass animate-fade-in">
       <div class="modal-header">
         <h3>{isEditingBindingNew ? "Create Hotkey Binding" : "Edit Hotkey Binding"}</h3>
-        <button class="close-btn" onclick={() => { editingBinding = null; isRecordingKeys = false; }}>✕</button>
+        <button class="close-btn" onclick={() => { editingBinding = null; recordingTarget = null; }}>✕</button>
       </div>
       <div class="modal-body">
         <label class="field">
@@ -1048,52 +1064,96 @@
         {/if}
 
         <!-- Premium Hotkey Recording Widget -->
-        <div class="border-t border-white/5 pt-[14px] flex flex-col gap-2">
-          <h5 class="mb-1 text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">Hotkey Keybind Selection</h5>
-          <div
-            class={[
-              "border-2 rounded-desktop p-6 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[80px]",
-              isRecordingKeys
-                ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
-                : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
-            ].join(" ")}
-            tabindex="0"
-            role="button"
-            aria-label="Hotkey recorder input"
-            onclick={() => isRecordingKeys = true}
-            onfocus={() => isRecordingKeys = true}
-            onblur={handleRecordKeyBlur}
-            onkeydown={handleRecordKeyDown}
-            onkeyup={handleRecordKeyUp}
-          >
-            {#if isRecordingKeys}
-              <div class="flex items-center gap-[10px]">
-                <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
-                <span class="text-[13px] font-semibold text-accent-blue">
-                  {currentlyPressedKeys.length > 0
-                    ? currentlyPressedKeys.join(" + ").replace(/KEY_/g, "")
-                    : "Press your physical shortcut combination now..."}
+        <div class="border-t border-white/5 pt-[14px] flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <h5 class="text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">
+              {editingBinding.gesture === "chord" ? "Base Combo (Held Keys)" : "Hotkey Keybind Selection"}
+            </h5>
+            <div
+              class={[
+                "border-2 rounded-desktop p-4 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[70px]",
+                recordingTarget === "keys"
+                  ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
+                  : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+              ].join(" ")}
+              tabindex="0"
+              role="button"
+              aria-label="Base Hotkey recorder input"
+              onclick={() => recordingTarget = "keys"}
+              onfocus={() => recordingTarget = "keys"}
+              onblur={() => handleRecordKeyBlur()}
+              onkeydown={handleRecordKeyDown}
+              onkeyup={handleRecordKeyUp}
+            >
+              {#if recordingTarget === "keys"}
+                <div class="flex items-center gap-[10px]">
+                  <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
+                  <span class="text-[13px] font-semibold text-accent-blue">
+                    {currentlyPressedKeys.length > 0
+                      ? currentlyPressedKeys.join(" + ").replace(/KEY_/g, "")
+                      : "Press your physical shortcut combination now..."}
+                  </span>
+                </div>
+              {:else}
+                <span class="text-[12px] text-obsidian-300 flex flex-col gap-1.5 items-center">
+                  {#if editingBinding.keys.length > 0}
+                    <div class="flex gap-1.5">
+                      {#each editingBinding.keys as k}
+                        <kbd class="px-1.5! py-0.5! text-[12px]! bg-accent-blue! text-black! border-none! font-extrabold! rounded!">{k.replace("KEY_", "")}</kbd>
+                      {/each}
+                    </div>
+                    <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to record)</span>
+                  {:else}
+                    ⚠️ Click/Focus here to press keys!
+                  {/if}
                 </span>
-              </div>
-            {:else}
-              <span class="text-[12px] text-obsidian-300 flex flex-col gap-2 items-center">
-                {#if editingBinding.keys.length > 0}
-                  <div class="flex gap-1.5">
-                    {#each editingBinding.keys as k}
-                      <kbd class="px-1.5! py-0.5! text-[12px]! bg-accent-blue! text-black! border-none! font-extrabold! rounded!">{k.replace("KEY_", "")}</kbd>
-                    {/each}
-                  </div>
-                  <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to record a new hotkey combo)</span>
-                {:else}
-                  ⚠️ Click/Focus here to press keys!
-                {/if}
-              </span>
-            {/if}
+              {/if}
+            </div>
           </div>
+
+          {#if editingBinding.gesture === "chord"}
+            <div class="flex flex-col gap-1.5">
+              <h5 class="text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">Subkey Trigger (Pressed Key)</h5>
+              <div
+                class={[
+                  "border-2 rounded-desktop p-4 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[70px]",
+                  recordingTarget === "subkey"
+                    ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
+                    : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+                ].join(" ")}
+                tabindex="0"
+                role="button"
+                aria-label="Subkey recorder input"
+                onclick={() => recordingTarget = "subkey"}
+                onfocus={() => recordingTarget = "subkey"}
+                onblur={() => handleRecordKeyBlur()}
+                onkeydown={handleRecordKeyDown}
+                onkeyup={handleRecordKeyUp}
+              >
+                {#if recordingTarget === "subkey"}
+                  <div class="flex items-center gap-[10px]">
+                    <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
+                    <span class="text-[13px] font-semibold text-accent-blue">
+                      Press the trigger key now...
+                    </span>
+                  </div>
+                {:else}
+                  <span class="text-[12px] text-obsidian-300 flex flex-col gap-1.5 items-center">
+                    {#if editingBinding.subkey}
+                      <kbd class="px-1.5! py-0.5! text-[12px]! bg-accent-blue! text-black! border-none! font-extrabold! rounded!">{editingBinding.subkey.replace("KEY_", "")}</kbd>
+                      <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to change trigger key)</span>
+                    {:else}
+                      ⚠️ Click/Focus here to press the trigger key!
+                    {/if}
+                  </span>
+                {/if}
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn-action secondary" onclick={() => { editingBinding = null; isRecordingKeys = false; }}>Cancel</button>
+        <button class="btn-action secondary" onclick={() => { editingBinding = null; recordingTarget = null; }}>Cancel</button>
         <button class="btn-action primary" onclick={saveBindingModal}>Done</button>
       </div>
     </div>

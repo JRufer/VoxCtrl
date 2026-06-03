@@ -177,6 +177,7 @@ fn test_hotkey_binding_multi_target_roundtrip() {
         target_ids: vec!["target1".into(), "target2".into()],
         tap_ms: 300,
         hold_threshold_ms: 500,
+        subkey: None,
         disabled: false,
     };
 

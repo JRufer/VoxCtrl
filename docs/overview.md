@@ -13,7 +13,7 @@ Everything runs locally. No audio ever leaves your machine.
 ## Key Features
 
 ### Core Dictation
-- **Hold-to-record, toggle, or double-tap** gesture modes per hotkey binding
+- **Hold-to-record, toggle, double-tap, double-tap & hold, or chord combo** gesture modes per hotkey binding
 - **Whisper speech recognition** — the same model family powering OpenAI's transcription API, running entirely on-device
 - **GPU acceleration** — automatic CUDA or Vulkan selection when available; falls back to CPU
 - **Multiple model sizes** — tiny through large-v3, trading speed for accuracy

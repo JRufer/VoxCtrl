@@ -78,6 +78,24 @@ fn handle_press(
         if s.binding.disabled || shadowed.contains(&s.binding.id) {
             continue;
         }
+
+        if s.binding.gesture == GestureType::Chord {
+            if let Some(ref subkey) = s.binding.subkey {
+                if key == subkey && s.binding.keys.iter().all(|k| pressed.contains(k)) {
+                    if !s.chord_active {
+                        s.chord_active = true;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Start,
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
         if !s.binding.keys.contains(&key.to_string()) {
             continue;
         }
@@ -267,6 +285,17 @@ fn handle_release(
                             kind: GestureKind::Stop,
                         });
                     }
+                }
+            }
+            GestureType::Chord => {
+                if s.chord_active {
+                    s.chord_active = false;
+                    let _ = tx.send(GestureEvent {
+                        binding_id: s.binding.id.clone(),
+                        binding_label: s.binding.label.clone(),
+                        target_id: s.binding.target_ids_string(),
+                        kind: GestureKind::Stop,
+                    });
                 }
             }
             _ => {}

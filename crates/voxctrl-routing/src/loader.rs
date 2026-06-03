@@ -120,6 +120,8 @@ struct RawBinding {
     #[serde(default = "default_hold_ms")]
     hold_threshold_ms: u32,
     #[serde(default)]
+    subkey: Option<String>,
+    #[serde(default)]
     disabled: bool,
 }
 
@@ -361,6 +363,7 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
         target_ids,
         tap_ms: r.tap_ms,
         hold_threshold_ms: r.hold_threshold_ms,
+        subkey: r.subkey,
         disabled: r.disabled,
     }
 }
@@ -383,6 +386,7 @@ fn binding_to_raw(b: &HotkeyBinding) -> RawBinding {
         target_ids: Some(b.target_ids.clone()),
         tap_ms: b.tap_ms,
         hold_threshold_ms: b.hold_threshold_ms,
+        subkey: b.subkey.clone(),
         disabled: b.disabled,
     }
 }
@@ -404,6 +408,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             target_ids: vec!["default".into()],
             tap_ms: 250,
             hold_threshold_ms: 1000,
+            subkey: None,
             disabled: false,
         },
         HotkeyBinding {
@@ -419,6 +424,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             target_ids: vec!["default".into()],
             tap_ms: 250,
             hold_threshold_ms: 1000,
+            subkey: None,
             disabled: false,
         },
     ]

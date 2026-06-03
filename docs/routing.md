@@ -238,11 +238,12 @@ Defined in `~/.config/voxctrl/bindings.toml`. Each `[[binding]]` block maps a ke
 |---|---|---|---|
 | `id` | string | required | Unique identifier |
 | `label` | string | `""` | Display name in UI |
-| `keys` | string[] | required | Key names (evdev format on Linux) |
+| `keys` | string[] | required | Key names (evdev format on Linux). For chord gestures, this defines the base combo keys. |
+| `subkey` | string | | Single trigger key for chord gestures (e.g. `"KEY_Z"`), pressed after base keys are held |
 | `gesture` | string | required | `"hold"`, `"toggle"`, `"double_tap"`, `"double_tap_hold"`, or `"chord"` |
 | `target_ids` | string[] | required | Ordered list of targets to route to |
 | `target_id` | string | | Single target (legacy; resolved if `target_ids` is empty) |
-| `hold_threshold_ms` | integer | `200` | Minimum hold duration in ms |
+| `hold_threshold_ms` | integer | `200` | Minimum hold / double-tap-hold duration in ms |
 | `tap_ms` | integer | `250` | Double-tap inter-press window in ms |
 | `disabled` | bool | `false` | Disable without removing |
 
@@ -253,8 +254,8 @@ Defined in `~/.config/voxctrl/bindings.toml`. Each `[[binding]]` block maps a ke
 | `hold` | Recording starts on press, stops on release |
 | `toggle` | First press starts, second press stops |
 | `double_tap` | Two rapid presses within `tap_ms` trigger a toggle session |
-| `double_tap_hold` | Double-tap and keep held on the second press to record, release to stop |
-| `chord` | All keys must be pressed simultaneously (superset-shadowing applies) |
+| `double_tap_hold` | Double-tap and keep held on the second press (enforces `hold_threshold_ms` and has a 2-minute safety timeout), release to stop |
+| `chord` | Hold the base `keys` and press the `subkey` trigger to start recording; release any of the base keys to stop |
 
 ### Key Names (evdev format)
 
@@ -292,6 +293,23 @@ keys = ["KEY_LEFTMETA", "KEY_V"]
 gesture = "double_tap"
 target_ids = ["clipboard"]
 tap_ms = 300
+
+[[binding]]
+id = "double_tap_hold_dictate"
+label = "Double-Tap & Hold to Dictate"
+keys = ["KEY_LEFTMETA"]
+gesture = "double_tap_hold"
+tap_ms = 250
+hold_threshold_ms = 200
+target_ids = ["default"]
+
+[[binding]]
+id = "chord_dictate"
+label = "Chord Dictation"
+keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA"]
+subkey = "KEY_Z"
+gesture = "chord"
+target_ids = ["default"]
 ```
 
 ### Multi-Target Routing

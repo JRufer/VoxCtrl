@@ -141,6 +141,7 @@ pub async fn save_config(
                 target_ids: vec![],
                 tap_ms: 250,
                 hold_threshold_ms: 0,
+                subkey: None,
                 disabled: false,
             });
         }
@@ -252,6 +253,7 @@ pub async fn save_bindings(
                 target_ids: vec![],
                 tap_ms: 250,
                 hold_threshold_ms: 0,
+                subkey: None,
                 disabled: false,
             });
         }

@@ -25,7 +25,7 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 * **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
-* **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, or double-tap gestures directly to any keyboard.
+* **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, double-tap, double-tap & hold, or chord combo gestures directly to any keyboard.
 * **DBus Dictation Service**: Exposes `ai.voxctrl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
 * **Neural Text-to-Speech (TTS)**: Built-in local neural voice feedback powered by Piper, with automatic local package installation and a voice downloader interface.
 * **Intelligent Post-Processing & Ollama**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional **local Ollama integration** (supporting Llama 3.2, Phi-3, or Mistral) for real-time grammar correction, tone rewriting, or custom formatting.
@@ -283,6 +283,14 @@ keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"]
 gesture = "hold"
 target_id = "default"                        # Backward compatibility fallback (first target)
 target_ids = ["default", "notes"]            # Sequential delivery to both targets!
+
+[[binding]]
+id = "chord_dictation"
+label = "Chord Dictation"
+keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA"]
+subkey = "KEY_Z"
+gesture = "chord"
+target_ids = ["default"]
 ```
 
 ### Multi-Target Hotkey Bindings
