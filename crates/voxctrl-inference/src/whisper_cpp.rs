@@ -119,6 +119,11 @@ impl TranscriptionBackend for WhisperCppBackend {
     }
 
     fn load(&mut self) -> Result<()> {
+        static LOGGING_INIT: std::sync::Once = std::sync::Once::new();
+        LOGGING_INIT.call_once(|| {
+            whisper_rs::install_logging_hooks();
+        });
+
         let path = self.resolve_model_path()?;
         info!("Loading whisper.cpp model: {}", path.display());
 

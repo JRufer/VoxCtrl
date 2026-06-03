@@ -586,7 +586,6 @@ pub fn run() {
                             let icon = if is_recording { &record_on_icon } else { &record_off_icon };
                             let _ = tray.set_icon(Some(icon.clone()));
                             was_animating = false;
-                            last_recording = is_recording;
                         }
                     }
 
