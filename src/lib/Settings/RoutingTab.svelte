@@ -61,6 +61,56 @@
     }
   });
 
+  // Helper to construct a canonical signature for a binding's key combination and gesture type
+  function getBindingSignature(keys: string[], gesture: string, subkey?: string): string {
+    const sortedKeys = [...keys].sort().join(",");
+    const subkeyPart = gesture === "chord" && subkey ? `+${subkey}` : "";
+    return `${gesture}:${sortedKeys}${subkeyPart}`;
+  }
+
+  // Derived set of signatures that are shared by two or more bindings (regardless of disabled state)
+  let conflictingSignatures = $derived.by(() => {
+    const sigCounts = new Map<string, number>();
+    for (const b of bindings) {
+      if (b.keys && b.keys.length > 0) {
+        const sig = getBindingSignature(b.keys, b.gesture, b.subkey);
+        sigCounts.set(sig, (sigCounts.get(sig) || 0) + 1);
+      }
+    }
+    const dups = new Set<string>();
+    for (const [sig, count] of sigCounts.entries()) {
+      if (count > 1) {
+        dups.add(sig);
+      }
+    }
+    return dups;
+  });
+
+  // Derived set of signatures that are shared by two or more active/enabled bindings
+  let activeConflictingSignatures = $derived.by(() => {
+    const activeSigCounts = new Map<string, number>();
+    for (const b of bindings) {
+      if (!b.disabled && b.keys && b.keys.length > 0) {
+        const sig = getBindingSignature(b.keys, b.gesture, b.subkey);
+        activeSigCounts.set(sig, (activeSigCounts.get(sig) || 0) + 1);
+      }
+    }
+    const dups = new Set<string>();
+    for (const [sig, count] of activeSigCounts.entries()) {
+      if (count > 1) {
+        dups.add(sig);
+      }
+    }
+    return dups;
+  });
+
+  // Derived check: does the current edited binding in the modal conflict with another existing binding?
+  let editingBindingConflict = $derived.by(() => {
+    if (!editingBinding || !editingBinding.keys || editingBinding.keys.length === 0) return false;
+    const editSig = getBindingSignature(editingBinding.keys, editingBinding.gesture, editingBinding.subkey);
+    return bindings.some(b => b.id !== editingBinding!.id && getBindingSignature(b.keys, b.gesture, b.subkey) === editSig);
+  });
+
   // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
   function autoResize(node: HTMLTextAreaElement) {
     function resize() {
@@ -569,11 +619,33 @@
       ＋ Add New Hotkey Binding
     </button>
 
+    {#if conflictingSignatures.size > 0}
+      <div class="conflict-alert-banner animate-fade-in">
+        <span class="warning-icon">⚠️</span>
+        <span class="alert-message">
+          <strong>Conflict detected:</strong> Some key bindings share the same key combination and gesture type. Disabling one of the conflicting binds will fix the problem.
+        </span>
+      </div>
+    {/if}
+
     <div class="bindings-list">
       {#each bindings as b}
-        <div class="binding-item glass" class:disabled={b.disabled}>
+        <div
+          class="binding-item glass"
+          class:disabled={b.disabled}
+          class:has-conflict={b.keys && b.keys.length > 0 && conflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
+          class:active-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
+        >
+          {#if !b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
+            <span class="conflict-marker">CONFLICT</span>
+          {/if}
           <div class="binding-content">
-            <div class="binding-title">{b.label || b.id}</div>
+            <div
+              class="binding-title"
+              class:has-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
+            >
+              {b.label || b.id}
+            </div>
             <div class="binding-row2">
               <div class="keys-display">
                 {#each b.keys as k}
@@ -1074,7 +1146,9 @@
                 "border-2 rounded-desktop p-4 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[70px]",
                 recordingTarget === "keys"
                   ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
-                  : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+                  : (editingBindingConflict
+                    ? "border-solid border-[#fbbf24] bg-[rgba(251,191,36,0.05)] hover:border-[#fbbf24]/80"
+                    : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35")
               ].join(" ")}
               tabindex="0"
               role="button"
@@ -1119,7 +1193,9 @@
                   "border-2 rounded-desktop p-4 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[70px]",
                   recordingTarget === "subkey"
                     ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
-                    : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
+                    : (editingBindingConflict
+                      ? "border-solid border-[#fbbf24] bg-[rgba(251,191,36,0.05)] hover:border-[#fbbf24]/80"
+                      : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35")
                 ].join(" ")}
                 tabindex="0"
                 role="button"
@@ -1149,6 +1225,12 @@
                 {/if}
               </div>
             </div>
+          {/if}
+
+          {#if editingBindingConflict}
+            <span class="validation-error-msg" style="color: #fbbf24; font-weight: 500; margin-top: 4px;">
+              ⚠️ Warning: This key combination and gesture type conflicts with another existing binding.
+            </span>
           {/if}
         </div>
       </div>
@@ -1336,6 +1418,13 @@
   .binding-item.disabled {
     opacity: 0.55;
     border-color: rgba(255, 255, 255, 0.05);
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 10px,
+      rgba(0, 0, 0, 0.25) 10px,
+      rgba(0, 0, 0, 0.25) 20px
+    );
   }
 
   .binding-content {
@@ -1835,5 +1924,57 @@
 
   .longer-display-label {
     min-width: 255px !important;
+  }
+
+  /* Conflict detection styling */
+  .binding-item.has-conflict {
+    border-color: rgba(251, 191, 36, 0.45) !important;
+  }
+
+  .binding-item.active-conflict {
+    background: rgba(251, 191, 36, 0.06);
+    position: relative;
+  }
+
+  .binding-item.active-conflict:hover {
+    border-color: rgba(251, 191, 36, 0.7) !important;
+    box-shadow: 0 4px 20px rgba(251, 191, 36, 0.15);
+  }
+
+  .binding-title.has-conflict {
+    padding-right: 75px;
+  }
+
+  .conflict-marker {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    background: #fbbf24;
+    color: #111827;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 6px rgba(251, 191, 36, 0.25);
+  }
+
+  .conflict-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #fbbf24;
+    line-height: 1.4;
+  }
+
+  .warning-icon {
+    font-size: 16px;
+    flex-shrink: 0;
   }
 </style>
