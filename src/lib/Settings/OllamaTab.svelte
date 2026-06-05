@@ -4,6 +4,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
+  import CustomSelect from "./CustomSelect.svelte";
+
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
@@ -16,6 +18,21 @@
   let testing = $state(false);
   let testStatus = $state<{ success: boolean; message: string } | null>(null);
   let availableModels = $state<string[]>([]);
+
+  let ollamaModelOptions = $derived([
+    ...availableModels.map(model => ({ value: model, label: model })),
+    ...(cfg.ollama.model && !availableModels.includes(cfg.ollama.model)
+      ? [{ value: cfg.ollama.model, label: `${cfg.ollama.model} (not found)` }]
+      : [])
+  ]);
+
+  const ollamaModeOptions = [
+    { value: "clean", label: "Clean (grammar fix)" },
+    { value: "formal", label: "Formal" },
+    { value: "casual", label: "Casual" },
+    { value: "bullet", label: "Bullet points" },
+    { value: "concise", label: "Concise (summarize)" }
+  ];
 
   async function performTest() {
     testing = true;
@@ -59,14 +76,7 @@
     <label class="field">
       <span>Model (Default)</span>
       {#if availableModels.length > 0}
-        <select bind:value={cfg.ollama.model} onchange={markDirty}>
-          {#each availableModels as model}
-            <option value={model}>{model}</option>
-          {/each}
-          {#if cfg.ollama.model && !availableModels.includes(cfg.ollama.model)}
-            <option value={cfg.ollama.model}>{cfg.ollama.model} (not found)</option>
-          {/if}
-        </select>
+        <CustomSelect bind:value={cfg.ollama.model} options={ollamaModelOptions} onchange={markDirty} />
       {:else}
         <input type="text" bind:value={cfg.ollama.model} onchange={markDirty} placeholder="e.g. llama3.2:1b" />
       {/if}
@@ -92,13 +102,7 @@
     <h3>Default Processing Mode</h3>
     <label class="field">
       <span>Mode</span>
-      <select bind:value={cfg.ollama.mode} onchange={markDirty}>
-        <option value="clean">Clean (grammar fix)</option>
-        <option value="formal">Formal</option>
-        <option value="casual">Casual</option>
-        <option value="bullet">Bullet points</option>
-        <option value="concise">Concise (summarize)</option>
-      </select>
+      <CustomSelect bind:value={cfg.ollama.mode} options={ollamaModeOptions} onchange={markDirty} />
     </label>
   </div>
 </section>

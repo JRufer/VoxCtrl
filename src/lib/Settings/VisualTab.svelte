@@ -4,6 +4,8 @@
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
 
+  import CustomSelect from "./CustomSelect.svelte";
+
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
 
   interface CustomOverlay {
@@ -21,6 +23,28 @@
 
   let customOverlays = $state<CustomOverlay[]>([]);
   let monitors = $state<MonitorInfo[]>([]);
+
+  let overlayStyleOptions = $derived([
+    { value: "voice_card", label: "Voice Card" },
+    { value: "waveform", label: "Waveform" },
+    { value: "pulse", label: "Pulse Ring" },
+    { value: "blue_wave", label: "Ocean Wave" },
+    ...customOverlays.map(o => ({ value: o.name, label: o.name }))
+  ]);
+
+  const overlayPositionOptions = [
+    { value: "top", label: "Top of screen" },
+    { value: "center", label: "Center of screen" },
+    { value: "bottom", label: "Bottom of screen" }
+  ];
+
+  let overlayMonitorOptions = $derived([
+    { value: "primary", label: "Primary Monitor" },
+    ...monitors.filter(mon => mon.name).map(mon => ({
+      value: mon.name!,
+      label: `${mon.name} (${mon.width}x${mon.height})${mon.is_primary ? ' [Primary]' : ''}`
+    }))
+  ]);
 
   onMount(async () => {
     try {
@@ -52,38 +76,17 @@
     
     <label class="field">
       <span>Overlay style</span>
-      <select bind:value={cfg.ui.overlay_style} onchange={markDirty}>
-        <option value="voice_card">Voice Card</option>
-        <option value="waveform">Waveform</option>
-        <option value="pulse">Pulse Ring</option>
-        <option value="blue_wave">Ocean Wave</option>
-        {#each customOverlays as overlay}
-          <option value={overlay.name}>{overlay.name}</option>
-        {/each}
-      </select>
+      <CustomSelect bind:value={cfg.ui.overlay_style} options={overlayStyleOptions} onchange={markDirty} />
     </label>
 
     <label class="field">
       <span>Overlay position</span>
-      <select bind:value={cfg.ui.overlay_position} onchange={markDirty}>
-        <option value="top">Top of screen</option>
-        <option value="center">Center of screen</option>
-        <option value="bottom">Bottom of screen</option>
-      </select>
+      <CustomSelect bind:value={cfg.ui.overlay_position} options={overlayPositionOptions} onchange={markDirty} />
     </label>
 
     <label class="field">
       <span>Overlay display</span>
-      <select bind:value={cfg.ui.overlay_monitor} onchange={markDirty}>
-        <option value="primary">Primary Monitor</option>
-        {#each monitors as mon}
-          {#if mon.name}
-            <option value={mon.name}>
-              {mon.name} ({mon.width}x{mon.height}){mon.is_primary ? ' [Primary]' : ''}
-            </option>
-          {/if}
-        {/each}
-      </select>
+      <CustomSelect bind:value={cfg.ui.overlay_monitor} options={overlayMonitorOptions} onchange={markDirty} />
     </label>
 
     {#if cfg.ui.overlay_monitor !== 'primary' && monitors.length > 0 && !monitors.some(m => m.name === cfg.ui.overlay_monitor)}

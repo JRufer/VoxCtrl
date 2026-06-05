@@ -5,11 +5,18 @@
   import type { AppConfig } from "../../stores/config";
   import { configDirty } from "../../stores/config";
 
+  import CustomSelect from "./CustomSelect.svelte";
+
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
 
   interface AudioDevice { index: number; name: string; }
   let devices = $state<AudioDevice[]>([]);
+
+  let audioDeviceOptions = $derived([
+    { value: -1, label: "Default system device" },
+    ...devices.map(d => ({ value: d.index, label: d.name }))
+  ]);
 
   // VU Meter States using Svelte 5 Runes
   let rawLevel = $state(0);
@@ -81,21 +88,16 @@
 
   <div class="field-group">
     <h3>Input Device</h3>
-    <label class="field">
-      <span>Microphone</span>
-      <select
+    <label class="field col">
+      <span class="field-title">Microphone</span>
+      <CustomSelect
         value={cfg.audio.input_device_index ?? -1}
-        onchange={(e) => {
-          const v = parseInt((e.target as HTMLSelectElement).value);
+        options={audioDeviceOptions}
+        onchange={(v) => {
           cfg.audio.input_device_index = v < 0 ? null : v;
           markDirty();
         }}
-      >
-        <option value={-1}>Default system device</option>
-        {#each devices as d}
-          <option value={d.index}>{d.name}</option>
-        {/each}
-      </select>
+      />
     </label>
 
     <!-- Hardware-inspired real-time VU meter -->

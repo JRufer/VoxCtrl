@@ -49,6 +49,10 @@ h3 {
   padding-bottom: 4px;
 }
 
+.field.col {
+  @apply flex-col items-stretch gap-1.5 w-full;
+}
+
 .field span {
   @apply flex-1;
   font-size: 13px;

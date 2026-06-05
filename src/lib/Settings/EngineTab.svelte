@@ -4,6 +4,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
+  import CustomSelect from "./CustomSelect.svelte";
+
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() {
     configDirty.set(true);
@@ -21,6 +23,36 @@
     "large-v2",
     "large-v3",
     "large-v3-turbo",
+  ];
+
+  const backendOptions = [
+    { value: "auto", label: "Auto-detect" },
+    { value: "whisper-cpp", label: "Whisper.cpp" },
+    { value: "moonshine", label: "Moonshine (CPU only)" }
+  ];
+
+  const inferenceModeOptions = [
+    { value: "Balanced", label: "Balanced" },
+    { value: "Aggressive", label: "Aggressive (shorter silence)" }
+  ];
+
+  let whisperModelSizeOptions = $derived(
+    MODEL_SIZES.map(s => ({
+      value: s,
+      label: `${s}${downloadedMap[s] ? " ✔" : ""}`
+    }))
+  );
+
+  let deviceOptions = $derived([
+    { value: "auto", label: "Auto" },
+    ...(cudaEnabled ? [{ value: "cuda", label: "CUDA (NVIDIA)" }] : []),
+    { value: "vulkan", label: "Vulkan (AMD/Intel)" },
+    { value: "cpu", label: "CPU" }
+  ]);
+
+  const moonshineModelSizeOptions = [
+    { value: "base", label: "Base" },
+    { value: "tiny", label: "Tiny" }
   ];
 
   let downloadedMap = $state<Record<string, boolean>>({});
@@ -136,18 +168,11 @@
     <h3>Backend</h3>
     <label class="field">
       <span>Backend</span>
-      <select bind:value={cfg.engine.backend} onchange={markDirty}>
-        <option value="auto">Auto-detect</option>
-        <option value="whisper-cpp">Whisper.cpp</option>
-        <option value="moonshine">Moonshine (CPU only)</option>
-      </select>
+      <CustomSelect bind:value={cfg.engine.backend} options={backendOptions} onchange={markDirty} />
     </label>
     <label class="field">
       <span>Inference mode</span>
-      <select bind:value={cfg.engine.inference_mode} onchange={markDirty}>
-        <option value="Balanced">Balanced</option>
-        <option value="Aggressive">Aggressive (shorter silence)</option>
-      </select>
+      <CustomSelect bind:value={cfg.engine.inference_mode} options={inferenceModeOptions} onchange={markDirty} />
     </label>
   </div>
 
@@ -156,14 +181,7 @@
       <h3>Whisper.cpp Settings</h3>
       <label class="field">
         <span>Model size</span>
-        <select
-          bind:value={cfg.engine.whisper_cpp.model_size}
-          onchange={onModelChanged}
-        >
-          {#each MODEL_SIZES as s}
-            <option value={s}>{s}{downloadedMap[s] ? " ✔" : ""}</option>
-          {/each}
-        </select>
+        <CustomSelect bind:value={cfg.engine.whisper_cpp.model_size} options={whisperModelSizeOptions} onchange={onModelChanged} />
       </label>
 
       <div class="model-status-container">
@@ -190,14 +208,7 @@
 
       <label class="field">
         <span>Device</span>
-        <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
-          <option value="auto">Auto</option>
-          {#if cudaEnabled}
-            <option value="cuda">CUDA (NVIDIA)</option>
-          {/if}
-          <option value="vulkan">Vulkan (AMD/Intel)</option>
-          <option value="cpu">CPU</option>
-        </select>
+        <CustomSelect bind:value={cfg.engine.whisper_cpp.device} options={deviceOptions} onchange={markDirty} />
       </label>
       <div class="field">
         <span>Model directory (leave blank for default)</span>
@@ -232,13 +243,7 @@
       <h3>Moonshine Settings</h3>
       <label class="field">
         <span>Model size</span>
-        <select
-          bind:value={cfg.engine.moonshine.model_size}
-          onchange={markDirty}
-        >
-          <option value="base">Base</option>
-          <option value="tiny">Tiny</option>
-        </select>
+        <CustomSelect bind:value={cfg.engine.moonshine.model_size} options={moonshineModelSizeOptions} onchange={markDirty} />
       </label>
       <label class="field">
         <span>Language</span>

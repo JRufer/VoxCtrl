@@ -4,6 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import CustomSelect from "./CustomSelect.svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() { configDirty.set(true); }
@@ -209,6 +210,31 @@
 
   const KOKORO_GROUPS = [...new Set(KOKORO_VOICES.map(v => v.group))];
 
+  let piperVoiceOptions = $derived(
+    PIPER_VOICES.map(v => ({
+      value: v,
+      label: `${v}${downloadedMap[v] ? " ✔" : ""}`
+    }))
+  );
+
+  let kokoroVoiceOptions = $derived(
+    KOKORO_VOICES.map(v => ({
+      value: v.id,
+      label: `${v.group} - ${v.label}`
+    }))
+  );
+
+  const engineOptions = [
+    { value: "kokoro", label: "Kokoro (neural, natural voices)" },
+    { value: "piper", label: "Piper (neural, high quality)" },
+    { value: "espeak", label: "eSpeak-NG (lightweight)" }
+  ];
+
+  const kokoroQualityOptions = [
+    { value: "f32", label: "f32 (Best Quality, 310 MB)" },
+    { value: "fp16", label: "fp16 (Balanced, 169 MB)" }
+  ];
+
   let kokoroReady = $state(false);
   let kokoroChecking = $state(false);
   let kokoroDownloading = $state(false);
@@ -400,11 +426,7 @@
     </label>
     <label class="field">
       <span>Engine</span>
-      <select bind:value={cfg.tts.engine} onchange={onEngineChanged}>
-        <option value="kokoro">Kokoro (neural, natural voices)</option>
-        <option value="piper">Piper (neural, high quality)</option>
-        <option value="espeak">eSpeak-NG (lightweight)</option>
-      </select>
+      <CustomSelect bind:value={cfg.tts.engine} options={engineOptions} onchange={onEngineChanged} />
     </label>
     {#if cfg.tts.engine === "kokoro" || cfg.tts.engine === "piper"}
     <label class="field">
@@ -441,15 +463,9 @@
   {#if cfg.tts.engine === "piper"}
   <div class="field-group">
     <h3>Piper Voice</h3>
-    <label class="field">
-      <span>Voice</span>
-      <select bind:value={cfg.tts.voice} onchange={onVoiceChanged}>
-        {#each PIPER_VOICES as v}
-          <option value={v}>
-            {v}{downloadedMap[v] ? " ✔" : ""}
-          </option>
-        {/each}
-      </select>
+    <label class="field col">
+      <span class="field-title">Voice</span>
+      <CustomSelect bind:value={cfg.tts.voice} options={piperVoiceOptions} onchange={onVoiceChanged} />
     </label>
 
     <div class="voice-status-container">
@@ -491,25 +507,14 @@
   {#if cfg.tts.engine === "kokoro"}
   <div class="field-group">
     <h3>Kokoro Voice</h3>
-    <label class="field">
-      <span>Voice</span>
-      <select bind:value={cfg.tts.kokoro.voice} onchange={markDirty}>
-        {#each KOKORO_GROUPS as group}
-          <optgroup label={group}>
-            {#each KOKORO_VOICES.filter(v => v.group === group) as v}
-              <option value={v.id}>{v.label}</option>
-            {/each}
-          </optgroup>
-        {/each}
-      </select>
+    <label class="field col">
+      <span class="field-title">Voice</span>
+      <CustomSelect bind:value={cfg.tts.kokoro.voice} options={kokoroVoiceOptions} onchange={markDirty} />
     </label>
 
-    <label class="field">
-      <span>Model Quality</span>
-      <select bind:value={cfg.tts.kokoro.quality} onchange={() => { markDirty(); checkKokoroReady(); }}>
-        <option value="f32">f32 (Best Quality, 310 MB)</option>
-        <option value="fp16">fp16 (Balanced, 169 MB)</option>
-      </select>
+    <label class="field col">
+      <span class="field-title">Model Quality</span>
+      <CustomSelect bind:value={cfg.tts.kokoro.quality} options={kokoroQualityOptions} onchange={() => { markDirty(); checkKokoroReady(); }} />
     </label>
 
 
