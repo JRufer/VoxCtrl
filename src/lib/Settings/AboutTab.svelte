@@ -79,72 +79,53 @@
 </section>
 
 <style>
+  @reference "tailwindcss";
+
   .about-card {
-    flex-direction: row !important;
-    align-items: flex-start;
-    gap: 20px;
+    @apply flex-row! items-start gap-5;
   }
   .logo {
-    width: 64px;
-    height: 64px;
-    object-fit: contain;
-    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.6)) drop-shadow(0 4px 24px rgba(56, 189, 248, 0.35));
-    border-radius: 12px;
+    @apply w-16 h-16 object-contain drop-shadow-[0_0_10px_rgba(56,189,248,0.6)] drop-shadow-[0_4px_24px_rgba(56,189,248,0.35)] rounded-xl;
   }
-  .app-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-  .app-version { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-  p { font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 400px; }
-  a { color: var(--accent2); font-size: 13px; text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  .app-name {
+    @apply text-2xl font-bold mb-1;
+  }
+  .app-version {
+    @apply text-xs text-[var(--text-muted)] mb-2.5;
+  }
+  p {
+    @apply text-[13px] text-[var(--text-muted)] leading-relaxed max-w-[400px];
+  }
+  a {
+    @apply text-[var(--accent2)] text-[13px] no-underline;
+  }
+  a:hover {
+    @apply underline;
+  }
   .kv {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    padding: 3px 0;
-    border-bottom: 1px solid var(--border);
+    @apply flex justify-between text-xs py-1 border-b border-[var(--border)];
   }
-  .kv span:first-child { color: var(--text-muted); }
+  .kv span:first-child {
+    @apply text-[var(--text-muted)];
+  }
 
   /* Open Source Attribution styling */
   .credits-hint {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 12px;
+    @apply text-xs text-[var(--text-muted)] mb-3;
   }
   .credits-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 4px;
+    @apply flex flex-col gap-2 mt-1;
   }
   .credit-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .credit-item:last-child {
-    border-bottom: none;
+    @apply flex justify-between items-center py-1.5 border-b border-[var(--border)] last:border-none;
   }
   .credit-name-link {
-    font-size: 13px;
-    font-weight: 400;
-    color: #fff;
-    text-decoration: none;
-    transition: color 0.15s ease;
+    @apply text-[13px] font-normal text-white no-underline transition-colors duration-150 ease-out;
   }
   .credit-name-link:hover {
-    color: var(--color-accent-blue);
-    text-decoration: underline;
+    @apply text-[var(--color-accent-blue)] underline;
   }
   .credit-license {
-    font-size: 10px;
-    background: rgba(56, 189, 248, 0.08);
-    color: var(--color-accent-blue);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 400;
-    border: 1px solid rgba(56, 189, 248, 0.15);
+    @apply text-[10px] bg-[var(--color-accent-blue)]/8 text-[var(--color-accent-blue)] p-0.5 px-1.5 rounded border border-[var(--color-accent-blue)]/15 font-normal;
   }
 </style>

@@ -175,93 +175,59 @@
 </section>
 
 <style>
-  .val { font-size: 12px; color: var(--text-muted); min-width: 36px; text-align: right; }
+  @reference "tailwindcss";
+
+  .val {
+    @apply text-xs text-[var(--text-muted)] min-w-[36px] text-right;
+  }
 
   .vu-meter-container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 4px 0;
-    margin: 4px 0 12px 0;
+    @apply flex flex-col gap-2 py-1 my-1 mb-3;
   }
 
   .vu-meter-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    font-family: monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    @apply flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wide;
   }
 
   .vu-label {
-    color: var(--text-muted);
-    font-weight: 600;
+    @apply text-[var(--text-muted)] font-semibold;
   }
 
   .vu-status-dot {
-    width: 6px;
-    height: 6px;
-    background: #444;
-    transition: background 0.15s ease;
+    @apply w-1.5 h-1.5 bg-[#444] transition-colors duration-150 ease-out;
   }
 
   .vu-status-dot.active {
-    background: #39ff14; /* Neon Acid Green */
-    box-shadow: 0 0 8px #39ff14;
+    @apply bg-[#39ff14] shadow-[0_0_8px_#39ff14];
   }
 
   .vu-status-text {
-    color: var(--text);
-    opacity: 0.7;
-    margin-left: auto;
+    @apply text-[var(--text)] opacity-70 ml-auto;
   }
 
   .vu-meter-bar-wrapper {
-    position: relative;
-    width: 100%;
-    height: 14px;
-    background: rgba(0, 0, 0, 0.4);
-    padding: 3px;
-    box-sizing: border-box;
+    @apply relative w-full h-3.5 bg-black/40 p-[3px] box-border;
   }
 
   .vu-meter-bar {
-    position: relative;
-    display: flex;
-    gap: 2px;
-    width: 100%;
-    height: 100%;
+    @apply relative flex gap-[2px] w-full h-full;
   }
 
   .vu-segment {
-    flex: 1;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.05);
-    transition: background 0.05s ease;
+    @apply flex-1 h-full bg-white/[0.05] transition-colors duration-[50ms] ease-out;
   }
 
   /* Neon Acid Green for safe range */
   .vu-segment.active {
-    background: #39ff14;
-    box-shadow: 0 0 4px rgba(57, 255, 20, 0.3);
+    @apply bg-[#39ff14] shadow-[0_0_4px_rgba(57,255,20,0.3)];
   }
 
   /* Signal Orange for warning range */
   .vu-segment.active.orange {
-    background: #ff6d00;
-    box-shadow: 0 0 4px rgba(255, 109, 0, 0.5);
+    @apply bg-[#ff6d00] shadow-[0_0_4px_rgba(255,109,0,0.5)];
   }
 
   .vu-peak-marker {
-    position: absolute;
-    top: -2px;
-    bottom: -2px;
-    width: 2px;
-    background: #ffab00;
-    box-shadow: 0 0 6px #ffab00;
-    pointer-events: none;
-    transition: left 0.05s linear;
+    @apply absolute -top-0.5 -bottom-0.5 w-[2px] bg-[#ffab00] shadow-[0_0_6px_#ffab00] pointer-events-none transition-[left] duration-[50ms] ease-linear;
   }
 </style>

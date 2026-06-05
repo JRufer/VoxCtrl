@@ -74,31 +74,18 @@
 </div>
 
 <style>
+  @reference "tailwindcss";
+
   .diagnostic-window {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100vw;
-    height: 100vh;
-    background: var(--color-obsidian-950); /* Force deepest dark background immediately */
-    color: var(--text);
-    overflow: hidden;
-    padding: 20px;
+    @apply flex items-center justify-center w-screen h-screen bg-[var(--color-obsidian-950)] text-[var(--text)] overflow-hidden p-5;
   }
 
   .modal-card {
-    text-align: center;
-    max-width: 400px;
-    width: 100%;
-    animation: scaleUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+    @apply text-center max-w-[400px] w-full animate-[scaleUp_0.3s_cubic-bezier(0.175,0.885,0.32,1.2)_forwards];
   }
 
   .modal-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    display: inline-block;
-    filter: drop-shadow(0 4px 12px rgba(255, 107, 53, 0.2));
-    animation: pulseIcon 2s infinite ease-in-out;
+    @apply text-[48px] mb-4 inline-block drop-shadow-[0_4px_12px_rgba(255,107,53,0.2)] animate-[pulseIcon_2s_infinite_ease-in-out];
   }
 
   @keyframes pulseIcon {
@@ -107,115 +94,56 @@
   }
 
   .modal-title {
-    font-size: 20px;
-    font-weight: 800;
-    color: #fff;
-    margin-bottom: 12px;
-    letter-spacing: -0.5px;
+    @apply text-2xl font-extrabold text-white mb-3 tracking-tight;
   }
 
   .modal-desc {
-    font-size: 13.5px;
-    line-height: 1.6;
-    color: var(--color-obsidian-300);
-    margin-bottom: 24px;
-    text-align: left;
+    @apply text-[13.5px] leading-relaxed text-[var(--color-obsidian-300)] mb-6 text-left;
   }
 
   .modal-desc code {
-    background: rgba(255, 255, 255, 0.05);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: monospace;
-    color: var(--color-accent-blue);
+    @apply bg-white/5 px-1.5 py-0.5 rounded font-mono text-[var(--color-accent-blue)];
   }
 
   .modal-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
+    @apply flex flex-col gap-2.5 w-full;
   }
 
   .btn-primary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    padding: 10px 16px;
-    border-radius: 6px;
-    background: var(--color-accent-blue);
-    color: #fff;
-    font-weight: 750;
-    text-decoration: none;
-    font-size: 13px;
-    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3);
-    transition: var(--transition-snappy-fast);
+    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-accent-blue)] text-white font-bold no-underline text-[13px] shadow-[0_4px_14px_rgba(56,189,248,0.3)] transition-all duration-150 ease-out;
   }
 
   .btn-primary:hover {
-    transform: scale(1.02) translateY(-1px);
-    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
-    filter: brightness(1.05);
-    color: #fff;
+    @apply scale-[1.02] -translate-y-[1px] shadow-[0_6px_18px_rgba(56,189,248,0.45)] brightness-[1.05] text-white;
   }
 
   .btn-primary:active {
-    transform: scale(0.97) translateY(0px);
+    @apply scale-[0.97] translate-y-0;
   }
 
   .btn-secondary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    padding: 10px 16px;
-    border-radius: 6px;
-    background: var(--color-obsidian-800);
-    color: var(--color-obsidian-300);
-    border: 1px solid var(--border);
-    font-weight: 600;
-    font-size: 13px;
-    transition: var(--transition-snappy-fast);
+    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-obsidian-800)] text-[var(--color-obsidian-300)] border border-[var(--border)] font-semibold text-[13px] transition-all duration-150 ease-out;
   }
 
   .btn-secondary:hover {
-    background: var(--color-obsidian-700);
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.1);
-    transform: translateY(-1px);
+    @apply bg-[var(--color-obsidian-700)] text-white border-white/10 -translate-y-[1px];
   }
 
   .btn-secondary:active {
-    transform: scale(0.97) translateY(0px);
+    @apply scale-[0.97] translate-y-0;
   }
 
   /* Sleek loading state */
   .loading-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
+    @apply flex flex-col items-center gap-4;
   }
 
   .loading-label {
-    font-size: 13px;
-    color: var(--color-obsidian-300);
-    font-weight: 500;
+    @apply text-[13px] text-[var(--color-obsidian-300)] font-medium;
   }
 
   .spinner {
-    width: 28px;
-    height: 28px;
-    border: 2.5px solid rgba(255, 255, 255, 0.04);
-    border-top: 2.5px solid var(--color-accent-blue);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    @apply w-7 h-7 border-[2.5px] border-white/5 border-t-[var(--color-accent-blue)] rounded-full animate-spin;
   }
 
   @keyframes scaleUp {

@@ -604,99 +604,66 @@
 </section>
 
 <style>
-  .row { display: flex; gap: 8px; margin-top: 8px; }
+  @reference "tailwindcss";
+
+  .row {
+    @apply flex gap-2 mt-2;
+  }
   .btn-preview {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    border-radius: var(--radius);
-    padding: 6px 14px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    @apply bg-[var(--surface2)] border border-[var(--border)] text-[var(--text)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs cursor-pointer transition-all duration-200 ease-out;
   }
   .btn-preview:hover:not(:disabled) {
-    background: var(--border);
-    color: var(--accent);
+    @apply bg-[var(--border)] text-[var(--accent)];
   }
-  .btn-preview:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-preview:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
 
   .voice-status-container {
-    display: flex;
-    align-items: center;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    font-size: 13px;
-    min-height: 42px;
+    @apply flex items-center bg-[var(--bg)] border border-[var(--border)] rounded-[var(--radius)] p-2.5 px-3.5 text-[13px] min-h-[42px];
   }
   .status-downloaded {
-    color: #4caf50;
-    font-weight: 600;
+    @apply text-emerald-400 font-semibold;
   }
   .status-downloading {
-    color: var(--accent2);
+    @apply text-[var(--accent2)];
   }
   .status-checking {
-    color: var(--text-muted);
+    @apply text-[var(--text-muted)];
   }
   .status-missing-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
+    @apply flex items-center justify-between w-full;
   }
   .status-missing {
-    color: #e57373;
+    @apply text-red-400;
   }
   .btn-download {
-    background: var(--accent);
-    border: none;
-    color: #fff;
-    border-radius: var(--radius);
-    padding: 6px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s;
+    @apply bg-[var(--accent)] border-none text-white rounded-[var(--radius)] p-1.5 px-3 text-xs cursor-pointer font-semibold transition-colors duration-200;
   }
   .btn-download:hover:not(:disabled) {
-    background: var(--accent2);
+    @apply bg-[var(--accent2)];
   }
   .btn-download:disabled {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    opacity: 0.5;
-    cursor: not-allowed;
+    @apply bg-[var(--surface2)] border border-[var(--border)] text-[var(--text-muted)] opacity-50 cursor-not-allowed;
   }
   .field-input-error {
-    border-color: #ef4444 !important;
+    @apply border-red-500!;
   }
   .field-input-error:focus {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    @apply border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.15),_inset_0_2px_4px_rgba(0,0,0,0.2)];
   }
   .field-error-msg {
-    margin-top: 0.25rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    color: #ef4444;
+    @apply mt-1 text-sm leading-5 text-red-400;
   }
   .range-input {
-    width: 100%;
-    accent-color: var(--accent);
+    @apply w-full accent-[var(--accent)];
   }
   .number-input {
-    width: 80px;
+    @apply w-20;
   }
 
   .tts-test-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
+    @apply flex justify-between items-center w-full;
   }
   .run-speed-container {
     display: flex;

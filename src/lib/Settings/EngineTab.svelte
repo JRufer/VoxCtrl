@@ -253,63 +253,39 @@
 </section>
 
 <style>
+  @reference "tailwindcss";
+
   .model-status-container {
-    display: flex;
-    align-items: center;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    font-size: 13px;
-    min-height: 42px;
-    margin-bottom: 12px;
+    @apply flex items-center bg-[var(--bg)] border border-[var(--border)] rounded-[var(--radius)] p-2.5 px-3.5 text-[13px] min-h-[42px] mb-3;
   }
   .status-downloaded {
-    color: #4caf50;
-    font-weight: 600;
+    @apply text-emerald-400 font-semibold;
   }
   .status-downloading {
-    color: var(--accent2);
+    @apply text-[var(--accent2)];
   }
   .status-checking {
-    color: var(--text-muted);
+    @apply text-[var(--text-muted)];
   }
   .status-missing-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
+    @apply flex items-center justify-between w-full;
   }
   .status-missing {
-    color: #e57373;
+    @apply text-red-400;
   }
   .btn-download {
-    background: var(--accent);
-    border: none;
-    color: #fff;
-    border-radius: var(--radius);
-    padding: 6px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s;
+    @apply bg-[var(--accent)] border-none text-white rounded-[var(--radius)] p-1.5 px-3 text-xs cursor-pointer font-semibold transition-colors duration-200;
   }
   .btn-download:hover {
-    background: var(--accent2);
+    @apply bg-[var(--accent2)];
   }
   .field-input-error {
-    border-color: #ef4444 !important;
+    @apply border-red-500!;
   }
   .field-input-error:focus {
-    border-color: #ef4444;
-    box-shadow:
-      0 0 0 2px rgba(239, 68, 68, 0.15),
-      inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    @apply border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.15),_inset_0_2px_4px_rgba(0,0,0,0.2)];
   }
   .field-error-msg {
-    margin-top: 0.25rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    color: #ef4444;
+    @apply mt-1 text-sm leading-5 text-red-400;
   }
 </style>

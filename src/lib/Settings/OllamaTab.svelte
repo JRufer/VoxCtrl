@@ -104,61 +104,36 @@
 </section>
 
 <style>
-  .field.col { flex-direction: column; align-items: flex-start; gap: 6px; }
+  @reference "tailwindcss";
+
+  .field.col {
+    @apply flex-col items-start gap-1.5;
+  }
   textarea {
-    width: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    padding: 8px;
-    font-size: 13px;
-    font-family: monospace;
-    resize: vertical;
+    @apply w-full bg-[var(--bg)] border border-[var(--border)] rounded p-2 text-[var(--text)] text-[13px] font-mono resize-y;
   }
   .action-row {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
+    @apply flex flex-col items-center gap-2 mt-3.5 pt-3.5 border-t border-[var(--border)];
   }
   .btn-test {
-    width: 100%;
-    background: var(--accent);
-    border: none;
-    color: #fff;
-    border-radius: var(--radius);
-    padding: 6px 0;
-    font-size: 12px;
-    cursor: pointer;
-    font-weight: 700;
-    transition: var(--transition-snappy-fast);
-    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.15);
+    @apply w-full bg-[var(--accent)] border-none text-white rounded-[var(--radius)] py-1.5 text-xs cursor-pointer font-bold transition-all duration-150 ease-out shadow-[0_2px_6px_rgba(56,189,248,0.15)];
   }
   .btn-test:hover:not(:disabled) {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+    @apply brightness-110 -translate-y-0.5 shadow-[0_4px_12px_rgba(56,189,248,0.3)];
   }
   .btn-test:active:not(:disabled) {
-    transform: translateY(0);
+    @apply translate-y-0;
   }
   .btn-test:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    @apply opacity-60 cursor-not-allowed;
   }
   .status-msg {
-    font-size: 12px;
-    font-weight: 600;
-    text-align: center;
+    @apply text-xs font-semibold text-center;
   }
   .status-msg.success {
-    color: #4caf50;
+    @apply text-emerald-400;
   }
   .status-msg.error {
-    color: #e57373;
+    @apply text-red-400;
   }
 </style>
