@@ -100,10 +100,6 @@ struct RawProcessing {
     auto_format_lists: Option<bool>,
     apply_snippets: Option<bool>,
     code_mode: Option<bool>,
-    ollama_enabled: Option<bool>,
-    ollama_model: Option<String>,
-    ollama_mode: Option<String>,
-    ollama_prompt: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -123,6 +119,14 @@ struct RawBinding {
     subkey: Option<String>,
     #[serde(default)]
     disabled: bool,
+    #[serde(default)]
+    ollama_enabled: Option<bool>,
+    #[serde(default)]
+    ollama_model: Option<String>,
+    #[serde(default)]
+    ollama_mode: Option<String>,
+    #[serde(default)]
+    ollama_prompt: Option<String>,
 }
 
 fn bool_true() -> bool {
@@ -167,11 +171,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         || r.processing.spoken_punctuation.is_some()
         || r.processing.auto_format_lists.is_some()
         || r.processing.apply_snippets.is_some()
-        || r.processing.code_mode.is_some()
-        || r.processing.ollama_enabled.is_some()
-        || r.processing.ollama_model.is_some()
-        || r.processing.ollama_mode.is_some()
-        || r.processing.ollama_prompt.is_some();
+        || r.processing.code_mode.is_some();
 
     // Migrate legacy post_processing string to processing overrides
     let processing = if !has_any_override {
@@ -186,10 +186,6 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
             auto_format_lists: r.processing.auto_format_lists,
             apply_snippets: r.processing.apply_snippets,
             code_mode: r.processing.code_mode,
-            ollama_enabled: r.processing.ollama_enabled,
-            ollama_model: r.processing.ollama_model,
-            ollama_mode: r.processing.ollama_mode,
-            ollama_prompt: r.processing.ollama_prompt,
         }
     };
 
@@ -246,7 +242,6 @@ fn migrate_legacy_pp(pp: &str) -> TargetProcessingConfig {
             spoken_punctuation: Some(false),
             auto_format_lists: Some(false),
             apply_snippets: Some(false),
-            ollama_enabled: Some(false),
             ..Default::default()
         },
         "strip_fillers" => TargetProcessingConfig {
@@ -254,7 +249,6 @@ fn migrate_legacy_pp(pp: &str) -> TargetProcessingConfig {
             spoken_punctuation: Some(false),
             auto_format_lists: Some(false),
             apply_snippets: Some(false),
-            ollama_enabled: Some(false),
             ..Default::default()
         },
         "snippets_only" => TargetProcessingConfig {
@@ -262,7 +256,6 @@ fn migrate_legacy_pp(pp: &str) -> TargetProcessingConfig {
             spoken_punctuation: Some(false),
             auto_format_lists: Some(false),
             apply_snippets: Some(true),
-            ollama_enabled: Some(false),
             ..Default::default()
         },
         "ollama_only" => TargetProcessingConfig {
@@ -270,7 +263,6 @@ fn migrate_legacy_pp(pp: &str) -> TargetProcessingConfig {
             spoken_punctuation: Some(false),
             auto_format_lists: Some(false),
             apply_snippets: Some(false),
-            ollama_enabled: Some(true),
             ..Default::default()
         },
         _ => TargetProcessingConfig::default(),
@@ -325,10 +317,6 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
             auto_format_lists: p.auto_format_lists,
             apply_snippets: p.apply_snippets,
             code_mode: p.code_mode,
-            ollama_enabled: p.ollama_enabled,
-            ollama_model: p.ollama_model.clone(),
-            ollama_mode: p.ollama_mode.clone(),
-            ollama_prompt: p.ollama_prompt.clone(),
         },
         response_pipe: t.response_pipe.clone(),
         tts_engine: t.tts_engine.clone(),
@@ -365,6 +353,10 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
         hold_threshold_ms: r.hold_threshold_ms,
         subkey: r.subkey,
         disabled: r.disabled,
+        ollama_enabled: r.ollama_enabled,
+        ollama_model: r.ollama_model,
+        ollama_mode: r.ollama_mode,
+        ollama_prompt: r.ollama_prompt,
     }
 }
 
@@ -388,6 +380,10 @@ fn binding_to_raw(b: &HotkeyBinding) -> RawBinding {
         hold_threshold_ms: b.hold_threshold_ms,
         subkey: b.subkey.clone(),
         disabled: b.disabled,
+        ollama_enabled: b.ollama_enabled,
+        ollama_model: b.ollama_model.clone(),
+        ollama_mode: b.ollama_mode.clone(),
+        ollama_prompt: b.ollama_prompt.clone(),
     }
 }
 
@@ -410,6 +406,10 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             hold_threshold_ms: 1000,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         },
         HotkeyBinding {
             id: "default_toggle".into(),
@@ -426,6 +426,10 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             hold_threshold_ms: 1000,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         },
     ]
 }

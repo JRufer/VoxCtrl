@@ -34,6 +34,14 @@ pub struct HotkeyBinding {
     pub subkey: Option<String>,
     #[serde(default)]
     pub disabled: bool,
+    #[serde(default)]
+    pub ollama_enabled: Option<bool>,
+    #[serde(default)]
+    pub ollama_model: Option<String>,
+    #[serde(default)]
+    pub ollama_mode: Option<String>,
+    #[serde(default)]
+    pub ollama_prompt: Option<String>,
 }
 
 impl HotkeyBinding {
@@ -87,10 +95,6 @@ pub struct TargetProcessingConfig {
     pub auto_format_lists: Option<bool>,
     pub apply_snippets: Option<bool>,
     pub code_mode: Option<bool>,
-    pub ollama_enabled: Option<bool>,
-    pub ollama_model: Option<String>,
-    pub ollama_mode: Option<String>,
-    pub ollama_prompt: Option<String>,
 }
 
 impl TargetProcessingConfig {
@@ -103,10 +107,6 @@ impl TargetProcessingConfig {
             || self.auto_format_lists.is_some()
             || self.apply_snippets.is_some()
             || self.code_mode.is_some()
-            || self.ollama_enabled.is_some()
-            || self.ollama_model.is_some()
-            || self.ollama_mode.is_some()
-            || self.ollama_prompt.is_some()
     }
 }
 

@@ -7,10 +7,6 @@ export interface TargetProcessingConfig {
   auto_format_lists?: boolean;
   apply_snippets?: boolean;
   code_mode?: boolean;
-  ollama_enabled?: boolean;
-  ollama_model?: string;
-  ollama_mode?: string;
-  ollama_prompt?: string;
 }
 
 export interface OutputTarget {
@@ -58,4 +54,8 @@ export interface HotkeyBinding {
   label: string;
   subkey?: string;
   disabled: boolean;
+  ollama_enabled?: boolean;
+  ollama_model?: string;
+  ollama_mode?: string;
+  ollama_prompt?: string;
 }

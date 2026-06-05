@@ -41,6 +41,9 @@ pub struct AppState {
     /// Currently active keybind display name/label
     pub active_binding_label: Arc<Mutex<String>>,
 
+    /// Currently active hotkey binding ID
+    pub active_binding_id: Arc<Mutex<String>>,
+
     /// Currently configured target definitions (in-memory cache for fast lookups)
     pub targets: Arc<Mutex<Vec<voxctrl_routing::OutputTarget>>>,
 

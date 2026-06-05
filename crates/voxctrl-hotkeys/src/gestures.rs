@@ -213,6 +213,10 @@ mod tests {
             hold_threshold_ms: 200,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         };
 
         let state = BindingState::new(binding);
@@ -233,6 +237,10 @@ mod tests {
             hold_threshold_ms: 200,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         };
 
         let cancel = CancellationToken::new();
@@ -275,6 +283,10 @@ mod tests {
             hold_threshold_ms: 200,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         };
 
         let mut state = BindingState::new(binding);

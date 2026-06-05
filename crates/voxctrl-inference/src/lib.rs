@@ -25,6 +25,8 @@ pub struct InferenceRequest {
     pub audio: Vec<f32>,
     /// Target id (used to look up per-target processing overrides)
     pub target_id: String,
+    /// Hotkey binding ID (if triggered by a hotkey)
+    pub binding_id: Option<String>,
     /// AT-SPI2 surrounding text for initial prompt, if available
     pub context_text: Option<String>,
 }
@@ -180,22 +182,25 @@ impl InferenceEngine {
             processed = String::new();
         }
 
-        // ── Target-Specific Ollama Post-Processing ────────────────────────────
-        let target_wants_ollama = target
-            .and_then(|t| t.processing.ollama_enabled)
+        // ── Hotkey-Specific Ollama Post-Processing ────────────────────────────
+        let bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
+        let binding = req.binding_id.as_ref().and_then(|bid| bindings.iter().find(|b| &b.id == bid));
+
+        let binding_wants_ollama = binding
+            .and_then(|b| b.ollama_enabled)
             .unwrap_or(false);
 
-        if target_wants_ollama && !processed.is_empty() {
+        if binding_wants_ollama && !processed.is_empty() {
             let mut ollama_cfg = app_config.ollama.clone();
             ollama_cfg.enabled = true;
 
-            if let Some(ref t) = target {
-                if let Some(ref model) = t.processing.ollama_model {
+            if let Some(ref b) = binding {
+                if let Some(ref model) = b.ollama_model {
                     if !model.is_empty() {
                         ollama_cfg.model = model.clone();
                     }
                 }
-                if let Some(ref mode_str) = t.processing.ollama_mode {
+                if let Some(ref mode_str) = b.ollama_mode {
                     ollama_cfg.mode = match mode_str.as_str() {
                         "clean" => voxctrl_config::OllamaMode::Clean,
                         "formal" => voxctrl_config::OllamaMode::Formal,
@@ -206,7 +211,7 @@ impl InferenceEngine {
                         _ => voxctrl_config::OllamaMode::Clean,
                     };
                 }
-                if let Some(ref prompt) = t.processing.ollama_prompt {
+                if let Some(ref prompt) = b.ollama_prompt {
                     if !prompt.is_empty() {
                         ollama_cfg.custom_prompt = Some(prompt.clone());
                         ollama_cfg.mode = voxctrl_config::OllamaMode::Custom;

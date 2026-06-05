@@ -6,7 +6,7 @@
   let targets = $state<OutputTarget[]>([]);
   let bindings = $state<HotkeyBinding[]>([]);
   let saving = $state(false);
-  let activeSection = $state<"targets" | "bindings">("targets");
+  let activeSection = $state<"targets" | "bindings">("bindings");
 
   // Modals state
   let editingTarget = $state<OutputTarget | null>(null);
@@ -252,23 +252,9 @@
       return;
     }
 
-    // Force prompt template to have `{text}` if Ollama processing is enabled with custom mode
-    if (editOllamaEnabled) {
-      if (editOllamaMode === "custom") {
-        if (!editOllamaPrompt.includes("{text}")) {
-          alert("Ollama Configuration Error:\nYour custom prompt template MUST contain the '{text}' placeholder so Ollama knows where to insert the transcribed text.\n\nExample:\nwrite a hyku about {text}");
-          return;
-        }
-      }
-    }
-
     // Commit flat states back to the target's processing config before saving
     editingTarget.processing = {
       apply_snippets: editApplySnippets,
-      ollama_enabled: editOllamaEnabled,
-      ollama_model: editOllamaModel,
-      ollama_mode: editOllamaMode,
-      ollama_prompt: editOllamaPrompt,
     };
  
     if (editingTarget.delivery === "mcp") {
@@ -361,6 +347,10 @@
       return;
     }
     isEditingBindingNew = true;
+    editOllamaEnabled = false;
+    editOllamaModel = "";
+    editOllamaMode = "custom";
+    editOllamaPrompt = "";
     editingBinding = {
       id: "binding_" + Math.random().toString(36).substring(2, 6),
       label: "New Binding",
@@ -372,6 +362,10 @@
       hold_threshold_ms: 1000,
       subkey: "",
       disabled: false,
+      ollama_enabled: false,
+      ollama_model: "",
+      ollama_mode: "custom",
+      ollama_prompt: "",
     };
   }
 
@@ -381,6 +375,10 @@
     if (!clone.target_ids) {
       clone.target_ids = clone.target_id ? [clone.target_id] : [];
     }
+    editOllamaEnabled = clone.ollama_enabled === true;
+    editOllamaModel = clone.ollama_model || "";
+    editOllamaMode = clone.ollama_mode || "custom";
+    editOllamaPrompt = clone.ollama_prompt || "";
     editingBinding = clone;
   }
 
@@ -419,6 +417,21 @@
       alert("Please capture a subkey trigger for the chord combo before saving.");
       return;
     }
+
+    // Force prompt template to have `{text}` if Ollama processing is enabled with custom mode
+    if (editOllamaEnabled) {
+      if (editOllamaMode === "custom") {
+        if (!editOllamaPrompt.includes("{text}")) {
+          alert("Ollama Configuration Error:\nYour custom prompt template MUST contain the '{text}' placeholder so Ollama knows where to insert the transcribed text.\n\nExample:\nwrite a haiku about {text}");
+          return;
+        }
+      }
+    }
+
+    editingBinding.ollama_enabled = editOllamaEnabled;
+    editingBinding.ollama_model = editOllamaModel;
+    editingBinding.ollama_mode = editOllamaMode;
+    editingBinding.ollama_prompt = editOllamaPrompt;
     if (editingBinding.target_ids && editingBinding.target_ids.length > 0) {
       // Clean up empty entries
       editingBinding.target_ids = editingBinding.target_ids.filter(id => id.trim() !== "");
@@ -640,11 +653,16 @@
             <span class="conflict-marker">CONFLICT</span>
           {/if}
           <div class="binding-content">
-            <div
-              class="binding-title"
-              class:has-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
-            >
-              {b.label || b.id}
+            <div class="binding-header-row">
+              <div
+                class="binding-title"
+                class:has-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture, b.subkey))}
+              >
+                {b.label || b.id}
+              </div>
+              {#if b.ollama_enabled}
+                <span class="badge ollama">Ollama LLM</span>
+              {/if}
             </div>
             <div class="binding-row2">
               <div class="keys-display">
@@ -973,44 +991,6 @@
               <input type="checkbox" bind:checked={editApplySnippets} />
               <span>Apply snippets to transcription text</span>
             </label>
-            <label class="checkbox-field mt-2">
-              <input type="checkbox" bind:checked={editOllamaEnabled} />
-              <span>Enable target-specific Ollama LLM post-processing</span>
-            </label>
-
-            {#if editOllamaEnabled}
-              <div class="ollama-target-settings pl-4 mt-2 ml-4">
-                <label class="field">
-                  <span>Model Override (leave empty for global default)</span>
-                  <input
-                    type="text"
-                    bind:value={editOllamaModel}
-                    placeholder="e.g. llama3.2:1b"
-                  />
-                </label>
-
-                <div class="field col mt-2">
-                  <div class="field-label-row">
-                    <span class="field-title">Custom Prompt Template</span>
-                    <span class="field-tag">LLM Prompt</span>
-                  </div>
-                  <textarea
-                    rows="3"
-                    bind:value={editOllamaPrompt}
-                    class:has-error={editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
-                    placeholder="e.g. write a haiku about {'{text}'}"
-                    use:autoResize
-                  ></textarea>
-                  {#if editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
-                    <span class="validation-error-msg">
-                      ⚠️ Validation Error: Prompt template MUST contain the <code>{"{text}"}</code> placeholder.
-                    </span>
-                  {:else}
-                    <p class="hint">Prompt template MUST contain the <code>{"{text}"}</code> placeholder.</p>
-                  {/if}
-                </div>
-              </div>
-            {/if}
           {/if}
 
           <label class="field mt-2">
@@ -1233,6 +1213,49 @@
             </span>
           {/if}
         </div>
+
+        <!-- Ollama Post-Processing Settings -->
+        <div class="processing-toggles border-t border-white/5 pt-[14px] mt-4">
+          <h5>Ollama LLM Post-Processing</h5>
+          <label class="checkbox-field">
+            <input type="checkbox" bind:checked={editOllamaEnabled} />
+            <span>Enable Ollama LLM post-processing for this hotkey</span>
+          </label>
+
+          {#if editOllamaEnabled}
+            <div class="ollama-target-settings pl-4 mt-2 ml-4">
+              <label class="field">
+                <span>Model Override (leave empty for global default)</span>
+                <input
+                  type="text"
+                  bind:value={editOllamaModel}
+                  placeholder="e.g. llama3.2:1b"
+                />
+              </label>
+
+              <div class="field col mt-2">
+                <div class="field-label-row">
+                  <span class="field-title">Custom Prompt Template</span>
+                  <span class="field-tag">LLM Prompt</span>
+                </div>
+                <textarea
+                  rows="3"
+                  bind:value={editOllamaPrompt}
+                  class:has-error={editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
+                  placeholder="e.g. write a haiku about {'{text}'}"
+                  use:autoResize
+                ></textarea>
+                {#if editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
+                  <span class="validation-error-msg">
+                    ⚠️ Validation Error: Prompt template MUST contain the <code>{"{text}"}</code> placeholder.
+                  </span>
+                {:else}
+                  <p class="hint">Prompt template MUST contain the <code>{"{text}"}</code> placeholder.</p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn-action secondary" onclick={() => { editingBinding = null; recordingTarget = null; }}>Cancel</button>
@@ -1358,6 +1381,12 @@
     border: 1px solid rgba(0, 229, 255, 0.3);
   }
 
+  .badge.ollama {
+    background: rgba(0, 230, 118, 0.15);
+    color: #b9f6ca;
+    border: 1px solid rgba(0, 230, 118, 0.3);
+  }
+
   .card-body {
     flex: 1;
     display: flex;
@@ -1433,6 +1462,13 @@
     flex-direction: column;
     gap: 4px;
     min-width: 0;
+  }
+
+  .binding-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .binding-title {

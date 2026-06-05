@@ -1584,9 +1584,9 @@ mod tests {
         let voices_dir = dir.path().join("voices");
         fs::create_dir_all(&voices_dir).unwrap();
         let bad_npy = b"NOTANPY\x01\x00\x00";
-        fs::write(voices_dir.join("af_heart.npy"), bad_npy).unwrap();
+        fs::write(voices_dir.join("af_heart_bad.npy"), bad_npy).unwrap();
 
-        let result = load_voice_embedding(&voices_dir, "af_heart", 0);
+        let result = load_voice_embedding(&voices_dir, "af_heart_bad", 0);
         assert!(result.is_err());
     }
 

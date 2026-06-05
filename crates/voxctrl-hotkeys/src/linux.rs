@@ -436,6 +436,10 @@ mod tests {
             hold_threshold_ms: 100, // short threshold for testing
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         })
     }
 
@@ -456,6 +460,10 @@ mod tests {
             hold_threshold_ms: 100,
             subkey: subkey.map(String::from),
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         })
     }
 

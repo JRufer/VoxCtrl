@@ -157,6 +157,7 @@ pub fn run() {
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
+        active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(targets.clone())),
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
@@ -186,6 +187,7 @@ pub fn run() {
         let mut accumulated_audio = Vec::<f32>::new();
         let mut was_recording = false;
         let mut target_id = "default".to_string();
+        let mut binding_id = String::new();
 
         while let Ok(chunk) = audio_rx.recv() {
             let is_recording = state_for_audio.is_recording();
@@ -194,6 +196,7 @@ pub fn run() {
                 if !was_recording {
                     accumulated_audio.clear();
                     target_id = state_for_audio.active_target.blocking_lock().clone();
+                    binding_id = state_for_audio.active_binding_id.blocking_lock().clone();
                     was_recording = true;
                 }
                 accumulated_audio.extend(chunk);
@@ -203,6 +206,7 @@ pub fn run() {
                         let req = voxctrl_inference::InferenceRequest {
                             audio: std::mem::take(&mut accumulated_audio),
                             target_id: target_id.clone(),
+                            binding_id: Some(binding_id.clone()),
                             context_text: None,
                         };
                         state_for_audio.set_processing(true);
@@ -253,6 +257,10 @@ pub fn run() {
             hold_threshold_ms: 0,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         });
     }
 
@@ -288,6 +296,7 @@ pub fn run() {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
                     *state_for_gesture.active_binding_label.lock().await = event.binding_label.clone();
+                    *state_for_gesture.active_binding_id.lock().await = event.binding_id.clone();
                     state_for_gesture.set_recording(true);
                 }
                 GestureKind::Stop => {
@@ -989,6 +998,7 @@ mod tests {
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
             active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
+            active_binding_id: Arc::new(Mutex::new(String::new())),
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,

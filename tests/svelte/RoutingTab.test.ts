@@ -38,7 +38,7 @@ describe("RoutingTab.svelte Conflict Detection", () => {
   });
 
   async function switchToBindingsTab() {
-    const tabButton = await screen.findByText(/Hotkey Bindings/i);
+    const tabButton = await screen.findByRole("button", { name: /Hotkey Bindings/i });
     await fireEvent.click(tabButton);
   }
 
@@ -165,5 +165,51 @@ describe("RoutingTab.svelte Conflict Detection", () => {
 
     const activeConflictItems = container.querySelectorAll(".active-conflict");
     expect(activeConflictItems.length).toBe(0);
+  });
+
+  test("shows Ollama LLM badge when ollama_enabled is true", async () => {
+    mockBindings = [
+      {
+        id: "bind1",
+        keys: ["KEY_LEFTMETA", "KEY_SPACE"],
+        gesture: "hold",
+        target_id: "default",
+        target_ids: ["default"],
+        tap_ms: 300,
+        hold_threshold_ms: 1000,
+        label: "Binding 1",
+        disabled: false,
+        ollama_enabled: true,
+      },
+    ];
+
+    render(RoutingTab);
+    await switchToBindingsTab();
+
+    const badge = await screen.findByText(/Ollama LLM/i);
+    expect(badge).not.toBeNull();
+  });
+
+  test("does not show Ollama LLM badge when ollama_enabled is false", async () => {
+    mockBindings = [
+      {
+        id: "bind1",
+        keys: ["KEY_LEFTMETA", "KEY_SPACE"],
+        gesture: "hold",
+        target_id: "default",
+        target_ids: ["default"],
+        tap_ms: 300,
+        hold_threshold_ms: 1000,
+        label: "Binding 1",
+        disabled: false,
+        ollama_enabled: false,
+      },
+    ];
+
+    render(RoutingTab);
+    await switchToBindingsTab();
+
+    const badge = screen.queryByText(/Ollama LLM/i);
+    expect(badge).toBeNull();
   });
 });

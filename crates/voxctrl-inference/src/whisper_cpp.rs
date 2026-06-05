@@ -369,7 +369,21 @@ mod tests {
     #[test]
     fn test_is_model_downloaded_default_dir_not_present() {
         // With empty model_dir (default) and no models on disk, returns false.
-        assert!(!is_model_downloaded("tiny", ""));
+        // We isolate HOME to ensure default directory is empty.
+        let old_home = std::env::var_os("HOME");
+        let temp_home = tempfile::tempdir().expect("create temp home");
+        let home = temp_home.path().to_path_buf();
+        std::env::set_var("HOME", &home);
+
+        let result = is_model_downloaded("tiny", "");
+
+        if let Some(old) = old_home {
+            std::env::set_var("HOME", old);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        assert!(!result);
     }
 
     #[test]
