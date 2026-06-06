@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [development, main]
 
+env:
+  CARGO_HTTP_MULTIPLEXING: false
+  CARGO_HTTP_HTTP2: false
+
 jobs:
   # ── Rust compile check ────────────────────────────────────────────────────────
   cargo-check:

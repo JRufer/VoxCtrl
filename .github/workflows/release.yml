@@ -16,6 +16,10 @@ on:
 permissions:
   contents: write   # needed to create/update GitHub releases
 
+env:
+  CARGO_HTTP_MULTIPLEXING: false
+  CARGO_HTTP_HTTP2: false
+
 # ── Build matrix ──────────────────────────────────────────────────────────────
 jobs:
   build:
