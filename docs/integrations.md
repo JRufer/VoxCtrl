@@ -171,7 +171,7 @@ The DBus service is a stub on non-Linux platforms (compiles but does nothing).
 
 ### Purpose
 
-After Whisper transcribes speech, text can optionally be rewritten by a local LLM running in [Ollama](https://ollama.ai/). Enabled per-target via `processing.ollama_enabled = true` in `targets.toml`.
+After Whisper transcribes speech, text can optionally be rewritten by a local LLM running in [Ollama](https://ollama.ai/). Enabled per-hotkey binding via `ollama_enabled = true` in `bindings.toml` (or via the Hotkeys tab in the GUI settings).
 
 ### Configuration
 

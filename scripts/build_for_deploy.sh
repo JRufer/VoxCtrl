@@ -49,7 +49,7 @@ echo -e "${BOLD}==========================================${NC}"
 # ── Determine version ─────────────────────────────────────────────────────────
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUNDLE_NAME="VoxCtrl-deploy-${VERSION}"
-APPIMAGE_FILE="VoxCtrl-x86_64.AppImage"
+APPIMAGE_FILE="VoxCtrl-latest-x86_64.AppImage"
 ZIP_FILE="${OUTPUT_DIR}/${BUNDLE_NAME}.zip"
 
 info "Version   : ${VERSION}"

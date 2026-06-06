@@ -35,6 +35,7 @@ Thumbs.db
 # Rust
 /target/
 **/target/
+/target_check/
 **/*.rs.bk
 .cargo_home/
 

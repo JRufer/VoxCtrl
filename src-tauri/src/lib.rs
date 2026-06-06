@@ -23,6 +23,11 @@ mod commands;
 mod state;
 mod default_overlays;
 mod startup_log;
+mod installer;
+
+pub fn run_cli_installer() -> Result<(), String> {
+    crate::installer::run_cli_installer()
+}
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -803,6 +808,7 @@ pub fn run() {
             test_ollama,
             cuda_enabled,
             check_udev_status,
+            install_system_integration,
             stop_tts,
         ])
         .run(tauri::generate_context!())

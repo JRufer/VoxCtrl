@@ -294,6 +294,13 @@ fn handle_release(
     _pressed: &HashSet<String>,
     tx: &GestureSender,
 ) {
+    // Collect keys for any currently active DoubleTapHold gestures
+    let active_dth_keys: Vec<Vec<String>> = states.iter()
+        .filter(|s| s.binding.gesture == GestureType::DoubleTapHold
+            && s.double_tap_hold_active.load(std::sync::atomic::Ordering::SeqCst))
+        .map(|s| s.binding.keys.clone())
+        .collect();
+
     for s in states.iter_mut() {
         if s.binding.disabled {
             continue;
@@ -318,22 +325,25 @@ fn handle_release(
             }
             GestureType::DoubleTap => {
                 if s.double_tap.on_release() {
-                    if !s.toggle_on {
-                        s.toggle_on = true;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Start,
-                        });
-                    } else {
-                        s.toggle_on = false;
-                        let _ = tx.send(GestureEvent {
-                            binding_id: s.binding.id.clone(),
-                            binding_label: s.binding.label.clone(),
-                            target_id: s.binding.target_ids_string(),
-                            kind: GestureKind::Stop,
-                        });
+                    let suppressed = active_dth_keys.contains(&s.binding.keys);
+                    if !suppressed {
+                        if !s.toggle_on {
+                            s.toggle_on = true;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Start,
+                            });
+                        } else {
+                            s.toggle_on = false;
+                            let _ = tx.send(GestureEvent {
+                                binding_id: s.binding.id.clone(),
+                                binding_label: s.binding.label.clone(),
+                                target_id: s.binding.target_ids_string(),
+                                kind: GestureKind::Stop,
+                            });
+                        }
                     }
                 }
             }

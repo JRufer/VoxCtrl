@@ -91,7 +91,7 @@ jobs:
 
       # Run tests for crates that have unit tests and no heavy system deps
       - name: cargo test
-        run: cargo test -p voxctrl-config -p voxctrl-routing
+        run: cargo test -p voxctrl-config -p voxctrl-routing -p voxctrl-hotkeys -p voxctrl-app
 
   # ── Frontend type check ───────────────────────────────────────────────────────
   frontend-check:

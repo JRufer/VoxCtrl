@@ -186,25 +186,26 @@ text = "{TEXT}"                    # Custom arguments template (substitutes the 
 
 ## 📦 Portable AppImage & Installation
 
-VoxCtrl runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, combined with an automation script that handles system integration and hotkey permissions.
+VoxCtrl runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, which features a built-in installer to handle system integration and hardware hotkey permissions.
 
 ### 1. Unified Setup & System Integration
 
-To install runtime dependencies, fetch/configure the AppImage, and integrate VoxCtrl into your desktop environment, run the unified `install.sh` script:
+To install runtime dependencies, configure global hotkey permissions, and integrate VoxCtrl into your desktop environment launcher, run the AppImage with the `--install` flag:
 
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x VoxCtrl-*-x86_64.AppImage
+./VoxCtrl-*-x86_64.AppImage --install
 ```
 
-#### What `install.sh` accomplishes automatically:
+Alternatively, you can just launch the AppImage normally. If the application detects missing permissions, a diagnostic window will appear with a **🔧 Setup System Integration** button to automatically run the setup.
+
+#### What the built-in installer accomplishes automatically:
 * **System Runtime Packages**: Detects your package manager (`apt`, `pacman`, `dnf`, `zypper`) and installs WebKitGTK, OpenSSL, PortAudio, `wtype`, `xdotool`, and clipboard utilities.
-* **AppImage Retrieval**: Checks for `VoxCtrl-x86_64.AppImage` locally. If missing, it attempts to fetch the latest pre-compiled binary from GitHub. If not found or offline, it falls back to building it from source.
 * **Low-Level Hardware Hotkeys**: Creates the `/etc/udev/rules.d/99-voxctrl.rules` rule to permit access to `uinput`, and adds your user to the `input` group so the evdev key listener works globally without running the application as root.
-* **Desktop Menu Integration**: Registers a modern `.desktop` entry in `~/.local/share/applications/` and copies application icons so VoxCtrl appears in your desktop application menus.
+* **Desktop Menu Integration**: Registers a modern `.desktop` entry in `~/.local/share/applications/` and copies the application icon so VoxCtrl appears in your desktop application menus.
 
 > [!IMPORTANT]
-> If `install.sh` adds your user account to the `input` group, you **must log out and log back in** (or reboot) for hardware global hotkeys to function correctly.
+> If the installer adds your user account to the `input` group, you **must log out and log back in** (or reboot) for hardware global hotkeys to function correctly.
 
 ---
 

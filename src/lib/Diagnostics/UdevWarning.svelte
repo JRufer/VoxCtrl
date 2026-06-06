@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { open } from "@tauri-apps/plugin-shell";
 
   let udevStatus = $state<{
     is_configured: boolean;
@@ -10,6 +9,9 @@
     in_group: boolean;
     needs_relogin: boolean;
   } | null>(null);
+
+  let installing = $state(false);
+  let installError = $state<string | null>(null);
 
   onMount(async () => {
     try {
@@ -29,39 +31,60 @@
     }
   }
 
-  async function handleDownload() {
+  async function handleSetup() {
+    installing = true;
+    installError = null;
     try {
-      await open("https://github.com/JRufer/VoxCtr/blob/master/install.sh");
-    } catch (err) {
-      console.error("Failed to open install.sh URL:", err);
+      const status: any = await invoke("install_system_integration");
+      udevStatus = status;
+    } catch (err: any) {
+      console.error("Failed to install system integration:", err);
+      installError = err.toString();
+    } finally {
+      installing = false;
     }
   }
 </script>
 
 <div class="diagnostic-window">
-  {#if udevStatus}
+  {#if installing}
+    <div class="loading-container animate-[scaleUp_0.3s_cubic-bezier(0.175,0.885,0.32,1.2)_forwards]">
+      <div class="spinner"></div>
+      <span class="loading-label">Configuring system dependencies & hotkey rules...</span>
+      <p class="installing-subtext">You may be prompted to enter your root/administrator password.</p>
+    </div>
+  {:else if udevStatus}
     <div class="modal-card">
-      <div class="modal-icon">⚠️</div>
-      <h2 class="modal-title">Hardware Permissions Required</h2>
+      <div class="modal-icon">{udevStatus.needs_relogin ? '🔄' : '⚠️'}</div>
+      <h2 class="modal-title">
+        {udevStatus.needs_relogin ? 'Relogin Required' : 'Hardware Permissions Required'}
+      </h2>
       <p class="modal-desc">
         {#if udevStatus.needs_relogin}
-          Hardware hotkey rules are installed, but your active session is missing <code>input</code> group permissions. Please **log out and log back in** (or reboot) for these settings to take effect.
+          Hardware hotkey rules are configured, but your active session is missing <code>input</code> group permissions. Please **log out and log back in** (or reboot) for these settings to take effect.
         {:else}
-          VoxCtrl requires global hotkey setup to capture keyboard shortcuts natively. The <code>install.sh</code> script must be run to configure system hardware permissions.
+          VoxCtrl requires global hotkey setup to capture keyboard shortcuts natively. Click below to automatically configure udev rules, input group membership, and desktop integration launcher files.
         {/if}
       </p>
+
+      {#if installError}
+        <div class="error-container">
+          <span class="error-icon">❌</span>
+          <span class="error-msg">{installError}</span>
+        </div>
+      {/if}
       
       <div class="modal-actions">
         {#if !udevStatus.needs_relogin}
           <button
             class="btn-primary"
-            onclick={handleDownload}
+            onclick={handleSetup}
           >
-            📥 Download install.sh
+            🔧 Setup System Integration
           </button>
         {/if}
         <button class="btn-secondary" onclick={handleClose}>
-          Continue Anyway
+          {udevStatus.needs_relogin ? 'Close' : 'Continue Anyway'}
         </button>
       </div>
     </div>
@@ -105,12 +128,24 @@
     @apply bg-white/5 px-1.5 py-0.5 rounded font-mono text-[var(--color-accent-blue)];
   }
 
+  .error-container {
+    @apply flex items-start gap-2 p-3 rounded bg-red-500/10 border border-red-500/20 text-left mb-5 text-[12px] text-red-400 w-full;
+  }
+
+  .error-icon {
+    @apply shrink-0;
+  }
+
+  .error-msg {
+    @apply leading-relaxed;
+  }
+
   .modal-actions {
     @apply flex flex-col gap-2.5 w-full;
   }
 
   .btn-primary {
-    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-accent-blue)] text-white font-bold no-underline text-[13px] shadow-[0_4px_14px_rgba(56,189,248,0.3)] transition-all duration-150 ease-out;
+    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-accent-blue)] text-white font-bold no-underline text-[13px] shadow-[0_4px_14px_rgba(56,189,248,0.3)] transition-all duration-150 ease-out cursor-pointer;
   }
 
   .btn-primary:hover {
@@ -122,7 +157,7 @@
   }
 
   .btn-secondary {
-    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-obsidian-800)] text-[var(--color-obsidian-300)] border border-[var(--border)] font-semibold text-[13px] transition-all duration-150 ease-out;
+    @apply flex items-center justify-center w-full py-2.5 px-4 rounded-md bg-[var(--color-obsidian-800)] text-[var(--color-obsidian-300)] border border-[var(--border)] font-semibold text-[13px] transition-all duration-150 ease-out cursor-pointer;
   }
 
   .btn-secondary:hover {
@@ -135,15 +170,19 @@
 
   /* Sleek loading state */
   .loading-container {
-    @apply flex flex-col items-center gap-4;
+    @apply flex flex-col items-center gap-3;
   }
 
   .loading-label {
-    @apply text-[13px] text-[var(--color-obsidian-300)] font-medium;
+    @apply text-[13.5px] text-[var(--color-obsidian-200)] font-semibold text-center;
+  }
+
+  .installing-subtext {
+    @apply text-[11.5px] text-[var(--color-obsidian-400)] max-w-[280px] text-center mt-1;
   }
 
   .spinner {
-    @apply w-7 h-7 border-[2.5px] border-white/5 border-t-[var(--color-accent-blue)] rounded-full animate-spin;
+    @apply w-7 h-7 border-[2.5px] border-white/5 border-t-[var(--color-accent-blue)] rounded-full animate-spin mb-2;
   }
 
   @keyframes scaleUp {
