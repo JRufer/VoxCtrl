@@ -62,6 +62,28 @@ pub fn run() {
     {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+
+        // Suppress libayatana-appindicator deprecation warnings by registering a dummy log handler
+        unsafe {
+            extern "C" {
+                fn g_log_set_handler(
+                    log_domain: *const std::os::raw::c_char,
+                    log_levels: std::os::raw::c_int,
+                    log_func: Option<unsafe extern "C" fn(*const std::os::raw::c_char, std::os::raw::c_int, *const std::os::raw::c_char, *mut std::os::raw::c_void)>,
+                    user_data: *mut std::os::raw::c_void,
+                ) -> std::os::raw::c_uint;
+            }
+
+            unsafe extern "C" fn dummy_log_handler(
+                _log_domain: *const std::os::raw::c_char,
+                _log_levels: std::os::raw::c_int,
+                _message: *const std::os::raw::c_char,
+                _user_data: *mut std::os::raw::c_void,
+            ) {}
+
+            let domain = b"libayatana-appindicator\0".as_ptr() as *const std::os::raw::c_char;
+            g_log_set_handler(domain, 16, Some(dummy_log_handler), std::ptr::null_mut());
+        }
     }
 
     // Initialise logging (console + special warning-free/privacy-safe startup and error file log)
