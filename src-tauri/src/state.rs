@@ -35,6 +35,10 @@ pub struct AppState {
     /// Most recent transcription result (shown in history + overlay)
     pub last_text: Arc<Mutex<String>>,
 
+    /// Monotonic counter — incremented each time last_text is written.
+    /// MCP transcribe_voice uses this to detect a new result vs a stale one.
+    pub last_text_version: Arc<std::sync::atomic::AtomicU64>,
+
     /// Currently active dictation target ID
     pub active_target: Arc<Mutex<String>>,
 

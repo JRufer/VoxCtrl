@@ -128,7 +128,11 @@ fn run_coordinator(
                             pressed.remove(&key_name);
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        tracing::error!(
+                            "Hotkey coordinator: event channel closed unexpectedly \
+                             ({e}); all hotkeys are disabled until the app restarts."
+                        );
                         break;
                     }
                 }
@@ -223,22 +227,11 @@ fn handle_press(
                 }
             }
             GestureType::DoubleTap => {
-                let completed = s.double_tap.on_press();
-                if completed {
-                    let cancel = tokio_util::sync::CancellationToken::new();
-                    s.double_tap_hold_cancel = Some(cancel.clone());
-                    let triggered = s.double_tap_hold_triggered.clone();
-                    triggered.store(false, std::sync::atomic::Ordering::SeqCst);
-                    let threshold = Duration::from_millis(s.binding.hold_threshold_ms as u64);
-                    tokio::spawn(async move {
-                        tokio::select! {
-                            _ = tokio::time::sleep(threshold) => {
-                                triggered.store(true, std::sync::atomic::Ordering::SeqCst);
-                            }
-                            _ = cancel.cancelled() => {}
-                        }
-                    });
-                }
+                // Only advance the state machine; the event fires on release, not
+                // press.  The hold-timer logic here was wrong: it gated the toggle
+                // on hold_threshold_ms (default 1 s) and prevented DoubleTap from
+                // ever firing when the timer happened to complete before release.
+                s.double_tap.on_press();
             }
             GestureType::DoubleTapHold => {
                 let completed = s.double_tap.on_press();
@@ -325,27 +318,22 @@ fn handle_release(
             }
             GestureType::DoubleTap => {
                 if s.double_tap.on_release() {
-                    if let Some(cancel) = s.double_tap_hold_cancel.take() {
-                        cancel.cancel();
-                    }
-                    if !s.double_tap_hold_triggered.load(std::sync::atomic::Ordering::SeqCst) {
-                        if !s.toggle_on {
-                            s.toggle_on = true;
-                            let _ = tx.send(GestureEvent {
-                                binding_id: s.binding.id.clone(),
-                                binding_label: s.binding.label.clone(),
-                                target_id: s.binding.target_ids_string(),
-                                kind: GestureKind::Start,
-                            });
-                        } else {
-                            s.toggle_on = false;
-                            let _ = tx.send(GestureEvent {
-                                binding_id: s.binding.id.clone(),
-                                binding_label: s.binding.label.clone(),
-                                target_id: s.binding.target_ids_string(),
-                                kind: GestureKind::Stop,
-                            });
-                        }
+                    if !s.toggle_on {
+                        s.toggle_on = true;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Start,
+                        });
+                    } else {
+                        s.toggle_on = false;
+                        let _ = tx.send(GestureEvent {
+                            binding_id: s.binding.id.clone(),
+                            binding_label: s.binding.label.clone(),
+                            target_id: s.binding.target_ids_string(),
+                            kind: GestureKind::Stop,
+                        });
                     }
                 }
             }
@@ -465,6 +453,95 @@ mod tests {
             ollama_mode: None,
             ollama_prompt: None,
         })
+    }
+
+    #[tokio::test]
+    async fn test_double_tap_fires_with_zero_hold_threshold() {
+        // Regression: DoubleTap was gated on a hold timer using hold_threshold_ms.
+        // When hold_threshold_ms=0 (or any low value) the timer fired before the key
+        // was released, setting double_tap_hold_triggered=true and permanently
+        // suppressing the toggle.  With the fix the timer is gone entirely.
+        let (tx, mut rx) = crate::channel();
+        let mut states = vec![BindingState::new(HotkeyBinding {
+            id: "dt_zero_threshold".to_string(),
+            label: "DT Zero".to_string(),
+            keys: vec!["KEY_LEFTMETA".to_string()],
+            gesture: GestureType::DoubleTap,
+            target_id: "t".to_string(),
+            target_ids: vec!["t".to_string()],
+            tap_ms: 300,
+            hold_threshold_ms: 0, // the value that previously broke DoubleTap
+            subkey: None,
+            disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
+        })];
+        let mut pressed = std::collections::HashSet::new();
+
+        // First tap
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+        // Second tap — must emit Start despite hold_threshold_ms=0
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        let event = rx.recv().await.expect("DoubleTap must fire with zero hold_threshold_ms");
+        assert_eq!(event.binding_id, "dt_zero_threshold");
+        assert_eq!(event.kind, GestureKind::Start);
+    }
+
+    #[tokio::test]
+    async fn test_double_tap_fires_with_large_hold_threshold() {
+        // Regression: DoubleTap with a large hold_threshold_ms (e.g. default 1000 ms)
+        // previously spawned a long-running timer.  A quick release (before the timer
+        // fired) would NOT emit an event because the timer hadn't set triggered=true,
+        // and the release handler required triggered=false to fire.  With the fix,
+        // DoubleTap always fires on the second release regardless of hold_threshold_ms.
+        let (tx, mut rx) = crate::channel();
+        let mut states = vec![BindingState::new(HotkeyBinding {
+            id: "dt_large_threshold".to_string(),
+            label: "DT Large".to_string(),
+            keys: vec!["KEY_LEFTMETA".to_string()],
+            gesture: GestureType::DoubleTap,
+            target_id: "t".to_string(),
+            target_ids: vec!["t".to_string()],
+            tap_ms: 300,
+            hold_threshold_ms: 1000, // default value from models.rs
+            subkey: None,
+            disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
+        })];
+        let mut pressed = std::collections::HashSet::new();
+
+        // First tap
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+        // Second tap (quick release, well before 1000 ms threshold)
+        pressed.insert("KEY_LEFTMETA".to_string());
+        handle_press("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        handle_release("KEY_LEFTMETA", &mut states, &pressed, &tx);
+        pressed.remove("KEY_LEFTMETA");
+
+        let event = rx.recv().await.expect("DoubleTap must fire regardless of hold_threshold_ms");
+        assert_eq!(event.binding_id, "dt_large_threshold");
+        assert_eq!(event.kind, GestureKind::Start);
     }
 
     #[tokio::test]
