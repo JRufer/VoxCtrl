@@ -300,10 +300,13 @@ delivery = "pipe"
 pipe_path = "/tmp/voice.fifo"
 ```
 
-**TTS per-target response:**
+**`speak`:**
 ```toml
-tts_engine = "piper"          # Default: "piper"
-tts_voice = "en-us-ryan-high" # Optional voice override
+delivery = "speak"
+```
+
+**TTS response pipe:**
+```toml
 response_pipe = "/tmp/tts-response.fifo"  # Optional FIFO for TTS output
 ```
 

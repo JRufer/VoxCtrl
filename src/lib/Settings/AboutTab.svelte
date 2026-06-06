@@ -66,6 +66,18 @@
         <span class="credit-license">MIT License</span>
       </div>
       <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/hexgrad/kokoro" target="_blank">Kokoro TTS</a>
+        <span class="credit-license">Apache 2.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/pykeio/ort" target="_blank">ONNX Runtime (ort)</a>
+        <span class="credit-license">MIT License</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/trossora/whisper-rs" target="_blank">whisper-rs</a>
+        <span class="credit-license">MIT License</span>
+      </div>
+      <div class="credit-item">
         <a class="credit-name-link" href="https://rust-lang.org" target="_blank">Rust, Tokio & CPAL</a>
         <span class="credit-license">MIT / Apache 2.0</span>
       </div>

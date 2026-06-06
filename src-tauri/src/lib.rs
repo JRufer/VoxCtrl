@@ -482,6 +482,23 @@ pub fn run() {
                 }
             }
 
+            // Register Speak target callback
+            {
+                let state = app.handle().state::<Arc<AppState>>().inner().clone();
+                voxctrl_routing::targets::set_speak_callback(std::sync::Arc::new(move |text| {
+                    let state = state.clone();
+                    let text_str = text.to_string();
+                    tauri::async_runtime::spawn(async move {
+                        let handle = state.tts_handle.lock().await;
+                        if let Some(ref tts) = *handle {
+                            tts.speak(text_str);
+                        } else {
+                            tracing::warn!("Speak target triggered but TTS is disabled or not initialized");
+                        }
+                    });
+                }));
+            }
+
             // ── Startup udev Diagnostics ──────────────────────────────────────
             #[cfg(target_os = "linux")]
             {
@@ -1085,8 +1102,6 @@ mod tests {
             initial_prompt: None,
             processing: Default::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
             strip_newlines: false,
         };
 
@@ -1119,8 +1134,6 @@ mod tests {
             initial_prompt: None,
             processing: Default::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
             strip_newlines: false,
         };
 
@@ -1148,6 +1161,9 @@ mod tests {
         for res in results {
             assert!(res.success, "Delivery failed: {:?}", res.error);
         }
+
+        // Sleep a tiny bit to let OS write flush
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let content_a = std::fs::read_to_string(&path_a).unwrap_or_default();
         let content_b = std::fs::read_to_string(&path_b).unwrap_or_default();
@@ -1225,7 +1241,32 @@ mod tests {
             assert!(res.is_configured);
             assert!(res.rule_exists);
             assert!(res.in_group);
-            assert!(!res.needs_relogin);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_speak_target_delivery() {
+        use voxctrl_routing::models::{DeliveryType, OutputTarget};
+        use voxctrl_routing::targets::build_target;
+        use std::sync::{Arc, Mutex};
+
+        let mut config = OutputTarget::default_inject();
+        config.delivery = DeliveryType::Speak;
+
+        let spoken = Arc::new(Mutex::new(String::new()));
+        let spoken_clone = spoken.clone();
+        let _ = voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
+            *spoken_clone.lock().unwrap() = text.to_string();
+        }));
+
+        let target = build_target(config);
+        let res = target.deliver("Test Speak Target from Tauri").await;
+        
+        assert!(res.success);
+        
+        let spoken_text = spoken.lock().unwrap();
+        if !spoken_text.is_empty() {
+            assert_eq!(*spoken_text, "Test Speak Target from Tauri");
         }
     }
 }

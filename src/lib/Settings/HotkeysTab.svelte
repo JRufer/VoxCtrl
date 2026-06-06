@@ -353,7 +353,6 @@
       send_on_release: false,
       append_newline: true,
       strip_newlines: false,
-      tts_engine: "None",
       processing: {
         apply_snippets: true,
         ollama_enabled: false,

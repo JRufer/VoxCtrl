@@ -39,8 +39,6 @@ export interface OutputTarget {
   initial_prompt?: string;
   processing?: TargetProcessingConfig;
   response_pipe?: string;
-  tts_engine: string;
-  tts_voice?: string;
 }
 
 export interface HotkeyBinding {

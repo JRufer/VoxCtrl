@@ -180,7 +180,8 @@
               { value: "dbus", label: "DBus Signal" },
               { value: "http", label: "HTTP Custom Client" },
               { value: "webhook", label: "Send Webhook Event" },
-              { value: "mcp", label: "Call MCP Server Tool" }
+              { value: "mcp", label: "Call MCP Server Tool" },
+              { value: "speak", label: "Speak Text Aloud (TTS)" }
             ]}
           />
         </label>
@@ -442,18 +443,6 @@
               bind:value={editingTarget.initial_prompt}
               placeholder="e.g. Format code variables in camelCase"
             />
-          </label>
-
-          <label class="field">
-            <span>Voice Response Engine</span>
-              <CustomSelect
-                bind:value={editingTarget.tts_engine}
-                options={[
-                  { value: "None", label: "Disabled (Silent Output)" },
-                  { value: "Piper", label: "Piper (Premium offline voice synthesis)" },
-                  { value: "Espeak", label: "eSpeak (Lightweight synthesizer)" }
-                ]}
-              />
           </label>
         </div>
       </div>

@@ -54,7 +54,6 @@
       send_on_release: false,
       append_newline: true,
       strip_newlines: false,
-      tts_engine: "None",
       processing: {
         apply_snippets: true,
         ollama_enabled: false,
@@ -168,6 +167,9 @@
           {/if}
           {#if t.delivery === "mcp"}
             <div class="binding-targets">MCP Tool: {t.mcp_tool || "speak_text"}</div>
+          {/if}
+          {#if t.delivery === "speak"}
+            <div class="binding-targets">Speech: Plays transcribed text via TTS</div>
           {/if}
           <div class="binding-actions">
             <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>

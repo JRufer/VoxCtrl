@@ -80,6 +80,7 @@ pub enum DeliveryType {
     Http,
     Webhook,
     Mcp,
+    Speak,
 }
 
 // ── Per-target processing overrides ──────────────────────────────────────────
@@ -171,9 +172,6 @@ pub struct OutputTarget {
 
     // TTS response loopback
     pub response_pipe: Option<String>,
-    #[serde(default = "default_tts_engine")]
-    pub tts_engine: String,
-    pub tts_voice: Option<String>,
 }
 
 fn bool_true() -> bool {
@@ -181,9 +179,6 @@ fn bool_true() -> bool {
 }
 fn default_http_method() -> String {
     "POST".into()
-}
-fn default_tts_engine() -> String {
-    "piper".into()
 }
 fn default_file_mode() -> String {
     "append".into()
@@ -221,8 +216,6 @@ impl OutputTarget {
             initial_prompt: None,
             processing: TargetProcessingConfig::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
         }
     }
 }

@@ -37,8 +37,6 @@ fn test_mcp_config_roundtrip() {
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
-        tts_engine: "piper".into(),
-        tts_voice: None,
     };
 
     save_targets(&[target.clone()], &temp_dir).unwrap();
@@ -146,8 +144,6 @@ async fn test_mcp_delivery_handshake() {
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
-        tts_engine: "piper".into(),
-        tts_voice: None,
     };
 
     let target = build_target(config);
@@ -1013,8 +1009,6 @@ async fn test_mcp_delivery_failure_server_error() {
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
-        tts_engine: "piper".into(),
-        tts_voice: None,
     };
 
     let target = build_target(config);
@@ -1062,8 +1056,6 @@ fn test_strip_newlines_config_roundtrip() {
         initial_prompt: None,
         processing: Default::default(),
         response_pipe: None,
-        tts_engine: "piper".into(),
-        tts_voice: None,
     };
 
     save_targets(&[target.clone()], &temp_dir).unwrap();
@@ -1129,6 +1121,25 @@ fn test_hold_threshold_default() {
     for binding in bindings {
         assert_eq!(binding.hold_threshold_ms, 1000);
     }
+}
+
+#[tokio::test]
+async fn test_speak_target_success() {
+    use std::sync::{Arc, Mutex};
+    let mut config = OutputTarget::default_inject();
+    config.delivery = DeliveryType::Speak;
+    
+    // Set mock speak callback
+    let spoken = Arc::new(Mutex::new(String::new()));
+    let spoken_clone = spoken.clone();
+    crate::targets::set_speak_callback(Arc::new(move |text| {
+        *spoken_clone.lock().unwrap() = text.to_string();
+    }));
+    
+    let target = build_target(config);
+    let res = target.deliver("Hello speak target").await;
+    assert!(res.success);
+    assert_eq!(*spoken.lock().unwrap(), "Hello speak target");
 }
 
 

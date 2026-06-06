@@ -29,8 +29,6 @@ Defined in `~/.config/voxctrl/targets.toml`. Each `[[target]]` block describes o
 | `send_on_release` | bool | `true` | Wait for hotkey release before delivering |
 | `initial_prompt` | string | null | Whisper context prompt override for this target |
 | `processing` | object | (inherit) | Per-target post-processing overrides |
-| `tts_engine` | string | `"piper"` | TTS engine for response loopback |
-| `tts_voice` | string | null | Voice override for TTS response |
 | `response_pipe` | string | null | FIFO path for TTS response output |
 
 ### Delivery Types
@@ -197,6 +195,18 @@ id = "mcp_out"
 delivery = "mcp"
 mcp_path = "/tmp/voxctrl-mcp.sock"   # Optional socket path override
 mcp_tool = "transcribe_voice"        # Optional tool name hint
+```
+
+---
+
+#### `speak` — Speak Text Aloud (TTS)
+Plays the transcribed text aloud via the globally configured Text-to-Speech (TTS) engine. This works offline and does not require an active MCP client or server to be enabled.
+
+```toml
+[[target]]
+id = "tts_out"
+label = "Read Transcription Aloud"
+delivery = "speak"
 ```
 
 ---

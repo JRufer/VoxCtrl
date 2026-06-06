@@ -81,11 +81,8 @@ struct RawTarget {
     strip_newlines: bool,
     initial_prompt: Option<String>,
     #[serde(default)]
-    processing: RawProcessing,
+    pub processing: RawProcessing,
     response_pipe: Option<String>,
-    #[serde(default = "default_tts_engine")]
-    tts_engine: String,
-    tts_voice: Option<String>,
     // Legacy field kept for migration
     post_processing: Option<String>,
 }
@@ -135,9 +132,6 @@ fn bool_true() -> bool {
 fn default_post() -> String {
     "POST".into()
 }
-fn default_tts_engine() -> String {
-    "piper".into()
-}
 fn default_file_mode() -> String {
     "append".into()
 }
@@ -161,6 +155,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         "http" => DeliveryType::Http,
         "webhook" => DeliveryType::Webhook,
         "mcp" => DeliveryType::Mcp,
+        "speak" => DeliveryType::Speak,
         _ => DeliveryType::Inject,
     };
 
@@ -230,8 +225,6 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         initial_prompt: r.initial_prompt,
         processing,
         response_pipe: r.response_pipe,
-        tts_engine: r.tts_engine,
-        tts_voice: r.tts_voice,
     }
 }
 
@@ -319,8 +312,6 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
             code_mode: p.code_mode,
         },
         response_pipe: t.response_pipe.clone(),
-        tts_engine: t.tts_engine.clone(),
-        tts_voice: t.tts_voice.clone(),
         post_processing: None,
     }
 }
