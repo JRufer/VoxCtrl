@@ -103,20 +103,29 @@ for cuda_dir in "/opt/cuda/bin" "/usr/local/cuda/bin"; do
 done
 
 # Set CUDA home variables if found on the system
+CUDA_FOUND=false
 if [ -d "/opt/cuda" ]; then
     export CUDA_PATH="/opt/cuda"
     export CUDA_TOOLKIT_ROOT_DIR="/opt/cuda"
     export CUDAToolkit_ROOT="/opt/cuda"
     export CUDACXX="/opt/cuda/bin/nvcc"
+    CUDA_FOUND=true
 elif [ -d "/usr/local/cuda" ]; then
     export CUDA_PATH="/usr/local/cuda"
     export CUDA_TOOLKIT_ROOT_DIR="/usr/local/cuda"
     export CUDAToolkit_ROOT="/usr/local/cuda"
     export CUDACXX="/usr/local/cuda/bin/nvcc"
+    CUDA_FOUND=true
 fi
 
 info "Running Tauri release compiler with headless PATH and CUDA injection..."
-npx tauri build
+if [ "$CUDA_FOUND" = true ]; then
+    info "CUDA detected. Compiling with GPU support..."
+    npx tauri build -- --features cuda
+else
+    info "CUDA not detected. Compiling for CPU only..."
+    npx tauri build
+fi
 
 ok "Compilation finished successfully."
 

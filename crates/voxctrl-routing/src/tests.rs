@@ -1142,5 +1142,55 @@ async fn test_speak_target_success() {
     assert_eq!(*spoken.lock().unwrap(), "Hello speak target");
 }
 
+// ── shellexpand_tilde tests ───────────────────────────────────────────────────
 
+#[test]
+fn test_shellexpand_tilde_bare_tilde_does_not_panic() {
+    // Bug fix regression: bare "~" must not panic with byte-index-out-of-bounds.
+    use crate::targets::shellexpand_tilde_pub;
+    let result = shellexpand_tilde_pub("~");
+    // Result must be a valid path (either home dir or "~" if home is unavailable).
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn test_shellexpand_tilde_with_slash_expands() {
+    use crate::targets::shellexpand_tilde_pub;
+    if let Some(home) = dirs::home_dir() {
+        let result = shellexpand_tilde_pub("~/documents");
+        let expected = home.join("documents").to_string_lossy().into_owned();
+        assert_eq!(result, expected);
+    }
+}
+
+#[test]
+fn test_shellexpand_tilde_bare_expands_to_home() {
+    use crate::targets::shellexpand_tilde_pub;
+    if let Some(home) = dirs::home_dir() {
+        let result = shellexpand_tilde_pub("~");
+        assert_eq!(result, home.to_string_lossy());
+    }
+}
+
+#[test]
+fn test_shellexpand_tilde_absolute_path_unchanged() {
+    use crate::targets::shellexpand_tilde_pub;
+    let path = "/absolute/path/to/file.txt";
+    assert_eq!(shellexpand_tilde_pub(path), path);
+}
+
+#[test]
+fn test_shellexpand_tilde_relative_path_unchanged() {
+    use crate::targets::shellexpand_tilde_pub;
+    let path = "relative/path/file.txt";
+    assert_eq!(shellexpand_tilde_pub(path), path);
+}
+
+#[test]
+fn test_shellexpand_tilde_no_tilde_prefix_unchanged() {
+    use crate::targets::shellexpand_tilde_pub;
+    // "~something" (no slash) is NOT a home-dir expansion — keep as-is.
+    let path = "~something";
+    assert_eq!(shellexpand_tilde_pub(path), path);
+}
 

@@ -407,7 +407,7 @@ The application employs robust permission checks at startup and via the `check_u
   ```bash
   VOXCTRL_TEST_UDEV_STATUS=missing npm run tauri dev
   ```
-  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) in the foreground detailing the need for hardware udev rules, providing a direct **📥 Download install.sh** button to GitHub, and a **Continue Anyway** native window close pathway.
+  * **UI Outcome**: Spawns a standalone native window (`udev-warning`) in the foreground detailing the need for hardware udev rules, providing a direct **🔧 Setup System Integration** button to run setup automatically, and a **Continue Anyway** native window close pathway.
 
 * **Simulate Relogin Required (Installer run but session not updated)**:
   Simulates that rules exist but the current shell process is missing `input` group permissions:

@@ -634,6 +634,12 @@ pub async fn check_udev_status() -> Result<UdevStatusPayload, String> {
     }
 }
 
+#[tauri::command]
+pub async fn install_system_integration() -> Result<UdevStatusPayload, String> {
+    crate::installer::run_gui_installer().await?;
+    check_udev_status().await
+}
+
 #[derive(serde::Serialize)]
 pub struct MonitorInfo {
     pub name: Option<String>,

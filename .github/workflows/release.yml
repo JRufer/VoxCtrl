@@ -264,7 +264,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
-          name: "VoxCtr ${{ steps.tag.outputs.name }}"
+          name: "VoxCtrl ${{ steps.tag.outputs.name }}"
           draft: true
           generate_release_notes: true
           fail_on_unmatched_files: true
@@ -288,11 +288,14 @@ jobs:
 
             ### Linux CPU — first run
             ```bash
-            chmod +x VoxCtr_*-linux-x86_64.AppImage
-            ./VoxCtr_*-linux-x86_64.AppImage
+            chmod +x VoxCtrl_*-linux-x86_64.AppImage
+            # Run the built-in host setup (configures evdev global hotkeys and udev permissions)
+            ./VoxCtrl_*-linux-x86_64.AppImage --install
+            # Launch the application
+            ./VoxCtrl_*-linux-x86_64.AppImage
             ```
 
             ### Linux CUDA — install
             ```bash
-            sudo dpkg -i VoxCtr_*-linux-x86_64-cuda.deb
+            sudo dpkg -i VoxCtrl_*-linux-x86_64-cuda.deb
             ```

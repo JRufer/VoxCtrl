@@ -135,20 +135,21 @@ Once locked, the platform is physically blocked from corrupting the shebang, and
 To run the completed portable application on a fresh host system, follow these deployment steps:
 
 ### 1. Copy the Essential Files
-You only need to transfer **two files** to the new machine:
+You only need to transfer **one file** to the new machine:
 * `VoxCtrl-*-x86_64.AppImage` (the versioned executable)
-* `install.sh` (the host setup script)
 
 ### 2. Run the Unified Setup
-Run the setup script on the new machine once to pull in runtime dependencies, register global hotkey udev rules, and register a desktop launcher menu item:
+Run the built-in setup command once on the new machine to automatically pull in host runtime dependencies, register global hotkey udev rules, install desktop icons, and write a menu launcher:
 
 ```bash
-chmod +x install.sh
-./install.sh
+chmod +x VoxCtrl-*-x86_64.AppImage
+./VoxCtrl-*-x86_64.AppImage --install
 ```
 
+Alternatively, you can just double-click or run the AppImage directly; VoxCtrl's diagnostic system will detect the missing permissions at startup and present an interactive GUI button to configure the setup.
+
 ### 3. Apply Group Privileges
-Because `install.sh` adds your account to the low-level `input` group for global hardware hotkeys, **you must log out and log back in** (or reboot) before launching the application.
+Because the installer adds your account to the low-level `input` group for global hardware hotkeys, **you must log out and log back in** (or reboot) before launching the application.
 
 ---
 

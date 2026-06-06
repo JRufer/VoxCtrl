@@ -27,22 +27,26 @@ curl -LO https://github.com/jrufer/voxctrl/releases/latest/download/VoxCtrl.AppI
 # Make executable
 chmod +x VoxCtrl.AppImage
 
-# Run
-./VoxCtrl.AppImage
+# Run normally
+./VoxCtrl-x86_64.AppImage
+
+# Or run the built-in installer for desktop integration and hardware permissions:
+./VoxCtrl-x86_64.AppImage --install
 ```
 
-Or use the install script for system integration (desktop entry, udev rules):
-```bash
-bash install.sh
-```
+### Setup Methods
 
-The install script:
-1. Copies the AppImage to `~/.local/bin/voxctrl`
-2. Installs a `.desktop` file for application launchers
-3. Creates udev rules for `/dev/input` access (required for global hotkeys)
-4. Adds the current user to the `input` group
+VoxCtrl supports two ways to perform system configuration (udev rules, input group, desktop shortcut, and high-res icon):
+1. **CLI Mode:** Run `./VoxCtrl-x86_64.AppImage --install` in a terminal. It will prompt for your administrator password via `sudo` and configure everything.
+2. **GUI Mode:** Launch the AppImage normally. If hardware permissions are missing, a diagnostics window will automatically appear. Click the **🔧 Setup System Integration** button; it will securely prompt for your password via `pkexec` and configure everything in the background.
 
-> **Note:** After running `install.sh`, you must log out and back in for the `input` group membership to take effect. Until then, global hotkeys will not work.
+The built-in installer:
+1. Copies the application icon to `~/.local/share/icons/hicolor/128x128/apps/voxctrl.png`
+2. Registers a `.desktop` launcher file in `~/.local/share/applications/voxctrl.desktop` linking to the active AppImage path
+3. Establishes hardware udev rules (`/etc/udev/rules.d/99-voxctrl.rules`) to grant hotkey device permissions
+4. Adds your active user account to the system `input` group
+
+> **Note:** After running the installer, you must log out and log back in (or reboot) for the new `input` group permissions to take effect. Until then, global hotkeys will not work.
 > 
 > **Robust Container / Sandbox Support:** VoxCtrl employs intelligent diagnostic checks that support legacy rule files (`99-voxctrl.rules`, `99-voxctl.rules`, or `99-voxctr.rules`) and dynamically fallback to checking the system's NSS group database (`/etc/group`) if the current container process session fails to refresh its active group token, ensuring that the warning screen does not show up repeatedly on every launch.
 
@@ -192,7 +196,7 @@ See [Development Guide](./development.md).
 ### Hotkeys not working
 - Check you are in the `input` group: `groups | grep input`
 - Log out and back in after adding to group
-- On some distros, the udev rule path differs — check `install.sh` for details
+- On some distros, the udev rule path differs — check the built-in installer logic for details
 
 ### No audio devices found
 - Run `arecord -l` to verify your mic is recognized by ALSA

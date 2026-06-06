@@ -50,34 +50,55 @@ static PUNCT_WORDS: &[(&str, &str)] = &[
     ("greater than",     ">"),
 ];
 
+// Compiled once at first call; reused for every subsequent transcription.
+static PUNCT_REGEX_TABLE: std::sync::OnceLock<Vec<(Regex, &'static str)>> =
+    std::sync::OnceLock::new();
+static DOUBLE_SPACE_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static LIST_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+fn punct_regex_table() -> &'static [(Regex, &'static str)] {
+    PUNCT_REGEX_TABLE.get_or_init(|| {
+        PUNCT_WORDS
+            .iter()
+            .filter_map(|(word, repl)| {
+                let pattern = format!(r"(?i)\b{}\b", regex::escape(word));
+                Regex::new(&pattern).ok().map(|re| (re, *repl))
+            })
+            .collect()
+    })
+}
+
+fn double_space_re() -> &'static Regex {
+    DOUBLE_SPACE_RE.get_or_init(|| Regex::new(r" {2,}").unwrap())
+}
+
+fn list_re() -> &'static Regex {
+    LIST_RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)\b(first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|finally)\b,?\s*",
+        )
+        .unwrap()
+    })
+}
+
 pub fn apply_spoken_punctuation(text: &str) -> String {
     let mut result = text.to_string();
-    for (word, replacement) in PUNCT_WORDS {
-        // Case-insensitive word-boundary replacement
-        let pattern = format!(r"(?i)\b{}\b", regex::escape(word));
-        if let Ok(re) = Regex::new(&pattern) {
-            result = re.replace_all(&result, *replacement).to_string();
-        }
+    for (re, replacement) in punct_regex_table() {
+        result = re.replace_all(&result, *replacement).to_string();
     }
-    // Clean up double spaces
-    let ws = Regex::new(r" {2,}").unwrap();
-    ws.replace_all(&result, " ").trim().to_string()
+    double_space_re().replace_all(&result, " ").trim().to_string()
 }
 
 // ── Auto list formatting ──────────────────────────────────────────────────────
 
 pub fn auto_format_lists(text: &str) -> String {
-    // If text contains "first ... second ... third" pattern, format as list
-    let list_re = Regex::new(
-        r"(?i)\b(first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|finally)\b,?\s*"
-    ).unwrap();
-    if !list_re.is_match(text) {
+    let re = list_re();
+    if !re.is_match(text) {
         return text.to_string();
     }
 
     let mut counter = 1u32;
-    list_re
-        .replace_all(text, |_caps: &regex::Captures| {
+    re.replace_all(text, |_caps: &regex::Captures| {
             let prefix = format!("\n{}. ", counter);
             counter += 1;
             prefix
@@ -286,6 +307,45 @@ pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_spoken_punct_regex_table_cached() {
+        // Calling twice must return the exact same slice address (OnceLock).
+        let p1 = punct_regex_table().as_ptr();
+        let p2 = punct_regex_table().as_ptr();
+        assert_eq!(p1, p2, "punct_regex_table must return the same compiled Vec");
+    }
+
+    #[test]
+    fn test_auto_format_lists_regex_cached() {
+        let p1 = list_re() as *const _;
+        let p2 = list_re() as *const _;
+        assert_eq!(p1, p2, "list_re must return the same compiled Regex");
+    }
+
+    #[test]
+    fn test_double_space_regex_cached() {
+        let p1 = double_space_re() as *const _;
+        let p2 = double_space_re() as *const _;
+        assert_eq!(p1, p2, "double_space_re must return the same compiled Regex");
+    }
+
+    #[test]
+    fn test_spoken_punct_correctness() {
+        // The regex matches only the spoken word; the preceding space is preserved.
+        assert_eq!(
+            apply_spoken_punctuation("Hello period world"),
+            "Hello . world"
+        );
+        assert_eq!(
+            apply_spoken_punctuation("yes comma no"),
+            "yes , no"
+        );
+        assert_eq!(
+            apply_spoken_punctuation("what question mark"),
+            "what ?"
+        );
+    }
 
     #[test]
     fn test_silence_hallucinations() {

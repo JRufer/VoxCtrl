@@ -73,7 +73,15 @@ Full schema with defaults:
     "voice_dir": "",
     "stop_key": ["KEY_ESCAPE"],
     "response_overlay": true,
-    "gpu": false
+    "speed": 1.0,
+    "gpu": false,
+    "kokoro": {
+      "voice": "af_heart",
+      "quality": "fp16",
+      "speed": 1.0,
+      "prewarm": false,
+      "data_dir": ""
+    }
   },
   "mcp": {
     "server_enabled": false,
@@ -190,7 +198,20 @@ Example with snippets:
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
+| `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0) |
 | `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Kokoro and Piper |
+| `kokoro` | object | | Kokoro engine sub-configuration (see below) |
+
+**`kokoro` sub-object:**
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voice` | string | `"af_heart"` | Voice ID, e.g. `"af_heart"`, `"am_adam"`, `"bf_emma"`, `"bm_george"` |
+| `quality` | string | `"fp16"` | Model precision: `"f32"` (310 MB), `"fp16"` (169 MB), `"int8"` (88 MB) |
+| `speed` | float | `1.0` | Speech speed multiplier (0.5 – 2.0) |
+| `prewarm` | bool | `false` | Pre-warm model on startup so first speech is instantaneous |
+| `data_dir` | string | `""` | Custom directory for model/voices; empty = `~/.local/share/voxctrl/kokoro/` |
+
 
 ### `mcp` section
 
@@ -243,10 +264,6 @@ auto_format_lists = true
 apply_snippets = true
 code_mode = false
 quiet_mode = false
-ollama_enabled = false
-ollama_model = ""
-ollama_mode = ""
-ollama_prompt = ""
 atspi_context = true
 noise_suppression = false
 ```
@@ -326,6 +343,8 @@ gesture = "hold"
 target_ids = ["default"]
 hold_threshold_ms = 200        # Default: 200ms min hold to register
 disabled = false
+ollama_enabled = true          # Enable Ollama rewrite specifically for this hotkey
+ollama_mode = "formal"         # Rewrite output in formal style for this hotkey
 
 [[binding]]
 id = "dictate_notes"
@@ -374,6 +393,10 @@ target_ids = ["default"]
 | `hold_threshold_ms` | integer | No | `200` | Min hold duration in ms for hold / double-tap-hold gesture |
 | `tap_ms` | integer | No | `250` | Double-tap inter-press window in ms |
 | `disabled` | bool | No | `false` | Disable without deleting |
+| `ollama_enabled` | bool | No | `null` | Enable/disable Ollama post-processing specifically for this hotkey (null = inherit global config) |
+| `ollama_model` | string | No | `null` | Ollama model override specifically for this hotkey |
+| `ollama_mode` | string | No | `null` | Ollama mode override specifically for this hotkey (`clean`/`formal`/`casual`/`bullet`/`concise`/`custom`) |
+| `ollama_prompt` | string | No | `null` | Custom prompt override specifically for this hotkey |
 
 ---
 

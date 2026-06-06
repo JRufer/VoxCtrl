@@ -23,6 +23,11 @@ mod commands;
 mod state;
 mod default_overlays;
 mod startup_log;
+mod installer;
+
+pub fn run_cli_installer() -> Result<(), String> {
+    crate::installer::run_cli_installer()
+}
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -177,6 +182,7 @@ pub fn run() {
         gain: Arc::new(std::sync::atomic::AtomicU32::new(cfg_data.audio.gain.to_bits())),
         word_count: Arc::new(AtomicU32::new(0)),
         last_text: Arc::new(Mutex::new(String::new())),
+        last_text_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         active_target: Arc::new(Mutex::new("default".to_string())),
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
         active_binding_id: Arc::new(Mutex::new(String::new())),
@@ -342,13 +348,21 @@ pub fn run() {
                 let words = output.text.split_whitespace().count() as u32;
                 state.increment_words(words);
 
-                // Deliver text via the output target router
+                // Deliver text via the output target router.
+                // Write last_text BEFORE launching deliveries so that MCP
+                // transcribe_voice can detect the result without waiting for
+                // potentially slow targets (webhooks, sockets, etc.).
                 let text = output.text.clone();
                 let target_id = output.target_id.clone();
                 let router = state.router.clone();
                 let state_lt = state.clone();
                 let text_lt = output.text.clone();
                 rt_handle.spawn(async move {
+                    {
+                        let mut lt = state_lt.last_text.lock().await;
+                        *lt = text_lt;
+                        state_lt.last_text_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
                     let target_ids: Vec<String> = target_id
                         .split(',')
                         .map(|s| s.trim().to_string())
@@ -364,7 +378,6 @@ pub fn run() {
                     }
                     // Wait for all deliveries to complete concurrently
                     while let Some(_) = join_set.join_next().await {}
-                    *state_lt.last_text.lock().await = text_lt;
                 });
 
                 let (show_notif, history_enabled) = {
@@ -795,6 +808,7 @@ pub fn run() {
             test_ollama,
             cuda_enabled,
             check_udev_status,
+            install_system_integration,
             stop_tts,
         ])
         .run(tauri::generate_context!())
@@ -807,18 +821,18 @@ impl McpCallbacks for AppState {
             use std::sync::atomic::Ordering;
             use tokio::time::{sleep, Duration};
 
-            // 1. Clear last_text
-            {
-                let mut lt = self.last_text.lock().await;
-                lt.clear();
-            }
+            // Snapshot the current version counter BEFORE starting. The delivery
+            // thread increments it each time a new result is written to last_text.
+            // Polling for version > baseline_version guarantees we only accept a
+            // result from THIS recording session, never a stale prior-session value.
+            let baseline_version = self.last_text_version.load(Ordering::SeqCst);
 
             self.set_mcp_recording(true);
 
-            // 2. Start recording
+            // Start recording.
             self.set_recording(true);
 
-            // 3. Spawn a timer task to automatically stop recording after timeout_secs
+            // Spawn a timer to automatically stop recording after timeout_secs.
             let recording = self.recording.clone();
             let audio_tx = self.audio_tx.clone();
             tokio::spawn(async move {
@@ -827,21 +841,23 @@ impl McpCallbacks for AppState {
                 let _ = audio_tx.send(Vec::new());
             });
 
-            // 4. Wait until recording is set to false (either by the timer or manually/VAD if that's implemented)
+            // Wait until recording stops (timer or manual stop).
             while self.is_recording() {
                 sleep(Duration::from_millis(50)).await;
             }
 
             self.set_mcp_recording(false);
 
-            // 5. Wait a short time for inference to finish and populate last_text
-            let poll_limit = 60; // 60 * 50ms = 3.0 seconds maximum wait for inference
+            // Wait for inference + delivery to produce a new last_text.
+            // last_text is now written BEFORE delivery targets run, so this poll
+            // completes as soon as inference finishes rather than waiting for slow
+            // delivery targets.  3 s budget is kept as a safety net.
+            let poll_limit = 60; // 60 × 50 ms = 3.0 s
             let mut text = String::new();
             for _ in 0..poll_limit {
                 sleep(Duration::from_millis(50)).await;
-                let current = self.last_text.lock().await.clone();
-                if !current.is_empty() {
-                    text = current;
+                if self.last_text_version.load(Ordering::SeqCst) > baseline_version {
+                    text = self.last_text.lock().await.clone();
                     break;
                 }
             }
@@ -1035,6 +1051,7 @@ mod tests {
             gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             word_count: Arc::new(AtomicU32::new(0)),
             last_text: Arc::new(Mutex::new(String::new())),
+            last_text_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             active_target: Arc::new(Mutex::new("default".to_string())),
             active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
             active_binding_id: Arc::new(Mutex::new(String::new())),

@@ -368,6 +368,8 @@ interface AudioConfig {
 interface UiConfig {
   show_overlay: boolean;
   overlay_style: "voice_card" | "waveform" | "pulse" | "blue_wave" | "none";
+  overlay_position: string;
+  overlay_monitor: string;
   auto_show_settings: boolean;
   show_notification: boolean;
   history_enabled: boolean;
@@ -391,12 +393,24 @@ interface OllamaConfig {
   timeout_secs: number;
 }
 
+interface KokoroConfig {
+  voice: string;
+  quality: string;
+  speed: number;
+  prewarm: boolean;
+  data_dir: string;
+}
+
 interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak";
+  engine: "piper" | "espeak" | "kokoro";
   voice: string;
+  voice_dir: string;
   stop_key: string[];       // singular field name, plural value
   response_overlay: boolean;
+  speed: number;
+  gpu: boolean;
+  kokoro: KokoroConfig;
 }
 
 interface McpConfig {
@@ -467,10 +481,6 @@ interface TargetProcessingConfig {
   auto_format_lists?: boolean;
   apply_snippets?: boolean;
   code_mode?: boolean;
-  ollama_enabled?: boolean;
-  ollama_model?: string;
-  ollama_mode?: string;
-  ollama_prompt?: string;
 }
 
 interface HotkeyBinding {
@@ -484,6 +494,10 @@ interface HotkeyBinding {
   hold_threshold_ms: number;// default: 200
   subkey?: string;          // Optional subkey trigger for chord gesture
   disabled: boolean;
+  ollama_enabled?: boolean;
+  ollama_model?: string;
+  ollama_mode?: string;
+  ollama_prompt?: string;
 }
 
 interface AppStatus {

@@ -750,10 +750,19 @@ fn which(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Public alias for tests — not part of the stable API.
+#[cfg(test)]
+pub fn shellexpand_tilde_pub(s: &str) -> String {
+    shellexpand_tilde(s)
+}
+
 fn shellexpand_tilde(s: &str) -> String {
-    if s.starts_with('~') {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(&s[2..]).to_string_lossy().into_owned();
+    if let Some(home) = dirs::home_dir() {
+        if s == "~" {
+            return home.to_string_lossy().into_owned();
+        }
+        if let Some(rest) = s.strip_prefix("~/") {
+            return home.join(rest).to_string_lossy().into_owned();
         }
     }
     s.to_string()
