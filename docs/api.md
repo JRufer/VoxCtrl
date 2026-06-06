@@ -414,7 +414,7 @@ interface AtspiConfig {
 interface OutputTarget {
   id: string;
   label: string;
-  delivery: "inject" | "clipboard" | "exec" | "pipe" | "socket" | "file" | "dbus" | "http" | "webhook" | "mcp";
+  delivery: "inject" | "clipboard" | "exec" | "pipe" | "socket" | "file" | "dbus" | "http" | "webhook" | "mcp" | "speak";
 
   // exec
   command?: string;
@@ -455,8 +455,6 @@ interface OutputTarget {
 
   processing: TargetProcessingConfig;
 
-  tts_engine: string;
-  tts_voice?: string;
   response_pipe?: string;
 }
 

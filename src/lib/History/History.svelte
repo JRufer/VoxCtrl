@@ -190,100 +190,54 @@
 </div>
 
 <style>
+  @reference "tailwindcss";
+
   .history-root {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    width: 100vw;
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
+    @apply flex flex-col h-screen w-screen bg-[var(--bg)] text-[var(--text)] overflow-hidden;
   }
 
   .toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border);
-    background: var(--color-obsidian-900);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
-    z-index: 10;
+    @apply flex items-center justify-between p-4 px-6 border-b border-[var(--border)] bg-[var(--color-obsidian-900)] shadow-[4px_0_24px_rgba(0,0,0,0.25)] z-10;
   }
 
   .title-section {
-    display: flex;
-    align-items: center;
-    gap: 14px;
+    @apply flex items-center gap-3.5;
   }
 
   .title-logo {
-    font-size: 20px;
-    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+    @apply text-xl drop-shadow-[0_2px_8px_rgba(56,189,248,0.3)];
   }
 
   .title-text {
-    display: flex;
-    flex-direction: column;
+    @apply flex flex-col;
   }
 
   h1 {
-    font-size: 15px;
-    font-weight: 850;
-    color: #fff;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
+    @apply text-[15px] font-[850] text-white tracking-[-0.5px] leading-[1.1];
   }
 
   .subtitle {
-    font-size: 7px;
-    font-weight: 700;
-    color: var(--color-accent-blue);
-    letter-spacing: 0.12em;
-    margin-top: 1px;
+    @apply text-[7px] font-bold text-[var(--color-accent-blue)] tracking-[0.12em] mt-0.5;
   }
 
   .btn-clear {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    color: #f87171;
-    padding: 6px 14px;
-    border-radius: var(--radius);
-    font-size: 12px;
-    font-weight: 750;
-    transition: var(--transition-snappy-fast);
+    @apply bg-red-500/8 border border-red-500/20 text-red-400 p-1.5 px-3.5 rounded-[var(--radius)] text-xs font-bold transition-all duration-150 ease-out;
   }
 
   .btn-clear:hover {
-    background: #ef4444;
-    border-color: #ef4444;
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+    @apply bg-red-500 border-red-500 text-white shadow-[0_4px_12px_rgba(239,68,68,0.25)];
   }
 
   .btn-clear:active {
-    transform: scale(0.97);
+    @apply scale-[0.97];
   }
 
   .list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    @apply flex-1 overflow-y-auto p-5 px-6 flex flex-col gap-2;
   }
 
   .entry {
-    background: rgba(26, 31, 46, 0.4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    transition: all 0.2s ease-in-out;
-    animation: cardSlide 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+    @apply bg-[var(--color-obsidian-800)]/40 border border-[var(--border)] rounded-[var(--radius)] p-3.5 px-4 flex flex-col gap-2.5 transition-all duration-200 ease-in-out animate-[cardSlide_0.25s_cubic-bezier(0.175,0.885,0.32,1.2)_forwards];
   }
 
   @keyframes cardSlide {
@@ -292,147 +246,84 @@
   }
 
   .entry:hover {
-    border-color: var(--accent2);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    transform: translateY(-2px);
+    @apply border-[var(--accent2)] shadow-[0_4px_20px_rgba(0,0,0,0.3)] -translate-y-[2px];
   }
 
   .entry-bubble {
-    position: relative;
-    padding-left: 10px;
-    padding-right: 28px;
+    @apply relative pl-2.5 pr-7;
   }
 
   .bubble-decorator {
-    position: absolute;
-    left: 0;
-    top: 4px;
-    bottom: 4px;
-    width: 3px;
-    background: var(--accent2);
-    border-radius: 99px;
-    opacity: 0.5;
+    @apply absolute left-0 top-1 bottom-1 w-[3px] bg-[var(--accent2)] rounded-full opacity-50;
   }
 
   .btn-copy {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: var(--text-muted);
-    opacity: 0;
-    transition: all 0.15s ease;
-    cursor: pointer;
-    padding: 0;
+    @apply absolute top-0 right-0 w-[22px] h-[22px] flex items-center justify-center text-xs bg-transparent border border-transparent rounded text-[var(--text-muted)] opacity-0 transition-all duration-150 ease-out cursor-pointer p-0;
   }
 
   .entry:hover .btn-copy {
-    opacity: 1;
+    @apply opacity-100;
   }
 
   .btn-copy:hover {
-    color: var(--accent2);
-    background: rgba(0, 229, 255, 0.08);
-    border-color: rgba(0, 229, 255, 0.2);
+    @apply text-[var(--accent2)] bg-[var(--accent2)]/8 border-[var(--accent2)]/20;
   }
 
   .btn-copy:active {
-    transform: scale(0.92);
+    @apply scale-[0.92];
   }
 
   .entry-text {
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--text);
-    font-weight: 500;
-    white-space: pre-wrap;
+    @apply text-[13px] leading-relaxed text-[var(--text)] font-medium whitespace-pre-wrap;
   }
 
   .entry:hover .entry-text {
-    color: #fff;
+    @apply text-white;
   }
 
   .entry-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    @apply flex flex-col gap-1.5;
   }
 
   .meta-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    @apply flex justify-between items-center;
   }
 
   .badge {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    border: 1px solid transparent;
+    @apply flex items-center gap-1 py-0.5 px-2 rounded-xl text-[10px] font-semibold tracking-wide border border-transparent;
   }
 
   .badge-icon {
-    font-size: 10px;
+    @apply text-[10px];
   }
 
   .badge-neutral {
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-muted);
-    border-color: var(--border);
+    @apply bg-white/[0.03] text-[var(--text-muted)] border-[var(--border)];
   }
 
   .badge-blue {
-    background: rgba(0, 229, 255, 0.15);
-    color: #84ffff;
-    border-color: rgba(0, 229, 255, 0.3);
+    @apply bg-[var(--accent2)]/15 text-[var(--accent2)] border-[var(--accent2)]/30;
   }
 
   .badge-orange {
-    background: rgba(124, 77, 255, 0.15);
-    color: #b388ff;
-    border-color: rgba(124, 77, 255, 0.3);
+    @apply bg-purple-500/15 text-purple-300 border-purple-500/30;
   }
 
   .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--text-muted);
-    padding: 40px;
+    @apply flex-1 flex flex-col items-center justify-center gap-3 text-[var(--text-muted)] p-10;
   }
 
   .spinner-container {
-    width: 44px;
-    height: 44px;
-    margin-bottom: 8px;
+    @apply w-11 h-11 mb-2;
   }
 
   .spinner-svg {
-    animation: rotate 1.8s linear infinite;
-    width: 100%;
-    height: 100%;
+    @apply w-full h-full animate-[rotate_1.8s_linear_infinite];
   }
 
   .spinner-svg .path {
-    stroke: var(--color-accent-blue);
+    @apply stroke-[var(--color-accent-blue)] animate-[dash_1.5s_ease-in-out_infinite];
     stroke-linecap: round;
-    animation: dash 1.5s ease-in-out infinite;
   }
 
   @keyframes rotate {
@@ -446,45 +337,26 @@
   }
 
   .loading-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
+    @apply text-xs font-semibold text-[var(--text-muted)] tracking-wider;
   }
 
   .empty-graphic {
-    width: 64px;
-    height: 64px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 8px;
+    @apply w-16 h-16 bg-white/[0.03] border border-[var(--border)] rounded-full flex items-center justify-center mb-2;
   }
 
   .empty-emoji {
-    font-size: 28px;
+    @apply text-[28px];
   }
 
   .empty-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: -0.2px;
+    @apply text-[15px] font-bold text-white tracking-wide;
   }
 
   .empty-subtitle {
-    font-size: 12px;
-    color: var(--text-muted);
-    text-align: center;
-    max-width: 260px;
-    line-height: 1.5;
+    @apply text-xs text-[var(--text-muted)] text-center max-w-[260px] leading-relaxed;
   }
 
   .empty-subtitle strong {
-    color: var(--accent2);
-    font-weight: 600;
+    @apply text-[var(--accent2)] font-semibold;
   }
 </style>

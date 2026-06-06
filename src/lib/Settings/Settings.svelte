@@ -10,19 +10,21 @@
   import VisualTab from "./VisualTab.svelte";
   import EngineTab from "./EngineTab.svelte";
   import AudioTab from "./AudioTab.svelte";
-  import RoutingTab from "./RoutingTab.svelte";
+  import HotkeysTab from "./HotkeysTab.svelte";
+  import TargetsTab from "./TargetsTab.svelte";
   import TtsTab from "./TtsTab.svelte";
   import OllamaTab from "./OllamaTab.svelte";
   import FeaturesTab from "./FeaturesTab.svelte";
   import AboutTab from "./AboutTab.svelte";
 
-  type Tab = "general" | "engine" | "routing" | "visual" | "audio" | "tts" | "features" | "ollama" | "about";
+  type Tab = "general" | "engine" | "hotkeys" | "targets" | "visual" | "audio" | "tts" | "features" | "ollama" | "about";
   let activeTab = $state<Tab>("general");
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "general",  label: "General",  icon: "⚙️" },
     { id: "engine",   label: "Engine",   icon: "🧠" },
-    { id: "routing",  label: "Routing",  icon: "🔀" },
+    { id: "hotkeys",  label: "Hotkeys",  icon: "⌨️" },
+    { id: "targets",  label: "Output Targets", icon: "🎯" },
     { id: "visual",   label: "Visual",   icon: "🎨" },
     { id: "audio",    label: "Audio",    icon: "🔊" },
     { id: "tts",      label: "TTS",      icon: "🗣️" },
@@ -161,8 +163,10 @@
         <GeneralTab bind:cfg={$config} />
       {:else if activeTab === "engine"}
         <EngineTab bind:cfg={$config} />
-      {:else if activeTab === "routing"}
-        <RoutingTab />
+      {:else if activeTab === "hotkeys"}
+        <HotkeysTab />
+      {:else if activeTab === "targets"}
+        <TargetsTab />
       {:else if activeTab === "visual"}
         <VisualTab bind:cfg={$config} />
       {:else if activeTab === "audio"}
@@ -191,45 +195,23 @@
 </div>
 
 <style>
+  @reference "tailwindcss";
+
   .settings-root {
-    display: flex;
-    height: 100vh;
-    width: 100vw;
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
+    @apply flex h-screen w-screen bg-[var(--bg)] text-[var(--text)] overflow-hidden;
   }
 
   /* Redesigned Sidebar Base */
   .sidebar {
-    display: flex;
-    flex-direction: column;
-    width: 135px;
-    background: var(--color-obsidian-900);
-    border-right: 1px solid var(--border);
-    flex-shrink: 0;
-    padding: 20px 6px;
-    z-index: 10;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+    @apply flex flex-col w-[135px] bg-[var(--color-obsidian-900)] border-r border-[var(--border)] shrink-0 px-1.5 py-5 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.25)];
   }
 
   .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 4px 16px 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-    margin-bottom: 16px;
-    white-space: nowrap;
+    @apply flex items-center gap-2 px-1 py-1.5 pb-4 border-b border-white/[0.03] mb-4 whitespace-nowrap;
   }
 
   .brand-logo {
-    width: 20px;
-    height: 20px;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
-    animation: floating 4s ease-in-out infinite;
-    flex-shrink: 0;
+    @apply w-5 h-5 object-contain drop-shadow-[0_2px_8px_rgba(56,189,248,0.3)] animate-[floating_4s_ease-in-out_infinite] shrink-0;
   }
 
   @keyframes floating {
@@ -238,145 +220,81 @@
   }
 
   .brand-text {
-    display: flex;
-    flex-direction: column;
-    white-space: nowrap;
-    overflow: hidden;
+    @apply flex flex-col whitespace-nowrap overflow-hidden;
   }
 
   .brand-name {
-    font-size: 15px;
-    font-weight: 850;
-    color: #fff;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
-    white-space: nowrap;
+    @apply text-[15px] font-[850] text-white tracking-[-0.5px] leading-[1.1] whitespace-nowrap;
   }
 
   .brand-tag {
-    font-size: 7px;
-    font-weight: 700;
-    color: var(--color-accent-blue);
-    letter-spacing: 0.12em;
-    margin-top: 1px;
-    white-space: nowrap;
+    @apply text-[7px] font-bold text-[var(--color-accent-blue)] tracking-[0.12em] mt-0.5 whitespace-nowrap;
   }
 
   .sidebar-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-    overflow-y: auto;
+    @apply flex flex-col gap-1 flex-1 overflow-y-auto;
   }
 
   /* Nav Links with Snappy Elastic Springs */
   .nav-btn {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 6px;
-    border-radius: var(--radius);
-    color: var(--color-obsidian-300);
-    font-size: 12px;
-    font-weight: 600;
-    text-align: left;
-    transition: var(--transition-snappy-fast);
-    white-space: nowrap;
+    @apply relative flex items-center gap-2 px-1.5 py-2 rounded-[var(--radius)] text-[var(--color-obsidian-300)] text-xs font-semibold text-left transition-all duration-150 ease-out whitespace-nowrap;
   }
 
   .nav-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.03);
-    transform: translateX(2px);
+    @apply text-white bg-white/[0.03] translate-x-[2px];
   }
 
   .nav-btn.active {
-    color: var(--color-accent-blue);
-    background: rgba(56, 189, 248, 0.08);
-    transform: scale(1.01) translateX(2px);
+    @apply text-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/8 scale-[1.01] translate-x-[2px];
   }
 
   .nav-btn:active {
-    transform: scale(0.97) translateX(0);
+    @apply scale-[0.97] translate-x-0;
   }
 
   .nav-icon {
-    font-size: 14px;
-    transition: transform 0.2s var(--ease-spring-out);
+    @apply text-sm transition-transform duration-200 ease-out;
   }
 
   .nav-btn:hover .nav-icon {
-    transform: scale(1.18) rotate(5deg);
+    @apply scale-[1.18] rotate-[5deg];
   }
 
   .nav-active-pill {
-    position: absolute;
-    right: 0;
-    top: 15%;
-    height: 70%;
-    width: 3px;
-    background: var(--color-accent-blue);
-    border-radius: 99px 0 0 99px;
-    box-shadow: -2px 0 8px var(--color-accent-blue);
+    @apply absolute right-0 top-[15%] h-[70%] w-[3px] bg-[var(--color-accent-blue)] rounded-[99px_0_0_99px] shadow-[-2px_0_8px_var(--color-accent-blue)];
   }
 
   /* Record / Status Box Container */
   .sidebar-footer {
-    padding-top: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    @apply pt-4 border-t border-white/[0.03];
   }
 
   .status-panel {
-    background: var(--color-obsidian-950);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    transition: var(--transition-snappy);
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
+    @apply bg-[var(--color-obsidian-950)] border border-[var(--border)] rounded-[var(--radius)] px-1.5 py-2 flex flex-col gap-2 transition-all duration-250 ease-out shadow-[inset_0_2px_6px_rgba(0,0,0,0.3)];
   }
 
   .status-panel.recording {
-    border-color: rgba(56, 189, 248, 0.25);
-    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.1), inset 0 2px 6px rgba(0, 0, 0, 0.3);
+    @apply border-[var(--color-accent-blue)]/25 shadow-[0_4px_20px_rgba(56,189,248,0.1),_inset_0_2px_6px_rgba(0,0,0,0.3)];
   }
 
   .status-header {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    align-items: flex-start;
-    white-space: nowrap;
+    @apply flex flex-col gap-0.5 items-start whitespace-nowrap;
   }
 
   .status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
+    @apply flex items-center gap-1 whitespace-nowrap;
   }
 
   .status-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color-obsidian-300);
-    transition: var(--transition-snappy-fast);
+    @apply w-[5px] h-[5px] rounded-full bg-[var(--color-obsidian-300)] transition-all duration-150 ease-out;
   }
 
   .status-panel.recording .status-dot {
-    background: var(--color-accent-blue);
-    box-shadow: 0 0 8px var(--color-accent-blue);
-    animation: heartBeat 1.2s infinite;
+    @apply bg-[var(--color-accent-blue)] shadow-[0_0_8px_var(--color-accent-blue)] animate-[heartBeat_1.2s_infinite];
   }
 
   .status-panel.speaking .status-dot {
-    background: var(--color-accent-green);
-    box-shadow: 0 0 8px var(--color-accent-green);
+    @apply bg-[var(--color-accent-green)] shadow-[0_0_8px_var(--color-accent-green)];
   }
 
   @keyframes heartBeat {
@@ -385,71 +303,36 @@
   }
 
   .status-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--color-obsidian-300);
-    white-space: nowrap;
+    @apply text-[10px] font-bold text-[var(--color-obsidian-300)] whitespace-nowrap;
   }
 
   .status-panel.recording .status-label {
-    color: var(--color-accent-blue);
+    @apply text-[var(--color-accent-blue)];
   }
 
   .word-count {
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.3);
-    font-weight: 600;
-    white-space: nowrap;
+    @apply text-[9px] text-white/30 font-semibold whitespace-nowrap;
   }
 
   /* Custom Spring Record CTA Button */
   .btn-record {
-    position: relative;
-    width: 100%;
-    padding: 6px 4px;
-    border-radius: var(--radius);
-    background: rgba(56, 189, 248, 0.08);
-    color: var(--color-accent-blue);
-    font-size: 11px;
-    font-weight: 750;
-    text-align: center;
-    border: 1px solid rgba(56, 189, 248, 0.2);
-    box-shadow: 0 2px 6px rgba(56, 189, 248, 0.05);
-    transition: var(--transition-snappy-fast);
-    overflow: hidden;
-    white-space: nowrap;
+    @apply relative w-full px-1 py-1.5 rounded-[var(--radius)] bg-[var(--color-accent-blue)]/8 text-[var(--color-accent-blue)] text-[11px] font-bold text-center border border-[var(--color-accent-blue)]/20 shadow-[0_2px_6px_rgba(56,189,248,0.05)] transition-all duration-150 ease-out overflow-hidden whitespace-nowrap;
   }
 
   .btn-record:hover {
-    background: var(--color-accent-blue);
-    color: #fff;
-    border-color: var(--color-accent-blue);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.25);
+    @apply bg-[var(--color-accent-blue)] text-white border-[var(--color-accent-blue)] -translate-y-[1px] shadow-[0_4px_12px_rgba(56,189,248,0.25)];
   }
 
   .btn-record:active {
-    transform: scale(0.97) translateY(0px);
+    @apply scale-[0.97] translate-y-0;
   }
 
   .btn-record.active {
-    background: var(--color-accent-blue);
-    color: #fff;
-    border-color: var(--color-accent-blue);
-    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35);
+    @apply bg-[var(--color-accent-blue)] text-white border-[var(--color-accent-blue)] shadow-[0_4px_16px_rgba(56,189,248,0.35)];
   }
 
   .pulse-ring {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border-radius: var(--radius);
-    border: 2px solid var(--color-accent-blue);
-    animation: ripple 1.6s infinite ease-out;
-    opacity: 0;
-    pointer-events: none;
+    @apply absolute top-0 left-0 w-full h-full rounded-[var(--radius)] border-2 border-[var(--color-accent-blue)] animate-[ripple_1.6s_infinite_ease-out] opacity-0 pointer-events-none;
   }
 
   @keyframes ripple {
@@ -458,48 +341,26 @@
   }
 
   .btn-text {
-    position: relative;
-    z-index: 2;
+    @apply relative z-[2];
   }
 
   /* Content area */
   .content-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg);
-    overflow: hidden;
-    position: relative;
-    z-index: 1;
+    @apply flex-1 flex flex-col bg-[var(--bg)] overflow-hidden relative z-[1];
   }
 
   /* Elevate container above sidebar when any tab displays a modal */
   .content-container:has(:global(.modal-backdrop)) {
-    z-index: 100;
+    @apply z-[100];
   }
 
   .tab-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 30px;
-    z-index: 1;
+    @apply flex-1 overflow-y-auto p-[30px] z-[1];
   }
 
   /* Floating Snappy Save Change Banner */
   .floating-save-container {
-    position: absolute;
-    bottom: 24px;
-    right: 24px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    background: var(--color-obsidian-900);
-    border: 1px solid var(--color-accent-blue);
-    padding: 10px 16px;
-    border-radius: var(--radius);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 12px rgba(56, 189, 248, 0.15);
-    z-index: 100;
-    animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    @apply absolute bottom-6 right-6 flex items-center gap-3.5 bg-[var(--color-obsidian-900)] border border-[var(--color-accent-blue)] p-2.5 px-4 rounded-[var(--radius)] shadow-[0_10px_30px_rgba(0,0,0,0.4),_0_0_12px_rgba(56,189,248,0.15)] z-[100] animate-[popUp_0.3s_cubic-bezier(0.175,0.885,0.32,1.275)_forwards];
   }
 
   @keyframes popUp {
@@ -508,29 +369,18 @@
   }
 
   .save-hint {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-obsidian-300);
+    @apply text-xs font-semibold text-[var(--color-obsidian-300)];
   }
 
   .btn-save {
-    background: var(--color-accent-blue);
-    color: #fff;
-    padding: 6px 14px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 750;
-    transition: var(--transition-snappy-fast);
-    box-shadow: 0 4px 10px rgba(56, 189, 248, 0.25);
+    @apply bg-[var(--color-accent-blue)] text-white px-3.5 py-1.5 rounded-md text-xs font-bold transition-all duration-150 ease-out shadow-[0_4px_10px_rgba(56,189,248,0.25)];
   }
 
   .btn-save:hover {
-    transform: scale(1.02) translateY(-1px);
-    box-shadow: 0 6px 14px rgba(56, 189, 248, 0.35);
-    filter: brightness(1.05);
+    @apply scale-[1.02] -translate-y-[1px] shadow-[0_6px_14px_rgba(56,189,248,0.35)] brightness-[1.05];
   }
 
   .btn-save:active {
-    transform: scale(0.97) translateY(0px);
+    @apply scale-[0.97] translate-y-0;
   }
 </style>

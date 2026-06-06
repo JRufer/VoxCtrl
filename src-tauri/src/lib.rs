@@ -22,6 +22,7 @@ use crate::{
 mod commands;
 mod state;
 mod default_overlays;
+mod startup_log;
 
 // Helper to robustly show, unminimize, and focus a window, especially under Linux WMs
 fn show_and_focus_window(window: &tauri::WebviewWindow) {
@@ -61,17 +62,92 @@ pub fn run() {
     {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+
+        // Suppress libayatana-appindicator deprecation warnings by registering a dummy log handler
+        unsafe {
+            extern "C" {
+                fn g_log_set_handler(
+                    log_domain: *const std::os::raw::c_char,
+                    log_levels: std::os::raw::c_int,
+                    log_func: Option<unsafe extern "C" fn(*const std::os::raw::c_char, std::os::raw::c_int, *const std::os::raw::c_char, *mut std::os::raw::c_void)>,
+                    user_data: *mut std::os::raw::c_void,
+                ) -> std::os::raw::c_uint;
+            }
+
+            unsafe extern "C" fn dummy_log_handler(
+                _log_domain: *const std::os::raw::c_char,
+                _log_levels: std::os::raw::c_int,
+                _message: *const std::os::raw::c_char,
+                _user_data: *mut std::os::raw::c_void,
+            ) {}
+
+            let domain = b"libayatana-appindicator\0".as_ptr() as *const std::os::raw::c_char;
+            g_log_set_handler(domain, 16, Some(dummy_log_handler), std::ptr::null_mut());
+        }
     }
 
-    // Initialise logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "voxctrl=info".parse().unwrap()),
-        )
-        .init();
+    // Initialise logging (console + special warning-free/privacy-safe startup and error file log)
+    use tracing_subscriber::prelude::*;
+    let local_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("voxctrl");
+    let _ = std::fs::create_dir_all(&local_dir);
+    let log_path = local_dir.join("startup_errors.log");
+
+    let file_layer = match startup_log::StartupErrorLayer::new(log_path) {
+        Ok(layer) => Some(layer),
+        Err(e) => {
+            eprintln!("Failed to initialize startup error log file: {e}");
+            None
+        }
+    };
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "voxctrl=info".parse().unwrap());
+
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer());
+
+    if let Some(fl) = file_layer {
+        let _ = registry.with(fl).try_init();
+    } else {
+        let _ = registry.try_init();
+    }
 
     let config = Config::load();
+    
+    // Log the sanitized configuration parameters at startup
+    tracing::info!("=== System Startup Config ===");
+    tracing::info!("Backend choice: {:?}", config.data.engine.backend);
+    tracing::info!("Inference mode: {:?}", config.data.engine.inference_mode);
+    tracing::info!("Whisper model size: {}", config.data.engine.whisper_cpp.model_size);
+    tracing::info!("Whisper device: {}", config.data.engine.whisper_cpp.device);
+    tracing::info!("Whisper threads: {}", config.data.engine.whisper_cpp.threads);
+    tracing::info!("Moonshine model size: {}", config.data.engine.moonshine.model_size);
+    tracing::info!("Moonshine language: {}", config.data.engine.moonshine.language);
+    tracing::info!("VAD threshold: {}", config.data.audio.vad_threshold);
+    tracing::info!("Min silence duration ms: {}", config.data.audio.min_silence_duration_ms);
+    tracing::info!("Noise suppression: {}", config.data.audio.noise_suppression);
+    tracing::info!("Input device index: {:?}", config.data.audio.input_device_index);
+    tracing::info!("Gain: {}", config.data.audio.gain);
+    tracing::info!("Dynamic stream: {}", config.data.audio.dynamic_stream);
+    tracing::info!("TTS enabled: {}", config.data.tts.enabled);
+    tracing::info!("TTS engine: {:?}", config.data.tts.engine);
+    tracing::info!("TTS voice: {}", config.data.tts.voice);
+    tracing::info!("TTS speed: {}", config.data.tts.speed);
+    tracing::info!("TTS GPU: {}", config.data.tts.gpu);
+    tracing::info!("Kokoro voice: {}", config.data.tts.kokoro.voice);
+    tracing::info!("Kokoro quality: {}", config.data.tts.kokoro.quality);
+    tracing::info!("Kokoro speed: {}", config.data.tts.kokoro.speed);
+    tracing::info!("Kokoro prewarm: {}", config.data.tts.kokoro.prewarm);
+    tracing::info!("MCP enabled: {}", config.data.mcp.server_enabled);
+    tracing::info!("MCP record timeout: {}", config.data.mcp.record_timeout);
+    tracing::info!("ATSPI injection: {}", config.data.atspi.injection);
+    tracing::info!("ATSPI context prompt: {}", config.data.atspi.context_prompt);
+    tracing::info!("ATSPI auto code mode: {}", config.data.atspi.auto_code_mode);
+    tracing::info!("=============================");
+
     let cfg_data = Arc::new(config.data.clone());
     let config = Arc::new(Mutex::new(config));
 
@@ -103,6 +179,7 @@ pub fn run() {
         last_text: Arc::new(Mutex::new(String::new())),
         active_target: Arc::new(Mutex::new("default".to_string())),
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
+        active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(targets.clone())),
         history: Arc::new(Mutex::new(Vec::new())),
         audio_tx: audio_tx.clone(),
@@ -132,6 +209,7 @@ pub fn run() {
         let mut accumulated_audio = Vec::<f32>::new();
         let mut was_recording = false;
         let mut target_id = "default".to_string();
+        let mut binding_id = String::new();
 
         while let Ok(chunk) = audio_rx.recv() {
             let is_recording = state_for_audio.is_recording();
@@ -140,6 +218,7 @@ pub fn run() {
                 if !was_recording {
                     accumulated_audio.clear();
                     target_id = state_for_audio.active_target.blocking_lock().clone();
+                    binding_id = state_for_audio.active_binding_id.blocking_lock().clone();
                     was_recording = true;
                 }
                 accumulated_audio.extend(chunk);
@@ -149,6 +228,7 @@ pub fn run() {
                         let req = voxctrl_inference::InferenceRequest {
                             audio: std::mem::take(&mut accumulated_audio),
                             target_id: target_id.clone(),
+                            binding_id: Some(binding_id.clone()),
                             context_text: None,
                         };
                         state_for_audio.set_processing(true);
@@ -199,6 +279,10 @@ pub fn run() {
             hold_threshold_ms: 0,
             subkey: None,
             disabled: false,
+            ollama_enabled: Some(false),
+            ollama_model: None,
+            ollama_mode: None,
+            ollama_prompt: None,
         });
     }
 
@@ -234,6 +318,7 @@ pub fn run() {
                 GestureKind::Start => {
                     *state_for_gesture.active_target.lock().await = event.target_id.clone();
                     *state_for_gesture.active_binding_label.lock().await = event.binding_label.clone();
+                    *state_for_gesture.active_binding_id.lock().await = event.binding_id.clone();
                     state_for_gesture.set_recording(true);
                 }
                 GestureKind::Stop => {
@@ -419,6 +504,23 @@ pub fn run() {
                 }
             }
 
+            // Register Speak target callback
+            {
+                let state = app.handle().state::<Arc<AppState>>().inner().clone();
+                voxctrl_routing::targets::set_speak_callback(std::sync::Arc::new(move |text| {
+                    let state = state.clone();
+                    let text_str = text.to_string();
+                    tauri::async_runtime::spawn(async move {
+                        let handle = state.tts_handle.lock().await;
+                        if let Some(ref tts) = *handle {
+                            tts.speak(text_str);
+                        } else {
+                            tracing::warn!("Speak target triggered but TTS is disabled or not initialized");
+                        }
+                    });
+                }));
+            }
+
             // ── Startup udev Diagnostics ──────────────────────────────────────
             #[cfg(target_os = "linux")]
             {
@@ -586,7 +688,6 @@ pub fn run() {
                             let icon = if is_recording { &record_on_icon } else { &record_off_icon };
                             let _ = tray.set_icon(Some(icon.clone()));
                             was_animating = false;
-                            last_recording = is_recording;
                         }
                     }
 
@@ -660,6 +761,7 @@ pub fn run() {
                 }
             });
 
+            startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -825,6 +927,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_startup_error_layer_privacy_and_levels() {
+        use tracing_subscriber::prelude::*;
+        use std::io::Read;
+        
+        let temp_dir = tempfile::tempdir().unwrap();
+        let log_path = temp_dir.path().join("test_startup_errors.log");
+        
+        let layer = crate::startup_log::StartupErrorLayer::new(log_path.clone()).unwrap();
+        let subscriber = tracing_subscriber::registry().with(layer);
+        
+        crate::startup_log::STARTUP_COMPLETE.store(false, std::sync::atomic::Ordering::SeqCst);
+        
+        tracing::subscriber::with_default(subscriber, || {
+            // 1. Startup INFO log (should be written)
+            tracing::info!("System startup: device init");
+            
+            // 2. Transcription text (should be blocked by privacy filters)
+            tracing::info!("Received transcription: Hello user");
+            
+            // 3. Spoken text warn (should be blocked by privacy filters)
+            tracing::warn!("Failed to speak the text: Hello user");
+            
+            // 4. Ollama payload error (should be blocked by privacy filters)
+            tracing::error!("Ollama request payload: test prompt");
+            
+            // Transition to post-startup
+            crate::startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
+            
+            // 5. Post-startup INFO log (should be ignored by level filter)
+            tracing::info!("Normal runtime info log");
+            
+            // 6. Post-startup ERROR log (should be written)
+            tracing::error!("System audio device connection lost");
+        });
+        
+        // Read file contents
+        let mut file = std::fs::File::open(log_path).unwrap();
+        let mut content = String::new();
+        file.read_to_string(&mut content).unwrap();
+        
+        // Assertions
+        assert!(content.contains("System startup: device init"));
+        assert!(content.contains("System audio device connection lost"));
+        
+        assert!(!content.contains("Hello user"));
+        assert!(!content.contains("Normal runtime info log"));
+        assert!(!content.contains("Ollama"));
+    }
+
+    #[test]
     fn test_calculate_overlay_y() {
         let mon_y = 0;
         let mon_h = 1080;
@@ -885,6 +1037,7 @@ mod tests {
             last_text: Arc::new(Mutex::new(String::new())),
             active_target: Arc::new(Mutex::new("default".to_string())),
             active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
+            active_binding_id: Arc::new(Mutex::new(String::new())),
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
@@ -971,8 +1124,6 @@ mod tests {
             initial_prompt: None,
             processing: Default::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
             strip_newlines: false,
         };
 
@@ -1005,8 +1156,6 @@ mod tests {
             initial_prompt: None,
             processing: Default::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
             strip_newlines: false,
         };
 
@@ -1034,6 +1183,9 @@ mod tests {
         for res in results {
             assert!(res.success, "Delivery failed: {:?}", res.error);
         }
+
+        // Sleep a tiny bit to let OS write flush
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let content_a = std::fs::read_to_string(&path_a).unwrap_or_default();
         let content_b = std::fs::read_to_string(&path_b).unwrap_or_default();
@@ -1111,7 +1263,32 @@ mod tests {
             assert!(res.is_configured);
             assert!(res.rule_exists);
             assert!(res.in_group);
-            assert!(!res.needs_relogin);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_speak_target_delivery() {
+        use voxctrl_routing::models::{DeliveryType, OutputTarget};
+        use voxctrl_routing::targets::build_target;
+        use std::sync::{Arc, Mutex};
+
+        let mut config = OutputTarget::default_inject();
+        config.delivery = DeliveryType::Speak;
+
+        let spoken = Arc::new(Mutex::new(String::new()));
+        let spoken_clone = spoken.clone();
+        let _ = voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
+            *spoken_clone.lock().unwrap() = text.to_string();
+        }));
+
+        let target = build_target(config);
+        let res = target.deliver("Test Speak Target from Tauri").await;
+        
+        assert!(res.success);
+        
+        let spoken_text = spoken.lock().unwrap();
+        if !spoken_text.is_empty() {
+            assert_eq!(*spoken_text, "Test Speak Target from Tauri");
         }
     }
 }

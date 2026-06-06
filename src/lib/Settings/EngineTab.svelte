@@ -4,6 +4,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
+  import CustomSelect from "./CustomSelect.svelte";
+
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() {
     configDirty.set(true);
@@ -21,6 +23,36 @@
     "large-v2",
     "large-v3",
     "large-v3-turbo",
+  ];
+
+  const backendOptions = [
+    { value: "auto", label: "Auto-detect" },
+    { value: "whisper-cpp", label: "Whisper.cpp" },
+    { value: "moonshine", label: "Moonshine (CPU only)" }
+  ];
+
+  const inferenceModeOptions = [
+    { value: "Balanced", label: "Balanced" },
+    { value: "Aggressive", label: "Aggressive (shorter silence)" }
+  ];
+
+  let whisperModelSizeOptions = $derived(
+    MODEL_SIZES.map(s => ({
+      value: s,
+      label: `${s}${downloadedMap[s] ? " ✔" : ""}`
+    }))
+  );
+
+  let deviceOptions = $derived([
+    { value: "auto", label: "Auto" },
+    ...(cudaEnabled ? [{ value: "cuda", label: "CUDA (NVIDIA)" }] : []),
+    { value: "vulkan", label: "Vulkan (AMD/Intel)" },
+    { value: "cpu", label: "CPU" }
+  ]);
+
+  const moonshineModelSizeOptions = [
+    { value: "base", label: "Base" },
+    { value: "tiny", label: "Tiny" }
   ];
 
   let downloadedMap = $state<Record<string, boolean>>({});
@@ -136,18 +168,11 @@
     <h3>Backend</h3>
     <label class="field">
       <span>Backend</span>
-      <select bind:value={cfg.engine.backend} onchange={markDirty}>
-        <option value="auto">Auto-detect</option>
-        <option value="whisper-cpp">Whisper.cpp</option>
-        <option value="moonshine">Moonshine (CPU only)</option>
-      </select>
+      <CustomSelect bind:value={cfg.engine.backend} options={backendOptions} onchange={markDirty} />
     </label>
     <label class="field">
       <span>Inference mode</span>
-      <select bind:value={cfg.engine.inference_mode} onchange={markDirty}>
-        <option value="Balanced">Balanced</option>
-        <option value="Aggressive">Aggressive (shorter silence)</option>
-      </select>
+      <CustomSelect bind:value={cfg.engine.inference_mode} options={inferenceModeOptions} onchange={markDirty} />
     </label>
   </div>
 
@@ -156,14 +181,7 @@
       <h3>Whisper.cpp Settings</h3>
       <label class="field">
         <span>Model size</span>
-        <select
-          bind:value={cfg.engine.whisper_cpp.model_size}
-          onchange={onModelChanged}
-        >
-          {#each MODEL_SIZES as s}
-            <option value={s}>{s}{downloadedMap[s] ? " ✔" : ""}</option>
-          {/each}
-        </select>
+        <CustomSelect bind:value={cfg.engine.whisper_cpp.model_size} options={whisperModelSizeOptions} onchange={onModelChanged} />
       </label>
 
       <div class="model-status-container">
@@ -190,14 +208,7 @@
 
       <label class="field">
         <span>Device</span>
-        <select bind:value={cfg.engine.whisper_cpp.device} onchange={markDirty}>
-          <option value="auto">Auto</option>
-          {#if cudaEnabled}
-            <option value="cuda">CUDA (NVIDIA)</option>
-          {/if}
-          <option value="vulkan">Vulkan (AMD/Intel)</option>
-          <option value="cpu">CPU</option>
-        </select>
+        <CustomSelect bind:value={cfg.engine.whisper_cpp.device} options={deviceOptions} onchange={markDirty} />
       </label>
       <div class="field">
         <span>Model directory (leave blank for default)</span>
@@ -232,13 +243,7 @@
       <h3>Moonshine Settings</h3>
       <label class="field">
         <span>Model size</span>
-        <select
-          bind:value={cfg.engine.moonshine.model_size}
-          onchange={markDirty}
-        >
-          <option value="base">Base</option>
-          <option value="tiny">Tiny</option>
-        </select>
+        <CustomSelect bind:value={cfg.engine.moonshine.model_size} options={moonshineModelSizeOptions} onchange={markDirty} />
       </label>
       <label class="field">
         <span>Language</span>
@@ -253,63 +258,39 @@
 </section>
 
 <style>
+  @reference "tailwindcss";
+
   .model-status-container {
-    display: flex;
-    align-items: center;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    font-size: 13px;
-    min-height: 42px;
-    margin-bottom: 12px;
+    @apply flex items-center bg-[var(--bg)] border border-[var(--border)] rounded-[var(--radius)] p-2.5 px-3.5 text-[13px] min-h-[42px] mb-3;
   }
   .status-downloaded {
-    color: #4caf50;
-    font-weight: 600;
+    @apply text-emerald-400 font-semibold;
   }
   .status-downloading {
-    color: var(--accent2);
+    @apply text-[var(--accent2)];
   }
   .status-checking {
-    color: var(--text-muted);
+    @apply text-[var(--text-muted)];
   }
   .status-missing-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
+    @apply flex items-center justify-between w-full;
   }
   .status-missing {
-    color: #e57373;
+    @apply text-red-400;
   }
   .btn-download {
-    background: var(--accent);
-    border: none;
-    color: #fff;
-    border-radius: var(--radius);
-    padding: 6px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s;
+    @apply bg-[var(--accent)] border-none text-white rounded-[var(--radius)] p-1.5 px-3 text-xs cursor-pointer font-semibold transition-colors duration-200;
   }
   .btn-download:hover {
-    background: var(--accent2);
+    @apply bg-[var(--accent2)];
   }
   .field-input-error {
-    border-color: #ef4444 !important;
+    @apply border-red-500!;
   }
   .field-input-error:focus {
-    border-color: #ef4444;
-    box-shadow:
-      0 0 0 2px rgba(239, 68, 68, 0.15),
-      inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    @apply border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.15),_inset_0_2px_4px_rgba(0,0,0,0.2)];
   }
   .field-error-msg {
-    margin-top: 0.25rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    color: #ef4444;
+    @apply mt-1 text-sm leading-5 text-red-400;
   }
 </style>

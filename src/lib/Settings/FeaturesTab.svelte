@@ -138,33 +138,17 @@
 </section>
 
 <style>
-
-
+  @reference "tailwindcss";
 
   .custom-vocab-input {
-    width: 100%;
-    min-height: 80px;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px 12px;
-    font-family: inherit;
-    font-size: 13px;
-    resize: vertical;
-    margin-top: 8px;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
+    @apply w-full min-h-[80px] bg-[var(--bg)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-2 px-3 text-[13px] resize-y mt-2 outline-none box-border transition-all duration-200 ease-out;
   }
 
   .custom-vocab-input:focus {
-    border-color: var(--accent2);
-    box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+    @apply border-[var(--accent2)] shadow-[0_0_0_2px_rgba(79,195,247,0.2)];
   }
 
   .custom-vocab-input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.5;
+    @apply text-[var(--text-muted)] opacity-50;
   }
 </style>

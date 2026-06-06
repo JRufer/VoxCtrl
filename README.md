@@ -38,7 +38,7 @@ The core of VoxCtrl is its **Output Target Router**. Rather than simply pasting 
 
 **New in v0.1:** You can now bind **multiple targets** to a single hotkey gesture! When activated, your text is broadcast concurrently to all bound targets. Configurations also **hot-reload instantly** in the background, without requiring an app restart.
 
-Below are the 9 target types supported by VoxCtrl and what they are used for:
+Below are the 10 target types supported by VoxCtrl and what they are used for:
 
 | Delivery Type | Mechanism | Perfect Use Case |
 | :--- | :--- | :--- |
@@ -51,6 +51,7 @@ Below are the 9 target types supported by VoxCtrl and what they are used for:
 | **`dbus`** | Emits a custom DBus signal containing the text on the session bus. | Triggering complex desktop notification actions, scripting custom desktop widget updates, or chaining custom system automation. |
 | **`http`** | Sends a fast HTTP POST/GET request containing the transcription formatted inside a JSON template. | Streaming transcriptions directly to webhooks, database ingestion services, or remote HTTP endpoints. |
 | **`webhook`** | Sends a signed, secure HTTP POST request with an HMAC-SHA256 signature generated using a shared secret. | Securely connecting dictation triggers to external APIs or home automation platforms (e.g., Home Assistant). |
+| **`speak`** | Plays back the transcribed text aloud via the globally configured Text-to-Speech (TTS) engine. | Hearing the transcribed text spoken back to you directly, even without an active MCP server connection. |
 
 ---
 

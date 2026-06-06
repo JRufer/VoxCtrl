@@ -41,6 +41,9 @@ pub struct AppState {
     /// Currently active keybind display name/label
     pub active_binding_label: Arc<Mutex<String>>,
 
+    /// Currently active hotkey binding ID
+    pub active_binding_id: Arc<Mutex<String>>,
+
     /// Currently configured target definitions (in-memory cache for fast lookups)
     pub targets: Arc<Mutex<Vec<voxctrl_routing::OutputTarget>>>,
 
@@ -89,20 +92,8 @@ impl AppState {
         self.audio_ready.load(Ordering::SeqCst)
     }
 
-    pub fn set_audio_ready(&self, v: bool) {
-        self.audio_ready.store(v, Ordering::SeqCst);
-    }
-
-    pub fn is_dynamic_stream(&self) -> bool {
-        self.dynamic_stream.load(Ordering::SeqCst)
-    }
-
     pub fn set_dynamic_stream(&self, v: bool) {
         self.dynamic_stream.store(v, Ordering::SeqCst);
-    }
-
-    pub fn is_monitoring(&self) -> bool {
-        self.monitoring.load(Ordering::SeqCst)
     }
 
     pub fn set_monitoring(&self, v: bool) {
@@ -112,17 +103,8 @@ impl AppState {
         }
     }
 
-    pub fn get_input_device_index(&self) -> Option<u32> {
-        let val = self.input_device_index.load(Ordering::SeqCst);
-        if val == u32::MAX { None } else { Some(val) }
-    }
-
     pub fn set_input_device_index(&self, v: Option<u32>) {
         self.input_device_index.store(v.unwrap_or(u32::MAX), Ordering::SeqCst);
-    }
-
-    pub fn get_gain(&self) -> f32 {
-        f32::from_bits(self.gain.load(Ordering::SeqCst))
     }
 
     pub fn set_gain(&self, v: f32) {

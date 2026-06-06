@@ -54,6 +54,7 @@ pub struct StatusPayload {
 
 #[tauri::command]
 pub async fn start_recording(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    *state.active_binding_id.lock().await = String::new();
     state.set_recording(true);
     info!("Recording started via command");
     Ok(())
@@ -69,6 +70,9 @@ pub async fn stop_recording(state: State<'_, Arc<AppState>>) -> Result<(), Strin
 #[tauri::command]
 pub async fn toggle_recording(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let was = state.is_recording();
+    if !was {
+        *state.active_binding_id.lock().await = String::new();
+    }
     state.set_recording(!was);
     Ok(!was)
 }
@@ -143,6 +147,10 @@ pub async fn save_config(
                 hold_threshold_ms: 0,
                 subkey: None,
                 disabled: false,
+                ollama_enabled: Some(false),
+                ollama_model: None,
+                ollama_mode: None,
+                ollama_prompt: None,
             });
         }
         let reloader_guard = state.hotkey_reloader.lock().await;
@@ -255,6 +263,10 @@ pub async fn save_bindings(
                 hold_threshold_ms: 0,
                 subkey: None,
                 disabled: false,
+                ollama_enabled: Some(false),
+                ollama_model: None,
+                ollama_mode: None,
+                ollama_prompt: None,
             });
         }
     }

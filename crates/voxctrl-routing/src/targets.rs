@@ -6,6 +6,16 @@ use tokio::net::UnixStream;
 
 use crate::models::{DeliveryResult, DeliveryType, OutputTarget, TestResult};
 
+use std::sync::Arc;
+use std::sync::OnceLock;
+
+pub type SpeakCallback = Arc<dyn Fn(&str) + Send + Sync + 'static>;
+static SPEAK_CALLBACK: OnceLock<SpeakCallback> = OnceLock::new();
+
+pub fn set_speak_callback(callback: SpeakCallback) {
+    let _ = SPEAK_CALLBACK.set(callback);
+}
+
 // Shared HTTP client — built once, reused for connection pooling.
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
@@ -39,6 +49,7 @@ pub fn build_target(config: OutputTarget) -> Box<dyn DeliveryTarget> {
         DeliveryType::Http      => Box::new(HttpTarget(config)),
         DeliveryType::Webhook   => Box::new(WebhookTarget(config)),
         DeliveryType::Mcp       => Box::new(McpTarget(config)),
+        DeliveryType::Speak     => Box::new(SpeakTarget(config)),
     }
 }
 
@@ -697,6 +708,36 @@ impl DeliveryTarget for McpTarget {
         }
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         TestResult { reachable: false, detail: "Platform not supported".into() }
+    }
+}
+
+// ── SpeakTarget ───────────────────────────────────────────────────────────────
+
+pub struct SpeakTarget(#[allow(dead_code)] OutputTarget);
+
+#[async_trait::async_trait]
+impl DeliveryTarget for SpeakTarget {
+    async fn deliver(&self, text: &str) -> DeliveryResult {
+        if let Some(callback) = SPEAK_CALLBACK.get() {
+            callback(text);
+            DeliveryResult::ok(text.to_string())
+        } else {
+            DeliveryResult::err("TTS engine not initialized or speak callback not registered")
+        }
+    }
+
+    async fn test(&self) -> TestResult {
+        if SPEAK_CALLBACK.get().is_some() {
+            TestResult {
+                reachable: true,
+                detail: "TTS speaker callback is registered".into(),
+            }
+        } else {
+            TestResult {
+                reachable: false,
+                detail: "TTS speaker callback not registered".into(),
+            }
+        }
     }
 }
 

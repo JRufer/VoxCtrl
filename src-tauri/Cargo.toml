@@ -54,3 +54,6 @@ zbus = { workspace = true }
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 cuda = ["voxctrl-inference/cuda"]
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -460,7 +460,7 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 
 * **Linux**: Check that `aplay` is installed (`which aplay`).
 * Verify the voice model is downloaded: models live in `~/.local/share/voxctrl/piper-voices/`.
-* Try `tts_engine = "espeak"` as a fallback choice.
+* Try changing the global TTS engine to `"espeak"` in settings or `config.json` as a fallback choice.
 
 **`transcribe_voice` returns `(no speech detected)`**
 

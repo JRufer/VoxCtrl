@@ -34,6 +34,14 @@ pub struct HotkeyBinding {
     pub subkey: Option<String>,
     #[serde(default)]
     pub disabled: bool,
+    #[serde(default)]
+    pub ollama_enabled: Option<bool>,
+    #[serde(default)]
+    pub ollama_model: Option<String>,
+    #[serde(default)]
+    pub ollama_mode: Option<String>,
+    #[serde(default)]
+    pub ollama_prompt: Option<String>,
 }
 
 impl HotkeyBinding {
@@ -72,6 +80,7 @@ pub enum DeliveryType {
     Http,
     Webhook,
     Mcp,
+    Speak,
 }
 
 // ── Per-target processing overrides ──────────────────────────────────────────
@@ -87,10 +96,6 @@ pub struct TargetProcessingConfig {
     pub auto_format_lists: Option<bool>,
     pub apply_snippets: Option<bool>,
     pub code_mode: Option<bool>,
-    pub ollama_enabled: Option<bool>,
-    pub ollama_model: Option<String>,
-    pub ollama_mode: Option<String>,
-    pub ollama_prompt: Option<String>,
 }
 
 impl TargetProcessingConfig {
@@ -103,10 +108,6 @@ impl TargetProcessingConfig {
             || self.auto_format_lists.is_some()
             || self.apply_snippets.is_some()
             || self.code_mode.is_some()
-            || self.ollama_enabled.is_some()
-            || self.ollama_model.is_some()
-            || self.ollama_mode.is_some()
-            || self.ollama_prompt.is_some()
     }
 }
 
@@ -171,9 +172,6 @@ pub struct OutputTarget {
 
     // TTS response loopback
     pub response_pipe: Option<String>,
-    #[serde(default = "default_tts_engine")]
-    pub tts_engine: String,
-    pub tts_voice: Option<String>,
 }
 
 fn bool_true() -> bool {
@@ -181,9 +179,6 @@ fn bool_true() -> bool {
 }
 fn default_http_method() -> String {
     "POST".into()
-}
-fn default_tts_engine() -> String {
-    "piper".into()
 }
 fn default_file_mode() -> String {
     "append".into()
@@ -221,8 +216,6 @@ impl OutputTarget {
             initial_prompt: None,
             processing: TargetProcessingConfig::default(),
             response_pipe: None,
-            tts_engine: "piper".into(),
-            tts_voice: None,
         }
     }
 }
