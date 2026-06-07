@@ -109,12 +109,16 @@ if [ -d "/opt/cuda" ]; then
     export CUDA_TOOLKIT_ROOT_DIR="/opt/cuda"
     export CUDAToolkit_ROOT="/opt/cuda"
     export CUDACXX="/opt/cuda/bin/nvcc"
+    export LD_LIBRARY_PATH="/opt/cuda/lib64:${LD_LIBRARY_PATH:-}"
+    export LIBRARY_PATH="/opt/cuda/lib64:${LIBRARY_PATH:-}"
     CUDA_FOUND=true
 elif [ -d "/usr/local/cuda" ]; then
     export CUDA_PATH="/usr/local/cuda"
     export CUDA_TOOLKIT_ROOT_DIR="/usr/local/cuda"
     export CUDAToolkit_ROOT="/usr/local/cuda"
     export CUDACXX="/usr/local/cuda/bin/nvcc"
+    export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
+    export LIBRARY_PATH="/usr/local/cuda/lib64:${LIBRARY_PATH:-}"
     CUDA_FOUND=true
 fi
 

@@ -529,7 +529,9 @@
                           type="button"
                           class="custom-dropdown-item"
                           disabled={editingBinding.target_ids.includes(t.id) && t.id !== tid}
-                          onclick={() => {
+                          onclick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             editingBinding!.target_ids[idx] = t.id;
                             activeDropdownIdx = null;
                           }}
@@ -540,7 +542,9 @@
                       <button
                         type="button"
                         class="custom-dropdown-item create-new"
-                        onclick={() => {
+                        onclick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           activeDropdownIdx = null;
                           triggerNewTarget(idx);
                         }}
