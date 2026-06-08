@@ -346,10 +346,10 @@
       file_timestamp: true,
       file_mode: "append",
       http_method: "POST",
-      http_json_template: { text: "{TEXT}" },
-      webhook_json_template: { text: "{TEXT}" },
+      http_json_template: { text: "{text}" },
+      webhook_json_template: { text: "{text}" },
       mcp_tool: "speak_text",
-      mcp_args: { text: "{TEXT}" },
+      mcp_args: { text: "{text}" },
       send_on_release: false,
       append_newline: true,
       strip_newlines: false,
@@ -726,7 +726,7 @@
                 <textarea
                   rows="3"
                   bind:value={editOllamaPrompt}
-                  class:has-error={editOllamaPrompt && !editOllamaPrompt.includes("{text}")}
+                  class={editOllamaPrompt && !editOllamaPrompt.includes("{text}") ? 'border-red-500! ring-2! ring-red-500/20! focus:border-red-500! focus:ring-red-500/20!' : ''}
                   placeholder="e.g. write a haiku about {'{text}'}"
                   use:autoResize
                 ></textarea>
@@ -1002,9 +1002,6 @@
     @apply bg-[var(--color-obsidian-950)] text-[var(--color-accent-blue)] p-0.5 px-1 rounded font-mono text-[10px] border border-[var(--border)];
   }
 
-  textarea.has-error {
-    @apply border-red-400! shadow-[0_0_0_2px_rgba(229,115,115,0.15),_inset_0_2px_4px_rgba(0,0,0,0.2)]!;
-  }
 
   .validation-error-msg {
     @apply block mt-1 text-xs font-medium text-red-400 leading-normal;

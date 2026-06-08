@@ -308,6 +308,28 @@ async fn test_exec_target_success_argument_substitution() {
 }
 
 #[tokio::test]
+async fn test_exec_target_success_lowercase_and_multiple_substitution() {
+    let mut config = OutputTarget::default_inject();
+    config.delivery = DeliveryType::Exec;
+    config.command = Some("echo first={text} second={text}".into());
+    let target = build_target(config);
+    let res = target.deliver("Value").await;
+    assert!(res.success);
+    assert_eq!(res.delivered_text.as_deref(), Some("Value"));
+}
+
+#[tokio::test]
+async fn test_exec_target_quoted_substitution() {
+    let mut config = OutputTarget::default_inject();
+    config.delivery = DeliveryType::Exec;
+    config.command = Some("echo \"{text}\"".into());
+    let target = build_target(config);
+    let res = target.deliver("Value").await;
+    assert!(res.success);
+    assert_eq!(res.delivered_text.as_deref(), Some("Value"));
+}
+
+#[tokio::test]
 async fn test_exec_target_failure_no_cmd() {
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::Exec;

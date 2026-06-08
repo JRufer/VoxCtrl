@@ -218,23 +218,18 @@ impl DeliveryTarget for ExecTarget {
             Some(c) => c.clone(),
             None => return DeliveryResult::err("No command configured"),
         };
-        // Split the template (without substitution) so that multi-word transcribed
-        // text is never split across argument boundaries. {TEXT} is replaced with
-        // the full text as a single argument after the split.
         let raw_parts: Vec<&str> = template.split_whitespace().collect();
         if raw_parts.is_empty() {
             return DeliveryResult::err("Empty command");
         }
-        let mut cmd = tokio::process::Command::new(raw_parts[0]);
+        let has_placeholder = template.contains("{TEXT}") || template.contains("{text}");
+        let cmd_binary = raw_parts[0].replace("{TEXT}", text).replace("{text}", text);
+        let mut cmd = tokio::process::Command::new(cmd_binary);
         for part in &raw_parts[1..] {
-            if *part == "{TEXT}" {
-                cmd.arg(text);
-            } else {
-                cmd.arg(part);
-            }
+            let substituted = part.replace("{TEXT}", text).replace("{text}", text);
+            cmd.arg(substituted);
         }
-        // If {TEXT} was not present in the template, append text as a trailing arg.
-        if !raw_parts.iter().any(|p| *p == "{TEXT}") {
+        if !has_placeholder {
             cmd.arg(text);
         }
         match cmd.spawn() {
@@ -782,7 +777,7 @@ fn build_json_payload(
 fn substitute_text(val: serde_json::Value, text: &str) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
-            serde_json::Value::String(s.replace("{TEXT}", text))
+            serde_json::Value::String(s.replace("{TEXT}", text).replace("{text}", text))
         }
         serde_json::Value::Array(arr) => {
             serde_json::Value::Array(arr.into_iter().map(|v| substitute_text(v, text)).collect())

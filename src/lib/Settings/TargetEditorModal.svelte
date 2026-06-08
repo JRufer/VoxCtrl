@@ -25,37 +25,56 @@
   let editHttpTemplateString = $state("");
   let editWebhookTemplateString = $state("");
 
-  // Derived JSON error validation for MCP custom arguments
+  // Derived validation for Terminal Command
+  let commandError = $derived.by(() => {
+    if (!editingTarget || editingTarget.delivery !== "exec") return null;
+    const cmd = editingTarget.command || "";
+    if (!cmd.includes("{text}")) {
+      return "Command must contain '{text}' placeholder.";
+    }
+    return null;
+  });
+
+  // Derived JSON and placeholder validation for MCP custom arguments
   let mcpArgsError = $derived.by(() => {
     if (!editMcpArgsString.trim()) return null;
     try {
       JSON.parse(editMcpArgsString);
-      return null;
     } catch (e: any) {
-      return e.message;
+      return "Invalid JSON format: " + e.message;
     }
+    if (!editMcpArgsString.includes("{text}")) {
+      return "Arguments must contain '{text}' placeholder.";
+    }
+    return null;
   });
 
-  // Derived JSON error validation for HTTP custom template
+  // Derived JSON and placeholder validation for HTTP custom template
   let httpTemplateError = $derived.by(() => {
     if (!editHttpTemplateString.trim()) return null;
     try {
       JSON.parse(editHttpTemplateString);
-      return null;
     } catch (e: any) {
-      return e.message;
+      return "Invalid JSON format: " + e.message;
     }
+    if (!editHttpTemplateString.includes("{text}")) {
+      return "JSON template must contain '{text}' placeholder.";
+    }
+    return null;
   });
 
-  // Derived JSON error validation for Webhook custom template
+  // Derived JSON and placeholder validation for Webhook custom template
   let webhookTemplateError = $derived.by(() => {
     if (!editWebhookTemplateString.trim()) return null;
     try {
       JSON.parse(editWebhookTemplateString);
-      return null;
     } catch (e: any) {
-      return e.message;
+      return "Invalid JSON format: " + e.message;
     }
+    if (!editWebhookTemplateString.includes("{text}")) {
+      return "JSON template must contain '{text}' placeholder.";
+    }
+    return null;
   });
 
   // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
@@ -89,9 +108,9 @@
         editingTarget.file_mode = "append";
       }
       editApplySnippets = editingTarget.processing.apply_snippets !== false;
-      editMcpArgsString = editingTarget.mcp_args ? JSON.stringify(editingTarget.mcp_args, null, 2) : '{\n  "text": "{TEXT}"\n}';
-      editHttpTemplateString = editingTarget.http_json_template ? JSON.stringify(editingTarget.http_json_template, null, 2) : '{\n  "text": "{TEXT}"\n}';
-      editWebhookTemplateString = editingTarget.webhook_json_template ? JSON.stringify(editingTarget.webhook_json_template, null, 2) : '{\n  "text": "{TEXT}"\n}';
+      editMcpArgsString = editingTarget.mcp_args ? JSON.stringify(editingTarget.mcp_args, null, 2) : '{\n  "text": "{text}"\n}';
+      editHttpTemplateString = editingTarget.http_json_template ? JSON.stringify(editingTarget.http_json_template, null, 2) : '{\n  "text": "{text}"\n}';
+      editWebhookTemplateString = editingTarget.webhook_json_template ? JSON.stringify(editingTarget.webhook_json_template, null, 2) : '{\n  "text": "{text}"\n}';
     }
   });
 
@@ -102,7 +121,18 @@
       return;
     }
 
+    if (editingTarget.delivery === "exec") {
+      if (commandError) {
+        alert("Validation Error: " + commandError);
+        return;
+      }
+    }
+
     if (editingTarget.delivery === "mcp") {
+      if (mcpArgsError) {
+        alert("Validation Error: " + mcpArgsError);
+        return;
+      }
       try {
         editingTarget.mcp_args = JSON.parse(editMcpArgsString);
       } catch (e) {
@@ -112,6 +142,10 @@
     }
 
     if (editingTarget.delivery === "http") {
+      if (httpTemplateError) {
+        alert("Validation Error: " + httpTemplateError);
+        return;
+      }
       try {
         editingTarget.http_json_template = JSON.parse(editHttpTemplateString);
       } catch (e) {
@@ -121,6 +155,10 @@
     }
 
     if (editingTarget.delivery === "webhook") {
+      if (webhookTemplateError) {
+        alert("Validation Error: " + webhookTemplateError);
+        return;
+      }
       try {
         editingTarget.webhook_json_template = JSON.parse(editWebhookTemplateString);
       } catch (e) {
@@ -199,10 +237,15 @@
               <input
                 type="text"
                 bind:value={editingTarget.command}
-                placeholder="e.g. xdg-open {'{TEXT}'}"
-                class="full-width-input"
+                placeholder="e.g. xdg-open {'{text}'}"
+                class="full-width-input {commandError ? 'border-red-500! ring-2! ring-red-500/20! focus:border-red-500! focus:ring-red-500/20!' : ''}"
               />
-              <p class="hint">Use <code>{"{TEXT}"}</code> inside the command string as a placeholder to substitute transcribed speech.</p>
+              <p class="hint">Use <code>{"{text}"}</code> inside the command string as a placeholder to substitute transcribed speech.</p>
+              {#if commandError}
+                <span class="validation-error-msg">
+                  ⚠️ {commandError}
+                </span>
+              {/if}
             </div>
           </div>
         {/if}
@@ -332,14 +375,14 @@
                 <textarea
                   rows="4"
                   bind:value={editHttpTemplateString}
-                  class:has-error={httpTemplateError}
-                  placeholder={'{"text": "{TEXT}"}'}
+                  class={httpTemplateError ? 'border-red-500! ring-2! ring-red-500/20! focus:border-red-500! focus:ring-red-500/20!' : ''}
+                  placeholder={'{"text": "{text}"}'}
                   use:autoResize
                 ></textarea>
-                <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+                <p class="hint">Must be valid JSON. Use <code>{"{text}"}</code> to substitute transcribed speech.</p>
                 {#if httpTemplateError}
                   <span class="validation-error-msg">
-                    ⚠️ Invalid JSON format: {httpTemplateError}
+                    ⚠️ {httpTemplateError}
                   </span>
                 {/if}
               </div>
@@ -359,14 +402,14 @@
                 <textarea
                   rows="4"
                   bind:value={editWebhookTemplateString}
-                  class:has-error={webhookTemplateError}
-                  placeholder={'{"text": "{TEXT}"}'}
+                  class={webhookTemplateError ? 'border-red-500! ring-2! ring-red-500/20! focus:border-red-500! focus:ring-red-500/20!' : ''}
+                  placeholder={'{"text": "{text}"}'}
                   use:autoResize
                 ></textarea>
-                <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+                <p class="hint">Must be valid JSON. Use <code>{"{text}"}</code> to substitute transcribed speech.</p>
                 {#if webhookTemplateError}
                   <span class="validation-error-msg">
-                    ⚠️ Invalid JSON format: {webhookTemplateError}
+                    ⚠️ {webhookTemplateError}
                   </span>
                 {/if}
               </div>
@@ -412,14 +455,14 @@
               <textarea
                 rows="4"
                 bind:value={editMcpArgsString}
-                class:has-error={mcpArgsError}
-                placeholder={'{"text": "{TEXT}"}'}
+                class={mcpArgsError ? 'border-red-500! ring-2! ring-red-500/20! focus:border-red-500! focus:ring-red-500/20!' : ''}
+                placeholder={'{"text": "{text}"}'}
                 use:autoResize
               ></textarea>
-              <p class="hint">Must be valid JSON. Use <code>{"{TEXT}"}</code> to substitute transcribed speech.</p>
+              <p class="hint">Must be valid JSON. Use <code>{"{text}"}</code> to substitute transcribed speech.</p>
               {#if mcpArgsError}
                 <span class="validation-error-msg">
-                  ⚠️ Invalid JSON format: {mcpArgsError}
+                  ⚠️ {mcpArgsError}
                 </span>
               {/if}
             </div>
@@ -587,9 +630,6 @@
     @apply bg-[var(--color-obsidian-950)] text-[var(--color-accent-blue)] p-0.5 px-1 rounded font-mono text-[10px] border border-[var(--border)];
   }
 
-  textarea.has-error {
-    @apply border-red-400! shadow-[0_0_0_2px_rgba(229,115,115,0.15),_inset_0_2px_4px_rgba(0,0,0,0.2)]!;
-  }
 
   .validation-error-msg {
     @apply block mt-1 text-xs font-medium text-red-400 leading-normal;
