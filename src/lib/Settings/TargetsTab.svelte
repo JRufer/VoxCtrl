@@ -162,6 +162,9 @@
           {#if t.delivery === "socket"}
             <div class="binding-targets">Socket: {t.socket_host}:{t.socket_port}</div>
           {/if}
+          {#if t.delivery === "pipe"}
+            <div class="binding-targets">Pipe: {t.pipe_path} {#if t.response_pipe}→ {t.response_pipe}{/if}</div>
+          {/if}
           {#if t.delivery === "http" || t.delivery === "webhook"}
             <div class="binding-targets">API: {t.http_url || t.webhook_url}</div>
           {/if}

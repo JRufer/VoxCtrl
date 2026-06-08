@@ -176,6 +176,7 @@
               { value: "clipboard", label: "Save to Clipboard" },
               { value: "exec", label: "Execute Command" },
               { value: "file", label: "Write to File" },
+              { value: "pipe", label: "FIFO Named Pipe" },
               { value: "socket", label: "TCP / Unix Socket" },
               { value: "dbus", label: "DBus Signal" },
               { value: "http", label: "HTTP Custom Client" },
@@ -256,6 +257,20 @@
             <label class="field">
               <span>Unix Socket Path (Optional fallback)</span>
               <input type="text" bind:value={editingTarget.socket_unix} placeholder="/tmp/app.sock" />
+            </label>
+          </div>
+        {/if}
+
+        {#if editingTarget.delivery === "pipe"}
+          <div class="morph-section">
+            <h5>FIFO Named Pipe settings</h5>
+            <label class="field">
+              <span>FIFO Pipe Path (Input)</span>
+              <input type="text" bind:value={editingTarget.pipe_path} placeholder="e.g. /tmp/agent.in" />
+            </label>
+            <label class="field">
+              <span>Response Pipe Path (Optional TTS Loopback)</span>
+              <input type="text" bind:value={editingTarget.response_pipe} placeholder="e.g. /tmp/agent.out" />
             </label>
           </div>
         {/if}
