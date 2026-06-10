@@ -272,6 +272,49 @@ async fn test_clipboard_target_success() {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn test_clipboard_target_linux_cli() {
+    let temp_dir = std::env::temp_dir().join(format!("voxctrl_clipboard_test_{}", chrono::Utc::now().timestamp_millis()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    // Mock wl-copy that writes its input to a file so we can assert it was called with the right data.
+    let mock_wl_copy = temp_dir.join("wl-copy");
+    let test_output_file = temp_dir.join("test_clipboard_output.txt");
+    let script = format!(
+        "#!/bin/sh\ncat > \"{}\"\nexit 0\n",
+        test_output_file.to_string_lossy()
+    );
+    std::fs::write(&mock_wl_copy, script).unwrap();
+    
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&mock_wl_copy, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("WAYLAND_DISPLAY", "mock-display");
+
+    // Prepend to PATH
+    let old_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = std::env::split_paths(&old_path).collect::<Vec<_>>();
+    paths.insert(0, temp_dir.clone());
+    let new_path = std::env::join_paths(paths).unwrap();
+    std::env::set_var("PATH", &new_path);
+
+    let mut config = OutputTarget::default_inject();
+    config.delivery = DeliveryType::Clipboard;
+    let target = build_target(config);
+    let res = target.deliver("Test Clipboard Content").await;
+
+    // Clean up PATH
+    std::env::set_var("PATH", old_path);
+
+    assert!(res.success, "Clipboard delivery failed: {:?}", res.error);
+    assert_eq!(res.delivered_text.as_deref(), Some("Test Clipboard Content"));
+
+    let content = std::fs::read_to_string(&test_output_file).unwrap();
+    assert_eq!(content, "Test Clipboard Content");
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
 #[tokio::test]
 async fn test_clipboard_target_failure_empty_text() {
     let mut config = OutputTarget::default_inject();

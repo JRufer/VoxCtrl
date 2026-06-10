@@ -180,6 +180,52 @@ impl DeliveryTarget for ClipboardTarget {
         if self.0.append_newline {
             payload.push('\n');
         }
+
+        #[cfg(target_os = "linux")]
+        {
+            let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+            if wayland && which("wl-copy") {
+                let mut child = match tokio::process::Command::new("wl-copy")
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(e) => return DeliveryResult::err(format!("Failed to spawn wl-copy: {e}")),
+                };
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(e) = stdin.write_all(payload.as_bytes()).await {
+                        return DeliveryResult::err(format!("Failed to write to wl-copy stdin: {e}"));
+                    }
+                }
+                match child.wait().await {
+                    Ok(status) if status.success() => return DeliveryResult::ok(payload),
+                    Ok(status) => return DeliveryResult::err(format!("wl-copy exited with status: {status}")),
+                    Err(e) => return DeliveryResult::err(format!("wl-copy wait failed: {e}")),
+                }
+            }
+
+            if which("xclip") {
+                let mut child = match tokio::process::Command::new("xclip")
+                    .args(["-selection", "clipboard"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(e) => return DeliveryResult::err(format!("Failed to spawn xclip: {e}")),
+                };
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(e) = stdin.write_all(payload.as_bytes()).await {
+                        return DeliveryResult::err(format!("Failed to write to xclip stdin: {e}"));
+                    }
+                }
+                match child.wait().await {
+                    Ok(status) if status.success() => return DeliveryResult::ok(payload),
+                    Ok(status) => return DeliveryResult::err(format!("xclip exited with status: {status}")),
+                    Err(e) => return DeliveryResult::err(format!("xclip wait failed: {e}")),
+                }
+            }
+        }
+
         let p = payload.clone();
         match tokio::task::spawn_blocking(move || {
             arboard::Clipboard::new()
@@ -196,6 +242,17 @@ impl DeliveryTarget for ClipboardTarget {
     }
 
     async fn test(&self) -> TestResult {
+        #[cfg(target_os = "linux")]
+        {
+            let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+            if wayland && which("wl-copy") {
+                return TestResult { reachable: true, detail: "wl-copy found on PATH (Wayland)".into() };
+            }
+            if which("xclip") {
+                return TestResult { reachable: true, detail: "xclip found on PATH".into() };
+            }
+        }
+
         let ok = tokio::task::spawn_blocking(|| arboard::Clipboard::new().is_ok())
             .await
             .unwrap_or(false);
