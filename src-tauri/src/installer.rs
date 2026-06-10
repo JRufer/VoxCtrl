@@ -283,6 +283,7 @@ mod tests {
 
     #[test]
     fn test_detect_pkg_manager_mocked() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "pacman");
         assert_eq!(detect_pkg_manager(), "pacman");
 
@@ -294,6 +295,7 @@ mod tests {
 
     #[test]
     fn test_setup_desktop_integration_success() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         let temp_dir = tempdir().unwrap();
         let home_path = temp_dir.path().to_path_buf();
         
@@ -322,6 +324,7 @@ mod tests {
 
     #[test]
     fn test_setup_desktop_integration_failure_readonly() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         // Set HOME to a non-existent/readonly path
         std::env::set_var("HOME", "/nonexistent_directory_voxctrl_test");
         let res = setup_desktop_integration();
@@ -331,6 +334,7 @@ mod tests {
 
     #[test]
     fn test_run_cli_installer_success() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "success");
         std::env::set_var("VOXCTRL_ORT_FOUND_MOCK", "true");
@@ -349,6 +353,7 @@ mod tests {
 
     #[test]
     fn test_run_cli_installer_failure() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "failure");
         std::env::set_var("VOXCTRL_ORT_FOUND_MOCK", "true");
@@ -367,6 +372,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_gui_installer_success() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "success");
         
@@ -383,6 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_gui_installer_failure() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "failure");
         

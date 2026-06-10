@@ -939,6 +939,16 @@ pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str
 }
 
 #[cfg(test)]
+pub mod test_utils {
+    use std::sync::{Mutex, OnceLock};
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    
+    pub fn get_env_lock() -> &'static Mutex<()> {
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1215,6 +1225,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_udev_status_env_overrides() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_TEST_UDEV_STATUS", "missing");
         let res = check_udev_status().await.unwrap();
         assert!(!res.is_configured);
@@ -1241,6 +1252,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_udev_status_nss_fallback_logic() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         // Query the NSS database manually using the exact logic we implemented to make sure it matches
         #[cfg(target_os = "linux")]
         {
