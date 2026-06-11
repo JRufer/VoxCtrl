@@ -22,7 +22,7 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 ## 🌟 Key Features
 
 * **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution. NVIDIA CUDA GPU acceleration is available as an opt-in compile-time feature (`--features cuda`); Vulkan acceleration (AMD/Intel/NVIDIA) works in the standard build.
-* **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
+* **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable, fully animated overlays (Ocean Wave, Voice Card, Waveform, and Pulse Ring), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
 * **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, double-tap, double-tap & hold, or chord combo gestures directly to any keyboard.
@@ -112,41 +112,27 @@ VoxCtrl provides a clean, native settings window and overlay environment:
 
 ### 🎨 Heads-Up HUD Overlay Styles
 
-VoxCtrl features a dynamic transparent overlay window that renders floating real-time audio visualization above your desktop during dictation. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
+VoxCtrl features a dynamic transparent overlay window — always-on-top and fully click-through — that renders floating real-time audio visualization above your desktop during dictation. Every style has its own identity, audio visualizer, active-target indicator, and animated load/unload transitions. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
 
 1. **Ocean Wave (Default) 🌊**
-   A premium, liquid fluid animation utilizing three overlapping, semi-transparent SVG wave layers (Deep Blue, Aqua Cyan, and Ice Teal) that execute dynamic parallax sliding.
-   * **Voice Reactive Swelling:** The amplitude of all waves swells dynamically in response to microphone sound levels.
-   * **Active Sea Level Rise:** The overall average water level swells upward as you speak and recedes to a low tide when silent.
-   * **Gentle Breathing Ripple:** In absolute silence, the waves execute a slow, calming idle ripple animation.
+   A glass tide pool at night with a glowing moon, rising bubbles, and three overlapping parallax wave layers (Deep Blue, Aqua Cyan, and Ice Teal).
+   * **Voice Reactive Tide:** Both the waterline and the wave amplitude swell dynamically in response to microphone sound levels, receding to a calm low tide when silent.
+   * **Floating Buoy Target Tag:** The active routing target label floats on a buoy that bobs on the wave surface.
+   * **Fill & Drain Transitions:** The water fills the pool when dictation starts and drains away when it ends.
 
-2. **Voice Card 🎙️**
-   A state-of-the-art capsule-shaped overlay card featuring the active target window name/badge and an ultra-reactive 45-bar graphic equalizer waveform.
-   * **Hyper-Sensitive Physics:** Calibrated with a snappier attack rate and instant release decay, animating HSL-gradient (purple-pink-rose) bars that swell and dance with your voice activity.
-   * **Symmetric Layout:** The visualizer mirrors symmetrically from the center for a premium, high-tech graphic equalizer aesthetic.
+2. **Voice Card 💳**
+   A literal membership card: gold contact chip, embossed VOXCTRL branding, holographic sheen, and a 20×6 VU-meter LED dot matrix (green→amber→red) lit bottom-up.
+   * **Real VU Ballistics:** Instant attack and slow decay, with a sensitivity curve tuned so even quiet speech lights the meter.
+   * **Card Flip Transitions:** The card deals in with a flip when dictation starts and flips back out when it ends, with an embossed `TARGET` field and a blinking `REC`/`INIT`/`PROC` stamp.
 
 3. **Waveform 📈**
-   A wider Obsidian-style widget designed with a central horizontal dotted axis and a 48-bar Gaussian center-weighted envelope. It utilizes a high-frequency organic noise fluctuation on activity and transitions to a smooth sine-wave glide during AI post-processing/thinking phases.
+   A green-phosphor oscilloscope ("OSC-01") with a graticule grid and a live scrolling line trace of your microphone signal, rendered with a phosphor glow. Includes a `TGT ▸` target readout chip and switches to a blue sine sweep during AI post-processing. Powers on and off like a CRT, expanding from (and collapsing back into) a single scanline.
 
 4. **Pulse Ring 🟠**
-   A minimalist, hyper-clean target tracking HUD composed of a solid orange core indicator surrounded by dual expanding, fading echo rings. The pulse speed and core glow scale dynamically on sound intensity to provide subtle, non-intrusive recording feedback.
+   A sonar/radar dial: a rotating sweep arm with a trailing wedge, expanding pulse rings that brighten with voice intensity, contact blips that flash as the sweep passes, and an audio-reactive core — paired with a pulsing "TARGET LOCK" plate showing the active routing target.
 
 5. **Disabled (None) ❌**
    Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
-
-### 🛠️ User-Creatable Custom Overlay Templates (Dynamic HTML/CSS/JS)
-
-In addition to the built-in visualizer styles, VoxCtrl features a **programmable runtime overlay system** that dynamically loads custom visualizers created by you! 
-
-* **Local Folder Scanning:** Create a folder inside `~/.local/share/voxctrl/overlays/` containing `index.html` and `style.css`. It will instantly register as a selectable choice in the **Visual Tab** settings dropdown list.
-* **Placeholder Replacements:** Place `{{trigger}}` and `{{target}}` variables in your HTML; VoxCtrl automatically replaces them with your active hotkey trigger and routing destination labels dynamically.
-* **High-Speed CSS Custom Variables:** Binds real-time parameters directly to your elements (such as `--voxctrl-audio-level` mapped 0.0–1.0 at 60fps, `--voxctrl-recording`, `--voxctrl-processing`, and `--voxctrl-speaking`) for pure, GPU-accelerated CSS keyframe animations.
-* **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctrl-audio-level` and `voxctrl-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
-* **Dynamic Script Execution:** Solves browser script blocking by parsing and executing standard `<script>` tags inside templates safely upon component mount.
-* **Built-in Naming Conflict Resolution:** Automatically intercepts reserved built-in keywords (`pulse`, `waveform`, etc.) and appends `_custom` suffixes to keep both visual styles working perfectly.
-* **Bundled Starter Example:** On first launch, VoxCtrl automatically extracts a premium, pre-configured `gradient-wave` custom visualizer folder to your local directory. You can copy, modify, and study this folder to start building your own visualizers immediately!
-
-For a complete layout schema, step-by-step tutorial, and canvas animation guidelines, read the [Overlay UI Guide](docs/overlays.md).
 
 ### ⚙️ Window Management & Focus Raising
 * **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.

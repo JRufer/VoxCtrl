@@ -21,7 +21,6 @@ use crate::{
 
 mod commands;
 mod state;
-mod default_overlays;
 mod startup_log;
 mod installer;
 
@@ -168,6 +167,8 @@ pub fn run() {
 
     let (inference_tx, inference_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
 
+    let (overlay_tx, overlay_rx) = crossbeam_channel::unbounded::<String>();
+
     let app_state = Arc::new(AppState {
         config: config.clone(),
         router: router.clone(),
@@ -192,6 +193,7 @@ pub fn run() {
         tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         hotkey_reloader: Arc::new(Mutex::new(None)),
+        overlay_tx: overlay_tx.clone(),
     });
 
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
@@ -589,11 +591,39 @@ pub fn run() {
                 });
             }
 
-            // ── Forward audio levels to settings window ───────────────────────
+            // ── Forward audio levels to settings window and Slint overlay ────
             let handle = app.handle().clone();
+            let state_for_audio_level = app.handle().state::<Arc<AppState>>().inner().clone();
             std::thread::spawn(move || {
                 while let Ok(level) = audio_level_rx.recv() {
                     let _ = handle.emit("audio-level", level);
+
+                    // Forward to Slint overlay channel
+                    let is_recording = state_for_audio_level.is_recording();
+                    let is_processing = state_for_audio_level.is_processing();
+                    let is_speaking = state_for_audio_level.is_speaking();
+                    let audio_ready = state_for_audio_level.is_audio_ready();
+                    let active_target_label = {
+                        if let Ok(label) = state_for_audio_level.active_binding_label.try_lock() {
+                            label.clone()
+                        } else {
+                            "Focused Window".to_string()
+                        }
+                    };
+
+                    let msg = serde_json::json!({
+                        "type": "status",
+                        "recording": is_recording,
+                        "processing": is_processing,
+                        "speaking": is_speaking,
+                        "audio_ready": audio_ready,
+                        "audio_level": level,
+                        "active_target_label": if active_target_label.is_empty() { "Focused Window".to_string() } else { active_target_label },
+                    });
+
+                    if let Ok(json_str) = serde_json::to_string(&msg) {
+                        let _ = state_for_audio_level.overlay_tx.send(json_str);
+                    }
                 }
             });
 
@@ -658,8 +688,40 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Note: Windows ("overlay", "settings", "history") are automatically created by Tauri
-            // via the declarations in `tauri.conf.json`. Manual creation here is omitted to prevent duplicates.
+            // Spawn the Slint overlay helper process
+            if let Some(overlay_path) = get_overlay_path() {
+                println!("Spawning Slint overlay helper: {:?}", overlay_path);
+                match std::process::Command::new(&overlay_path)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .spawn()
+                {
+                    Ok(mut child) => {
+                        if let Some(mut stdin) = child.stdin.take() {
+                            let rx = overlay_rx.clone();
+                            std::thread::spawn(move || {
+                                use std::io::Write;
+                                while let Ok(msg) = rx.recv() {
+                                    if writeln!(stdin, "{}", msg).is_err() || stdin.flush().is_err() {
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+                        // Wait for child in background so it doesn't become a zombie
+                        std::thread::spawn(move || {
+                            let _ = child.wait();
+                            println!("Slint overlay process exited.");
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to spawn Slint overlay process: {:?}", e);
+                    }
+                }
+            } else {
+                eprintln!("Slint overlay binary not found! Check your build directory.");
+            }
 
             // Force show the settings window on startup if the voice model is missing
             let mut show_settings = cfg_data.ui.auto_show_settings;
@@ -681,15 +743,17 @@ pub fn run() {
             let state_for_ticker = app_state.clone();
             let handle = app.handle().clone();
             tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(150)); // Faster 150ms interval for smooth spin!
+                let mut interval = tokio::time::interval(Duration::from_millis(150));
                 let mut last_recording = false;
                 let mut was_animating = false;
                 let mut frame_idx = 0;
+                let mut last_pos: Option<(String, String, String)> = None;
+                let mut startup_tick_count: u32 = 0;
                 loop {
                     interval.tick().await;
+                    startup_tick_count = startup_tick_count.saturating_add(1);
                     let is_recording = state_for_ticker.is_recording();
                     let is_processing = state_for_ticker.is_processing();
-                    let is_speaking = state_for_ticker.is_speaking();
 
                     if let Some(tray) = handle.tray_by_id("main-tray") {
                         if is_processing {
@@ -706,28 +770,38 @@ pub fn run() {
 
                     let is_mcp_recording = state_for_ticker.is_mcp_recording();
 
-                    // Toggle dynamic overlay window visibility based on show_overlay configuration
-                    let (should_show_overlay, overlay_position, overlay_monitor) = {
+                    // Update overlay window coordinates if user config changes
+                    let (overlay_position, overlay_monitor, overlay_style) = {
                         let cfg = state_for_ticker.config.lock().await;
-                        let show_for_dictation = (is_recording || is_processing) && cfg.data.ui.show_overlay;
-                        let show_for_tts = cfg.data.tts.enabled && cfg.data.tts.response_overlay && is_speaking;
-                        let show_for_mcp = cfg.data.mcp.visual_feedback && is_mcp_recording;
                         (
-                            show_for_dictation || show_for_tts || show_for_mcp,
                             cfg.data.ui.overlay_position.clone(),
                             cfg.data.ui.overlay_monitor.clone(),
+                            cfg.data.ui.overlay_style.clone(),
                         )
                     };
 
-                    if let Some(window) = handle.get_webview_window("overlay") {
-                        if should_show_overlay {
-                            position_overlay_window(&window, &overlay_position, &overlay_monitor);
-                            let _ = window.show();
-                            let _ = window.set_always_on_top(true);
-                        } else {
-                            let _ = window.hide();
+                    let current_pos = (overlay_position.clone(), overlay_monitor.clone(), overlay_style.clone());
+                    let mut should_reposition = false;
+                    if last_pos.as_ref() != Some(&current_pos) || last_pos.is_none() {
+                        last_pos = Some(current_pos);
+                        should_reposition = true;
+                    } else if startup_tick_count < 40 {
+                        should_reposition = true;
+                    }
+
+                    if should_reposition {
+                        if let Some((x, y)) = calculate_overlay_coordinates(&handle, &overlay_position, &overlay_monitor) {
+                            let pos_msg = serde_json::json!({
+                                "type": "position",
+                                "x": x,
+                                "y": y,
+                            });
+                            if let Ok(json_str) = serde_json::to_string(&pos_msg) {
+                                let _ = state_for_ticker.overlay_tx.send(json_str);
+                            }
                         }
                     }
+
                     last_recording = is_recording;
 
                     let active_target_id = state_for_ticker.active_target.lock().await.clone();
@@ -770,7 +844,18 @@ pub fn run() {
                         "active_target_id": active_target_id,
                         "active_target_label": target_label,
                     });
-                    let _ = handle.emit("status-tick", payload);
+                    let _ = handle.emit("status-tick", payload.clone());
+
+                    // Forward status to Slint overlay channel
+                    let mut payload_value = payload.clone();
+                    if let Some(obj) = payload_value.as_object_mut() {
+                        obj.insert("type".to_string(), serde_json::json!("status"));
+                        obj.insert("audio_level".to_string(), serde_json::json!(0.0));
+                        obj.insert("overlay_style".to_string(), serde_json::json!(overlay_style));
+                    }
+                    if let Ok(json_str) = serde_json::to_string(&payload_value) {
+                        let _ = state_for_ticker.overlay_tx.send(json_str);
+                    }
                 }
             });
 
@@ -901,11 +986,56 @@ pub fn calculate_overlay_y(
     }
 }
 
-pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str, monitor_pref: &str) {
+pub fn get_overlay_path() -> Option<std::path::PathBuf> {
+    if let Ok(mut current_path) = std::env::current_exe() {
+        println!("get_overlay_path: current_exe = {:?}", current_path);
+        current_path.pop(); // Pop binary name
+        let bin_name = if cfg!(target_os = "windows") {
+            "voxctrl-overlay.exe"
+        } else {
+            "voxctrl-overlay"
+        };
+        // Check same dir
+        let p1 = current_path.join(bin_name);
+        println!("get_overlay_path: checking p1 = {:?}", p1);
+        if p1.exists() {
+            println!("get_overlay_path: found p1!");
+            return Some(p1);
+        }
+        // Check parent dir (if running in deps/)
+        current_path.pop();
+        let p2 = current_path.join(bin_name);
+        println!("get_overlay_path: checking p2 = {:?}", p2);
+        if p2.exists() {
+            println!("get_overlay_path: found p2!");
+            return Some(p2);
+        }
+
+        // Check relative to current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            let p3 = cwd.join("target").join("debug").join(bin_name);
+            println!("get_overlay_path: checking p3 = {:?}", p3);
+            if p3.exists() {
+                println!("get_overlay_path: found p3!");
+                return Some(p3);
+            }
+            let p4 = cwd.join("src-tauri").join("target").join("debug").join(bin_name);
+            println!("get_overlay_path: checking p4 = {:?}", p4);
+            if p4.exists() {
+                println!("get_overlay_path: found p4!");
+                return Some(p4);
+            }
+        }
+    }
+    println!("get_overlay_path: failed to find overlay binary!");
+    None
+}
+
+pub fn calculate_overlay_coordinates(app: &tauri::AppHandle, position_str: &str, monitor_pref: &str) -> Option<(i32, i32)> {
     let target_monitor = match monitor_pref {
-        "primary" => window.primary_monitor().ok().flatten(),
+        "primary" => app.primary_monitor().ok().flatten(),
         _ => {
-            if let Ok(monitors) = window.available_monitors() {
+            if let Ok(monitors) = app.available_monitors() {
                 monitors.into_iter().find(|m| m.name().map(|s| s.as_ref()) == Some(monitor_pref))
             } else {
                 None
@@ -914,27 +1044,33 @@ pub fn position_overlay_window(window: &tauri::WebviewWindow, position_str: &str
     };
 
     let monitor = target_monitor
-        .or_else(|| window.primary_monitor().ok().flatten())
-        .or_else(|| window.current_monitor().ok().flatten());
+        .or_else(|| app.primary_monitor().ok().flatten())?;
 
-    if let Some(monitor) = monitor {
-        let monitor_size = monitor.size();
-        let monitor_pos = monitor.position();
-        let scale_factor = window.scale_factor().unwrap_or(1.0);
-        
-        if let Ok(window_size) = window.outer_size() {
-            let win_w = window_size.width as i32;
-            let win_h = window_size.height as i32;
-            let mon_w = monitor_size.width as i32;
-            let mon_h = monitor_size.height as i32;
-            let mon_x = monitor_pos.x;
-            let mon_y = monitor_pos.y;
-            
-            let x = mon_x + (mon_w - win_w) / 2;
-            let y = calculate_overlay_y(mon_y, mon_h, win_h, scale_factor, position_str);
-            
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-        }
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    let scale_factor = monitor.scale_factor();
+    
+    // Slint overlay window physical size is (560 * scale_factor) x (190 * scale_factor)
+    let win_w = (560.0 * scale_factor) as i32;
+    let win_h = (190.0 * scale_factor) as i32;
+    let mon_w = monitor_size.width as i32;
+    let mon_h = monitor_size.height as i32;
+    let mon_x = monitor_pos.x;
+    let mon_y = monitor_pos.y;
+    
+    let x = mon_x + (mon_w - win_w) / 2;
+    let y = calculate_overlay_y(mon_y, mon_h, win_h, scale_factor, position_str);
+    
+    Some((x, y))
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use std::sync::{Mutex, OnceLock};
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    
+    pub fn get_env_lock() -> &'static Mutex<()> {
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
     }
 }
 
@@ -1037,6 +1173,7 @@ mod tests {
 
     fn make_test_state() -> AppState {
         let (audio_tx, _) = crossbeam_channel::bounded(1);
+        let (overlay_tx, _) = crossbeam_channel::unbounded();
         AppState {
             config: Arc::new(Mutex::new(Config::load())),
             router: Arc::new(OutputTargetRouter::new(Vec::new())),
@@ -1058,6 +1195,7 @@ mod tests {
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
+            overlay_tx,
             tts_handle: Arc::new(Mutex::new(None)),
             active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
             hotkey_reloader: Arc::new(Mutex::new(None)),
@@ -1215,6 +1353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_udev_status_env_overrides() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_TEST_UDEV_STATUS", "missing");
         let res = check_udev_status().await.unwrap();
         assert!(!res.is_configured);
@@ -1241,6 +1380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_udev_status_nss_fallback_logic() {
+        let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         // Query the NSS database manually using the exact logic we implemented to make sure it matches
         #[cfg(target_os = "linux")]
         {

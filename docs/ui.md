@@ -4,15 +4,15 @@
 
 ## Window Layout
 
-VoxCtrl opens three separate native windows managed by Tauri:
+VoxCtrl opens separate native windows managed by Tauri, plus a native overlay helper window:
 
-| Window | Route | Default Size | Properties |
+| Window | Route / Process | Default Size | Properties |
 |---|---|---|---|
 | Settings | `/settings` | 840 × 640 (min 700 × 500) | Resizable, standard chrome |
-| Overlay | `/overlay` | 560 × 160 | Transparent, always-on-top, no decorations, not resizable, skip taskbar |
+| Overlay | `voxctrl-overlay` helper (Slint) | 560 × 190 | Transparent, always-on-top, no decorations, click-through |
 | History | `/history` | 600 × 500 | Resizable, standard chrome |
 
-Windows are declared in `src-tauri/tauri.conf.json`. All three start hidden (`visible: false`) and are shown programmatically.
+The Tauri windows are declared in `src-tauri/tauri.conf.json`, start hidden (`visible: false`), and are shown programmatically. The overlay is a separate native process (`src-tauri/src/overlay.rs`) spawned at startup and driven over stdin; the Svelte `/overlay` route hosts the web counterparts of the same visualizers (used for custom HTML overlays).
 
 ---
 
@@ -92,28 +92,32 @@ The main configuration interface. Organized into a sidebar with nine tabs:
 
 ## Overlay Window
 
-A transparent, always-on-top floating HUD that visualizes audio activity. It has no title bar, no taskbar entry, is not resizable, and auto-shows/hides based on recording state (controlled by `ui.show_overlay`).
+A transparent, always-on-top, click-through floating HUD that visualizes audio activity, rendered by the native `voxctrl-overlay` helper process (Slint). It has no title bar or decorations, ignores mouse input (the cursor hit-test is disabled at the windowing-system level), and auto-shows/hides based on recording state (controlled by `ui.show_overlay`). Every style plays a spring-driven load animation on appear and an unload animation on dismiss — the window stays alive until the unload animation completes.
 
 The window coordinates are calculated dynamically relative to the active display monitor's size and scale factor, placing the visualizer cleanly in the **Center**, **Top** (60 logical pixels from the top), or **Bottom** (60 logical pixels from the bottom) of the screen depending on the `ui.overlay_position` setting. The HUD target display can be locked to a specific monitor screen (`ui.overlay_monitor`), failing over gracefully to the primary monitor with a golden warning badge if the target screen is unplugged. Position changes are hot-reloaded and applied instantly in real-time.
 
 ### Visualization Styles
 
-Set via `ui.overlay_style` in config:
+Set via `ui.overlay_style` in config. Each style has a unique identity, audio visualizer, and target indicator — see the [Overlay UI Guide](./overlays.md) for full details. Svelte components with the same designs live in `src/lib/Overlay/` for the web overlay layer.
 
-#### `blue_wave` (default)
-Animated flowing wave in blue/cyan tones. Wave amplitude responds to microphone input level. Component: `BlueWave.svelte`.
+#### `blue_wave` (default) — Ocean Wave
+A glass tide pool: three layered waves whose tide rises with the microphone level, rising bubbles, and a buoy tag bobbing on the surface that shows the active target. Water fills on load and drains on unload. Component: `BlueWave.svelte`.
 
-#### `voice_card`
-A minimal card with a pulsing animated circle and the current status text ("Listening...", "Processing...", "Speaking..."). Component: `VoiceCard.svelte`.
+#### `voice_card` — Voice Card
+A membership-card design with a gold chip, holographic sheen, and a 20×6 VU-meter LED dot matrix (green→amber→red) with fast-attack/slow-decay ballistics. The active target is embossed in the card's `TARGET` field. Deals in/out with a card flip. Component: `VoiceCard.svelte`.
 
-#### `waveform`
-Classic oscilloscope-style waveform visualization. Amplitude tracks the real-time audio level. Component: `Waveform.svelte`.
+#### `waveform` — Oscilloscope
+A green-phosphor oscilloscope with a live scrolling line trace of the microphone signal, graticule grid, and a `TGT ▸` target readout chip. Powers on/off like a CRT (expands from / collapses to a scanline). Component: `Waveform.svelte`.
 
-#### `pulse`
-A series of animated bars (like an equalizer) that pulse in response to audio input. Component: `Pulse.svelte`.
+#### `pulse` — Pulse Ring
+A sonar/radar dial: rotating sweep arm with trailing wedge, expanding audio pulse rings, contact blips, and an audio-reactive core — paired with a pulsing "TARGET LOCK" plate showing the active target. Component: `Pulse.svelte`.
 
 #### `none`
 Overlay is disabled entirely.
+
+### Speaking Pill
+
+While TTS is speaking, a green "SYSTEM RESPONDING" pill with a live mini-equalizer and the active target label slides up from the bottom of the overlay window (and a red pill is shown for MCP recording in the web overlay layer).
 
 ---
 

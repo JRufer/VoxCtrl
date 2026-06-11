@@ -47,10 +47,10 @@
       file_timestamp: true,
       file_mode: "append",
       http_method: "POST",
-      http_json_template: { text: "{TEXT}" },
-      webhook_json_template: { text: "{TEXT}" },
+      http_json_template: { text: "{text}" },
+      webhook_json_template: { text: "{text}" },
       mcp_tool: "speak_text",
-      mcp_args: { text: "{TEXT}" },
+      mcp_args: { text: "{text}" },
       send_on_release: false,
       append_newline: true,
       strip_newlines: false,
@@ -161,6 +161,9 @@
           {/if}
           {#if t.delivery === "socket"}
             <div class="binding-targets">Socket: {t.socket_host}:{t.socket_port}</div>
+          {/if}
+          {#if t.delivery === "pipe"}
+            <div class="binding-targets">Pipe: {t.pipe_path} {#if t.response_pipe}→ {t.response_pipe}{/if}</div>
           {/if}
           {#if t.delivery === "http" || t.delivery === "webhook"}
             <div class="binding-targets">API: {t.http_url || t.webhook_url}</div>

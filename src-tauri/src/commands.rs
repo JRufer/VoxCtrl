@@ -162,9 +162,15 @@ pub async fn save_config(
     // Emit config-changed event to all windows to enable instant reactivity
     let _ = app.emit("config-changed", new_config);
 
-    if let Some(w) = app.get_webview_window("overlay") {
-        if w.is_visible().unwrap_or(false) {
-            crate::position_overlay_window(&w, &guard.data.ui.overlay_position, &guard.data.ui.overlay_monitor);
+    let (overlay_position, overlay_monitor) = (guard.data.ui.overlay_position.clone(), guard.data.ui.overlay_monitor.clone());
+    if let Some((x, y)) = crate::calculate_overlay_coordinates(&app, &overlay_position, &overlay_monitor) {
+        let pos_msg = serde_json::json!({
+            "type": "position",
+            "x": x,
+            "y": y,
+        });
+        if let Ok(json_str) = serde_json::to_string(&pos_msg) {
+            let _ = state.overlay_tx.send(json_str);
         }
     }
 
@@ -378,24 +384,56 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
 #[tauri::command]
 pub async fn show_overlay(
     app: tauri::AppHandle,
-    state: State<'_, Arc<AppState>>,
+    state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("overlay") {
-        let (position, monitor_pref) = {
-            let cfg = state.config.lock().await;
-            (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
-        };
-        crate::position_overlay_window(&w, &position, &monitor_pref);
-        w.show().map_err(|e| e.to_string())?;
-        w.set_always_on_top(true).map_err(|e| e.to_string())?;
+    let (position, monitor_pref) = {
+        let cfg = state.config.lock().await;
+        (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
+    };
+    
+    if let Some((x, y)) = crate::calculate_overlay_coordinates(&app, &position, &monitor_pref) {
+        let pos_msg = serde_json::json!({
+            "type": "position",
+            "x": x,
+            "y": y,
+        });
+        let status_msg = serde_json::json!({
+            "type": "status",
+            "recording": true,
+            "processing": false,
+            "speaking": false,
+            "audio_ready": true,
+            "audio_level": 0.0,
+            "active_target_label": "Overlay Test",
+        });
+        
+        if let Ok(s) = serde_json::to_string(&pos_msg) {
+            let _ = state.overlay_tx.send(s);
+        }
+        if let Ok(s) = serde_json::to_string(&status_msg) {
+            let _ = state.overlay_tx.send(s);
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("overlay") {
-        w.hide().map_err(|e| e.to_string())?;
+pub async fn hide_overlay(
+    _app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let status_msg = serde_json::json!({
+        "type": "status",
+        "recording": false,
+        "processing": false,
+        "speaking": false,
+        "audio_ready": true,
+        "audio_level": 0.0,
+        "active_target_label": "Focused Window",
+    });
+    
+    if let Ok(s) = serde_json::to_string(&status_msg) {
+        let _ = state.overlay_tx.send(s);
     }
     Ok(())
 }
@@ -417,8 +455,6 @@ pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
     if !overlays_dir.exists() {
         let _ = std::fs::create_dir_all(&overlays_dir);
     }
-
-    crate::default_overlays::ensure_default_overlays(&overlays_dir);
 
     let mut list = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&overlays_dir) {

@@ -242,7 +242,7 @@ impl Default for OllamaConfig {
             mode: OllamaMode::Clean,
             custom_prompt: None,
             endpoint: "http://localhost:11434".into(),
-            timeout_secs: 8,
+            timeout_secs: 30,
         }
     }
 }
@@ -461,6 +461,15 @@ impl Config {
             let clean_config = Self { data: data.clone(), path: path.clone() };
             if let Err(e) = clean_config.save() {
                 tracing::error!("Failed to save migrated stop_key: {e}");
+            }
+        }
+
+        // Migrate legacy default Ollama timeout (8s) to the new default (30s) to prevent timeouts
+        if data.ollama.timeout_secs == 8 {
+            data.ollama.timeout_secs = 30;
+            let clean_config = Self { data: data.clone(), path: path.clone() };
+            if let Err(e) = clean_config.save() {
+                tracing::error!("Failed to save migrated Ollama timeout: {e}");
             }
         }
 
@@ -692,6 +701,36 @@ mod tests {
         let parsed: UiConfig = serde_json::from_str(partial_json).unwrap();
         assert_eq!(parsed.overlay_position, "center");
         assert_eq!(parsed.overlay_monitor, "primary");
+    }
+
+    #[test]
+    fn test_ollama_timeout_migration() {
+        let mut default_cfg = AppConfig::default();
+        default_cfg.ollama.timeout_secs = 8;
+
+        let legacy_json = serde_json::to_string(&default_cfg).unwrap();
+
+        let parsed: AppConfig = serde_json::from_str(&legacy_json).unwrap();
+        assert_eq!(parsed.ollama.timeout_secs, 8);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_file_path = temp_dir.path().join("config.json");
+        std::fs::write(&config_file_path, &legacy_json).unwrap();
+
+        let mut config = Config {
+            data: parsed,
+            path: config_file_path.clone(),
+        };
+
+        if config.data.ollama.timeout_secs == 8 {
+            config.data.ollama.timeout_secs = 30;
+            config.save().unwrap();
+        }
+
+        assert_eq!(config.data.ollama.timeout_secs, 30);
+
+        let re_read_content = std::fs::read_to_string(&config_file_path).unwrap();
+        assert!(re_read_content.contains(r#""timeout_secs": 30"#));
     }
 }
 

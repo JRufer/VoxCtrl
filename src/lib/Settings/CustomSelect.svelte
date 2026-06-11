@@ -76,7 +76,11 @@
           class="custom-dropdown-item"
           disabled={opt.disabled}
           class:selected={opt.value === value}
-          onclick={() => selectOption(opt.value)}
+          onclick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectOption(opt.value);
+          }}
         >
           {opt.label}
         </button>

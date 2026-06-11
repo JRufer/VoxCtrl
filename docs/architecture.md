@@ -14,10 +14,12 @@ VoxCtrl is a **Tauri 2** application: a compiled Rust backend that spawns a WebV
 │  └───────────────────┘      └──────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
          │                              │
-   Settings/Overlay/             Audio devices,
-   History windows               Filesystem, DBus,
+   Settings/History              Audio devices,
+   windows                       Filesystem, DBus,
                                  Network (Ollama/HTTP)
 ```
+
+In addition, the backend spawns a **native overlay helper process** (`voxctrl-overlay`, built with Slint from `src-tauri/src/overlay.rs`) that renders the always-on-top, click-through recording HUD. The backend streams newline-delimited JSON (`status` / `position` / `shutdown`) to the helper's stdin; the helper runs its own 16 ms animation loop, drives spring-based load/unload animations, and builds the per-style visualizer geometry (oscilloscope trace, radar sweep, ocean waves, VU LED matrix) each tick.
 
 ---
 
@@ -153,11 +155,12 @@ App.svelte  (route switcher)
   │     ├── OllamaTab
   │     └── AboutTab
   │
-  ├── /overlay   → Overlay component
-  │     ├── BlueWave       (default)
-  │     ├── VoiceCard
-  │     ├── Waveform
-  │     └── Pulse
+  ├── /overlay   → Overlay component (web overlay layer; the on-screen HUD
+  │     │          for built-in styles is the native voxctrl-overlay helper)
+  │     ├── BlueWave       (default — "Ocean Wave" tide pool)
+  │     ├── VoiceCard      ("Voice Card" VU LED matrix card)
+  │     ├── Waveform       (green-phosphor oscilloscope)
+  │     └── Pulse          ("Pulse Ring" sonar dial)
   │
   └── /history   → History component
 ```

@@ -24,6 +24,37 @@
   const triggerLabel = $derived($status.active_target_label || "Focused Window");
   const targetLabel = $derived($status.active_target_label || "Focused Window");
 
+  // Delay unmounting the visualizer when recording/speaking stops to allow CSS outro animation to finish
+  let isRecordingOrSpeaking = $derived(
+    ($recording && $config.ui.show_overlay) ||
+    ($speaking && $config.tts.enabled && $config.tts.response_overlay) ||
+    ($mcpRecording && $config.mcp.visual_feedback)
+  );
+  let renderOverlay = $state(false);
+  let animateActive = $state(false);
+  let timeoutId: any;
+  let animateTimeoutId: any;
+
+  $effect(() => {
+    if (isRecordingOrSpeaking) {
+      if (timeoutId) clearTimeout(timeoutId);
+      renderOverlay = true;
+      if (animateTimeoutId) clearTimeout(animateTimeoutId);
+      animateTimeoutId = setTimeout(() => {
+        animateActive = true;
+      }, 25);
+    } else {
+      animateActive = false;
+      timeoutId = setTimeout(() => {
+        renderOverlay = false;
+      }, 450);
+    }
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (animateTimeoutId) clearTimeout(animateTimeoutId);
+    };
+  });
+
   let processedHtml = $derived.by(() => {
     if (!activeCustomOverlay) return "";
     return activeCustomOverlay.html
@@ -48,15 +79,13 @@
   });
 
   $effect(() => {
-    const root = document.querySelector(".overlay-root") as HTMLElement;
-    if (root) {
-      root.style.setProperty("--voxctrl-audio-level", String(currentVolume));
-      root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
-      root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
-      root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
-      root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
-      root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
-    }
+    const root = document.documentElement;
+    root.style.setProperty("--voxctrl-audio-level", String(currentVolume));
+    root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
+    root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
+    root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
+    root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
+    root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
   });
 
   onMount(() => {
@@ -135,36 +164,51 @@
         oldScript.parentNode.replaceChild(newScript, oldScript);
       }
     });
+
+    return {
+      destroy() {
+        window.dispatchEvent(new CustomEvent("voxctrl-cleanup"));
+      }
+    };
   }
 </script>
 
 <div class="overlay-root" data-recording={$recording} data-speaking={$speaking} data-processing={$status.processing}>
-  {#if ($recording || $speaking || $status.processing) && visible}
-    {#key $config.ui.overlay_style}
-      {#if $config.ui.overlay_style === "waveform"}
-        <Waveform recording={$recording} />
-      {:else if $config.ui.overlay_style === "pulse"}
-        <Pulse recording={$recording} />
-      {:else if $config.ui.overlay_style === "blue_wave"}
-        <BlueWave recording={$recording} speaking={$speaking} />
-      {:else if activeCustomOverlay}
-        {@html `<style>${activeCustomOverlay.css}</style>`}
-        <div class="custom-overlay-content" use:executeScripts>
-          {@html processedHtml}
-        </div>
-      {:else if $config.ui.overlay_style !== "none"}
-        <VoiceCard recording={$recording} speaking={$speaking} />
-      {/if}
-    {/key}
+  {#if renderOverlay && visible}
+    {#if $config.ui.overlay_style === "waveform"}
+      <Waveform recording={$recording} active={animateActive} />
+    {:else if $config.ui.overlay_style === "pulse"}
+      <Pulse recording={$recording} active={animateActive} />
+    {:else if $config.ui.overlay_style === "blue_wave"}
+      <BlueWave recording={$recording} speaking={$speaking} active={animateActive} />
+    {:else if activeCustomOverlay}
+      {@html `<style>${activeCustomOverlay.css}</style>`}
+      <div class="custom-overlay-content" class:active={animateActive} use:executeScripts>
+        {@html processedHtml}
+      </div>
+    {:else if $config.ui.overlay_style !== "none"}
+      <VoiceCard recording={$recording} speaking={$speaking} active={animateActive} />
+    {/if}
+
     {#if $speaking}
-      <div class="system-response-box">
-        <span class="pulse-dot"></span>
-        <span class="label">System Responding...</span>
+      <div class="system-response-box speaking" class:on={animateActive}>
+        <span class="mini-eq">
+          {#each [0, 1, 2, 3, 4] as i}
+            <span class="eq-bar" style="animation-delay: {i * 0.13}s"></span>
+          {/each}
+        </span>
+        <span class="pill-text">
+          <span class="pill-title">SYSTEM RESPONDING</span>
+          <span class="pill-target">▸ {targetLabel}</span>
+        </span>
       </div>
     {:else if $mcpRecording}
-      <div class="system-response-box">
+      <div class="system-response-box mcp" class:on={animateActive}>
         <span class="pulse-dot"></span>
-        <span class="label">Recording...</span>
+        <span class="pill-text">
+          <span class="pill-title">RECORDING</span>
+          <span class="pill-target">▸ {targetLabel}</span>
+        </span>
       </div>
     {/if}
   {/if}
@@ -178,6 +222,8 @@
     border: none !important;
     outline: none !important;
     overflow: hidden !important;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
   }
 
   :global(*:focus) {
@@ -200,38 +246,88 @@
   .system-response-box {
     position: absolute;
     z-index: 10;
-    width: 260px;
-    height: 64px;
-    background: rgba(239, 68, 68, 0.65);
-    border: 2px solid rgba(239, 68, 68, 0.85);
-    box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3), inset 0 0 12px rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: #ffffff;
-    font-family: 'Inter', system-ui, sans-serif;
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    backdrop-filter: blur(4px);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    gap: 10px;
+    height: 46px;
+    padding: 0 20px;
+    border-radius: 23px;
+    font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+    opacity: 0;
+    transform: translateY(20px);
+    transition:
+      transform 0.34s cubic-bezier(0.175, 0.885, 0.32, 1.25),
+      opacity 0.28s ease;
+  }
+
+  .system-response-box.on {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .system-response-box.speaking {
+    background: rgba(4, 47, 36, 0.94);
+    border: 1.2px solid rgba(16, 185, 129, 0.55);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 18px rgba(16, 185, 129, 0.25);
+    color: #a7f3d0;
+  }
+
+  .system-response-box.mcp {
+    background: rgba(76, 5, 25, 0.94);
+    border: 1.2px solid rgba(244, 63, 94, 0.55);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 18px rgba(244, 63, 94, 0.25);
+    color: #fecdd3;
+  }
+
+  .mini-eq {
+    display: flex;
+    align-items: center;
+    gap: 2.5px;
+    height: 22px;
+  }
+
+  .eq-bar {
+    width: 3px;
+    height: 8px;
+    border-radius: 1.5px;
+    background: #34d399;
+    animation: eq-bounce 0.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes eq-bounce {
+    from { height: 7px; }
+    to { height: 21px; }
+  }
+
+  .pill-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .pill-title {
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: 0.15em;
+  }
+
+  .pill-target {
+    font-size: 8.5px;
+    font-weight: 600;
+    opacity: 0.55;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .pulse-dot {
     width: 10px;
     height: 10px;
-    background-color: #ffffff;
+    background-color: #f43f5e;
     border-radius: 50%;
     animation: flash 1.2s infinite ease-in-out;
-  }
-
-  @keyframes popIn {
-    0% { transform: scale(0.85); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
   }
 
   @keyframes flash {

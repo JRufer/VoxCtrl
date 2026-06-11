@@ -180,6 +180,52 @@ impl DeliveryTarget for ClipboardTarget {
         if self.0.append_newline {
             payload.push('\n');
         }
+
+        #[cfg(target_os = "linux")]
+        {
+            let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+            if wayland && which("wl-copy") {
+                let mut child = match tokio::process::Command::new("wl-copy")
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(e) => return DeliveryResult::err(format!("Failed to spawn wl-copy: {e}")),
+                };
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(e) = stdin.write_all(payload.as_bytes()).await {
+                        return DeliveryResult::err(format!("Failed to write to wl-copy stdin: {e}"));
+                    }
+                }
+                match child.wait().await {
+                    Ok(status) if status.success() => return DeliveryResult::ok(payload),
+                    Ok(status) => return DeliveryResult::err(format!("wl-copy exited with status: {status}")),
+                    Err(e) => return DeliveryResult::err(format!("wl-copy wait failed: {e}")),
+                }
+            }
+
+            if which("xclip") {
+                let mut child = match tokio::process::Command::new("xclip")
+                    .args(["-selection", "clipboard"])
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(e) => return DeliveryResult::err(format!("Failed to spawn xclip: {e}")),
+                };
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(e) = stdin.write_all(payload.as_bytes()).await {
+                        return DeliveryResult::err(format!("Failed to write to xclip stdin: {e}"));
+                    }
+                }
+                match child.wait().await {
+                    Ok(status) if status.success() => return DeliveryResult::ok(payload),
+                    Ok(status) => return DeliveryResult::err(format!("xclip exited with status: {status}")),
+                    Err(e) => return DeliveryResult::err(format!("xclip wait failed: {e}")),
+                }
+            }
+        }
+
         let p = payload.clone();
         match tokio::task::spawn_blocking(move || {
             arboard::Clipboard::new()
@@ -196,6 +242,17 @@ impl DeliveryTarget for ClipboardTarget {
     }
 
     async fn test(&self) -> TestResult {
+        #[cfg(target_os = "linux")]
+        {
+            let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+            if wayland && which("wl-copy") {
+                return TestResult { reachable: true, detail: "wl-copy found on PATH (Wayland)".into() };
+            }
+            if which("xclip") {
+                return TestResult { reachable: true, detail: "xclip found on PATH".into() };
+            }
+        }
+
         let ok = tokio::task::spawn_blocking(|| arboard::Clipboard::new().is_ok())
             .await
             .unwrap_or(false);
@@ -218,23 +275,18 @@ impl DeliveryTarget for ExecTarget {
             Some(c) => c.clone(),
             None => return DeliveryResult::err("No command configured"),
         };
-        // Split the template (without substitution) so that multi-word transcribed
-        // text is never split across argument boundaries. {TEXT} is replaced with
-        // the full text as a single argument after the split.
         let raw_parts: Vec<&str> = template.split_whitespace().collect();
         if raw_parts.is_empty() {
             return DeliveryResult::err("Empty command");
         }
-        let mut cmd = tokio::process::Command::new(raw_parts[0]);
+        let has_placeholder = template.contains("{TEXT}") || template.contains("{text}");
+        let cmd_binary = raw_parts[0].replace("{TEXT}", text).replace("{text}", text);
+        let mut cmd = tokio::process::Command::new(cmd_binary);
         for part in &raw_parts[1..] {
-            if *part == "{TEXT}" {
-                cmd.arg(text);
-            } else {
-                cmd.arg(part);
-            }
+            let substituted = part.replace("{TEXT}", text).replace("{text}", text);
+            cmd.arg(substituted);
         }
-        // If {TEXT} was not present in the template, append text as a trailing arg.
-        if !raw_parts.iter().any(|p| *p == "{TEXT}") {
+        if !has_placeholder {
             cmd.arg(text);
         }
         match cmd.spawn() {
@@ -782,7 +834,7 @@ fn build_json_payload(
 fn substitute_text(val: serde_json::Value, text: &str) -> serde_json::Value {
     match val {
         serde_json::Value::String(s) => {
-            serde_json::Value::String(s.replace("{TEXT}", text))
+            serde_json::Value::String(s.replace("{TEXT}", text).replace("{text}", text))
         }
         serde_json::Value::Array(arr) => {
             serde_json::Value::Array(arr.into_iter().map(|v| substitute_text(v, text)).collect())
