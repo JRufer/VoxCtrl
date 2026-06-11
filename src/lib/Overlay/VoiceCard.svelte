@@ -3,201 +3,313 @@
   import { listen } from "@tauri-apps/api/event";
   import { status } from "../../stores/status";
 
-  let { recording = false, speaking = false } = $props();
+  let { recording = false, speaking = false, active = true } = $props();
 
-  let barHeights = $state<number[]>(Array(45).fill(4));
+  // VU-meter LED dot matrix: 20 columns x 6 rows, lit bottom-up
+  const COLS = 20;
+  const ROWS = 6;
+
+  let colLevels = $state<number[]>(Array(COLS).fill(0));
+
   let unlistenAudioLevel: (() => void) | null = null;
   let animationFrameId: number;
   let targetVolume = 0;
   let currentVolume = 0;
 
+  const isReady = $derived($status.audio_ready !== false);
+  const targetLabel = $derived($status.active_target_label || "Focused Window");
+
   onMount(() => {
-    // Listen to real-time audio levels emitted from the Rust backend
     listen<number>("audio-level", (event) => {
-      // Calibrated audio signal multiplier reduced by 1/3rd (100.0)
       targetVolume = Math.min(1.0, event.payload * 100.0);
     }).then((unlisten) => {
       unlistenAudioLevel = unlisten;
     });
 
-    let time = 0;
-    function updateAnimation() {
-      time += 1;
-      
-      // Accelerate interpolation for immediate and snappy visual reaction ("fast attack")
-      currentVolume += (targetVolume - currentVolume) * 0.42;
-      
-      // Accelerate decay rate for immediate visual drop-offs on silence ("fast release")
-      targetVolume *= 0.82;
+    let phase = 0;
+    const levels = new Float32Array(COLS);
 
-      const numBars = 45;
-      const centerIdx = 22; // Center index of the symmetric array
-      const rawHeights: number[] = [];
+    function update() {
+      phase += 0.016;
+      currentVolume += (targetVolume - currentVolume) * 0.35;
+      targetVolume *= 0.86;
 
-      for (let i = 0; i < numBars; i++) {
-        // Gaussian bell curve centering larger base heights in the middle
-        const centerDist = Math.abs(i - centerIdx);
-        const baseHeight = Math.max(3, 15 * Math.exp(-(centerDist * centerDist) / 80));
-        
-        let targetHeight = baseHeight;
-        if (currentVolume > 0.01) {
-          // Propagate waves outwards by combining time and bar indices
-          let wave = Math.sin(time * 0.18 + i * 0.35) * 0.45 + 0.55;
-          // Add some organic high-frequency jitter for graphic-equalizer realism
-          let jitter = Math.random() * 0.25 + 0.78;
-          // Dynamic height scaling multiplier reduced by 1/3rd (240 range)
-          targetHeight = baseHeight + (currentVolume * 240 * wave * jitter);
-        } else if ($status.processing) {
-          // Rhythmic scanning ripple sweeping across the bars during processing
-          let ripple = Math.sin(time * 0.09 - i * 0.28) * 0.5 + 0.5;
-          targetHeight = baseHeight + (ripple * 25.0 * Math.exp(-(centerDist * centerDist) / 180));
+      for (let i = 0; i < COLS; i++) {
+        let target: number;
+        if ($status.processing) {
+          target = 0.25 + 0.75 * Math.max(0, Math.sin(phase * 4.0 - i * 0.45));
+        } else if (recording && $status.audio_ready === false) {
+          target = 0.08 + 0.06 * Math.random();
         } else {
-          // Slow breathing animation when idle (silence)
-          let idleWave = Math.sin(time * 0.04 + i * 0.15) * 1.0;
-          targetHeight = Math.max(3, baseHeight + idleWave);
+          const mid = (COLS - 1) / 2;
+          const env = Math.exp(-((i - mid) ** 2) / 42);
+          target = Math.min(1, currentVolume * (0.55 + 0.65 * Math.random()) * env * 1.9);
         }
-
-        rawHeights.push(targetHeight);
+        // Fast attack, slow decay — like a real VU meter
+        levels[i] = target > levels[i] ? target : levels[i] * 0.86;
       }
+      colLevels = Array.from(levels);
 
-      // Symmetric layout mapping: average height values with their horizontal mirror
-      const symmetricHeights: number[] = [];
-      for (let i = 0; i < numBars; i++) {
-        const mirrorIdx = numBars - 1 - i;
-        const avgHeight = (rawHeights[i] + rawHeights[mirrorIdx]) / 2;
-        // Clamp height ceiling to 60px (proportional layout reduction)
-        symmetricHeights.push(Math.max(3, Math.min(60, avgHeight)));
-      }
-
-      barHeights = symmetricHeights;
-      animationFrameId = requestAnimationFrame(updateAnimation);
+      animationFrameId = requestAnimationFrame(update);
     }
-
-    animationFrameId = requestAnimationFrame(updateAnimation);
+    animationFrameId = requestAnimationFrame(update);
 
     return () => {
       if (unlistenAudioLevel) unlistenAudioLevel();
       cancelAnimationFrame(animationFrameId);
     };
   });
+
+  function dotClass(row: number): string {
+    // row 0 is the top dot: red, then amber, then green
+    if (row === 0) return "red";
+    if (row <= 2) return "amber";
+    return "green";
+  }
 </script>
 
-<div class="voice-card-container" class:processing={$status.processing}>
-  <div class="header-row">
-    <span class="activity-label">{$status.processing ? "AI Thinking" : "Voice Activity"}</span>
-    <span class="target-badge" class:processing={$status.processing}>
-      <span class="target-text">{$status.processing ? "Processing..." : ($status.active_target_label || "Focused Window")}</span>
+<div class="card-scene" class:on={active}>
+  <div class="card" class:processing={$status.processing} class:initializing={recording && !isReady}>
+    <div class="sheen"></div>
+
+    <div class="chip">
+      <span class="chip-line h1"></span>
+      <span class="chip-line h2"></span>
+      <span class="chip-line v"></span>
+    </div>
+
+    <span class="brand">VOXCTRL</span>
+    <span class="brand-sub">VOICE CARD</span>
+
+    <span class="stamp">
+      <span class="stamp-dot"></span>
+      {#if $status.processing}
+        PROC
+      {:else if recording && !isReady}
+        INIT
+      {:else}
+        REC
+      {/if}
     </span>
-  </div>
-  
-  <div class="equalizer-container">
-    {#each barHeights as height, i}
-      <div 
-        class="eq-bar" 
-        style="height: {height}px; background: {$status.processing ? `hsl(${190 + (i / 45) * 45}, 82%, 56%)` : `hsl(${285 + (i / 45) * 60}, 76%, 60%)`};"
-      ></div>
-    {/each}
+
+    <div class="matrix">
+      {#each colLevels as lvl}
+        <div class="col">
+          {#each Array(ROWS) as _, r}
+            <span
+              class="dot {dotClass(r)}"
+              class:lit={ROWS - r <= lvl * ROWS}
+            ></span>
+          {/each}
+        </div>
+      {/each}
+    </div>
+
+    <span class="field-label">TARGET</span>
+    <span class="field-value">
+      {#if $status.processing}
+        Reading the card…
+      {:else}
+        {targetLabel}
+      {/if}
+    </span>
+    <span class="card-number">•••• VOX</span>
   </div>
 </div>
 
 <style>
-  .voice-card-container {
-    width: 320px;
-    height: 120px;
-    background: rgba(18, 18, 22, 0.94);
-    border: 1.2px solid rgba(255, 255, 255, 0.05);
-    border-radius: 28px;
-    padding: 14px 16px;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    animation: slideUpIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
-    user-select: none;
+  /* Card deals in with a 3D flip, flips back out on unload */
+  .card-scene {
+    perspective: 900px;
     pointer-events: none;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    user-select: none;
   }
 
-  .voice-card-container.processing {
-    border-color: rgba(6, 182, 212, 0.35);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 15px rgba(6, 182, 212, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  .card {
+    position: relative;
+    width: 340px;
+    height: 152px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #181b24 0%, #0b0d12 55%, #141925 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+    font-family: 'Outfit', 'Inter', sans-serif;
+    transform: rotateY(88deg);
+    opacity: 0;
+    transition:
+      transform 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.2),
+      opacity 0.3s ease,
+      border-color 0.3s ease;
   }
 
-  @keyframes slideUpIn {
-    from {
-      opacity: 0;
-      transform: translateY(12px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+  .on .card {
+    transform: rotateY(0deg);
+    opacity: 1;
   }
 
-  .header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
+  .card.processing {
+    border-color: rgba(56, 189, 248, 0.4);
   }
 
-  .activity-label {
-    font-family: 'Inter', sans-serif;
-    font-size: 11px;
-    font-weight: 550;
-    color: rgba(255, 255, 255, 0.35);
-    letter-spacing: -0.01em;
+  /* Holographic sheen drifting across the face */
+  .sheen {
+    position: absolute;
+    top: -20px;
+    bottom: -20px;
+    width: 64px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+    animation: sheen-drift 6.5s linear infinite;
   }
 
-  .target-badge {
+  @keyframes sheen-drift {
+    from { left: -70px; }
+    to { left: 410px; }
+  }
+
+  .chip {
+    position: absolute;
+    left: 20px;
+    top: 18px;
+    width: 38px;
+    height: 28px;
+    border-radius: 6px;
+    background: linear-gradient(160deg, #f6d27a 0%, #d9a946 55%, #b9842b 100%);
+  }
+
+  .chip-line {
+    position: absolute;
+    background: rgba(70, 45, 0, 0.45);
+  }
+  .chip-line.h1 { left: 0; right: 0; top: 9px; height: 1.5px; }
+  .chip-line.h2 { left: 0; right: 0; top: 18px; height: 1.5px; }
+  .chip-line.v { top: 0; bottom: 0; left: 18px; width: 1.5px; }
+
+  .brand {
+    position: absolute;
+    left: 68px;
+    top: 16px;
+    color: #f3f4f6;
+    font-size: 14px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+  }
+
+  .brand-sub {
+    position: absolute;
+    left: 68px;
+    top: 34px;
+    color: rgba(255, 255, 255, 0.38);
+    font-size: 7.5px;
+    font-weight: 800;
+    letter-spacing: 0.4em;
+  }
+
+  .stamp {
+    position: absolute;
+    right: 20px;
+    top: 18px;
     display: inline-flex;
     align-items: center;
-    border: 1px solid rgba(16, 185, 129, 0.4);
-    background: rgba(16, 185, 129, 0.07);
-    color: #10b981;
-    font-family: 'Inter', sans-serif;
-    font-size: 10.5px;
-    font-weight: 600;
-    border-radius: 6px;
-    padding: 2.5px 9px;
-    max-width: 130px;
-    transition: all 0.3s ease;
+    gap: 5px;
+    height: 20px;
+    padding: 0 9px;
+    border-radius: 5px;
+    border: 1px solid rgba(244, 63, 94, 0.5);
+    background: rgba(244, 63, 94, 0.08);
+    color: #f43f5e;
+    font-size: 8.5px;
+    font-weight: 850;
+    letter-spacing: 0.18em;
   }
 
-  .target-badge.processing {
-    border-color: rgba(6, 182, 212, 0.4);
-    background: rgba(6, 182, 212, 0.07);
-    color: #06b6d4;
-    animation: badgePulse 1.8s ease-in-out infinite;
+  .initializing .stamp {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.08);
+    color: #f59e0b;
   }
 
-  @keyframes badgePulse {
-    0%, 100% { opacity: 0.9; }
-    50% { opacity: 0.6; }
+  .processing .stamp {
+    border-color: rgba(56, 189, 248, 0.5);
+    background: rgba(56, 189, 248, 0.08);
+    color: #38bdf8;
   }
 
-  .target-text {
+  .stamp-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: stamp-blink 1.15s ease-in-out infinite;
+  }
+
+  @keyframes stamp-blink {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+
+  .matrix {
+    position: absolute;
+    left: 22px;
+    top: 56px;
+    width: 296px;
+    height: 51px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .dot {
+    width: 11px;
+    height: 6px;
+    border-radius: 2px;
+    opacity: 0.1;
+    transition: opacity 0.05s linear;
+  }
+
+  .dot.lit { opacity: 0.95; }
+  .dot.red { background: #f43f5e; }
+  .dot.amber { background: #fbbf24; }
+  .dot.green { background: #34d399; }
+
+  .processing .dot { background: #22d3ee; }
+
+  .field-label {
+    position: absolute;
+    left: 22px;
+    top: 118px;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.36em;
+  }
+
+  .field-value {
+    position: absolute;
+    left: 22px;
+    top: 128px;
+    max-width: 200px;
+    color: #e5e7eb;
+    font-size: 11.5px;
+    font-weight: 750;
+    letter-spacing: 0.04em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .equalizer-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    height: 60px;
-    width: 100%;
-    margin-top: auto;
-  }
-
-  .eq-bar {
-    width: 3.5px;
-    border-radius: 99px;
-    transition: height 0.06s cubic-bezier(0.215, 0.610, 0.355, 1);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    flex-shrink: 0;
+  .card-number {
+    position: absolute;
+    right: 22px;
+    top: 128px;
+    color: rgba(255, 255, 255, 0.22);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
   }
 </style>

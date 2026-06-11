@@ -1,279 +1,270 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
   import { status } from "../../stores/status";
 
-  let { recording = false } = $props();
+  let { recording = false, active = true } = $props();
 
-  // 48 bars — center-weighted amplitude envelope
-  const BAR_COUNT = 48;
+  // Oscilloscope: a scrolling ring buffer of samples rendered as one line trace
+  const POINTS = 126;
+  const W = 500;
+  const H = 78;
 
-  // Gaussian envelope so bars are tallest in the centre and taper at the edges
-  function envelope(i: number): number {
-    const mid = (BAR_COUNT - 1) / 2;
-    const sigma = BAR_COUNT / 5;
-    return Math.exp(-((i - mid) ** 2) / (2 * sigma ** 2));
-  }
+  let tracePath = $state("");
+  let unlistenAudioLevel: (() => void) | null = null;
+  let animationFrameId: number;
+  let targetVolume = 0;
+  let currentVolume = 0;
 
-  let heights = $state(Array.from({ length: BAR_COUNT }, () => 2));
-  let timer: ReturnType<typeof setInterval> | undefined;
-  let offset = 0;
-
-  $effect(() => {
-    if (recording) {
-      clearInterval(timer);
-      timer = setInterval(() => {
-        heights = Array.from({ length: BAR_COUNT }, (_, i) => {
-          const env = envelope(i);
-          const base = 2 + env * 8;
-          const noise = Math.random() * env * 56;
-          return base + noise;
-        });
-      }, 60);
-    } else if ($status.processing) {
-      clearInterval(timer);
-      timer = setInterval(() => {
-        offset += 0.22;
-        heights = Array.from({ length: BAR_COUNT }, (_, i) => {
-          const env = envelope(i);
-          const base = 2 + env * 4;
-          const wave = Math.sin(i * 0.45 - offset) * env * 28;
-          return base + Math.abs(wave);
-        });
-      }, 30);
-    } else {
-      clearInterval(timer);
-      heights = Array.from({ length: BAR_COUNT }, () => 2);
-    }
-    return () => clearInterval(timer);
-  });
-
-  const targetLabel = $derived($status.active_target_label || "Focused Window");
   const isReady = $derived($status.audio_ready !== false);
+  const targetLabel = $derived($status.active_target_label || "Focused Window");
+
+  onMount(() => {
+    listen<number>("audio-level", (event) => {
+      targetVolume = Math.min(1.0, event.payload * 100.0);
+    }).then((unlisten) => {
+      unlistenAudioLevel = unlisten;
+    });
+
+    const history = new Float32Array(POINTS);
+    let phase = 0;
+
+    function update() {
+      phase += 0.016;
+      currentVolume += (targetVolume - currentVolume) * 0.35;
+      targetVolume *= 0.86;
+
+      let sample = 0;
+      if ($status.processing) {
+        sample = 0.55 * Math.sin(phase * 9.0) * (0.6 + 0.4 * Math.sin(phase * 1.7));
+      } else if (recording && $status.audio_ready === false) {
+        sample = 0.05 * (Math.random() * 2 - 1);
+      } else if (recording) {
+        const noise = Math.random() * 2 - 1;
+        sample = Math.min(1, currentVolume * 1.5) * (0.45 * Math.sin(phase * 24.0) + 0.55 * noise);
+      }
+
+      history.copyWithin(0, 1);
+      history[POINTS - 1] = sample;
+
+      let d = "";
+      for (let i = 0; i < POINTS; i++) {
+        const x = (i * W) / (POINTS - 1);
+        const y = Math.min(H - 2, Math.max(2, H / 2 - history[i] * 35));
+        d += i === 0 ? `M ${x.toFixed(0)} ${y.toFixed(1)}` : ` L ${x.toFixed(0)} ${y.toFixed(1)}`;
+      }
+      tracePath = d;
+
+      animationFrameId = requestAnimationFrame(update);
+    }
+    animationFrameId = requestAnimationFrame(update);
+
+    return () => {
+      if (unlistenAudioLevel) unlistenAudioLevel();
+      cancelAnimationFrame(animationFrameId);
+    };
+  });
 </script>
 
-<div class="wave-widget">
-  <!-- Top info bar -->
-  <div class="info-bar">
-    <div class="info-left">
-      <span class="mic-dot" class:initializing={recording && !isReady} class:processing={$status.processing}></span>
-      <span class="info-text">
+<div
+  class="scope"
+  class:on={active}
+  class:processing={$status.processing}
+  class:initializing={recording && !isReady}
+>
+  <div class="scope-inner">
+    <div class="header">
+      <span class="led"></span>
+      <span class="title">WAVEFORM // OSC-01</span>
+      <span class="subtitle">
         {#if $status.processing}
-          PROCESSING...
+          · TRANSCRIBING
+        {:else if recording && !isReady}
+          · CALIBRATING
         {:else}
-          🎙️ MIC
+          · LIVE TRACE
         {/if}
       </span>
-      <span class="sep">·</span>
-      <span class="info-subtext">
-        {#if $status.processing}
-          thinking with AI
-        {:else if recording && !isReady}
-          preparing stream
-        {:else}
-          voice overlay
-        {/if}
+      <span class="spacer"></span>
+      <span class="target-chip">
+        <span class="tgt">TGT ▸</span>
+        <span class="tgt-label">{targetLabel}</span>
       </span>
     </div>
-    {#if recording || $status.processing}
-      <div class="target-pill">
-        <span class="arrow">🎯</span>
-        <span class="pill-text">{targetLabel}</span>
-      </div>
-    {/if}
-  </div>
 
-  <!-- Waveform area -->
-  <div class="wave-stage">
-    <!-- Dotted centre axis -->
-    <div class="axis"></div>
-
-    <!-- Bars -->
-    <div class="bars">
-      {#each heights as h, i}
-        {@const env = envelope(i)}
-        <div
-          class="bar"
-          class:active={(recording && isReady) || $status.processing}
-          class:processing={$status.processing}
-          style="
-            height: {h}px;
-            --glow: {((recording && isReady) || $status.processing) ? Math.round(env * 16) : 0}px;
-            --opacity: {((recording && isReady) || $status.processing) ? (0.45 + env * 0.55) : 0.18};
-          "
-        ></div>
+    <div class="stage">
+      <div class="grid-h g1"></div>
+      <div class="grid-h g2"></div>
+      <div class="grid-h g3"></div>
+      {#each [1, 2, 3, 4] as t}
+        <div class="grid-v" style="left: {t * 20}%"></div>
       {/each}
+      <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
+        <path class="glow" d={tracePath} />
+        <path class="trace" d={tracePath} />
+      </svg>
     </div>
   </div>
 </div>
 
 <style>
-  .wave-widget {
+  /* CRT panel: powers on by expanding from a scanline, collapses back off */
+  .scope {
     width: 540px;
-    background: linear-gradient(160deg, #0d0e12 0%, #08090b 100%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px; /* Option C */
-    padding: 14px 20px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    box-shadow:
-      0 10px 40px rgba(0, 0, 0, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    height: 124px;
+    background: linear-gradient(180deg, #07140c 0%, #030a07 100%);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+    border-radius: 10px;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6), 0 0 18px rgba(34, 197, 94, 0.14);
+    overflow: hidden;
     pointer-events: none;
     user-select: none;
-    animation: zoom-in 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.25) both;
+    transform: scaleY(0.04);
+    opacity: 0;
+    transition:
+      transform 0.32s cubic-bezier(0.175, 0.885, 0.32, 1.2),
+      opacity 0.28s ease;
   }
 
-  @keyframes zoom-in {
-    from { opacity: 0; transform: scale(0.95) translateY(6px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
+  .scope.on {
+    transform: scaleY(1);
+    opacity: 1;
   }
 
-  /* ── Info bar ────────────────────────────────── */
-  .info-bar {
+  .scope-inner {
+    width: 100%;
+    height: 100%;
+    padding: 10px 20px 12px;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 20px;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  .info-left {
+  .header {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--color-obsidian-300);
-    font-size: 10px;
-    font-weight: 750;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    height: 18px;
     font-family: 'Outfit', 'Inter', sans-serif;
   }
 
-  .mic-dot {
-    width: 6px;
-    height: 6px;
+  .led {
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--color-accent-tangerine);
-    box-shadow: 0 0 8px var(--color-accent-tangerine);
+    background: #4ade80;
+    box-shadow: 0 0 7px #4ade80;
+    animation: led-blink 1.1s ease-in-out infinite;
     flex-shrink: 0;
   }
 
-  .mic-dot.initializing {
+  .initializing .led {
     background: #f59e0b;
-    box-shadow: 0 0 8px #f59e0b;
-    animation: pulse-orange 0.6s ease-in-out infinite alternate;
+    box-shadow: 0 0 7px #f59e0b;
   }
 
-  .mic-dot.processing {
-    background: var(--color-accent-blue);
-    box-shadow: 0 0 8px var(--color-accent-blue);
-    animation: pulse-cyan 0.6s ease-in-out infinite alternate;
+  .processing .led {
+    background: #38bdf8;
+    box-shadow: 0 0 7px #38bdf8;
   }
 
-  @keyframes pulse-orange {
-    from { opacity: 0.4; transform: scale(0.9); }
-    to { opacity: 1.0; transform: scale(1.3); }
+  @keyframes led-blink {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
   }
 
-  @keyframes pulse-cyan {
-    from { opacity: 0.4; transform: scale(0.9); }
-    to { opacity: 1.0; transform: scale(1.3); }
+  .title {
+    color: #bbf7d0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
   }
 
-  .info-subtext {
+  .subtitle {
+    color: rgba(187, 247, 208, 0.35);
+    font-size: 9px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 0.1em;
   }
 
-  .sep {
-    color: rgba(255, 255, 255, 0.15);
-  }
+  .spacer { flex: 1; }
 
-  /* Target pill — top-right */
-  .target-pill {
+  .target-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 99px;
-    padding: 2.5px 12px;
-    color: #fff;
-    font-size: 9px;
-    font-weight: 750;
+    gap: 5px;
+    background: rgba(74, 222, 128, 0.06);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 4px;
+    padding: 2px 8px;
+  }
+
+  .tgt {
+    color: #4ade80;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+  }
+
+  .tgt-label {
+    color: #d1fae5;
+    font-size: 8.5px;
+    font-weight: 700;
     letter-spacing: 0.06em;
-    text-transform: uppercase;
-    font-family: 'Outfit', 'Inter', sans-serif;
-  }
-
-  .arrow {
-    font-size: 10px;
-  }
-
-  .pill-text {
-    max-width: 140px;
+    max-width: 150px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--color-obsidian-300);
   }
 
-  /* ── Wave stage ──────────────────────────────── */
-  .wave-stage {
+  .stage {
     position: relative;
-    height: 70px;
-    display: flex;
-    align-items: center;
+    flex: 1;
   }
 
-  /* Dotted horizontal axis line */
-  .axis {
+  .grid-h {
     position: absolute;
     left: 0;
     right: 0;
-    top: 50%;
     height: 1px;
-    background: repeating-linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.06) 0px,
-      rgba(255, 255, 255, 0.06) 3px,
-      transparent 3px,
-      transparent 8px
-    );
-    pointer-events: none;
+    background: rgba(74, 222, 128, 0.07);
+  }
+  .g1 { top: 25%; }
+  .g2 { top: 50%; background: rgba(74, 222, 128, 0.14); }
+  .g3 { top: 75%; }
+
+  .grid-v {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(74, 222, 128, 0.05);
   }
 
-  /* Bars */
-  .bars {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
+  svg {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
-    z-index: 1;
   }
 
-  .bar {
-    width: 3px;
-    border-radius: 99px;
-    background: var(--color-accent-tangerine);
-    opacity: var(--opacity, 0.18);
-    transition: height 0.06s cubic-bezier(0.175, 0.885, 0.32, 1.2),
-                opacity 0.06s ease;
-    min-height: 2px;
+  .trace {
+    fill: none;
+    stroke: #a7f3d0;
+    stroke-width: 1.8;
+    vector-effect: non-scaling-stroke;
   }
 
-  .bar.active {
-    box-shadow:
-      0 0 var(--glow) var(--color-accent-tangerine),
-      0 0 calc(var(--glow) * 1.5) rgba(255, 107, 53, 0.3);
+  .glow {
+    fill: none;
+    stroke: #4ade80;
+    stroke-width: 6;
+    opacity: 0.16;
+    vector-effect: non-scaling-stroke;
   }
 
-  .bar.processing {
-    background: var(--color-accent-blue);
-    box-shadow:
-      0 0 var(--glow) var(--color-accent-blue),
-      0 0 calc(var(--glow) * 1.5) rgba(56, 189, 248, 0.3);
-  }
+  .initializing .trace { stroke: #fcd34d; }
+  .initializing .glow { stroke: #f59e0b; }
+  .processing .trace { stroke: #7dd3fc; }
+  .processing .glow { stroke: #38bdf8; }
 </style>
