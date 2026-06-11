@@ -247,7 +247,12 @@ cargo test --workspace
 # Run tests for a specific backend crate
 cargo test -p voxctrl-config
 cargo test -p voxctrl-routing
+
+# Run the native overlay engine's visualizer/animation tests
+cargo test --bin voxctrl-overlay
 ```
+
+The overlay engine tests (in `src-tauri/src/overlay.rs`) cover the load/unload animation spring (convergence, bounded overshoot, unload duration), the oscilloscope trace (orientation and clamping), the radar sweep/rings/blips geometry, the ocean wave paths (bottom edge locked to the stage, drain/fill mapping), and the VU LED matrix ballistics.
 
 #### Writing Backend Tests
 Backend unit tests are written inside their respective crate files within a `#[cfg(test)]` module block.

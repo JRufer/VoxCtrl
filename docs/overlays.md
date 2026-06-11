@@ -1,21 +1,23 @@
 # Overlay UI Guide
 
-VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The overlay is a dedicated, borderless, transparent Tauri window (560×160 px, transparent background, always-on-top, click-through) that renders a Svelte component over whatever application is in focus.
+VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The built-in overlay styles are rendered by a dedicated **native helper process** (`voxctrl-overlay`, built with [Slint](https://slint.dev)) in a borderless, transparent, always-on-top, click-through window (560×190 logical px) drawn over whatever application is in focus.
 
 ---
 
 ## How the Overlay Works
 
-The overlay is a separate Tauri window running the `/overlay` route. It is configured with the following properties:
+The main VoxCtrl process spawns the `voxctrl-overlay` helper binary at startup and streams newline-delimited JSON messages (`status`, `position`, `shutdown`) to its stdin — recording/processing/speaking state, the smoothed microphone level, the active routing target label, the configured style, and screen coordinates. The helper window has the following properties:
 
-- **Transparent** — The window background is fully transparent; only the component's drawn pixels are visible.
-- **Always-on-Top** — Floats persistently above all other active desktop windows.
-- **Click-Through** (`pointer-events: none`) — Mouse and keyboard events pass cleanly through to the window beneath it, preventing any focus interruption.
-- **Non-Resizable, Skip Taskbar** — Does not appear in the desktop panel/taskbar and cannot be manually resized.
+- **Transparent** — The window background is fully transparent; only the drawn pixels of the visualizer are visible.
+- **Always-on-Top** — Floats persistently above all other active desktop windows. The window level is re-asserted every time the overlay re-appears, since some window managers reset it across hide/show cycles.
+- **Click-Through** — The window's cursor hit-test is disabled at the windowing-system level (winit `set_cursor_hittest(false)`), so mouse events pass cleanly through to the window beneath it, preventing any focus interruption.
+- **Borderless / Frameless** — No title bar or decorations.
 
-The overlay is controlled by the `show_overlay` / `hide_overlay` IPC commands and is automatically shown when recording starts and hidden when transcription completes (provided `ui.show_overlay` is enabled).
+The overlay is shown automatically when recording starts and hidden when transcription completes (provided `ui.show_overlay` is enabled). The active style is determined by `config.ui.overlay_style` and is hot-switched without restarting the helper.
 
-The active style is determined by `config.ui.overlay_style`. The window switches styles instantly without restarting—it temporarily unmounts the visualizer and remounts the new template after a 25ms flush to clear the WebKit compositor's frame buffer, preventing graphical ghosts on platforms like Linux (WebKitGTK/Wayland).
+### Load & Unload Animations
+
+Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears. Animations are driven by a slightly-underdamped spring (so overlays land with a subtle bounce), and the helper window intentionally **stays alive until the unload animation finishes** instead of vanishing on the same frame recording stops. Each style interprets the spring's progress in its own way — see the per-style descriptions below.
 
 ---
 
@@ -52,35 +54,47 @@ If the configured target monitor is unplugged or disconnected at runtime, the Ta
 
 ## Built-in Styles
 
-Four built-in styles are available. The default is **Ocean Wave**.
+Four built-in styles are available — each with its own visual identity, its own kind of audio visualizer, its own load/unload animation, and a clear indicator of the active routing target. The default is **Ocean Wave**.
+
+All styles share three state palettes: **Recording** (the style's signature color), **Initializing** (amber, while the microphone stream is connecting), and **Processing** (sky blue, while the AI is transcribing).
 
 ### Ocean Wave *(default — `"blue_wave"`)*
-A layered animated ocean-wave visualization that reacts to real-time audio levels.
-- Three overlapping SVG wave layers in deep blue, cyan-aqua, and ice-teal.
-- Waves swell in amplitude in response to the `audio-level` event stream from the Rust backend.
-- Displays a "Voice Activity" label and a green routing target badge inside a dark rounded card.
-- Slides in with a subtle upward ease transition on appear.
+A glass tide pool at night, complete with a glowing moon and rising bubbles.
+- **Visualizer**: three layered sine waves (deep blue → cyan → ice teal) whose tide level *and* amplitude rise with your voice. The bottom of the water is always locked to the bottom of the pool — only the waterline moves.
+- **Target indicator**: a buoy tag that floats and bobs on the front wave's surface, showing the active target label.
+- **Load/unload**: the water fills the pool from the bottom on load and drains back out on unload.
+- **States**: "high tide — listening", "low tide — preparing" (initializing), "deep current — processing" (waves shift indigo and surge).
 
 ### Voice Card (`"voice_card"`)
-A symmetric, capsule-shaped spectrum equalizer card.
-- 45 vertical visualizer bars that respond to RMS audio level with a fast-attack, fast-release physics envelope.
-- Displays the active routing target badge and HSL-gradient bars (purple-pink-rose).
-- Built with a sleek dark-obsidian glassmorphism card.
+A literal membership card: gold contact chip, embossed VOXCTRL branding, and a holographic sheen that drifts across the face.
+- **Visualizer**: a 20×6 VU-meter LED dot matrix (green → amber → red, lit bottom-up) with real VU ballistics — instant attack, slow decay — and a centre-weighted envelope.
+- **Target indicator**: an embossed `TARGET` field in the card's bottom-left corner, plus a blinking `REC` / `INIT` / `PROC` status stamp top-right.
+- **Load/unload**: the card deals in with a flip (horizontal unfold from its centre) and flips back out on unload.
 
 ### Waveform (`"waveform"`)
-A centre-weighted bar graph with a Gaussian amplitude envelope.
-- 48 bars, tallest in the centre and tapering at the edges.
-- Adds randomized per-bar noise during active recording for a premium spectrum-analyser look.
-- Transitions to a flat idle glide state when not actively recording.
+A green-phosphor oscilloscope ("WAVEFORM // OSC-01") with a graticule grid.
+- **Visualizer**: a live scrolling line trace of the microphone signal, rendered in two passes (a wide phosphor glow underneath a crisp trace line). Positive samples deflect upward, like a real scope.
+- **Target indicator**: a `TGT ▸` readout chip in the scope's top-right corner.
+- **Load/unload**: a CRT power-on — the panel expands vertically from a single scanline — and collapses back into the line on unload.
+- **States**: "LIVE TRACE" (green), "CALIBRATING" (amber), "TRANSCRIBING" (blue sine sweep on the scope).
 
 ### Pulse Ring (`"pulse"`)
-A minimalist target-tracking indicator.
-- Three visual states: **Initializing** (amber, "Connecting Mic…"), **Recording** (orange, active target label), **Processing** (blue, "Processing…").
-- Dual concentric SVG rings pulse and fade outward during active recording, scaling in glow intensity relative to voice amplitude.
+A sonar/radar dial paired with a target-lock plate.
+- **Visualizer**: a rotating sweep arm with a faded trailing wedge, expanding pulse rings whose brightness tracks your voice, contact blips that flash as the sweep passes their bearing, and an audio-reactive core that swells with the microphone level.
+- **Target indicator**: a "PULSE // TARGET LOCK" plate beside the dial with a pulsing reticle (⌖) and lock frame showing the active target label.
+- **Load/unload**: the dial drops in and the lock plate slides out from behind it; both reverse on unload.
+- **States**: "TARGET LOCK" (tangerine), "ACQUIRING" (amber), "ANALYZING" (blue).
+
+### Speaking Pill
+
+While TTS is responding, a green "SYSTEM RESPONDING" pill slides up from the bottom of the overlay with a live mini-equalizer and the active target label, and slides back down when speech ends.
 
 ---
 
 ## 🎨 User-Creatable Custom Overlay Templates
+
+> [!NOTE]
+> Custom overlays are HTML/CSS/JS templates rendered by the web (Svelte) overlay layer, whereas the four built-in styles above are rendered by the native `voxctrl-overlay` helper. Custom overlay rendering is being migrated to the new native overlay engine; the template format documented below stays the same.
 
 VoxCtrl supports **user-creatable, customizable visual overlays** loaded dynamically from a local directory at runtime. You can build visualizers using plain HTML templates, vanilla CSS styling, and standard JavaScript, with high-performance access to the real-time audio stream.
 

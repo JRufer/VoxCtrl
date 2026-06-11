@@ -22,7 +22,7 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 ## 🌟 Key Features
 
 * **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution. NVIDIA CUDA GPU acceleration is available as an opt-in compile-time feature (`--features cuda`); Vulkan acceleration (AMD/Intel/NVIDIA) works in the standard build.
-* **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable overlays (Waveform, Pulse Circle, and Voice Card), a searchable transcription history panel, and a native desktop System Tray utility.
+* **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable, fully animated overlays (Ocean Wave, Voice Card, Waveform, and Pulse Ring), a searchable transcription history panel, and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency.
 * **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
 * **Linux evdev Global Hotkeys**: Low-level event loop listener bypassing desktop environments to bind global hold-to-talk, toggle-to-talk, double-tap, double-tap & hold, or chord combo gestures directly to any keyboard.
@@ -112,24 +112,24 @@ VoxCtrl provides a clean, native settings window and overlay environment:
 
 ### 🎨 Heads-Up HUD Overlay Styles
 
-VoxCtrl features a dynamic transparent overlay window that renders floating real-time audio visualization above your desktop during dictation. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
+VoxCtrl features a dynamic transparent overlay window — always-on-top and fully click-through — that renders floating real-time audio visualization above your desktop during dictation. Every style has its own identity, audio visualizer, active-target indicator, and animated load/unload transitions. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
 
 1. **Ocean Wave (Default) 🌊**
-   A premium, liquid fluid animation utilizing three overlapping, semi-transparent SVG wave layers (Deep Blue, Aqua Cyan, and Ice Teal) that execute dynamic parallax sliding.
-   * **Voice Reactive Swelling:** The amplitude of all waves swells dynamically in response to microphone sound levels.
-   * **Active Sea Level Rise:** The overall average water level swells upward as you speak and recedes to a low tide when silent.
-   * **Gentle Breathing Ripple:** In absolute silence, the waves execute a slow, calming idle ripple animation.
+   A glass tide pool at night with a glowing moon, rising bubbles, and three overlapping parallax wave layers (Deep Blue, Aqua Cyan, and Ice Teal).
+   * **Voice Reactive Tide:** Both the waterline and the wave amplitude swell dynamically in response to microphone sound levels, receding to a calm low tide when silent.
+   * **Floating Buoy Target Tag:** The active routing target label floats on a buoy that bobs on the wave surface.
+   * **Fill & Drain Transitions:** The water fills the pool when dictation starts and drains away when it ends.
 
-2. **Voice Card 🎙️**
-   A state-of-the-art capsule-shaped overlay card featuring the active target window name/badge and an ultra-reactive 45-bar graphic equalizer waveform.
-   * **Hyper-Sensitive Physics:** Calibrated with a snappier attack rate and instant release decay, animating HSL-gradient (purple-pink-rose) bars that swell and dance with your voice activity.
-   * **Symmetric Layout:** The visualizer mirrors symmetrically from the center for a premium, high-tech graphic equalizer aesthetic.
+2. **Voice Card 💳**
+   A literal membership card: gold contact chip, embossed VOXCTRL branding, holographic sheen, and a 20×6 VU-meter LED dot matrix (green→amber→red) lit bottom-up.
+   * **Real VU Ballistics:** Instant attack and slow decay, with a sensitivity curve tuned so even quiet speech lights the meter.
+   * **Card Flip Transitions:** The card deals in with a flip when dictation starts and flips back out when it ends, with an embossed `TARGET` field and a blinking `REC`/`INIT`/`PROC` stamp.
 
 3. **Waveform 📈**
-   A wider Obsidian-style widget designed with a central horizontal dotted axis and a 48-bar Gaussian center-weighted envelope. It utilizes a high-frequency organic noise fluctuation on activity and transitions to a smooth sine-wave glide during AI post-processing/thinking phases.
+   A green-phosphor oscilloscope ("OSC-01") with a graticule grid and a live scrolling line trace of your microphone signal, rendered with a phosphor glow. Includes a `TGT ▸` target readout chip and switches to a blue sine sweep during AI post-processing. Powers on and off like a CRT, expanding from (and collapsing back into) a single scanline.
 
 4. **Pulse Ring 🟠**
-   A minimalist, hyper-clean target tracking HUD composed of a solid orange core indicator surrounded by dual expanding, fading echo rings. The pulse speed and core glow scale dynamically on sound intensity to provide subtle, non-intrusive recording feedback.
+   A sonar/radar dial: a rotating sweep arm with a trailing wedge, expanding pulse rings that brighten with voice intensity, contact blips that flash as the sweep passes, and an audio-reactive core — paired with a pulsing "TARGET LOCK" plate showing the active routing target.
 
 5. **Disabled (None) ❌**
    Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
