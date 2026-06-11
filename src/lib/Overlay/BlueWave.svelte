@@ -59,8 +59,8 @@
       path2 = wavePath(a2, 0.022, -phase * 3.0, y2);
       path3 = wavePath(a3, 0.018, phase * 3.9, y3);
 
-      // The buoy bobs on the front wave's surface (panel coordinates)
-      buoyY = 38 + y3 - 30 + Math.sin(phase * 2.2) * 2.5;
+      // The buoy sits on the front wave's surface (panel coordinates)
+      buoyY = 38 + y3 - 21 + Math.sin(phase * 2.2) * 2.5;
 
       animationFrameId = requestAnimationFrame(update);
     }

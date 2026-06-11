@@ -8557,6 +8557,7 @@ dependencies = [
  "crossbeam-channel",
  "dirs 5.0.1",
  "gtk",
+ "i-slint-backend-winit",
  "serde",
  "serde_json",
  "slint",

@@ -42,8 +42,9 @@
           target = 0.08 + 0.06 * Math.random();
         } else {
           const mid = (COLS - 1) / 2;
-          const env = Math.exp(-((i - mid) ** 2) / 42);
-          target = Math.min(1, currentVolume * (0.55 + 0.65 * Math.random()) * env * 1.9);
+          const env = Math.exp(-((i - mid) ** 2) / 60);
+          // sqrt curve so quiet speech still lights the meter
+          target = Math.min(1, Math.sqrt(currentVolume) * (0.6 + 0.6 * Math.random()) * env * 1.6);
         }
         // Fast attack, slow decay — like a real VU meter
         levels[i] = target > levels[i] ? target : levels[i] * 0.86;

@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::io::BufRead;
 use std::sync::{Arc, Mutex};
+use i_slint_backend_winit::WinitWindowAccessor;
 use slint::ComponentHandle;
 
 slint::slint! {
@@ -264,15 +265,14 @@ slint::slint! {
                 Rectangle { x: 0; y: 61.5px; width: 124px; height: 1px; background: rgba(255, 255, 255, 0.07); }
                 Rectangle { x: 61.5px; y: 0; width: 1px; height: 124px; background: rgba(255, 255, 255, 0.07); }
 
-                // Sweep trail (faded) and sweep arm
+                // Sweep wedge (faded pie slice) and sweep arm
                 Path {
                     x: 0; y: 0; width: 124px; height: 124px;
                     viewbox-width: 124;
                     viewbox-height: 124;
                     commands: sweep-trail-path;
-                    fill: transparent;
-                    stroke: is-processing ? rgba(56, 189, 248, 0.18) : rgba(255, 107, 53, 0.18);
-                    stroke-width: 2.5px;
+                    fill: is-processing ? rgba(56, 189, 248, 0.14) : rgba(255, 107, 53, 0.14);
+                    stroke: transparent;
                 }
                 Path {
                     x: 0; y: 0; width: 124px; height: 124px;
@@ -904,6 +904,14 @@ fn main() {
             if let Err(e) = ui.show() {
                 eprintln!("[overlay] Failed to show window: {:?}", e);
             }
+            // Re-assert pass-through + always-on-top every time the window
+            // (re)appears — some WMs reset these across hide/show cycles.
+            ui.window().with_winit_window(|w| {
+                if let Err(e) = w.set_cursor_hittest(false) {
+                    eprintln!("[overlay] Failed to make window click-through: {:?}", e);
+                }
+                w.set_window_level(i_slint_backend_winit::winit::window::WindowLevel::AlwaysOnTop);
+            });
             shown = true;
         } else if !visible_needed && shown {
             if let Err(e) = ui.hide() {
@@ -972,16 +980,15 @@ fn main() {
                     cx + a.cos() * r,
                     cy + a.sin() * r
                 );
-                let mut trail = String::with_capacity(256);
-                for k in 1..=4 {
-                    let ta = a - 0.13 * k as f32;
-                    let _ = write!(
-                        trail,
-                        "M {cx} {cy} L {:.1} {:.1} ",
-                        cx + ta.cos() * (r - 2.0 * k as f32),
-                        cy + ta.sin() * (r - 2.0 * k as f32)
-                    );
-                }
+                // Filled pie wedge trailing behind the sweep arm.
+                let span = 0.95_f32;
+                let trail = format!(
+                    "M {cx} {cy} L {:.1} {:.1} A {r} {r} 0 0 1 {:.1} {:.1} Z",
+                    cx + (a - span).cos() * r,
+                    cy + (a - span).sin() * r,
+                    cx + a.cos() * r,
+                    cy + a.sin() * r
+                );
                 ui.set_sweep_path(main.into());
                 ui.set_sweep_trail_path(trail.into());
 
@@ -989,9 +996,9 @@ fn main() {
                 let t1 = (phase * 0.75).fract();
                 let t2 = (phase * 0.75 + 0.5).fract();
                 ui.set_ring1_s(22.0 + t1 * 96.0);
-                ui.set_ring1_o((1.0 - t1) * (0.2 + cur_level * 0.65));
+                ui.set_ring1_o((1.0 - t1) * (0.4 + cur_level * 0.6));
                 ui.set_ring2_s(22.0 + t2 * 96.0);
-                ui.set_ring2_o((1.0 - t2) * (0.2 + cur_level * 0.65));
+                ui.set_ring2_o((1.0 - t2) * (0.4 + cur_level * 0.6));
 
                 // Blips flash as the sweep passes their bearing.
                 let two_pi = std::f32::consts::TAU;
@@ -1024,15 +1031,16 @@ fn main() {
                 ui.set_ocean_path2(ocean_wave_path(380.0, 90.0, a2, 0.022, -phase * 3.0, drain(y2)).into());
                 ui.set_ocean_path3(ocean_wave_path(380.0, 90.0, a3, 0.018, phase * 3.9, y3_final).into());
 
-                // Buoy bobs on the front wave's surface (panel coords).
-                ui.set_buoy_y(38.0 + y3_final - 30.0 + (phase * 2.2).sin() * 2.5);
+                // Buoy sits on the front wave's surface (panel coords),
+                // bobbing with the swell.
+                ui.set_buoy_y(38.0 + y3_final - 21.0 + (phase * 2.2).sin() * 2.5);
 
                 // Bubbles rise faster while there is voice energy.
                 let bubbles = std::rc::Rc::new(slint::VecModel::default());
                 for i in 0..3 {
                     let speed = 14.0 + cur_level * 26.0;
                     let yy = 84.0 - (phase * speed + i as f32 * 31.0).rem_euclid(78.0);
-                    let o = ((yy / 84.0) * 0.55).clamp(0.08, 0.6) * fill;
+                    let o = (0.25 + (yy / 84.0) * 0.45).min(0.65) * fill;
                     bubbles.push(BubbleData { y: 38.0 + yy, o });
                 }
                 ui.set_bubbles(bubbles.into());
@@ -1048,8 +1056,9 @@ fn main() {
                         0.08 + 0.06 * rand()
                     } else {
                         let mid = (n as f32 - 1.0) / 2.0;
-                        let env = (-((i as f32 - mid).powi(2)) / 42.0).exp();
-                        (cur_level * (0.55 + 0.65 * rand()) * env * 1.9).min(1.0)
+                        let env = (-((i as f32 - mid).powi(2)) / 60.0).exp();
+                        // sqrt curve so quiet speech still lights the meter
+                        (cur_level.sqrt() * (0.6 + 0.6 * rand()) * env * 1.6).min(1.0)
                     };
                     if target > led_cols[i] {
                         led_cols[i] = target;

@@ -85,6 +85,8 @@ zip = "2"
 
 # UI framework for native overlay
 slint = { version = "1.8.0" }
+# Winit accessor used to make the overlay window click-through
+i-slint-backend-winit = { version = "1.8.0" }
 
 
 # Internal crates
