@@ -134,20 +134,6 @@ VoxCtrl features a dynamic transparent overlay window — always-on-top and full
 5. **Disabled (None) ❌**
    Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
 
-### 🛠️ User-Creatable Custom Overlay Templates (Dynamic HTML/CSS/JS)
-
-In addition to the built-in visualizer styles, VoxCtrl features a **programmable runtime overlay system** that dynamically loads custom visualizers created by you! 
-
-* **Local Folder Scanning:** Create a folder inside `~/.local/share/voxctrl/overlays/` containing `index.html` and `style.css`. It will instantly register as a selectable choice in the **Visual Tab** settings dropdown list.
-* **Placeholder Replacements:** Place `{{trigger}}` and `{{target}}` variables in your HTML; VoxCtrl automatically replaces them with your active hotkey trigger and routing destination labels dynamically.
-* **High-Speed CSS Custom Variables:** Binds real-time parameters directly to your elements (such as `--voxctrl-audio-level` mapped 0.0–1.0 at 60fps, `--voxctrl-recording`, `--voxctrl-processing`, and `--voxctrl-speaking`) for pure, GPU-accelerated CSS keyframe animations.
-* **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctrl-audio-level` and `voxctrl-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
-* **Dynamic Script Execution:** Solves browser script blocking by parsing and executing standard `<script>` tags inside templates safely upon component mount.
-* **Built-in Naming Conflict Resolution:** Automatically intercepts reserved built-in keywords (`pulse`, `waveform`, etc.) and appends `_custom` suffixes to keep both visual styles working perfectly.
-* **Bundled Starter Overlays:** On every launch, VoxCtrl extracts two complete, fully animated custom visualizers to your local directory to copy, modify, and study: **`gradient-wave`** (an aurora of voice-reactive gradient ribbons under twinkling stars) and **`rainbow`** (seven ROYGBIV arcs that draw themselves over a glass cloud capsule with a scrolling spectrum analyzer). Both include load/unload animations, live audio visualizers, and target indicators — matching the built-in styles.
-
-For a complete layout schema, step-by-step tutorial, and canvas animation guidelines, read the [Overlay UI Guide](docs/overlays.md).
-
 ### ⚙️ Window Management & Focus Raising
 * **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.
 

@@ -221,12 +221,16 @@ fn num_cpus() -> u32 {
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(dirs::home_dir);
     if path == "~" {
-        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+        return home.unwrap_or_else(|| PathBuf::from("~"));
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
+        if let Some(h) = home {
+            return h.join(rest);
         }
     }
     PathBuf::from(path)

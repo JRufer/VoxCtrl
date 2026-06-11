@@ -21,7 +21,6 @@ use crate::{
 
 mod commands;
 mod state;
-mod default_overlays;
 mod startup_log;
 mod installer;
 

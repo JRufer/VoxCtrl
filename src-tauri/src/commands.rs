@@ -456,8 +456,6 @@ pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
         let _ = std::fs::create_dir_all(&overlays_dir);
     }
 
-    crate::default_overlays::ensure_default_overlays(&overlays_dir);
-
     let mut list = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&overlays_dir) {
         for entry in entries.flatten() {
