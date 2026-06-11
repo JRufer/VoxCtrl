@@ -114,7 +114,9 @@ overlays/
 ```
 
 > [!NOTE]
-> **Bundled Example:** VoxCtrl automatically bundles and extracts a premium `gradient-wave` custom overlay folder inside your local directory at launch. Use this folder as a live reference!
+> **Bundled Overlays:** VoxCtrl automatically extracts (and refreshes on every launch) two complete custom overlays into your local directory — use them as live references for building your own:
+> * **`gradient-wave` — "Aurora"**: flowing multi-color gradient ribbons over a starlit night panel. The ribbons' amplitude swells with your voice, stars twinkle, and the active target is shown in a gradient-bordered chip. The sky rises in on load (ribbons sweep in staggered from the left) and drifts away on unload; processing switches to a fast "solar storm" sweep.
+> * **`rainbow`**: an actual rainbow — seven ROYGBIV arc bands that draw themselves in (staggered, outer-to-inner) over a dark glass cloud capsule holding a 15-bar scrolling spectrum analyzer. The rainbow glows brighter the louder you speak, and the target label sits in the "pot" pill at the rainbow's end with a status dot (green recording / amber initializing / blue processing). Everything un-draws in reverse on unload.
 
 ---
 

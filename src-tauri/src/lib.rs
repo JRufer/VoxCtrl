@@ -1174,6 +1174,7 @@ mod tests {
 
     fn make_test_state() -> AppState {
         let (audio_tx, _) = crossbeam_channel::bounded(1);
+        let (overlay_tx, _) = crossbeam_channel::unbounded();
         AppState {
             config: Arc::new(Mutex::new(Config::load())),
             router: Arc::new(OutputTargetRouter::new(Vec::new())),
@@ -1195,6 +1196,7 @@ mod tests {
             targets: Arc::new(Mutex::new(Vec::new())),
             history: Arc::new(Mutex::new(Vec::new())),
             audio_tx,
+            overlay_tx,
             tts_handle: Arc::new(Mutex::new(None)),
             active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
             hotkey_reloader: Arc::new(Mutex::new(None)),

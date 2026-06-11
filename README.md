@@ -144,7 +144,7 @@ In addition to the built-in visualizer styles, VoxCtrl features a **programmable
 * **JavaScript Event Bus:** Dispatches custom window-level DOM events (`voxctrl-audio-level` and `voxctrl-status`) to seamlessly drive custom HTML5 canvas loops, WebGL, or SVG morphs.
 * **Dynamic Script Execution:** Solves browser script blocking by parsing and executing standard `<script>` tags inside templates safely upon component mount.
 * **Built-in Naming Conflict Resolution:** Automatically intercepts reserved built-in keywords (`pulse`, `waveform`, etc.) and appends `_custom` suffixes to keep both visual styles working perfectly.
-* **Bundled Starter Example:** On first launch, VoxCtrl automatically extracts a premium, pre-configured `gradient-wave` custom visualizer folder to your local directory. You can copy, modify, and study this folder to start building your own visualizers immediately!
+* **Bundled Starter Overlays:** On every launch, VoxCtrl extracts two complete, fully animated custom visualizers to your local directory to copy, modify, and study: **`gradient-wave`** (an aurora of voice-reactive gradient ribbons under twinkling stars) and **`rainbow`** (seven ROYGBIV arcs that draw themselves over a glass cloud capsule with a scrolling spectrum analyzer). Both include load/unload animations, live audio visualizers, and target indicators — matching the built-in styles.
 
 For a complete layout schema, step-by-step tutorial, and canvas animation guidelines, read the [Overlay UI Guide](docs/overlays.md).
 
