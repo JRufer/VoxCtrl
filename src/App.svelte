@@ -16,6 +16,10 @@
   }
 
   const view = getView();
+  if (view === "overlay") {
+    document.documentElement.classList.add("overlay-window");
+    document.body.classList.add("overlay-window");
+  }
 </script>
 
 {#if view === "overlay"}

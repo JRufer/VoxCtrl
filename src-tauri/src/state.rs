@@ -65,6 +65,9 @@ pub struct AppState {
 
     /// Channel for sending hotkey configurations directly to background threads
     pub hotkey_reloader: Arc<Mutex<Option<crossbeam_channel::Sender<Vec<voxctrl_routing::HotkeyBinding>>>>>,
+
+    /// Channel sender to forward stdin messages to the native Slint overlay process
+    pub overlay_tx: crossbeam_channel::Sender<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

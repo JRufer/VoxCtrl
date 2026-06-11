@@ -18,7 +18,7 @@
   let offset = 0;
 
   $effect(() => {
-    if (recording && $status.audio_ready !== false) {
+    if (recording) {
       clearInterval(timer);
       timer = setInterval(() => {
         heights = Array.from({ length: BAR_COUNT }, (_, i) => {

@@ -2,6 +2,7 @@
 name = "voxctrl-app"
 version.workspace = true
 edition.workspace = true
+default-run = "voxctrl"
 
 [lib]
 name = "voxctrl_app_lib"
@@ -11,10 +12,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "voxctrl"
 path = "src/main.rs"
 
+[[bin]]
+name = "voxctrl-overlay"
+path = "src/overlay.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# UI framework for native overlay
+slint = { workspace = true }
+
 # Tauri 2 core
 tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
 tauri-plugin-shell     = "2"
@@ -49,6 +57,7 @@ tauri-plugin-single-instance = "2.4.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { workspace = true }
+gtk = { version = "0.18", features = ["v3_24"] }
 
 [features]
 default = ["custom-protocol"]

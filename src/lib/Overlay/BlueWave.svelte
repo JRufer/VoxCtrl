@@ -117,7 +117,7 @@
   .voice-card-container {
     width: 320px;
     height: 120px;
-    background: rgba(18, 18, 22, 0.94);
+    background: rgba(18, 18, 22, 0.96);
     border: 1.2px solid rgba(255, 255, 255, 0.05);
     border-radius: 28px;
     padding: 14px 16px;
@@ -126,7 +126,6 @@
     flex-direction: column;
     justify-content: space-between;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(16px);
     animation: slideUpIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
     user-select: none;
     pointer-events: none;

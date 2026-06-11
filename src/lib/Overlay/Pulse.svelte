@@ -41,8 +41,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    background: rgba(13, 14, 18, 0.82);
-    backdrop-filter: blur(16px);
+    background: rgba(13, 14, 18, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.06);
     padding: 6px 16px 6px 6px;
     border-radius: 99px;

@@ -24,6 +24,37 @@
   const triggerLabel = $derived($status.active_target_label || "Focused Window");
   const targetLabel = $derived($status.active_target_label || "Focused Window");
 
+  // Delay unmounting the visualizer when recording/speaking stops to allow CSS outro animation to finish
+  let isRecordingOrSpeaking = $derived(
+    ($recording && $config.ui.show_overlay) ||
+    ($speaking && $config.tts.enabled && $config.tts.response_overlay) ||
+    ($mcpRecording && $config.mcp.visual_feedback)
+  );
+  let renderOverlay = $state(false);
+  let animateActive = $state(false);
+  let timeoutId: any;
+  let animateTimeoutId: any;
+
+  $effect(() => {
+    if (isRecordingOrSpeaking) {
+      if (timeoutId) clearTimeout(timeoutId);
+      renderOverlay = true;
+      if (animateTimeoutId) clearTimeout(animateTimeoutId);
+      animateTimeoutId = setTimeout(() => {
+        animateActive = true;
+      }, 25);
+    } else {
+      animateActive = false;
+      timeoutId = setTimeout(() => {
+        renderOverlay = false;
+      }, 450);
+    }
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (animateTimeoutId) clearTimeout(animateTimeoutId);
+    };
+  });
+
   let processedHtml = $derived.by(() => {
     if (!activeCustomOverlay) return "";
     return activeCustomOverlay.html
@@ -48,15 +79,13 @@
   });
 
   $effect(() => {
-    const root = document.querySelector(".overlay-root") as HTMLElement;
-    if (root) {
-      root.style.setProperty("--voxctrl-audio-level", String(currentVolume));
-      root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
-      root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
-      root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
-      root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
-      root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
-    }
+    const root = document.documentElement;
+    root.style.setProperty("--voxctrl-audio-level", String(currentVolume));
+    root.style.setProperty("--voxctrl-recording", $recording ? "1" : "0");
+    root.style.setProperty("--voxctrl-processing", $status.processing ? "1" : "0");
+    root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
+    root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
+    root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
   });
 
   onMount(() => {
@@ -135,27 +164,32 @@
         oldScript.parentNode.replaceChild(newScript, oldScript);
       }
     });
+
+    return {
+      destroy() {
+        window.dispatchEvent(new CustomEvent("voxctrl-cleanup"));
+      }
+    };
   }
 </script>
 
 <div class="overlay-root" data-recording={$recording} data-speaking={$speaking} data-processing={$status.processing}>
-  {#if ($recording || $speaking || $status.processing) && visible}
-    {#key $config.ui.overlay_style}
-      {#if $config.ui.overlay_style === "waveform"}
-        <Waveform recording={$recording} />
-      {:else if $config.ui.overlay_style === "pulse"}
-        <Pulse recording={$recording} />
-      {:else if $config.ui.overlay_style === "blue_wave"}
-        <BlueWave recording={$recording} speaking={$speaking} />
-      {:else if activeCustomOverlay}
-        {@html `<style>${activeCustomOverlay.css}</style>`}
-        <div class="custom-overlay-content" use:executeScripts>
-          {@html processedHtml}
-        </div>
-      {:else if $config.ui.overlay_style !== "none"}
-        <VoiceCard recording={$recording} speaking={$speaking} />
-      {/if}
-    {/key}
+  {#if renderOverlay && visible}
+    {#if $config.ui.overlay_style === "waveform"}
+      <Waveform recording={$recording} />
+    {:else if $config.ui.overlay_style === "pulse"}
+      <Pulse recording={$recording} />
+    {:else if $config.ui.overlay_style === "blue_wave"}
+      <BlueWave recording={$recording} speaking={$speaking} />
+    {:else if activeCustomOverlay}
+      {@html `<style>${activeCustomOverlay.css}</style>`}
+      <div class="custom-overlay-content" class:active={animateActive} use:executeScripts>
+        {@html processedHtml}
+      </div>
+    {:else if $config.ui.overlay_style !== "none"}
+      <VoiceCard recording={$recording} speaking={$speaking} />
+    {/if}
+
     {#if $speaking}
       <div class="system-response-box">
         <span class="pulse-dot"></span>
@@ -178,6 +212,8 @@
     border: none !important;
     outline: none !important;
     overflow: hidden !important;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
   }
 
   :global(*:focus) {
@@ -202,7 +238,7 @@
     z-index: 10;
     width: 260px;
     height: 64px;
-    background: rgba(239, 68, 68, 0.65);
+    background: rgba(239, 68, 68, 0.88);
     border: 2px solid rgba(239, 68, 68, 0.85);
     box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3), inset 0 0 12px rgba(255, 255, 255, 0.2);
     border-radius: 12px;
@@ -216,7 +252,6 @@
     font-size: 14px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    backdrop-filter: blur(4px);
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
