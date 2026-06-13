@@ -370,16 +370,9 @@ pub fn run() {
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty())
                         .collect();
-                    let mut join_set = tokio::task::JoinSet::new();
                     for tid in target_ids {
-                        let r = router.clone();
-                        let text_clone = text.clone();
-                        join_set.spawn(async move {
-                            r.deliver(&tid, &text_clone).await;
-                        });
+                        router.deliver(&tid, &text).await;
                     }
-                    // Wait for all deliveries to complete concurrently
-                    while let Some(_) = join_set.join_next().await {}
                 });
 
                 let (show_notif, history_enabled) = {
@@ -1240,7 +1233,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_concurrent_multi_target_delivery() {
+    async fn test_sequential_multi_target_delivery() {
         use voxctrl_routing::models::{DeliveryType, OutputTarget};
 
         let temp_dir = std::env::temp_dir();
@@ -1317,21 +1310,13 @@ mod tests {
         let targets = vec![target_a, target_b];
 
         let router = Arc::new(OutputTargetRouter::new(targets));
-        let text = "Concurrent delivery text".to_string();
+        let text = "Sequential delivery text".to_string();
         let target_ids = vec!["target_a".to_string(), "target_b".to_string()];
 
-        let mut join_set = tokio::task::JoinSet::new();
-        for tid in target_ids {
-            let r = router.clone();
-            let text_clone = text.clone();
-            join_set.spawn(async move {
-                r.deliver(&tid, &text_clone).await
-            });
-        }
-
         let mut results = Vec::new();
-        while let Some(res) = join_set.join_next().await {
-            results.push(res.unwrap());
+        for tid in target_ids {
+            let res = router.deliver(&tid, &text).await;
+            results.push(res);
         }
 
         assert_eq!(results.len(), 2);
@@ -1344,8 +1329,8 @@ mod tests {
 
         let content_a = std::fs::read_to_string(&path_a).unwrap_or_default();
         let content_b = std::fs::read_to_string(&path_b).unwrap_or_default();
-        assert!(content_a.contains("Concurrent delivery text"));
-        assert!(content_b.contains("Concurrent delivery text"));
+        assert!(content_a.contains("Sequential delivery text"));
+        assert!(content_b.contains("Sequential delivery text"));
 
         let _ = std::fs::remove_file(&path_a);
         let _ = std::fs::remove_file(&path_b);
