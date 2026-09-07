@@ -13,8 +13,9 @@ Everything below describes what the code does, with pointers to where it does it
 | Can VoxCtrl read what I type in other applications? | **No.** Your desktop delivers shortcuts; VoxCtrl is never given keystrokes. |
 | Does installing it grant any process new access to my keyboard? | **No.** No udev rule, no `input` group, nothing. |
 | Does my audio leave the machine? | **No**, unless you configure a target that sends it somewhere. |
-| Does it send telemetry or analytics? | **No.** Nothing about you or your machine is ever transmitted. |
+| Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
 | Does it phone home at all? | **Once, for updates.** On launch it asks GitHub what the latest release is — no identifiers, nothing about you — and one setting turns it off. [Details](#network). |
+| Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
 | Does it need root? | **No.** Administrator rights are requested once, optionally, to install packages. |
 | Can I verify all this? | Yes — see [Verifying it yourself](#verifying-it-yourself). |
 
@@ -111,9 +112,9 @@ The one exception is one you configure: `http`, `webhook`, `chat` and `mcp` targ
 
 ## Network
 
-VoxCtrl has no telemetry, no analytics, and no crash reporting. Nothing is ever
-sent about what you dictate, what you type, what you have installed, or who you
-are.
+VoxCtrl has no telemetry, no analytics, and no automatic crash reporting.
+Nothing is ever sent about what you dictate, what you type, what you have
+installed, or who you are.
 
 It makes exactly one request you did not personally trigger: **the update
 check**. Everything else on the network happens because you asked for it:
@@ -126,6 +127,7 @@ check**. Everything else on the network happens because you asked for it:
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
 | LLM post-processing | The OpenAI-compatible endpoint you configured | The transcribed text |
 | `http` / `webhook` / `chat` / `mcp` targets | The destination you configured | The transcribed text |
+| Pressing **Send report** in Settings → Bug Report | The bug-report relay, or GitHub if you choose that route | The report you were shown first — see [Bug reports](#bug-reports) |
 
 ### The update check, in full
 
@@ -151,6 +153,40 @@ when there is no network.
 with no dependency on the rest of the app. `release.rs` builds the one request,
 `apply.rs` downloads and verifies, `src-tauri/src/updater.rs` decides when to
 ask and what to show.
+
+---
+
+## Bug reports
+
+This is the one place VoxCtrl sends anything about your machine, and it is
+worth being exact about the conditions: **you open the page, you type the
+report, you read the whole thing, and you press a button.** There is no
+background reporting, no crash uploader, and nothing that fires on its own.
+
+What travels is a fixed, written-down list — version and build, OS, CPU, memory,
+display adapter, desktop and session, your settings with every secret and every
+path and every piece of free text stripped out, the shape of your output targets,
+and the tail of the log. What never travels is anything you dictated, any API
+key, any file path, your account name, your hostname, your custom vocabulary,
+your prompts, or your target labels.
+
+Two properties are worth singling out, because they are what make the promise
+checkable rather than aspirational:
+
+- **The preview is the report.** The text in "Show me exactly what will be sent"
+  is the exact body that gets filed. There is no fuller version.
+- **Redaction is an allowlist.** Every text-bearing setting is classified by
+  hand, and an unclassified one is omitted rather than guessed at. A test walks
+  the real config struct and fails the build naming anything nobody has
+  classified — so a setting added next year cannot leak by being forgotten.
+
+Full detail, including the exact list, the four ways to send a report, and how
+to check all of it yourself: **[docs/bug_reports.md](bug_reports.md)**.
+
+**The code:** `crates/voxctrl-bugreport/` — `redact.rs` for the settings rules,
+`scrub.rs` for paths and account names, `sysinfo.rs` for the machine facts,
+`logs.rs` for the log excerpt, `throttle.rs` for the limits. The test that
+enforces the allowlist is `tests/config_coverage.rs`.
 
 ---
 
@@ -221,4 +257,4 @@ Untick "Check for a new version on launch" and the same command stays silent.
 
 ## Reporting a problem
 
-If you find something here that is not true, that is a bug and we want to know. Open an issue at <https://github.com/JRufer/VoxCtrl/issues>. For anything you would rather not disclose publicly, say so in the issue and we will arrange a private channel.
+If you find something here that is not true, that is a bug and we want to know. Open an issue at <https://github.com/JRufer/VoxCtrl/issues>, or use Settings → Bug Report, which needs no GitHub account. For anything you would rather not disclose publicly, say so in the issue and we will arrange a private channel.

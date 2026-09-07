@@ -454,6 +454,94 @@ interface OpenAiTestResult {
 
 ---
 
+### Bug Reports
+
+The commands behind Settings → Bug Report. What a report may contain, and why,
+is in [Bug Reports](./bug_reports.md); the enforcement is in the
+`voxctrl-bugreport` crate. None of these run on their own — every one is a
+button press.
+
+```typescript
+interface UserStatement {
+  summary: string;      // one line; becomes the issue title
+  description: string;  // what happened, what was expected
+  area: string;         // from a fixed list in the UI
+  frequency: "always" | "sometimes" | "once";
+}
+```
+
+#### `bug_report_context() → BugReportContext`
+What the page needs to describe itself: whether this build can submit a report
+itself, where the log it quotes lives, the limits, and how many reports have
+gone out.
+
+```typescript
+interface BugReportContext {
+  relay_configured: boolean;   // false → the page hides Send and offers the rest
+  issues_new_url: string;
+  support_email: string;
+  log_path: string;
+  install_id: string;
+  limits: {
+    cooldown_seconds: number;
+    per_day: number;
+    per_month: number;
+    min_description_chars: number;
+    max_description_chars: number;
+  };
+  submissions_last_day: number;
+  submissions_last_month: number;
+}
+```
+
+#### `preview_bug_report(statement: UserStatement) → BugReportPreview`
+Builds the report and returns it. `markdown` is the literal issue body, not a
+summary of it — the page shows exactly this and nothing fuller is ever sent.
+Sends nothing.
+
+```typescript
+interface BugReportPreview {
+  markdown: string;
+  title: string;
+  fingerprint: string;
+  blocked_reason: string | null;  // why the limits will not allow a send
+  can_submit: boolean;
+  github_url: string;             // GitHub's new-issue form, prefilled
+  mailto_url: string;
+}
+```
+
+The machine facts are gathered once per run and cached: collecting them shells
+out to a system probe (PowerShell on Windows), and the page previews on every
+pause in typing.
+
+#### `submit_bug_report(statement: UserStatement) → BugReportOutcome`
+Posts the report to the relay compiled into this build. Re-checks the limits
+first — the page may have been open since before the last submission — and
+records a submission only when one actually goes out, so a failed send does not
+spend the reporter's allowance.
+
+```typescript
+interface BugReportOutcome {
+  ok: boolean;
+  issue_url: string | null;
+  message: string;   // shown verbatim; the relay may write it
+}
+```
+
+#### `save_bug_report(statement: UserStatement, path: string) → string`
+Writes the report as Markdown to `path`. Never rate-limited, never needs a
+network. Returns the path written.
+
+#### `suggested_bug_report_filename() → string`
+A timestamped filename for the save dialog.
+
+#### `reset_bug_report_identity() → string`
+Throws away the installation identifier and the local submission history, and
+returns the new identifier.
+
+---
+
 ### Overlay
 
 #### `show_overlay() → void`

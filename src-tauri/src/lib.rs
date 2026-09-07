@@ -12,6 +12,7 @@ use voxctrl_routing::{config_dir, load_bindings, load_targets, OutputTargetRoute
 use crate::commands::*;
 use crate::state::AppState;
 
+mod bug_report;
 mod commands;
 mod installer;
 mod host_env;
@@ -523,6 +524,12 @@ pub fn run() {
             updater::set_update_auto_check,
             updater::dismiss_update,
             updater::open_update_window,
+            bug_report::bug_report_context,
+            bug_report::preview_bug_report,
+            bug_report::submit_bug_report,
+            bug_report::save_bug_report,
+            bug_report::suggested_bug_report_filename,
+            bug_report::reset_bug_report_identity,
         ])
         .build(tauri::generate_context!())
         .expect("error building Tauri application")

@@ -27,6 +27,16 @@ permissions:
 env:
   CARGO_HTTP_MULTIPLEXING: false
   CARGO_HTTP_HTTP2: false
+  # Where Settings → Bug Report sends a report when the user presses Send.
+  #
+  # Baked in at build time rather than read from config, so nothing on a user's
+  # machine can redirect their reports somewhere else. Unset — which it is until
+  # the relay is deployed — the Send button does not appear and the page offers
+  # the routes that need no server (save, copy, GitHub, email).
+  #
+  # Set the VOXCTRL_BUGREPORT_ENDPOINT repository secret to switch it on; see
+  # scripts/bug-report-relay/README.md.
+  VOXCTRL_BUGREPORT_ENDPOINT: ${{ secrets.VOXCTRL_BUGREPORT_ENDPOINT }}
 
 # ── Version consistency gate ───────────────────────────────────────────────────
 # There is no single source of truth for the app version: it's declared
@@ -464,70 +474,49 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.5.0
+            ## What's new in 0.5.1
 
-            **VoxCtrl runs on Windows.** The installer is back in the release, and
-            the Windows code behind it works rather than merely compiling.
+            **A Bug Report page, so testing the new Windows builds does not
+            require a GitHub account.**
 
-            ### Windows
+            0.5.0 shipped VoxCtrl's first Windows build, and this release adds
+            the Windows GPU build beside it. Both were built by one person on
+            one machine — so the thing they needed most was a way for anyone
+            else to say what broke.
 
-            Windows had been a build target without being a supported platform.
-            The code was there, but no CI job had ever compiled the application
-            for it — the Windows check excluded both the speech engine and the
-            app itself — and three of its core paths were wrong:
+            ### Settings → Bug Report
 
-            - **Global shortcuts could not fire at all.** The hotkey backend
-              named keys in a vocabulary nothing else used, so the shipped
-              default (`Super+Space`) — and almost anything you could record —
-              never matched. It has been rewritten as a Win32 low-level keyboard
-              hook keyed by scan code, so shortcuts are positional and work the
-              same on any keyboard layout. All four gesture styles work, the same
-              as on Linux, and the key that completes a shortcut is swallowed so
-              binding `Super+Space` does not also open Windows Search.
-            - **Dictated text came out mangled.** Injection went through
-              PowerShell `SendKeys`, which reads `+ ^ % ~ ( ) { } [ ]` as its own
-              syntax: "50% (a+b)" arrived as "50" plus two stray chords, and
-              "array[0]" as "array0". Text is now typed with `SendInput`, which
-              carries each character as itself — no escaping layer, no keyboard
-              layout, and no process spawned per dictation. Long transcriptions
-              go via the clipboard and hand it back afterwards.
-            - **The privacy indicator said the opposite of the truth.** A
-              low-level keyboard hook is called for every keystroke on the
-              machine, but the status API grouped it with the desktop portal, so
-              the Hotkeys tab would have shown a padlock and "VoxCtrl does not
-              read your keyboard" over a backend that reads all of it. It now
-              reports what it is, and a test holds the two apart so they cannot
-              drift back together.
+            Describe the problem and press a button. VoxCtrl gathers the log,
+            your OS and hardware, which build you are running and what it can
+            offload to the GPU, and your settings — then sends it, files it on
+            GitHub, saves it to a file, or drafts an email, whichever you pick.
+            **The one-click route needs no GitHub account.**
 
-            Also on Windows: the overlay no longer opens a console window or
-            steals focus mid-dictation, the MCP server advertises its named pipe
-            instead of a Unix socket path that does not exist there, and Piper
-            says it cannot install itself rather than reporting success and doing
-            nothing.
+            It is opt-in in the strongest sense: nothing runs at startup, on a
+            timer, or in the background, and **the page shows you the entire
+            report before anything leaves your machine**. What is in the preview
+            is what gets filed; there is no fuller version behind it.
 
-            Two limits are inherent to how Windows works, and VoxCtrl says so
-            rather than failing quietly: shortcuts do not fire while an elevated
-            application has focus or on the UAC prompt and lock screen, and
-            dictation cannot type into an elevated window unless VoxCtrl is
-            elevated too.
+            What never travels: anything you dictated, any audio, any API key or
+            access token, your username, hostname or IP address, any file path,
+            your custom vocabulary, snippets or prompts, and the labels,
+            commands and URLs of your output targets. Redaction works from an
+            allowlist rather than a blocklist, and a test walks the real config
+            and fails the build naming any setting nobody has classified — so a
+            setting added later cannot leak into a public issue by being
+            forgotten.
 
-            ### Build and CI
-
-            The Windows `cargo check` no longer excludes any crate and now checks
-            test code too, and there is a Windows test lane beside the Linux one.
-            Every bug above was invisible because Windows code was excluded from
-            CI; that is the part most worth not repeating.
+            Full detail, including how to check all of it yourself:
+            [docs/bug_reports.md](https://github.com/JRufer/VoxCtrl/blob/master/docs/bug_reports.md).
 
             ### Notes
 
-            The Windows build is CPU-only. whisper.cpp's Vulkan backend fails to
-            register on Windows MSVC static builds and falls back to the CPU while
-            reporting a GPU, so there is deliberately no Vulkan Windows artifact
-            until that is fixed. Linux is unaffected: the Vulkan AppImage is
-            unchanged.
+            Reports are rate-limited — five a day, twenty a month, duplicates
+            refused — and saving a report to a file is never limited, so a real
+            bug always has a way out.
 
-            The installer is not code-signed yet, so SmartScreen will warn that
-            the publisher is unknown.
+            The installers are not code-signed yet, so SmartScreen will warn
+            that the publisher is unknown.
 
             ## Downloads
 

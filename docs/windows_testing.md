@@ -16,8 +16,8 @@ This should take about fifteen minutes.
 ## 1. Install
 
 1. Download the installer — about 18 MB:
-   **[VoxCtrl_0.5.0_x64-setup-windows-x86_64.exe](https://github.com/JRufer/VoxCtrl/releases/download/v0.5.0/VoxCtrl_0.5.0_x64-setup-windows-x86_64.exe)**
-   (from the [v0.5.0 release page](https://github.com/JRufer/VoxCtrl/releases/tag/v0.5.0),
+   **[VoxCtrl_0.5.1_x64-setup-windows-x86_64.exe](https://github.com/JRufer/VoxCtrl/releases/download/v0.5.1/VoxCtrl_0.5.1_x64-setup-windows-x86_64.exe)**
+   (from the [v0.5.1 release page](https://github.com/JRufer/VoxCtrl/releases/tag/v0.5.1),
    if you'd rather see everything).
 2. Run it. Windows will show a blue **"Windows protected your PC"** box, because
    the installer is not yet signed with a certificate. Click **More info**, then
@@ -79,10 +79,27 @@ your clipboard back afterwards.
 
 ---
 
-## 4. If something goes wrong — this is all I need
+## 4. If something goes wrong — one button does all of this
 
-VoxCtrl writes a small log file. **Sending me that file after reproducing the
-problem is the single most useful thing you can do.**
+Open VoxCtrl's settings (right-click the tray icon → Settings) and go to
+**Bug Report** in the sidebar. Describe what happened and press a button. It
+gathers the log, your Windows version, your CPU and GPU, and your settings —
+with API keys, file paths, your username and anything you dictated stripped out
+first — and either files it for me (no GitHub account needed) or saves it to a
+file you can email me.
+
+**Before you press anything, it shows you the entire report.** Click
+*"Show me exactly what will be sent"* and read it. There is no fuller version
+behind it; that text is the report. The page also lists, side by side, what is
+collected and what never is.
+
+That is the easiest route, and it saves you the rest of this section. Everything
+below is the manual version, if you'd rather do it by hand.
+
+### Doing it by hand
+
+VoxCtrl writes a small log file. Sending me that file after reproducing the
+problem does the same job.
 
 To get a clean, short log:
 
@@ -112,11 +129,18 @@ Along with the log, it helps to say:
 - **Your Windows version and GPU** — press Windows key + R, type `winver` for
   the Windows version.
 
+(The Bug Report page collects all four of these for you.)
+
 ### Please don't send your settings folder
 
 `%APPDATA%\voxctrl` holds `config.json` and `targets.toml`. Those can contain
 **API keys and access tokens** if you've set any up. I don't need them, and you
 shouldn't share them. The log file above is enough.
+
+(The Bug Report page does include your settings — but it strips every key,
+token, file path and piece of text you typed out of them first, and shows you
+the result before sending. That is the difference between it and sending the
+folder yourself.)
 
 ---
 

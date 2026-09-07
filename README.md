@@ -16,6 +16,7 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 * **No permissions to grant**: No udev rule, no `input` group, no logout, no reboot. There is nothing to undo later, and installing VoxCtrl does not change your machine's security posture. *(Earlier versions installed a udev rule granting read access to every input device. That has been removed — see [why](docs/hotkeys.md#why-this-changed).)*
 * **No Cloud API Keys Required**: VoxCtrl relies exclusively on OpenAI's Whisper models (via native CPU/GPU accelerated `whisper-rs`) running directly on your local hardware.
 * **No Telemetry**: Your ambient microphone data never leaves your machine. There are no hidden tracking scripts or analytical pings. The one request VoxCtrl makes on its own is the update check — a plain GET to GitHub's public release listing, carrying nothing about you, and off with one tick in Settings → General.
+* **Diagnostics only when you send them**: Settings → **Bug Report** gathers a diagnostic bundle and sends it — but only when you press a button, and it shows you the entire report first. Everything you dictated, every API key, every file path, your username and your custom vocabulary are stripped before you ever see it, let alone before it is sent. See [docs/bug_reports.md](docs/bug_reports.md).
 * **Air-Gapped Ready**: Once the application and models are downloaded, VoxCtrl requires zero internet access to function.
 * **Local Neural Voices**: All text-to-speech feedback is generated offline by a local engine — Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, or eSpeak-NG.
 
@@ -146,6 +147,8 @@ VoxCtrl provides a clean, native settings window and overlay environment:
 ### 📌 Interactive Settings UI
 * **General tab**: Configure core system attributes, including the local MCP JSON-RPC server toggles and record timeouts.
 * **Visual tab**: A premium Cyber Obsidian interface that groups all aesthetic and presentation settings. It features an interactive **Overlay Style Selector** (supporting Voice Card, Waveform, Pulse Ring, Ocean Wave, Mono Bars, Neon Spectrum, Retro Terminal, Analog VU, or Disabled styles), toggles for displaying heads-up HUD overlays while speaking, **Command Trigger Overlay toggles and duration sliders**, and controls for sending system notifications on transcription. It also lets you configure if the Settings window should open automatically at launch or start minimized in the system tray.
+
+* **Bug Report tab**: Describe a problem, read the complete report VoxCtrl has assembled from it, and send it — filed for you with no GitHub account needed, opened as a prefilled GitHub issue, saved to a file, or emailed. What is collected and what never is are listed side by side above the form, and redaction works from an allowlist so a setting added later cannot leak by being forgotten. See [docs/bug_reports.md](docs/bug_reports.md).
 
 ### 🎨 Heads-Up HUD Overlay Styles
 
