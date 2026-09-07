@@ -59,6 +59,21 @@ impl Default for MoonshineConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParakeetConfig {
+    pub model_size: String,
+    pub language: String,
+}
+
+impl Default for ParakeetConfig {
+    fn default() -> Self {
+        Self {
+            model_size: "tdt-0.6b-v3".into(),
+            language: "auto".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendChoice {
@@ -68,6 +83,7 @@ pub enum BackendChoice {
     #[serde(alias = "auto")]
     WhisperCpp,
     Moonshine,
+    Parakeet,
 }
 
 impl Default for BackendChoice {
@@ -78,9 +94,14 @@ impl Default for BackendChoice {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineConfig {
+    #[serde(default)]
     pub backend: BackendChoice,
+    #[serde(default)]
     pub whisper_cpp: WhisperCppConfig,
+    #[serde(default)]
     pub moonshine: MoonshineConfig,
+    #[serde(default)]
+    pub parakeet: ParakeetConfig,
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
@@ -1119,6 +1140,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&BackendChoice::Moonshine).unwrap(),
             r#""moonshine""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BackendChoice::Parakeet).unwrap(),
+            r#""parakeet""#
         );
     }
 

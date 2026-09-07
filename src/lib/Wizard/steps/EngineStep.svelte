@@ -27,6 +27,7 @@
    *  "moonshine" selection silently runs whisper.cpp, which the user deserves
    *  to know before they pick it. */
   let moonshineAvailable = $state(true);
+  let parakeetAvailable = $state(true);
   /** The GPU backend whisper.cpp was compiled against, or null on a CPU-only
    *  build. Null is the honest default: a build that cannot answer cannot
    *  offload either, and naming a backend it does not have is how the toggle
@@ -36,6 +37,7 @@
   /** model id → on disk, per engine. */
   let whisperDownloaded = $state<Record<string, boolean>>({});
   let moonshineDownloaded = $state<Record<string, boolean>>({});
+  let parakeetDownloaded = $state<Record<string, boolean>>({});
 
   let downloading = $state<string | null>(null);
   let downloadError = $state<string | null>(null);
@@ -44,7 +46,11 @@
   let readinessChecked = $state(false);
 
   const selectedEngine = $derived<SttEngineId>(
-    $config.engine.backend === "moonshine" ? "moonshine" : "whisper-cpp",
+    $config.engine.backend === "parakeet"
+      ? "parakeet"
+      : $config.engine.backend === "moonshine"
+      ? "moonshine"
+      : "whisper-cpp",
   );
   const GPU_LABELS: Record<string, string> = {
     cuda: "CUDA",
@@ -59,25 +65,32 @@
 
   /** The model the current engine will actually load. */
   const selectedModel = $derived(
-    selectedEngine === "moonshine" && moonshineAvailable
+    selectedEngine === "parakeet" && parakeetAvailable
+      ? $config.engine.parakeet.model_size
+      : selectedEngine === "moonshine" && moonshineAvailable
       ? $config.engine.moonshine.model_size
       : $config.engine.whisper_cpp.model_size,
   );
 
   const selectedReady = $derived(
-    selectedEngine === "moonshine" && moonshineAvailable
+    selectedEngine === "parakeet" && parakeetAvailable
+      ? !!parakeetDownloaded[selectedModel]
+      : selectedEngine === "moonshine" && moonshineAvailable
       ? !!moonshineDownloaded[selectedModel]
       : !!whisperDownloaded[selectedModel],
   );
 
   function isSelected(engine: SttEngineId, model: ModelOption): boolean {
     if (engine !== selectedEngine) return false;
-    return model.id === (engine === "moonshine"
+    return model.id === (engine === "parakeet"
+      ? $config.engine.parakeet.model_size
+      : engine === "moonshine"
       ? $config.engine.moonshine.model_size
       : $config.engine.whisper_cpp.model_size);
   }
 
   function downloadedFor(engine: SttEngineId, model: ModelOption): boolean {
+    if (engine === "parakeet") return !!parakeetDownloaded[model.id];
     return engine === "moonshine" ? !!moonshineDownloaded[model.id] : !!whisperDownloaded[model.id];
   }
 
@@ -91,7 +104,8 @@
   function pickModel(engine: SttEngineId, model: ModelOption) {
     patchConfig((cfg) => {
       cfg.engine.backend = engine;
-      if (engine === "moonshine") cfg.engine.moonshine.model_size = model.id;
+      if (engine === "parakeet") cfg.engine.parakeet.model_size = model.id;
+      else if (engine === "moonshine") cfg.engine.moonshine.model_size = model.id;
       else cfg.engine.whisper_cpp.model_size = model.id;
     });
     downloadError = null;
@@ -129,15 +143,34 @@
 
   async function refreshMoonshine() {
     const next: Record<string, boolean> = {};
-    for (const m of STT_ENGINES[1].models) {
-      try {
-        next[m.id] = await invoke<boolean>("check_moonshine_downloaded", { modelSize: m.id });
-      } catch (e) {
-        console.error("Wizard: moonshine model check failed for", m.id, e);
-        next[m.id] = false;
+    const moonshineEngine = STT_ENGINES.find((e) => e.id === "moonshine");
+    if (moonshineEngine) {
+      for (const m of moonshineEngine.models) {
+        try {
+          next[m.id] = await invoke<boolean>("check_moonshine_downloaded", { modelSize: m.id });
+        } catch (e) {
+          console.error("Wizard: moonshine model check failed for", m.id, e);
+          next[m.id] = false;
+        }
       }
     }
     moonshineDownloaded = next;
+  }
+
+  async function refreshParakeet() {
+    const next: Record<string, boolean> = {};
+    const parakeetEngine = STT_ENGINES.find((e) => e.id === "parakeet");
+    if (parakeetEngine) {
+      for (const m of parakeetEngine.models) {
+        try {
+          next[m.id] = await invoke<boolean>("check_parakeet_downloaded", { modelSize: m.id });
+        } catch (e) {
+          console.error("Wizard: parakeet model check failed for", m.id, e);
+          next[m.id] = false;
+        }
+      }
+    }
+    parakeetDownloaded = next;
   }
 
   /**
@@ -153,7 +186,10 @@
     downloading = model;
     downloadError = null;
     try {
-      if (engine === "moonshine" && moonshineAvailable) {
+      if (engine === "parakeet" && parakeetAvailable) {
+        await invoke("download_parakeet_model", { modelSize: model });
+        parakeetDownloaded = { ...parakeetDownloaded, [model]: true };
+      } else if (engine === "moonshine" && moonshineAvailable) {
         await invoke("download_moonshine_model", { modelSize: model });
         moonshineDownloaded = { ...moonshineDownloaded, [model]: true };
       } else {
@@ -209,7 +245,7 @@
 
   async function refreshReadiness() {
     readinessChecked = false;
-    await Promise.all([refreshWhisper(), refreshMoonshine()]);
+    await Promise.all([refreshWhisper(), refreshMoonshine(), refreshParakeet()]);
     readinessChecked = true;
   }
 
@@ -218,6 +254,9 @@
     invoke<boolean>("moonshine_available")
       .then((v) => (moonshineAvailable = v))
       .catch(() => (moonshineAvailable = false));
+    invoke<boolean>("parakeet_available")
+      .then((v) => (parakeetAvailable = v))
+      .catch(() => (parakeetAvailable = false));
     invoke<{ whisper_gpu: string | null }>("accelerator_support")
       .then((v) => (whisperGpu = v?.whisper_gpu ?? null))
       .catch(() => (whisperGpu = null));
@@ -231,7 +270,9 @@
   /** Metrics for one engine card, recomputed from the model it has selected. */
   function metricsFor(engine: (typeof STT_ENGINES)[number]) {
     const chosen =
-      engine.id === "moonshine"
+      engine.id === "parakeet"
+        ? $config.engine.parakeet.model_size
+        : engine.id === "moonshine"
         ? $config.engine.moonshine.model_size
         : $config.engine.whisper_cpp.model_size;
     const model = engine.models.find((m) => m.id === chosen) ?? engine.models[0];
@@ -335,6 +376,11 @@
           {#if engine.id === "moonshine" && !moonshineAvailable}
             <div class="warn">
               This build was compiled without the Moonshine backend — choosing it runs whisper.cpp
+              with the model above instead.
+            </div>
+          {:else if engine.id === "parakeet" && !parakeetAvailable}
+            <div class="warn">
+              This build was compiled without the Parakeet backend — choosing it runs whisper.cpp
               with the model above instead.
             </div>
           {/if}
@@ -525,7 +571,7 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
   }
 

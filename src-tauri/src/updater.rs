@@ -46,7 +46,8 @@ pub async fn check(state: &Arc<AppState>) -> Result<UpdateCheckPayload, String> 
     // the CPU and GPU builds, so nothing on disk can answer this — only the
     // features the binary was compiled with.
     let gpu_build = voxctrl_inference::moonshine_gpu_backend().is_some()
-        || voxctrl_inference::whisper_gpu_backend().is_some();
+        || voxctrl_inference::whisper_gpu_backend().is_some()
+        || voxctrl_inference::parakeet_gpu_backend().is_some();
 
     let outcome = voxctrl_update::check(CURRENT_VERSION, gpu_build)
         .await

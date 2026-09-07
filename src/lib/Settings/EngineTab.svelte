@@ -34,6 +34,7 @@
   // it is.
   let whisperGpu = $state<string | null>(null);
   let moonshineGpu = $state<string | null>(null);
+  let parakeetGpu = $state<string | null>(null);
 
   const GPU_LABELS: Record<string, string> = {
     cuda: "CUDA (NVIDIA)",
@@ -50,6 +51,12 @@
       label: moonshineGpu
         ? `Moonshine (${gpuLabel(moonshineGpu)})`
         : "Moonshine (CPU only)",
+    },
+    {
+      value: "parakeet",
+      label: parakeetGpu
+        ? `Parakeet TDT (${gpuLabel(parakeetGpu)})`
+        : "Parakeet TDT (CPU only)",
     },
   ]);
 
@@ -76,6 +83,10 @@
     { value: "tiny", label: "Tiny" }
   ];
 
+  const parakeetModelSizeOptions = [
+    { value: "tdt-0.6b-v3", label: "TDT 0.6B v3 (INT8, ~665 MB)" }
+  ];
+
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
@@ -88,6 +99,50 @@
   let moonshineDownloadedMap = $state<Record<string, boolean>>({});
   let moonshineChecking = $state(false);
   let moonshineDownloading = $state(false);
+
+  // ── Parakeet ─────────────────────────────────────────────────────────────
+  let parakeetAvailable = $state(true);
+  let parakeetDownloadedMap = $state<Record<string, boolean>>({});
+  let parakeetChecking = $state(false);
+  let parakeetDownloading = $state(false);
+
+  async function checkParakeetDownloaded() {
+    parakeetChecking = true;
+    const newMap: Record<string, boolean> = {};
+    for (const m of parakeetModelSizeOptions) {
+      try {
+        newMap[m.value] = await invoke<boolean>("check_parakeet_downloaded", {
+          modelSize: m.value,
+        });
+      } catch (e) {
+        console.error("Failed to check Parakeet download status for " + m.value, e);
+        newMap[m.value] = false;
+      }
+    }
+    parakeetDownloadedMap = newMap;
+    parakeetChecking = false;
+  }
+
+  async function triggerParakeetDownload(model: string) {
+    if (parakeetDownloading) return;
+    parakeetDownloading = true;
+    try {
+      await invoke("download_parakeet_model", { modelSize: model });
+      parakeetDownloadedMap[model] = true;
+    } catch (e) {
+      alert(`Failed to download Parakeet model: ${e}`);
+    } finally {
+      parakeetDownloading = false;
+    }
+  }
+
+  async function onParakeetModelChanged() {
+    markDirty();
+    const selected = cfg.engine.parakeet?.model_size ?? "tdt-0.6b-v3";
+    if (parakeetAvailable && !parakeetDownloadedMap[selected]) {
+      await triggerParakeetDownload(selected);
+    }
+  }
 
   async function checkMoonshineDownloaded() {
     moonshineChecking = true;
@@ -203,12 +258,20 @@
     }
     checkMoonshineDownloaded();
     try {
+      parakeetAvailable = await invoke<boolean>("parakeet_available");
+    } catch (e) {
+      console.error("Failed to query Parakeet availability", e);
+    }
+    checkParakeetDownloaded();
+    try {
       const support = await invoke<{
         whisper_gpu: string | null;
         moonshine_gpu: string | null;
+        parakeet_gpu: string | null;
       }>("accelerator_support");
       whisperGpu = support.whisper_gpu ?? null;
       moonshineGpu = support.moonshine_gpu ?? null;
+      parakeetGpu = support.parakeet_gpu ?? null;
     } catch (e) {
       console.error("Failed to query GPU support", e);
     }
@@ -227,7 +290,7 @@
 <section>
   <h2>Inference Engine</h2>
 
-  {#if cfg.engine.backend !== "moonshine" && !checking && !downloadedMap[cfg.engine.whisper_cpp.model_size]}
+  {#if cfg.engine.backend === "whisper-cpp" && !checking && !downloadedMap[cfg.engine.whisper_cpp.model_size]}
     <div
       class="flex items-center gap-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 mb-5 animate-in fade-in slide-in-from-top-1 duration-300"
     >
@@ -257,7 +320,7 @@
     </label>
   </div>
 
-  {#if cfg.engine.backend !== "moonshine"}
+  {#if cfg.engine.backend === "whisper-cpp"}
     <div class="field-group">
       <h3>Whisper.cpp Settings</h3>
       <label class="field">
@@ -319,7 +382,7 @@
         Default model directory: <code>~/.local/share/voxctrl/models/</code>
       </p>
     </div>
-  {:else}
+  {:else if cfg.engine.backend === "moonshine"}
     <div class="field-group">
       <h3>Moonshine Settings</h3>
 
@@ -401,6 +464,69 @@
           onchange={markDirty}
         />
       </label>
+    </div>
+  {:else if cfg.engine.backend === "parakeet"}
+    <div class="field-group">
+      <h3>Parakeet Settings</h3>
+
+      {#if !parakeetAvailable}
+        <div
+          class="flex items-center gap-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-4"
+        >
+          <span class="text-2xl leading-none text-yellow-500">⚠️</span>
+          <div class="flex-1">
+            <strong class="block text-yellow-200 font-semibold text-sm mb-1"
+              >Parakeet backend not included in this build</strong
+            >
+            <p class="m-0 text-slate-200 text-xs leading-relaxed">
+              This build was compiled without Parakeet, so selecting it will fall
+              back to Whisper.cpp. Rebuild with <code>--features parakeet</code> to enable it.
+            </p>
+          </div>
+        </div>
+      {/if}
+
+      <label class="field">
+        <span>Model size</span>
+        <CustomSelect bind:value={cfg.engine.parakeet.model_size} options={parakeetModelSizeOptions} onchange={onParakeetModelChanged} />
+      </label>
+
+      {#if parakeetAvailable}
+        <div class="model-status-container">
+          {#if parakeetChecking}
+            <span class="status-checking">⏳ Checking local model files...</span>
+          {:else if parakeetDownloading}
+            <span class="status-downloading"
+              >⏳ Downloading Parakeet {cfg.engine.parakeet.model_size} (ONNX INT8)...</span
+            >
+          {:else if parakeetDownloadedMap[cfg.engine.parakeet.model_size]}
+            <span class="status-downloaded">✔ Model downloaded and ready</span>
+          {:else}
+            <div class="status-missing-wrapper">
+              <span class="status-missing">Model not downloaded</span>
+              <button
+                class="btn-download"
+                onclick={() => triggerParakeetDownload(cfg.engine.parakeet.model_size)}
+              >
+                Download {cfg.engine.parakeet.model_size}
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <label class="field">
+        <span>Language</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.parakeet.language}
+          placeholder="auto"
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        NVIDIA FastConformer TDT 0.6B with 128-mel ONNX preprocessor and INT8 quantization (~665 MB total).
+      </p>
     </div>
   {/if}
 </section>

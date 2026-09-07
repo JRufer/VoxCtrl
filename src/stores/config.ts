@@ -14,9 +14,10 @@ export interface AppConfig {
 }
 
 export interface EngineConfig {
-  backend: "whisper-cpp" | "moonshine";
+  backend: "whisper-cpp" | "moonshine" | "parakeet";
   whisper_cpp: WhisperCppConfig;
   moonshine: MoonshineConfig;
+  parakeet: ParakeetConfig;
 }
 
 export interface WhisperCppConfig {
@@ -27,6 +28,11 @@ export interface WhisperCppConfig {
 }
 
 export interface MoonshineConfig {
+  model_size: string;
+  language: string;
+}
+
+export interface ParakeetConfig {
   model_size: string;
   language: string;
 }
@@ -131,6 +137,7 @@ const defaultConfig: AppConfig = {
       threads: 0,
     },
     moonshine: { model_size: "base", language: "en" },
+    parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },
   },
   audio: {
     vad_threshold: 0.5,

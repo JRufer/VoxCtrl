@@ -4,6 +4,7 @@ import {
   MOONSHINE_MODELS,
   OVERLAY_POSITIONS,
   OVERLAY_STYLES,
+  PARAKEET_MODELS,
   STEP_LABELS,
   STT_ENGINES,
   TTS_ENGINES,
@@ -174,13 +175,14 @@ describe("wizard tables", () => {
   });
 
   test("STT engines carry the backend values the config expects", () => {
-    expect(STT_ENGINES.map((e) => e.id)).toEqual(["whisper-cpp", "moonshine"]);
+    expect(STT_ENGINES.map((e) => e.id)).toEqual(["whisper-cpp", "moonshine", "parakeet"]);
     expect(STT_ENGINES[0].models).toBe(WHISPER_MODELS);
     expect(STT_ENGINES[1].models).toBe(MOONSHINE_MODELS);
+    expect(STT_ENGINES[2].models).toBe(PARAKEET_MODELS);
   });
 
   test("model tables are ordered smallest to largest", () => {
-    for (const models of [WHISPER_MODELS, MOONSHINE_MODELS]) {
+    for (const models of [WHISPER_MODELS, MOONSHINE_MODELS, PARAKEET_MODELS]) {
       const sizes = models.map((m) => m.mb);
       expect([...sizes].sort((a, b) => a - b)).toEqual(sizes);
     }

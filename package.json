@@ -1,7 +1,7 @@
 {
   "name": "voxctrl",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "scripts": {
     "predev": "pkill -x voxctrl 2>/dev/null || true; fuser -k 5173/tcp 2>/dev/null || true",
@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "dev:gpu": "tauri dev -- --features vulkan",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "python3 scripts/run_tests.py",
     "test:unit": "vitest run"

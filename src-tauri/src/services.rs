@@ -290,10 +290,12 @@ pub fn auto_download_speech_model_if_needed(
 
     let show_settings = cfg_data.ui.auto_show_settings;
     // Only the whisper-cpp path needs a GGUF model on disk. A Moonshine
-    // selection uses whisper-cpp (and thus its model) unless the
-    // Moonshine backend is actually compiled into this build.
-    let uses_whisper_model = cfg_data.engine.backend != voxctrl_config::BackendChoice::Moonshine
-        || !voxctrl_inference::MOONSHINE_COMPILED;
+    // or Parakeet selection uses whisper-cpp (and thus its model) unless their
+    // backend is actually compiled into this build.
+    let uses_whisper_model = (cfg_data.engine.backend != voxctrl_config::BackendChoice::Moonshine
+        || !voxctrl_inference::MOONSHINE_COMPILED)
+        && (cfg_data.engine.backend != voxctrl_config::BackendChoice::Parakeet
+            || !voxctrl_inference::PARAKEET_COMPILED);
     if uses_whisper_model {
         let model_size = cfg_data.engine.whisper_cpp.model_size.clone();
         let model_dir = cfg_data.engine.whisper_cpp.model_dir.clone();

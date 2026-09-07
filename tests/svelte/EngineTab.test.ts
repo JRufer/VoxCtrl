@@ -32,6 +32,10 @@ const mockConfig = {
       model_size: "base",
       language: "en",
     },
+    parakeet: {
+      model_size: "tdt-0.6b-v3",
+      language: "auto",
+    },
   },
 } as any;
 
@@ -53,6 +57,21 @@ describe("EngineTab.svelte Warning Banner", () => {
       },
     };
     render(EngineTab, { cfg: moonshineConfig });
+    
+    // Warning banner should NOT be in the document
+    const title = screen.queryByText("Voice Model Not Downloaded");
+    expect(title).toBeNull();
+  });
+
+  test("does not show warning banner if Parakeet backend is selected", async () => {
+    const parakeetConfig = {
+      ...mockConfig,
+      engine: {
+        ...mockConfig.engine,
+        backend: "parakeet",
+      },
+    };
+    render(EngineTab, { cfg: parakeetConfig });
     
     // Warning banner should NOT be in the document
     const title = screen.queryByText("Voice Model Not Downloaded");
@@ -95,9 +114,9 @@ describe("EngineTab.svelte Backend selector", () => {
  */
 describe("EngineTab.svelte GPU support", () => {
   /** Answer `accelerator_support` with a given build, keeping the model checks. */
-  function buildWith(support: { whisper_gpu: string | null; moonshine_gpu: string | null }) {
+  function buildWith(support: { whisper_gpu: string | null; moonshine_gpu: string | null; parakeet_gpu?: string | null }) {
     vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
-      if (cmd === "accelerator_support") return support;
+      if (cmd === "accelerator_support") return { parakeet_gpu: null, ...support };
       if (cmd === "check_model_downloaded") return args?.modelSize === "base";
       return true;
     });

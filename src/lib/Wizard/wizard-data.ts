@@ -9,10 +9,10 @@
  * is still reachable in Settings afterwards.
  */
 
-export type SttEngineId = "whisper-cpp" | "moonshine";
+export type SttEngineId = "whisper-cpp" | "moonshine" | "parakeet";
 
 export interface ModelOption {
-  /** Value written into the config (`whisper_cpp.model_size` / `moonshine.model_size`). */
+  /** Value written into the config (`whisper_cpp.model_size` / `moonshine.model_size` / `parakeet.model_size`). */
   id: string;
   /** Approximate download size in MB, for the size label. */
   mb: number;
@@ -35,6 +35,11 @@ export const WHISPER_MODELS: ModelOption[] = [
 export const MOONSHINE_MODELS: ModelOption[] = [
   { id: "tiny", mb: 100, speed: 0.98, accuracy: 0.64 },
   { id: "base", mb: 250, speed: 0.92, accuracy: 0.77 },
+];
+
+/** NVIDIA Parakeet TDT 0.6B v3. */
+export const PARAKEET_MODELS: ModelOption[] = [
+  { id: "tdt-0.6b-v3", mb: 665, speed: 0.95, accuracy: 0.94 },
 ];
 
 export interface SttEngineInfo {
@@ -69,6 +74,16 @@ export const STT_ENGINES: SttEngineInfo[] = [
     models: MOONSHINE_MODELS,
     gpu: false,
     noiseRetention: 0.93,
+  },
+  {
+    id: "parakeet",
+    name: "Parakeet TDT",
+    glyph: "⚡",
+    tagline:
+      "NVIDIA FastConformer TDT 0.6B. Ultra-fast non-autoregressive transcription, SOTA accuracy, no repetition loops.",
+    models: PARAKEET_MODELS,
+    gpu: true,
+    noiseRetention: 0.88,
   },
 ];
 

@@ -50,6 +50,8 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.whisper_cpp.device", Safe),
     ("engine.moonshine.model_size", Safe),
     ("engine.moonshine.language", Safe),
+    ("engine.parakeet.model_size", Safe),
+    ("engine.parakeet.language", Safe),
     // A device node such as /dev/input/event4. No account name, no home
     // directory, and which node was picked is the whole question when a
     // hotkey does not fire.

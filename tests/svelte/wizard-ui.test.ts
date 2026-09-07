@@ -40,6 +40,7 @@ function baseConfig(): any {
       backend: "whisper-cpp",
       whisper_cpp: { model_dir: "", model_size: "small", device: "auto", threads: 0 },
       moonshine: { model_size: "base", language: "en" },
+      parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },
     },
     audio: {},
     ui: {
@@ -217,7 +218,7 @@ describe("EngineStep", () => {
     render(EngineStep, { registerGate: noopGate, setBlocker: noopBlocker });
 
     const cards = await screen.findAllByRole("radio");
-    const [whisper, moonshine] = cards;
+    const [whisper, moonshine, parakeet] = cards;
     expect(whisper.getAttribute("aria-checked")).toBe("true");
 
     await fireEvent.click(moonshine);
@@ -225,6 +226,11 @@ describe("EngineStep", () => {
     // The card has to visibly change, not just the config underneath it.
     await waitFor(() => expect(moonshine.getAttribute("aria-checked")).toBe("true"));
     expect(whisper.getAttribute("aria-checked")).toBe("false");
+
+    await fireEvent.click(parakeet);
+    await waitFor(() => expect(parakeet.getAttribute("aria-checked")).toBe("true"));
+    expect(whisper.getAttribute("aria-checked")).toBe("false");
+    expect(moonshine.getAttribute("aria-checked")).toBe("false");
   });
 
   test("picking a model size highlights that size on screen", async () => {
@@ -423,6 +429,16 @@ describe("EngineStep", () => {
     });
     render(EngineStep, { registerGate: noopGate, setBlocker: noopBlocker });
     expect(await screen.findByText(/compiled without the Moonshine backend/)).toBeTruthy();
+  });
+
+  test("warns when Parakeet was not compiled into this build", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "parakeet_available") return false;
+      if (cmd === "accelerator_support") return { whisper_gpu: null, moonshine_gpu: null, parakeet_gpu: null };
+      return false;
+    });
+    render(EngineStep, { registerGate: noopGate, setBlocker: noopBlocker });
+    expect(await screen.findByText(/compiled without the Parakeet backend/)).toBeTruthy();
   });
 
   test("the download gate fetches the model and records the failure if it fails", async () => {

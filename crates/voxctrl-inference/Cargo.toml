@@ -19,6 +19,7 @@ regex = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true }
 whisper-rs = { version = "0.16" }
+ndarray = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -78,6 +79,13 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 # `wgpu` is a tag `resolve_dist()` does understand, and
 # `x86_64-pc-windows-msvc+wgpu` is a prebuilt that exists.
 moonshine-webgpu = ["moonshine", "ort/webgpu"]
+
+# Parakeet ONNX backend via onnxruntime. Shares the same ONNX Runtime and
+# tokenizers dependencies as Moonshine.
+parakeet = ["dep:ort", "dep:tokenizers"]
+parakeet-cuda = ["parakeet", "ort/cuda"]
+parakeet-coreml = ["parakeet", "ort/coreml"]
+parakeet-webgpu = ["parakeet", "ort/webgpu"]
 
 [dependencies.ort]
 version = "2.0.0-rc.12"

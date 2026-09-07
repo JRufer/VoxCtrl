@@ -1,6 +1,8 @@
 pub mod backend;
 #[cfg(feature = "moonshine")]
 pub mod moonshine;
+#[cfg(feature = "parakeet")]
+pub mod parakeet;
 pub mod postprocess;
 mod util;
 pub mod whisper_cpp;
@@ -10,6 +12,10 @@ pub mod whisper_cpp;
 /// (e.g. the "model not downloaded" UI checks) must treat a Moonshine selection
 /// as effectively whisper-cpp.
 pub const MOONSHINE_COMPILED: bool = cfg!(feature = "moonshine");
+
+/// Whether the Parakeet ONNX backend was compiled into this build. When false,
+/// selecting Parakeet transparently falls back to whisper-cpp.
+pub const PARAKEET_COMPILED: bool = cfg!(feature = "parakeet");
 
 /// Which GPU backend whisper.cpp can offload to in this build, or `None` for a
 /// CPU-only build.
@@ -81,6 +87,37 @@ pub(crate) fn moonshine_gpu_provider() -> Option<&'static str> {
     }
 }
 
+/// Which GPU backend the Parakeet ONNX backend can offload to in this build,
+/// or `None` when it runs on the CPU.
+pub fn parakeet_gpu_backend() -> Option<&'static str> {
+    if cfg!(feature = "parakeet-cuda") {
+        Some("cuda")
+    } else if cfg!(feature = "parakeet-coreml") {
+        Some("coreml")
+    } else if cfg!(feature = "parakeet-webgpu") {
+        Some("webgpu")
+    } else {
+        None
+    }
+}
+
+#[cfg_attr(
+    not(any(
+        feature = "parakeet-cuda",
+        feature = "parakeet-coreml",
+        feature = "parakeet-webgpu"
+    )),
+    allow(dead_code)
+)]
+pub(crate) fn parakeet_gpu_provider() -> Option<&'static str> {
+    match parakeet_gpu_backend() {
+        Some("cuda") => Some("CUDA"),
+        Some("coreml") => Some("CoreML"),
+        Some("webgpu") => Some("WebGPU"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod gpu_backend_tests {
     use super::*;
@@ -102,6 +139,17 @@ mod gpu_backend_tests {
                 "a CPU-only build named a GPU provider"
             ),
         }
+        match parakeet_gpu_backend() {
+            Some(backend) => assert!(
+                parakeet_gpu_provider().is_some(),
+                "{backend} is reported to the UI but has no ONNX Runtime spelling"
+            ),
+            None => assert_eq!(
+                parakeet_gpu_provider(),
+                None,
+                "a CPU-only build named a GPU provider"
+            ),
+        }
     }
 
     #[test]
@@ -112,6 +160,13 @@ mod gpu_backend_tests {
             feature = "moonshine-webgpu"
         ))) {
             assert_eq!(moonshine_gpu_backend(), None);
+        }
+        if cfg!(not(any(
+            feature = "parakeet-cuda",
+            feature = "parakeet-coreml",
+            feature = "parakeet-webgpu"
+        ))) {
+            assert_eq!(parakeet_gpu_backend(), None);
         }
     }
 
@@ -427,6 +482,22 @@ fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
             {
                 // Moonshine feature not compiled — fall back to whisper-cpp.
                 tracing::warn!("Moonshine backend selected but not compiled in this build; using whisper-cpp");
+                Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))
+            }
+        }
+        BackendChoice::Parakeet => {
+            #[cfg(feature = "parakeet")]
+            {
+                info!(
+                    "Using Parakeet backend ({} model)",
+                    config.engine.parakeet.model_size
+                );
+                Box::new(parakeet::ParakeetBackend::new(config.engine.parakeet.clone()))
+            }
+            #[cfg(not(feature = "parakeet"))]
+            {
+                // Parakeet feature not compiled — fall back to whisper-cpp.
+                tracing::warn!("Parakeet backend selected but not compiled in this build; using whisper-cpp");
                 Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))
             }
         }

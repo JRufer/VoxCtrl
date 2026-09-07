@@ -4979,6 +4979,21 @@ dependencies = [
 
 [[package]]
 name = "ndarray"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
+
+[[package]]
+name = "ndarray"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
@@ -5900,7 +5915,7 @@ version = "2.0.0-rc.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7de3af33d24a745ffb8fab904b13478438d1cd52868e6f17735ef6e1f8bf133"
 dependencies = [
- "ndarray",
+ "ndarray 0.17.2",
  "ort-sys",
  "smallvec",
  "tracing",
@@ -9641,7 +9656,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9684,7 +9699,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "cpal",
@@ -9699,7 +9714,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -9717,7 +9732,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -9730,7 +9745,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -9742,7 +9757,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -9764,12 +9779,13 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "cc",
  "crossbeam-channel",
  "dirs 5.0.1",
+ "ndarray 0.16.1",
  "ort",
  "regex",
  "reqwest 0.12.28",
@@ -9789,7 +9805,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -9803,7 +9819,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -9817,7 +9833,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -9829,7 +9845,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-routing"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -9854,14 +9870,14 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-text"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -9888,7 +9904,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-update"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -9905,7 +9921,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",

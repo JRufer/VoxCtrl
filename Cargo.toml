@@ -19,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -144,3 +144,17 @@ strip = "symbols"
 
 [profile.dev]
 opt-level = 1
+
+# Optimize all external dependencies at opt-level 3 in dev mode so that
+# ONNX Runtime, Whisper.cpp bindings, Rubato audio resampling, VAD, and
+# tokenizers run at full native speed instead of crawling in unoptimized debug mode.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Keep inference and DSP loops at full speed even in dev builds
+[profile.dev.package.voxctrl-inference]
+opt-level = 3
+
+[profile.dev.package.voxctrl-audio]
+opt-level = 3
+

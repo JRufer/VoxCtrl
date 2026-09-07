@@ -241,11 +241,13 @@ pub async fn setup_blocker(state: &Arc<AppState>) -> Option<String> {
 
     let cfg = state.config.lock().await;
     let eng = &cfg.data.engine;
-    // Moonshine only bypasses the Whisper-model check when it is actually
+    // Moonshine or Parakeet only bypasses the Whisper-model check when it is actually
     // compiled in; otherwise the app silently falls back to whisper-cpp and
     // still needs the model.
-    let uses_whisper_model = eng.backend != voxctrl_config::BackendChoice::Moonshine
-        || !voxctrl_inference::MOONSHINE_COMPILED;
+    let uses_whisper_model = (eng.backend != voxctrl_config::BackendChoice::Moonshine
+        || !voxctrl_inference::MOONSHINE_COMPILED)
+        && (eng.backend != voxctrl_config::BackendChoice::Parakeet
+            || !voxctrl_inference::PARAKEET_COMPILED);
     if !uses_whisper_model {
         return None;
     }

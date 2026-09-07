@@ -145,9 +145,10 @@ pub fn run() {
     // two differ more often than they look like they should: the Vulkan build
     // accelerates whisper.cpp and nothing else.
     tracing::info!(
-        "GPU support in this build — whisper.cpp: {}, Moonshine: {}",
+        "GPU support in this build — whisper.cpp: {}, Moonshine: {}, Parakeet: {}",
         voxctrl_inference::whisper_gpu_backend().unwrap_or("none (CPU)"),
         voxctrl_inference::moonshine_gpu_backend().unwrap_or("none (CPU)"),
+        voxctrl_inference::parakeet_gpu_backend().unwrap_or("none (CPU)"),
     );
     tracing::info!("Moonshine model size: {}", config.data.engine.moonshine.model_size);
     tracing::info!("Moonshine language: {}", config.data.engine.moonshine.language);
@@ -497,6 +498,9 @@ pub fn run() {
             moonshine_available,
             check_moonshine_downloaded,
             download_moonshine_model,
+            parakeet_available,
+            check_parakeet_downloaded,
+            download_parakeet_model,
             check_directory_exists,
             test_openai,
             cuda_enabled,

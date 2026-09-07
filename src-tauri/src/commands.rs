@@ -213,6 +213,8 @@ pub struct AcceleratorSupport {
     pub whisper_gpu: Option<String>,
     /// `"cuda"`, `"coreml"`, or `None` — `None` in every build shipped today.
     pub moonshine_gpu: Option<String>,
+    /// `"cuda"`, `"coreml"`, `"webgpu"`, or `None`.
+    pub parakeet_gpu: Option<String>,
 }
 
 #[tauri::command]
@@ -220,6 +222,7 @@ pub fn accelerator_support() -> AcceleratorSupport {
     AcceleratorSupport {
         whisper_gpu: voxctrl_inference::whisper_gpu_backend().map(str::to_string),
         moonshine_gpu: voxctrl_inference::moonshine_gpu_backend().map(str::to_string),
+        parakeet_gpu: voxctrl_inference::parakeet_gpu_backend().map(str::to_string),
     }
 }
 
@@ -539,6 +542,42 @@ pub async fn download_moonshine_model(model_size: String) -> Result<(), String> 
     {
         let _ = model_size;
         Err("This build was compiled without the Moonshine backend. Rebuild with `--features moonshine` to use it.".into())
+    }
+}
+
+/// Whether the Parakeet ONNX backend was compiled into this build. The UI uses
+/// this to decide whether selecting Parakeet actually runs Parakeet (vs.
+/// transparently falling back to whisper-cpp).
+#[tauri::command]
+pub fn parakeet_available() -> bool {
+    voxctrl_inference::PARAKEET_COMPILED
+}
+
+#[tauri::command]
+pub async fn check_parakeet_downloaded(model_size: String) -> Result<bool, String> {
+    #[cfg(feature = "parakeet")]
+    {
+        Ok(voxctrl_inference::parakeet::is_model_downloaded(&model_size, ""))
+    }
+    #[cfg(not(feature = "parakeet"))]
+    {
+        let _ = model_size;
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+pub async fn download_parakeet_model(model_size: String) -> Result<(), String> {
+    #[cfg(feature = "parakeet")]
+    {
+        voxctrl_inference::parakeet::download_model(&model_size, "")
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(feature = "parakeet"))]
+    {
+        let _ = model_size;
+        Err("This build was compiled without the Parakeet backend. Rebuild with `--features parakeet` to use it.".into())
     }
 }
 
@@ -1517,8 +1556,10 @@ pub async fn get_setup_status(
         (
             eng.whisper_cpp.model_size.clone(),
             eng.whisper_cpp.model_dir.clone(),
-            eng.backend != voxctrl_config::BackendChoice::Moonshine
-                || !voxctrl_inference::MOONSHINE_COMPILED,
+            (eng.backend != voxctrl_config::BackendChoice::Moonshine
+                || !voxctrl_inference::MOONSHINE_COMPILED)
+                && (eng.backend != voxctrl_config::BackendChoice::Parakeet
+                    || !voxctrl_inference::PARAKEET_COMPILED),
         )
     };
 
