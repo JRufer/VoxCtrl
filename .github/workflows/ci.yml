@@ -140,7 +140,7 @@ jobs:
       # suite passing. Without a display here those tests silently skip and the
       # gap reopens.
       - name: cargo test
-        run: xvfb-run -a cargo test -p voxctrl-config -p voxctrl-routing -p voxctrl-hotkeys -p voxctrl-winput -p voxctrl-tts -p voxctrl-update -p voxctrl-app
+        run: xvfb-run -a cargo test -p voxctrl-config -p voxctrl-routing -p voxctrl-hotkeys -p voxctrl-winput -p voxctrl-tts -p voxctrl-update -p voxctrl-bugreport -p voxctrl-app
 
   # ── Unit tests (Windows) ──────────────────────────────────────────────────────
   #
@@ -170,6 +170,7 @@ jobs:
           -p voxctrl-winput
           -p voxctrl-update
           -p voxctrl-text
+          -p voxctrl-bugreport
 
   # ── Frontend type check ───────────────────────────────────────────────────────
   frontend-check:

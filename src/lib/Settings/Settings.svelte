@@ -16,9 +16,10 @@
   import TtsTab from "./TtsTab.svelte";
   import OpenAiTab from "./OpenAiTab.svelte";
   import FeaturesTab from "./FeaturesTab.svelte";
+  import BugReportTab from "./BugReportTab.svelte";
   import AboutTab from "./AboutTab.svelte";
 
-  type Tab = "general" | "engine" | "hotkeys" | "commands" | "visual" | "audio" | "tts" | "features" | "openai" | "about";
+  type Tab = "general" | "engine" | "hotkeys" | "commands" | "visual" | "audio" | "tts" | "features" | "openai" | "bugreport" | "about";
   let activeTab = $state<Tab>("general");
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -31,6 +32,7 @@
     { id: "tts",      label: "TTS",      icon: "🗣️" },
     { id: "features", label: "Features", icon: "✨" },
     { id: "openai",   label: "OpenAI API", icon: "🤖" },
+    { id: "bugreport", label: "Bug Report", icon: "🐞" },
     { id: "about",    label: "About",    icon: "ℹ️" },
   ];
 
@@ -196,6 +198,8 @@
         <FeaturesTab bind:cfg={$config} />
       {:else if activeTab === "openai"}
         <OpenAiTab bind:cfg={$config} />
+      {:else if activeTab === "bugreport"}
+        <BugReportTab />
       {:else if activeTab === "about"}
         <AboutTab />
       {/if}

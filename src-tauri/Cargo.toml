@@ -46,6 +46,7 @@ voxctrl-dbus      = { workspace = true }
 voxctrl-mcp       = { workspace = true }
 voxctrl-llm       = { workspace = true }
 voxctrl-update    = { workspace = true }
+voxctrl-bugreport = { workspace = true }
 
 # Runtime and utilities
 tokio = { workspace = true }
