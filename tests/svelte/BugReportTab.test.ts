@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 const CONTEXT = {
   relay_configured: true,
   issues_new_url: "https://github.com/JRufer/VoxCtrl/issues/new",
-  support_email: "voxctrl-bugs@proton.me",
+  support_email: "jrufer@jrufer.com",
   log_path: "/home/tester/.local/share/voxctrl/startup_errors.log",
   install_id: "0123456789abcdef0123456789abcdef",
   limits: {
@@ -34,7 +34,7 @@ const PREVIEW = {
   blocked_reason: null,
   can_submit: true,
   github_url: "https://github.com/JRufer/VoxCtrl/issues/new?title=x",
-  mailto_url: "mailto:voxctrl-bugs@proton.me?subject=x",
+  mailto_url: "mailto:jrufer@jrufer.com?subject=x",
 };
 
 const A_REAL_DESCRIPTION =

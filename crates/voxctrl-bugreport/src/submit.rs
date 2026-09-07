@@ -50,7 +50,7 @@ pub fn relay_endpoint() -> Option<&'static str> {
 pub const ISSUES_NEW_URL: &str = "https://github.com/JRufer/VoxCtrl/issues/new";
 
 /// Where a report can be emailed when there is no relay and no GitHub account.
-pub const SUPPORT_EMAIL: &str = "voxctrl-bugs@proton.me";
+pub const SUPPORT_EMAIL: &str = "jrufer@jrufer.com";
 
 /// GitHub answers a `GET` longer than about 8 KB with an error page rather than
 /// the form, so the prefilled body is trimmed well inside that.
