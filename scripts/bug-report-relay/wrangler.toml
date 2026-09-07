@@ -1,0 +1,35 @@
+# VoxCtrl bug-report relay — Cloudflare Worker configuration.
+#
+# See README.md in this directory for the deployment steps, including the two
+# secrets that must NOT be written here.
+
+name = "voxctrl-bug-report"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# owner/repo that issues are filed against.
+GITHUB_REPO = "JRufer/VoxCtrl"
+
+# Labels put on every issue the relay opens. `from-app` is the one that matters:
+# it marks reports that arrived through an anonymous channel, so they can be
+# triaged, filtered or bulk-closed as a group if the channel is ever abused.
+ISSUE_LABELS = "bug,from-app,needs-triage"
+
+# Set to "1" to switch the relay off. It then answers every report with a
+# sentence telling the reporter to save the report and send it by hand — which
+# is a far better failure than a timeout, and takes one deploy to flip.
+DISABLED = "0"
+
+# Rate limits. Anything omitted falls back to the defaults in worker.js.
+PER_IP_HOURLY = "3"
+PER_IP_DAILY = "8"
+PER_INSTALL_DAILY = "5"
+PER_INSTALL_MONTHLY = "20"
+GLOBAL_HOURLY = "25"
+
+# Counters and the seen-report index. Nothing here is readable as a report:
+# addresses are stored hashed, and the only other keys are counts.
+[[kv_namespaces]]
+binding = "REPORTS"
+id = "replace-with-your-kv-namespace-id"

@@ -35,7 +35,7 @@ the focused window — and does not move it.
 
 ## Settings Window
 
-The main configuration interface. Organized into a sidebar with ten tabs:
+The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### General Tab
 - "Open setup wizard" button — re-runs the first-run wizard
@@ -112,6 +112,22 @@ Ollama or LM Studio instance, or a hosted provider).
 - Mode selector
 - Custom prompt text area
 - "Test Connection" button → shows available models
+
+### Bug Report Tab
+Gathers a diagnostic report and offers four ways to send it. Full detail in
+[Bug Reports](./bug_reports.md).
+- A ledger of what is collected and what never is, shown **above** the form —
+  the disclosure must be readable without typing anything
+- Summary, area, frequency and description fields, with a minimum length so a
+  one-word report cannot be filed
+- "Show me exactly what will be sent" — the literal issue body, not a summary of it
+- **Send report** (only in builds with a relay endpoint compiled in; no GitHub
+  account needed), **Open on GitHub** (prefills GitHub's form; nothing is sent
+  until the user submits it there), **Save report to a file**, **Copy report**,
+  **Email it**
+- The rate limits, how many reports have been sent, and a **Reset ID** button
+
+Backed by `src-tauri/src/bug_report.rs` and the `voxctrl-bugreport` crate.
 
 ### About Tab
 - Version information
