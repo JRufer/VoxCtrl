@@ -60,6 +60,19 @@ jobs:
           cmake --version
           rustc -vV
 
+      # glslc, for the ggml Vulkan backend's compute shaders, which the
+      # `vulkan` check below compiles. Same source as the release workflow uses.
+      - name: Install Vulkan SDK (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
+            https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo apt-get update -q
+          sudo apt-get install -y vulkan-sdk
+          glslc --version
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: check-${{ matrix.os }}
@@ -89,11 +102,20 @@ jobs:
       # so each shipped GPU variant gets checked here.
       #
       # `moonshine-webgpu` is what the Windows GPU release artifact is built
-      # with; `vulkan` is what the Linux GPU AppImage is built with. Both pull
+      # with; `vulkan` is what the Linux AppImage is built with. Both pull
       # their own prebuilt ONNX Runtime / compile their own shaders, so this is
       # not free, but it is far cheaper than finding out at release time.
       - name: cargo check (moonshine-webgpu)
         run: cargo check -p voxctrl-app --features moonshine-webgpu
+
+      # Since the CPU AppImage was dropped, `vulkan` is not a variant of the
+      # Linux release — it *is* the Linux release. The default-features check
+      # above used to double as its coverage because the two were built the
+      # same way; now nothing else compiles a line of the ggml Vulkan backend
+      # before the release run does.
+      - name: cargo check (vulkan)
+        if: runner.os == 'Linux'
+        run: cargo check -p voxctrl-app --features vulkan
 
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:

@@ -88,16 +88,21 @@ jobs:
       fail-fast: false   # let all variants finish even if one fails
       matrix:
         include:
-          # ── Linux CPU ──────────────────────────────────────────────────────
-          - name: linux-cpu
-            os: ubuntu-22.04
-            features: ""
-            artifact_label: linux-x86_64
-            cuda: false
-
           # ── Linux Vulkan ───────────────────────────────────────────────────
-          # Portable GPU AppImage: accelerates NVIDIA/AMD/Intel via the host
-          # Vulkan driver, with CPU fallback. Far lighter to bundle than CUDA.
+          # The only Linux build. It accelerates NVIDIA/AMD/Intel via the host
+          # Vulkan driver and runs on the CPU when there is no Vulkan device to
+          # find, so a separate CPU artifact bought nothing but a second
+          # download for users to choose wrong between. ggml enumerates Vulkan
+          # devices at init and registers none when the loader finds no ICD;
+          # whisper.cpp then runs on the CPU backend exactly as the CPU build
+          # did. Far lighter to bundle than CUDA.
+          #
+          # Two consequences of being the only build, both handled elsewhere:
+          # the `.deb` now depends on `libvulkan1` (src-tauri/tauri.conf.json),
+          # since the loader is linked, not dlopened; and the updater sends a
+          # non-Vulkan AppImage here when a release has no CPU asset
+          # (crates/voxctrl-update/src/install.rs), so the people running the
+          # CPU AppImage this workflow used to publish keep getting updates.
           - name: linux-vulkan
             os: ubuntu-22.04
             features: "vulkan"
@@ -193,17 +198,11 @@ jobs:
       # APPIMAGE_EXTRACT_AND_RUN=1 tells linuxdeploy/appimagetool to extract
       # and run without FUSE (uses unsquashfs from squashfs-tools instead).
       # QT_QPA_PLATFORM=offscreen prevents Qt platform errors in headless CI.
-      - name: Build AppImage + deb (Linux, CPU)
-        if: runner.os == 'Linux' && !matrix.cuda && !matrix.vulkan
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          QT_QPA_PLATFORM: offscreen
-        # Moonshine (STT) and Inflect-Micro (TTS) are default features, so both
-        # ONNX engines are in every build without naming them here.
-        run: npm run tauri build
-
       # Portable GPU AppImage. whisper.cpp's Vulkan backend links only
       # libvulkan (lightweight, unlike CUDA), so linuxdeploy bundles it fine.
+      #
+      # Moonshine (STT) and Inflect-Micro (TTS) are default features, so both
+      # ONNX engines are in every build without naming them here.
       - name: Build AppImage + deb (Linux, Vulkan)
         if: runner.os == 'Linux' && matrix.vulkan
         env:
@@ -524,16 +523,24 @@ jobs:
 
             | Platform | File suffix | GPU required |
             |---|---|---|
-            | Linux | `-linux-x86_64.AppImage` | None |
-            | Linux (GPU) | `-linux-x86_64-vulkan.AppImage` | Any Vulkan GPU |
+            | Linux | `-linux-x86_64-vulkan.AppImage` | None — GPU used if present |
             | Windows | `-windows-x86_64.exe` | None |
             | Windows (GPU) | `-windows-x86_64-webgpu.exe` | Any Direct3D 12 GPU |
 
-            **The Vulkan AppImage** is a portable GPU build: it accelerates any
-            NVIDIA/AMD/Intel GPU via the host Vulkan driver, and falls back to
-            CPU when no GPU is present.
+            **There is one Linux build now.** The Vulkan AppImage accelerates
+            any NVIDIA/AMD/Intel GPU through the host Vulkan driver and runs on
+            the CPU when there is no Vulkan device, so it replaces the separate
+            CPU AppImage rather than sitting beside it — the same file is right
+            whether or not you have a GPU. If you were running the CPU AppImage,
+            VoxCtrl's own updater will move you onto this one; nothing to do.
 
-            **CPU builds** run on any hardware, including AMD, Intel, and ARM.
+            To keep it on the CPU regardless, set **Settings → Engine → Device**
+            to **CPU**. Worth doing if your only Vulkan device is a software
+            rasterizer such as Mesa's lavapipe, which is slower than the CPU
+            backend.
+
+            The Linux `.deb` now requires `libvulkan1`, which the package
+            manager pulls in for you.
 
             **The Windows builds** are NSIS installers. Neither is code-signed
             yet, so SmartScreen will warn that the publisher is unknown: choose
@@ -565,7 +572,7 @@ jobs:
               lock screen. Shortcuts do not fire there, and dictated text cannot
               be typed into an elevated window unless VoxCtrl is elevated too.
 
-            ### Linux CPU / GPU — first run
+            ### Linux — first run
 
             Needs glibc 2.35 or newer (Ubuntu 22.04+, Linux Mint 21+, Debian
             12+, Fedora 36+, Arch). Nothing has to be installed first — not

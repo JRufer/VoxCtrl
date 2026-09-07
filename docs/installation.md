@@ -204,7 +204,12 @@ the model, Hotkeys for bindings, Visual for the overlay, TTS for speech output.
 
 ### GPU Acceleration
 
-**Vulkan (AMD / Intel / NVIDIA):** Set `engine.whisper_cpp.device = "vulkan"` in config, or choose "Vulkan" in Settings → Engine. Install driver support if needed:
+**Vulkan (AMD / Intel / NVIDIA):** On by default. The published Linux
+AppImage is a Vulkan build — there is no separate CPU download — and it uses
+your GPU when the host has a Vulkan driver and runs on the CPU when it does
+not. Nothing to switch on; Settings → Engine reports which it got.
+
+Install driver support if your distribution does not already have it:
 
 ```bash
 # Ubuntu
@@ -258,7 +263,7 @@ and restart**, **Skip this version** (never asked about that release again; a
 later one still gets offered), or **Not now** (asked again next launch).
 
 Choosing to update downloads the release file that matches this installation —
-the CPU AppImage, the Vulkan AppImage, or the Windows installer — checks it
+the Linux AppImage or the Windows installer — checks it
 against the SHA-256 checksum GitHub published for it, replaces the running
 application file, and restarts into the new version. Your config, models and
 voices live elsewhere and are untouched. If anything fails at any point, the

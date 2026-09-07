@@ -75,6 +75,7 @@
       "deb": {
         "depends": [
           "libwebkit2gtk-4.1-0",
+          "libvulkan1",
           "libssl3",
           "libayatana-appindicator3-1",
           "wtype | xdotool",

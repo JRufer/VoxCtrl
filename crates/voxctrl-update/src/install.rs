@@ -150,8 +150,17 @@ pub fn select_asset<'a>(kind: &InstallKind, assets: &'a [ReleaseAsset]) -> Optio
             appimage_named(assets, "-linux-x86_64-vulkan.appimage")
                 .or_else(|| appimage_named(assets, "-linux-x86_64.appimage"))
         }
+        // Releases from 0.5.2 on publish only the Vulkan AppImage: it runs on
+        // the CPU when the host has no Vulkan device, so it is a superset of
+        // the CPU build this installation is. Without this fallback everyone
+        // still running a CPU AppImage would simply stop finding an asset and
+        // stop updating, silently. The updater replaces the file in place under
+        // its existing name, so those installations keep classifying themselves
+        // as non-Vulkan forever — this is the permanent path for them, not a
+        // one-release migration.
         InstallKind::AppImage { vulkan: false, .. } => {
             appimage_named(assets, "-linux-x86_64.appimage")
+                .or_else(|| appimage_named(assets, "-linux-x86_64-vulkan.appimage"))
         }
         // Same rule as the AppImage above: keep the GPU build when the release
         // has one, and take the CPU build rather than skip an update when it
@@ -226,6 +235,23 @@ mod tests {
         assert_eq!(
             select_asset(&kind, &assets).unwrap().name,
             "VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage"
+        );
+    }
+
+    /// Releases from 0.5.2 on carry no CPU AppImage. The CPU installations
+    /// already out there must land on the Vulkan build rather than find
+    /// nothing and quietly stop updating — it runs on the CPU when the host
+    /// has no Vulkan device, so it is the same app on that machine.
+    #[test]
+    fn a_cpu_appimage_takes_the_vulkan_build_when_that_is_all_the_release_has() {
+        let assets = vec![
+            asset("VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.AppImage"),
+            asset("VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.deb"),
+        ];
+        let kind = InstallKind::AppImage { path: "/home/u/VoxCtrl.AppImage".into(), vulkan: false };
+        assert_eq!(
+            select_asset(&kind, &assets).unwrap().name,
+            "VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.AppImage"
         );
     }
 
