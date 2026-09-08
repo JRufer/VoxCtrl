@@ -73,7 +73,8 @@ Hardware input (e.g. 48000 Hz, f32 samples)
    apply_gain()         — multiply each sample by gain (atomic f32, live-updated)
         │
         ▼
-   rms() → level_tx     — f32 RMS forwarded to UI every ~30ms for VU meter
+   rms() → level_tx     — f32 RMS, produced only while recording or monitoring
+                          and coalesced downstream to one event per frame
         │
         ▼
    resample_chunk()      — linear interpolation to 16000 Hz (if hardware rate differs)
@@ -180,4 +181,4 @@ pub struct AudioRecorder {
 }
 ```
 
-It is started via `.run(audio_tx, level_tx, audio_ready)` which spawns the `capture_loop` on a dedicated OS thread. The loop polls every 30ms to check for device index changes, dynamic stream preference changes, and recording/monitoring state transitions.
+It is started via `.run(audio_tx, level_tx, audio_ready)` which spawns the `capture_loop` on a dedicated OS thread. The loop watches for device index changes, dynamic stream preference changes, and recording/monitoring state transitions. It is signalled the moment one of those flags is set — `AudioRecorder::with_wake` supplies the channel — so a dynamic stream opens the microphone on the keypress rather than at the next poll; the 200 ms interval underneath is only a backstop.

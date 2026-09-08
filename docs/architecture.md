@@ -120,10 +120,10 @@ VoxCtrl uses Tokio for async I/O plus dedicated OS threads for latency-sensitive
 |---|---|---|
 | Main Tauri thread | OS thread | Window management, IPC dispatch |
 | Audio capture | OS thread (cpal) | Microphone streaming at hardware rate |
-| Audio level emitter | Tokio task | Forwards RMS levels to UI every ~50ms |
+| Audio level emitter | OS thread | Forwards RMS levels to the UI and the overlay, coalesced to one per frame (16 ms); silent unless recording or monitoring |
 | Hotkey listener | async task + OS threads | XDG GlobalShortcuts portal, with an evdev/Win32 fallback |
 | Inference worker | OS thread | Blocking Whisper computation; `WhisperState` (KV cache + attention buffers) is allocated once at load and reused across all calls |
-| Status ticker | Tokio task | Emits `status-tick` events every 250ms |
+| Status ticker | Tokio task | Ticks at 150 ms to animate the tray icon; emits `status-tick` only when the state changed, plus a 900 ms heartbeat |
 | Config watcher | Tokio task | `inotify`/`kqueue` on config files |
 | MCP server | Tokio task | Unix socket accept loop |
 | DBus service | Tokio task | Session bus method handler |

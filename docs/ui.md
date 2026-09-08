@@ -236,7 +236,7 @@ export const wordCount = derived(status, ($s) => $s.word_count);
 export const activeTargetLabel = derived(status, ($s) => $s.active_target_label ?? "Focused Window");
 ```
 
-Updated by `status-tick` Tauri events (emitted by backend every ~250ms) and an initial `get_status()` call on load.
+Updated by `status-tick` Tauri events (emitted by the backend when the state changes, plus a heartbeat under a second apart) and an initial `get_status()` call on load.
 
 ---
 
@@ -244,9 +244,9 @@ Updated by `status-tick` Tauri events (emitted by backend every ~250ms) and an i
 
 | Event | Payload | Description |
 |---|---|---|
-| `status-tick` | `AppStatus` | Periodic state update (~250ms) |
+| `status-tick` | `AppStatus` | State update, on change plus a sub-second heartbeat |
 | `config-changed` | `AppConfig` | Config was modified (by any window or externally) |
-| `audio-level` | `f32` | RMS audio level for VU meter (while monitoring is active) |
+| `audio-level` | `f32` | RMS audio level for the VU meter and overlay visualisers (while recording or monitoring), at most one per frame |
 | `update-progress` | `{ downloaded, total }` | Bytes fetched so far while an update downloads |
 | `update-installed` | `String` (version) | The new version is in place; the app is about to restart |
 | `update-failed` | `String` | The update could not be installed; the running version is untouched |

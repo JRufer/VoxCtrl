@@ -569,7 +569,10 @@ import { listen } from '@tauri-apps/api/event';
 ```
 
 ### `status-tick`
-Emitted every ~250ms with the current application state.
+Emitted whenever the application state changes, and otherwise as a heartbeat
+under a second apart. The backend compares each payload against the last and
+skips sending an identical one, so an idle app is quiet without the frontend's
+staleness fallback ever tripping.
 
 ```typescript
 await listen<AppStatus>('status-tick', (event) => {
@@ -587,7 +590,13 @@ await listen<AppConfig>('config-changed', (event) => {
 ```
 
 ### `audio-level`
-Emitted during monitoring with the current RMS energy level (0.0–1.0+).
+Emitted with the current RMS energy level (0.0–1.0+) while recording or
+monitoring — the overlay visualisers and the Audio tab's VU meter respectively.
+Nothing is emitted when neither is watching.
+
+The microphone produces a level for every buffer it delivers, which is far more
+often than anything can draw; they are coalesced to at most one event per frame
+(16 ms), newest value winning.
 
 ```typescript
 await listen<number>('audio-level', (event) => {
