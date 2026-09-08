@@ -222,7 +222,7 @@ impl MoonshineBackend {
             .map_err(|e| anyhow!("ort session builder: {e}"))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("set optimization level: {e}"))?
-            .with_intra_threads(threads())
+            .with_intra_threads(crate::util::inference_threads())
             .map_err(|e| anyhow!("set intra threads: {e}"))?;
 
         let mut builder = Self::with_gpu(builder);
@@ -612,12 +612,6 @@ fn empty_result(language: &str) -> TranscriptionResult {
         inference_ms: 0,
         word_timestamps: None,
     }
-}
-
-fn threads() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| (n.get() / 2).max(1))
-        .unwrap_or(2)
 }
 
 #[cfg(test)]

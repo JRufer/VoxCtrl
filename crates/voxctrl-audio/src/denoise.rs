@@ -15,7 +15,7 @@
 //! when a recording ends.
 
 #[cfg(feature = "noisereduce")]
-use crate::{resample_chunk, TARGET_SAMPLE_RATE};
+use crate::{resample_into, TARGET_SAMPLE_RATE};
 
 /// The only rate RNNoise understands.
 #[cfg(feature = "noisereduce")]
@@ -38,6 +38,10 @@ pub struct Denoiser {
     input_rate: u32,
     /// 48 kHz samples in i16 scale that did not fill a frame last time.
     pending: Vec<f32>,
+    /// Reused across chunks so the two resamples and the frame assembly on the
+    /// audio callback thread never touch the allocator.
+    at_48k: Vec<f32>,
+    cleaned: Vec<f32>,
     /// The first frame out of RNNoise contains fade-in artifacts.
     discard_first: bool,
 }
@@ -54,6 +58,8 @@ impl Denoiser {
             state: nnnoiseless::DenoiseState::new(),
             input_rate,
             pending: Vec::new(),
+            at_48k: Vec::new(),
+            cleaned: Vec::new(),
             discard_first: true,
         }
     }
@@ -67,11 +73,12 @@ impl Denoiser {
     pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
         const FRAME: usize = nnnoiseless::DenoiseState::FRAME_SIZE;
 
-        let at_48k = resample_chunk(input, self.input_rate, RNNOISE_SAMPLE_RATE);
+        self.at_48k.clear();
+        resample_into(input, self.input_rate, RNNOISE_SAMPLE_RATE, &mut self.at_48k);
         self.pending
-            .extend(at_48k.iter().map(|s| s * I16_SCALE));
+            .extend(self.at_48k.iter().map(|s| s * I16_SCALE));
 
-        let mut cleaned = Vec::with_capacity(self.pending.len());
+        self.cleaned.clear();
         let mut frame = [0.0f32; FRAME];
         let mut out = [0.0f32; FRAME];
         let mut consumed = 0;
@@ -87,11 +94,18 @@ impl Denoiser {
                 self.discard_first = false;
                 continue;
             }
-            cleaned.extend(out.iter().map(|s| s / I16_SCALE));
+            self.cleaned.extend(out.iter().map(|s| s / I16_SCALE));
         }
         self.pending.drain(..consumed);
 
-        resample_chunk(&cleaned, RNNOISE_SAMPLE_RATE, TARGET_SAMPLE_RATE)
+        let mut resampled = Vec::new();
+        resample_into(
+            &self.cleaned,
+            RNNOISE_SAMPLE_RATE,
+            TARGET_SAMPLE_RATE,
+            &mut resampled,
+        );
+        resampled
     }
 }
 

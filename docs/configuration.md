@@ -118,7 +118,7 @@ The engine config is nested into two backend sub-objects.
 |---|---|---|---|
 | `model_size` | string | `"tiny"` | Whisper model to load (see valid values below). `tiny`/`tiny.en` auto-download silently on first launch; other sizes require an explicit download in Settings → Engine. |
 | `device` | string | `"auto"` | Compute device: `auto`/`cpu`/`cuda`/`vulkan` |
-| `threads` | integer | `0` | CPU thread count; 0 = half of logical cores |
+| `threads` | integer | `0` | CPU thread count; 0 = one per physical core |
 | `model_dir` | string | `""` | Custom model directory; empty = `~/.local/share/voxctrl/models/`. Supports `~` expansion. The directory must already exist. |
 
 Valid `model_size` values: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v2`, `large-v3`, `large-v3-turbo`

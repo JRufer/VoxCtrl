@@ -186,6 +186,7 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
 fn make_input_callback(
     gain: Arc<AtomicU32>,
     recording: Arc<AtomicBool>,
+    monitoring: Arc<AtomicBool>,
     level_tx: Option<Sender<f32>>,
     tx: Sender<AudioChunk>,
     noise_suppression: Arc<AtomicBool>,
@@ -197,30 +198,58 @@ fn make_input_callback(
     // toggle still takes effect without rebuilding the stream.
     let mut denoiser = None;
     let mut denoising = false;
+    // Reused across callbacks so the gain stage never allocates on the audio
+    // thread: a `malloc` here is both CPU the real-time deadline cannot spare
+    // and a lock the allocator may block on, which is what an xrun sounds like.
+    let mut gained: Vec<f32> = Vec::new();
 
     move |data: &[f32], _: &cpal::InputCallbackInfo| {
-        let current_gain = f32::from_bits(gain.load(Ordering::SeqCst));
-        let gained: Vec<f32> = data.iter().map(|&s| s * current_gain).collect();
+        // Relaxed is enough for every flag read here: each one is an
+        // independent switch whose exact flip instant does not order any other
+        // memory, and a buffer either side of the change is equally correct.
+        let is_recording = recording.load(Ordering::Relaxed);
+
+        // The level feed only has consumers while the overlay is visualising a
+        // recording or the Audio tab is showing its VU meter. An always-on
+        // stream would otherwise push a level — and with it a Tauri event and
+        // a message to the overlay process — for every buffer, all day, with
+        // nothing on the other end to draw it.
         if let Some(ref ltx) = level_tx {
-            let rms = rms(&gained);
-            let _ = ltx.send(rms);
+            if is_recording || monitoring.load(Ordering::Relaxed) {
+                // Gain is a scalar, so scaling the RMS is the same number as
+                // the RMS of the scaled samples — without touching the heap.
+                let level = rms(data) * f32::from_bits(gain.load(Ordering::Relaxed));
+                let _ = ltx.send(level);
+            }
         }
-        if !recording.load(Ordering::SeqCst) {
+
+        if !is_recording {
             return;
         }
 
+        let current_gain = f32::from_bits(gain.load(Ordering::Relaxed));
+
         // Drop the denoiser when the setting goes off so its next run starts
         // from a clean spectral estimate rather than one built minutes ago.
-        let wants_denoise = noise_suppression.load(Ordering::SeqCst);
+        let wants_denoise = noise_suppression.load(Ordering::Relaxed);
         if wants_denoise != denoising {
             denoiser = make_denoiser(wants_denoise, hw_rate);
             denoising = wants_denoise;
         }
 
-        let processed = match denoiser {
-            Some(ref mut d) => d.process(&gained),
-            None if needs_resample => resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE),
-            None => gained,
+        // The denoise and resample stages need a slice to borrow, so those two
+        // fill the scratch buffer. The straight-through case does not: it
+        // builds the one buffer that is handed downstream and nothing more.
+        let processed = if let Some(ref mut d) = denoiser {
+            gained.clear();
+            gained.extend(data.iter().map(|&s| s * current_gain));
+            d.process(&gained)
+        } else if needs_resample {
+            gained.clear();
+            gained.extend(data.iter().map(|&s| s * current_gain));
+            resample_chunk(&gained, hw_rate, TARGET_SAMPLE_RATE)
+        } else {
+            data.iter().map(|&s| s * current_gain).collect()
         };
         if processed.is_empty() {
             return;
@@ -230,6 +259,50 @@ fn make_input_callback(
 }
 
 // ── Capture loop ──────────────────────────────────────────────────────────────
+
+/// Open and start an input stream on `device` with the standard processing
+/// chain, or `None` if the device refused it.
+///
+/// All three places the capture loop opens a stream — at startup, on the
+/// switch to always-on, and when a dynamic recording begins — want exactly
+/// this, so they share it rather than repeating the same twenty lines.
+#[allow(clippy::too_many_arguments)]
+fn open_stream(
+    device: &cpal::Device,
+    hw_config: &StreamConfig,
+    hw_rate: u32,
+    needs_resample: bool,
+    gain: &Arc<AtomicU32>,
+    recording: &Arc<AtomicBool>,
+    monitoring: &Arc<AtomicBool>,
+    noise_suppression: &Arc<AtomicBool>,
+    tx: &Sender<AudioChunk>,
+    level_tx: &Option<Sender<f32>>,
+) -> Option<cpal::Stream> {
+    let stream = device
+        .build_input_stream(
+            hw_config,
+            make_input_callback(
+                gain.clone(),
+                recording.clone(),
+                monitoring.clone(),
+                level_tx.clone(),
+                tx.clone(),
+                noise_suppression.clone(),
+                hw_rate,
+                needs_resample,
+            ),
+            |e| warn!("Audio stream error: {e}"),
+            None,
+        )
+        .map_err(|e| warn!("Failed to build audio stream: {e}"))
+        .ok()?;
+    stream
+        .play()
+        .map_err(|e| warn!("Failed to play audio stream: {e}"))
+        .ok()?;
+    Some(stream)
+}
 
 #[allow(unused_assignments, unused_variables)]
 fn capture_loop(
@@ -280,34 +353,15 @@ fn capture_loop(
         }
     } else {
         info!("Startup: Opening always-on stream (Option B)...");
-        let tx_inner = tx.clone();
-        let level_tx_inner = level_tx.clone();
-        let recording_inner = recording.clone();
-        let gain_inner = gain.clone();
-        match device.build_input_stream(
-            &hw_config,
-            make_input_callback(
-                gain_inner,
-                recording_inner,
-                level_tx_inner,
-                tx_inner,
-                noise_suppression.clone(),
-                hw_rate,
-                needs_resample,
-            ),
-            |e| warn!("Audio stream error: {e}"),
-            None,
+        if let Some(stream) = open_stream(
+            &device, &hw_config, hw_rate, needs_resample,
+            &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
         ) {
-            Ok(stream) => {
-                if stream.play().is_ok() {
-                    current_stream = Some(stream);
-                    if let Some(ref ready) = audio_ready {
-                        ready.store(true, Ordering::SeqCst);
-                    }
-                    info!("Startup always-on stream successfully playing.");
-                }
+            current_stream = Some(stream);
+            if let Some(ref ready) = audio_ready {
+                ready.store(true, Ordering::SeqCst);
             }
-            Err(e) => warn!("Failed to start always-on stream: {e}"),
+            info!("Startup always-on stream successfully playing.");
         }
     }
 
@@ -354,34 +408,15 @@ fn capture_loop(
             } else {
                 // Changed to always-on: start always-on stream if it isn't already active
                 if current_stream.is_none() {
-                    let tx_inner = tx.clone();
-                    let level_tx_inner = level_tx.clone();
-                    let recording_inner = recording.clone();
-                    let gain_inner = gain.clone();
-                    match device.build_input_stream(
-                        &hw_config,
-                        make_input_callback(
-                            gain_inner,
-                            recording_inner,
-                            level_tx_inner,
-                            tx_inner,
-                            noise_suppression.clone(),
-                            hw_rate,
-                            needs_resample,
-                        ),
-                        |e| warn!("Audio stream error: {e}"),
-                        None,
+                    if let Some(stream) = open_stream(
+                        &device, &hw_config, hw_rate, needs_resample,
+                        &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
                     ) {
-                        Ok(stream) => {
-                            if stream.play().is_ok() {
-                                current_stream = Some(stream);
-                                if let Some(ref ready) = audio_ready {
-                                    ready.store(true, Ordering::SeqCst);
-                                }
-                                info!("Switched to always-on mode: stream successfully playing.");
-                            }
+                        current_stream = Some(stream);
+                        if let Some(ref ready) = audio_ready {
+                            ready.store(true, Ordering::SeqCst);
                         }
-                        Err(e) => warn!("Failed to start always-on stream on toggle: {e}"),
+                        info!("Switched to always-on mode: stream successfully playing.");
                     }
                 }
             }
@@ -392,46 +427,20 @@ fn capture_loop(
         if is_dynamic {
             if active && !was_recording {
                 info!("Dynamic microphone stream starting (Option A)...");
-                let tx_inner = tx.clone();
-                let level_tx_inner = level_tx.clone();
-                let recording_inner = recording.clone();
-                let gain_inner = gain.clone();
-
-                match device.build_input_stream(
-                    &hw_config,
-                    make_input_callback(
-                        gain_inner,
-                        recording_inner,
-                        level_tx_inner,
-                        tx_inner,
-                        noise_suppression.clone(),
-                        hw_rate,
-                        needs_resample,
-                    ),
-                    |e| warn!("Audio stream error: {e}"),
-                    None,
+                match open_stream(
+                    &device, &hw_config, hw_rate, needs_resample,
+                    &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
                 ) {
-                    Ok(stream) => {
-                        if let Err(e) = stream.play() {
-                            warn!("Failed to play dynamic audio stream: {e}");
-                            if !is_monitoring {
-                                recording.store(false, Ordering::SeqCst);
-                            }
-                        } else {
-                            current_stream = Some(stream);
-                            if let Some(ref ready) = audio_ready {
-                                ready.store(true, Ordering::SeqCst);
-                            }
-                            info!("Dynamic microphone stream successfully playing (Option A).");
-                            was_recording = true;
+                    Some(stream) => {
+                        current_stream = Some(stream);
+                        if let Some(ref ready) = audio_ready {
+                            ready.store(true, Ordering::SeqCst);
                         }
+                        info!("Dynamic microphone stream successfully playing (Option A).");
+                        was_recording = true;
                     }
-                    Err(e) => {
-                        warn!("Failed to build dynamic audio stream: {e}");
-                        if !is_monitoring {
-                            recording.store(false, Ordering::SeqCst);
-                        }
-                    }
+                    None if !is_monitoring => recording.store(false, Ordering::SeqCst),
+                    None => {}
                 }
             } else if !active && was_recording {
                 info!("Dynamic microphone stream stopping...");
@@ -444,7 +453,17 @@ fn capture_loop(
             }
         }
 
-        std::thread::sleep(Duration::from_millis(30));
+        // 30 ms is what a dynamic stream needs: it opens the device on the
+        // hotkey press, so the poll interval is dead air at the start of a
+        // recording. An always-on stream has its device open already and this
+        // loop is only watching for a settings change, which nobody notices
+        // arriving a fifth of a second later — so it idles at a rate that
+        // lets the CPU stay asleep instead of waking 33 times a second.
+        std::thread::sleep(if is_dynamic {
+            Duration::from_millis(30)
+        } else {
+            Duration::from_millis(200)
+        });
     }
 }
 
@@ -465,22 +484,45 @@ fn rms(samples: &[f32]) -> f32 {
     (sum_sq / samples.len() as f32).sqrt()
 }
 
-/// Simple linear resampling. Replaced by rubato for production quality.
-fn resample_chunk(input: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
-    if from_hz == to_hz || input.is_empty() {
-        return input.to_vec();
+/// Linear resampling between two rates, appended to `out`.
+///
+/// The source position walks forward by a fixed step rather than being
+/// recomputed as `i / ratio` per output sample, which keeps this to one add,
+/// one truncate and one multiply-add per sample — it runs on the audio
+/// callback thread for every buffer a non-16 kHz device delivers.
+///
+/// Writing into a caller-owned buffer lets the denoiser resample twice per
+/// chunk without allocating twice per chunk.
+pub(crate) fn resample_into(input: &[f32], from_hz: u32, to_hz: u32, out: &mut Vec<f32>) {
+    if input.is_empty() {
+        return;
+    }
+    if from_hz == to_hz {
+        out.extend_from_slice(input);
+        return;
     }
     let ratio = to_hz as f64 / from_hz as f64;
     let out_len = (input.len() as f64 * ratio) as usize;
-    (0..out_len)
-        .map(|i| {
-            let src_idx = i as f64 / ratio;
-            let lo = src_idx as usize;
-            let hi = (lo + 1).min(input.len() - 1);
-            let frac = src_idx - lo as f64;
-            input[lo] * (1.0 - frac as f32) + input[hi] * frac as f32
-        })
-        .collect()
+    let step = 1.0 / ratio;
+    let last = input.len() - 1;
+
+    out.reserve(out_len);
+    let mut src = 0.0f64;
+    for _ in 0..out_len {
+        // Clamped because `src` is accumulated rather than recomputed: the
+        // drift is far too small to hear, but it must not index past the end.
+        let lo = (src as usize).min(last);
+        let frac = (src - lo as f64) as f32;
+        let hi = (lo + 1).min(last);
+        out.push(input[lo] * (1.0 - frac) + input[hi] * frac);
+        src += step;
+    }
+}
+
+fn resample_chunk(input: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
+    let mut out = Vec::new();
+    resample_into(input, from_hz, to_hz, &mut out);
+    out
 }
 
 // ── Device listing ────────────────────────────────────────────────────────────

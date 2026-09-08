@@ -9786,6 +9786,7 @@ dependencies = [
  "crossbeam-channel",
  "dirs 5.0.1",
  "ndarray 0.16.1",
+ "num_cpus",
  "ort",
  "regex",
  "reqwest 0.12.28",

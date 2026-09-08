@@ -265,15 +265,15 @@ impl InferenceEngine {
         let language: Option<String> = None;
 
         // Use the in-memory config that was passed to this engine — no disk I/O on
-        // the hot path, no TOCTOU race with concurrent save_config writes.
-        let app_config = (*self.config).clone();
+        // the hot path, no TOCTOU race with concurrent save_config writes, and
+        // no copy of the whole config (snippets, vocabulary, prompts) per
+        // utterance: nothing below mutates it.
+        let app_config = &*self.config;
 
         // ── Noise Gate (VAD) ──────────────────────────────────────────────────
         // Compute RMS energy of the entire audio request to implement a robust noise gate.
-        let rms = {
-            let sum_sq: f32 = req.audio.iter().map(|&s| s * s).sum();
-            (sum_sq / req.audio.len() as f32).sqrt()
-        };
+        let sum_sq: f32 = req.audio.iter().map(|&s| s * s).sum();
+        let rms = (sum_sq / req.audio.len() as f32).sqrt();
 
         // Map vad_threshold (0.0 - 1.0) to physical RMS threshold.
         // Invert so that 1.0 represents MAXIMUM sensitivity (completely open gate / 0.0 RMS threshold).
@@ -311,10 +311,10 @@ impl InferenceEngine {
             merged_prompt.push_str(". ");
         }
 
-        let initial_prompt = if merged_prompt.trim().is_empty() {
-            None
-        } else {
-            Some(merged_prompt.trim().to_string())
+        let initial_prompt = {
+            let end = merged_prompt.trim_end().len();
+            merged_prompt.truncate(end);
+            (!merged_prompt.is_empty()).then_some(merged_prompt)
         };
 
         let t_req = TranscribeRequest {
@@ -325,10 +325,12 @@ impl InferenceEngine {
         };
 
         let result = self.backend.transcribe(&t_req)?;
-        let raw_text = result.text.clone();
 
-        let post_cfg = self.build_post_config_with_app_config(&req.target_id, &app_config, &targets);
-        let mut processed = run_pipeline(&raw_text, &post_cfg);
+        let post_cfg = self.build_post_config_with_app_config(&req.target_id, app_config, &targets);
+        let mut processed = run_pipeline(&result.text, &post_cfg);
+        // The pipeline is done reading it, so the raw transcript moves into the
+        // output rather than being copied for it.
+        let raw_text = result.text;
 
         // ── Silence Hallucination Filter ──────────────────────────────────────
         // If Whisper returned a known silence hallucination (like "Thank you"), check if the audio energy
@@ -427,7 +429,12 @@ impl InferenceEngine {
         })
     }
 
-    fn build_post_config_with_app_config(&self, target_id: &str, app_config: &voxctrl_config::AppConfig, targets: &[voxctrl_routing::OutputTarget]) -> PostProcessConfig {
+    fn build_post_config_with_app_config<'a>(
+        &self,
+        target_id: &str,
+        app_config: &'a voxctrl_config::AppConfig,
+        targets: &[voxctrl_routing::OutputTarget],
+    ) -> PostProcessConfig<'a> {
         let target_ids: Vec<&str> = target_id.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
         let first_target_id = target_ids.first().copied().unwrap_or("default");
         let target = targets.iter().find(|t| t.id == first_target_id);
@@ -455,9 +462,9 @@ impl InferenceEngine {
             // Snippets always expand; the only thing that turns them off is
             // having none defined.
             apply_snippets: !app_config.features.snippets.is_empty(),
-            snippets: app_config.features.snippets.clone(),
+            snippets: &app_config.features.snippets,
             code_mode,
-            custom_vocabulary: app_config.features.custom_vocabulary.clone(),
+            custom_vocabulary: &app_config.features.custom_vocabulary,
         }
     }
 }

@@ -51,20 +51,27 @@ static PUNCT_WORDS: &[(&str, &str)] = &[
 ];
 
 // Compiled once at first call; reused for every subsequent transcription.
-static PUNCT_REGEX_TABLE: std::sync::OnceLock<Vec<(Regex, &'static str)>> =
-    std::sync::OnceLock::new();
+static PUNCT_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static DOUBLE_SPACE_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static LIST_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
-fn punct_regex_table() -> &'static [(Regex, &'static str)] {
-    PUNCT_REGEX_TABLE.get_or_init(|| {
-        PUNCT_WORDS
+/// One alternation over every spoken-punctuation word.
+///
+/// A regex per word meant scanning the transcript — and rebuilding it — once
+/// per entry in the table; there is nothing a second pass can match that the
+/// first cannot, because every replacement is punctuation. Longest phrase
+/// first, so "full stop" is not cut short by a shorter alternative starting at
+/// the same place.
+fn punct_re() -> &'static Regex {
+    PUNCT_RE.get_or_init(|| {
+        let mut words: Vec<&str> = PUNCT_WORDS.iter().map(|(word, _)| *word).collect();
+        words.sort_by_key(|w| std::cmp::Reverse(w.len()));
+        let alternation = words
             .iter()
-            .filter_map(|(word, repl)| {
-                let pattern = format!(r"(?i)\b{}\b", regex::escape(word));
-                Regex::new(&pattern).ok().map(|re| (re, *repl))
-            })
-            .collect()
+            .map(|w| regex::escape(w))
+            .collect::<Vec<_>>()
+            .join("|");
+        Regex::new(&format!(r"(?i)\b({alternation})\b")).unwrap()
     })
 }
 
@@ -82,11 +89,18 @@ fn list_re() -> &'static Regex {
 }
 
 pub fn apply_spoken_punctuation(text: &str) -> String {
-    let mut result = text.to_string();
-    for (re, replacement) in punct_regex_table() {
-        result = re.replace_all(&result, *replacement).to_string();
-    }
-    double_space_re().replace_all(&result, " ").trim().to_string()
+    let replaced = punct_re().replace_all(text, |caps: &regex::Captures| {
+        let spoken = &caps[1];
+        match PUNCT_WORDS
+            .iter()
+            .find(|(word, _)| word.eq_ignore_ascii_case(spoken))
+        {
+            Some((_, repl)) => std::borrow::Cow::Borrowed(*repl),
+            // Unreachable: the alternation is built from this same table.
+            None => std::borrow::Cow::Owned(spoken.to_string()),
+        }
+    });
+    double_space_re().replace_all(&replaced, " ").trim().to_string()
 }
 
 // ── Auto list formatting ──────────────────────────────────────────────────────
@@ -118,7 +132,9 @@ pub use voxctrl_text::expand_snippets;
 pub fn apply_code_mode(text: &str) -> String {
     // Replace spaces between words with underscores (snake_case by default)
     // Words that look like operators are preserved
-    let operator_re = Regex::new(r"\b(equals|plus|minus|times|divided by|modulo)\b").unwrap();
+    static OPERATOR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let operator_re = OPERATOR_RE
+        .get_or_init(|| Regex::new(r"\b(equals|plus|minus|times|divided by|modulo)\b").unwrap());
     let s = operator_re
         .replace_all(text, |caps: &regex::Captures| -> String {
             match caps[0].to_lowercase().as_str() {
@@ -174,40 +190,45 @@ pub fn is_silence_hallucination(text: &str) -> bool {
     cleaned == "thank you" || cleaned == "thanks for watching" || cleaned == "thank you for watching"
 }
 
+/// Borrows the snippet table and vocabulary from the caller's config: both
+/// are read-only here, and cloning them for every transcription copied a map
+/// and a vector that had not changed since startup.
 #[derive(Debug, Clone)]
-pub struct PostProcessConfig {
+pub struct PostProcessConfig<'a> {
     pub remove_fillers: bool,
     pub spoken_punctuation: bool,
     pub auto_format_lists: bool,
     pub apply_snippets: bool,
-    pub snippets: HashMap<String, String>,
+    pub snippets: &'a HashMap<String, String>,
     pub code_mode: bool,
-    pub custom_vocabulary: Vec<String>,
+    pub custom_vocabulary: &'a [String],
 }
 
 pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
-    let mut s = text.to_string();
+    // Borrowed until a stage actually rewrites something, so a transcript that
+    // has every feature switched off is never copied at all.
+    let mut s = std::borrow::Cow::Borrowed(text);
 
     if cfg.remove_fillers {
-        s = remove_fillers(&s);
+        s = remove_fillers(&s).into();
     }
     if cfg.spoken_punctuation {
-        s = apply_spoken_punctuation(&s);
+        s = apply_spoken_punctuation(&s).into();
     }
     if cfg.auto_format_lists {
-        s = auto_format_lists(&s);
+        s = auto_format_lists(&s).into();
     }
     if cfg.apply_snippets {
-        s = expand_snippets(&s, &cfg.snippets);
+        s = expand_snippets(&s, cfg.snippets).into();
     }
     if !cfg.custom_vocabulary.is_empty() {
-        s = correct_custom_vocabulary(&s, &cfg.custom_vocabulary);
+        s = correct_custom_vocabulary(&s, cfg.custom_vocabulary).into();
     }
     if cfg.code_mode {
-        s = apply_code_mode(&s);
+        s = apply_code_mode(&s).into();
     }
 
-    s
+    s.into_owned()
 }
 
 #[cfg(test)]
@@ -215,11 +236,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_spoken_punct_regex_table_cached() {
-        // Calling twice must return the exact same slice address (OnceLock).
-        let p1 = punct_regex_table().as_ptr();
-        let p2 = punct_regex_table().as_ptr();
-        assert_eq!(p1, p2, "punct_regex_table must return the same compiled Vec");
+    fn test_spoken_punct_regex_cached() {
+        // Calling twice must return the exact same address (OnceLock).
+        let p1 = punct_re() as *const _;
+        let p2 = punct_re() as *const _;
+        assert_eq!(p1, p2, "punct_re must return the same compiled Regex");
+    }
+
+    #[test]
+    fn test_every_spoken_punct_word_is_replaced() {
+        // One alternation stands in for what used to be one regex per word, so
+        // every entry in the table has to still come out as its punctuation.
+        for (word, repl) in PUNCT_WORDS {
+            let out = apply_spoken_punctuation(&format!("a {word} b"));
+            assert!(
+                !out.to_lowercase().contains(word),
+                "'{word}' survived as a spoken word: {out:?}"
+            );
+            assert!(
+                out.contains(repl.trim()),
+                "'{word}' did not produce {repl:?}: {out:?}"
+            );
+        }
     }
 
     #[test]
