@@ -139,7 +139,7 @@
       <input type="checkbox" bind:checked={cfg.audio.dynamic_stream} onchange={markDirty} />
     </label>
     <p class="field-help" style="margin: -4px 0 12px 16px; opacity: 0.75; font-size: 11px; line-height: 1.45; color: var(--text-muted, #888); max-width: 480px;">
-      Only opens the microphone stream when recording is triggered. If your first words are being clipped due to hardware delay, disable this feature to keep the stream always open.
+      Only opens the microphone stream when recording is triggered, which saves power but cannot capture anything spoken while the microphone is still opening. Turn this off to keep the stream open: the last 300ms before you trigger recording is then kept and included, so a first word spoken early — the one carrying a voice command's "VoxCtrl" — is not lost.
     </p>
   </div>
 

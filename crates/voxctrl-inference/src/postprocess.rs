@@ -177,7 +177,7 @@ pub fn apply_code_mode(text: &str) -> String {
 
 // Shared with voxctrl-tts, which applies the same fuzzy correction to text
 // before speaking it. See voxctrl-text for the implementation.
-pub use voxctrl_text::{correct_custom_vocabulary, levenshtein_distance};
+pub use voxctrl_text::{correct_custom_vocabulary, levenshtein_distance, normalize_brand_name};
 
 // ── Full post-processing pipeline ─────────────────────────────────────────────
 
@@ -223,6 +223,13 @@ pub fn run_pipeline(text: &str, cfg: &PostProcessConfig) -> String {
     }
     if !cfg.custom_vocabulary.is_empty() {
         s = correct_custom_vocabulary(&s, cfg.custom_vocabulary).into();
+    }
+    // Unconditional: a wake word the recogniser split into "vox control" has
+    // to be repaired before the router looks for it, and whether the user
+    // configured a vocabulary has nothing to do with it. Borrows straight
+    // through when there is no "control"-ish word to rewrite.
+    if let std::borrow::Cow::Owned(normalized) = normalize_brand_name(&s) {
+        s = std::borrow::Cow::Owned(normalized);
     }
     if cfg.code_mode {
         s = apply_code_mode(&s).into();
@@ -288,6 +295,34 @@ mod tests {
         assert_eq!(
             apply_spoken_punctuation("what question mark"),
             "what ?"
+        );
+    }
+
+    /// The regression this fixes: with no custom vocabulary — the default
+    /// install — the pipeline skipped `correct_custom_vocabulary`, and the
+    /// brand repair was buried inside it. A wake word the recogniser split
+    /// into two words therefore reached the router unrepaired, which typed
+    /// the command out instead of routing it.
+    #[test]
+    fn brand_repair_runs_with_no_custom_vocabulary() {
+        let snippets = HashMap::new();
+        let cfg = PostProcessConfig {
+            remove_fillers: false,
+            spoken_punctuation: false,
+            auto_format_lists: false,
+            apply_snippets: false,
+            snippets: &snippets,
+            code_mode: false,
+            custom_vocabulary: &[],
+        };
+        assert_eq!(
+            run_pipeline("vox control say hello", &cfg),
+            "VoxCtrl say hello"
+        );
+        // And it still leaves ordinary speech alone.
+        assert_eq!(
+            run_pipeline("the foxes control the hen house", &cfg),
+            "the foxes control the hen house"
         );
     }
 

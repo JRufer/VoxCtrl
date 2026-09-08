@@ -63,6 +63,11 @@ pub struct AppState {
 
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
+    /// Nudges the audio capture supervisor when a flag it watches changes, so
+    /// a dynamic stream opens the microphone on the keypress instead of on the
+    /// supervisor's next poll — the interval that used to eat the first
+    /// syllable of the utterance.
+    pub audio_wake: crossbeam_channel::Sender<()>,
 
     /// Playback engine handle
     pub tts_handle: Arc<Mutex<Option<voxctrl_tts::TtsEngineHandle>>>,
@@ -140,10 +145,19 @@ impl AppState {
 
     pub fn set_dynamic_stream(&self, v: bool) {
         self.dynamic_stream.store(v, Ordering::SeqCst);
+        self.wake_audio();
+    }
+
+    /// Tell the capture supervisor to look at its flags now. Never blocks: the
+    /// channel holds one pending nudge and a second one would say nothing the
+    /// first does not.
+    fn wake_audio(&self) {
+        let _ = self.audio_wake.try_send(());
     }
 
     pub fn set_monitoring(&self, v: bool) {
         self.monitoring.store(v, Ordering::SeqCst);
+        self.wake_audio();
         if !v {
             let _ = self.audio_tx.send(Vec::new());
         }
@@ -151,6 +165,7 @@ impl AppState {
 
     pub fn set_input_device_index(&self, v: Option<u32>) {
         self.input_device_index.store(v.unwrap_or(u32::MAX), Ordering::SeqCst);
+        self.wake_audio();
     }
 
     pub fn set_noise_suppression(&self, v: bool) {
@@ -184,6 +199,10 @@ impl AppState {
     /// playback. This is the plain flag, and the only way to clear it.
     pub fn set_recording(&self, v: bool) {
         self.recording.store(v, Ordering::SeqCst);
+        // Straight after the flag, and before anything else: in dynamic-stream
+        // mode this nudge is what opens the microphone, and the time until it
+        // does is missing from the front of what the user is already saying.
+        self.wake_audio();
         if !v {
             let _ = self.audio_tx.send(Vec::new());
         }

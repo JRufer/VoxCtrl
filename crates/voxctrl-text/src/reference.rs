@@ -219,7 +219,7 @@ pub fn ref_correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> Str
 #[cfg(test)]
 mod differential {
     use super::*;
-    use crate::{correct_custom_vocabulary, expand_snippets, levenshtein_distance};
+    use crate::{correct_custom_vocabulary, expand_snippets, levenshtein_distance, normalize_brand_name};
 
     /// Deterministic pseudo-random corpus generator.
     struct Rng(u64);
@@ -277,7 +277,11 @@ mod differential {
             let vocab_len = (rng.next() % 5) as usize;
             let vocab: Vec<String> = (0..vocab_len).map(|_| rng.pick_owned(&vocab_pool)).collect();
 
-            let mine = correct_custom_vocabulary(&text, &vocab);
+            // The brand normalisation used to be the tail of this function and
+            // is now its own; applied in the same order, the pair has to come
+            // out exactly where the original did.
+            let mine =
+                normalize_brand_name(&correct_custom_vocabulary(&text, &vocab)).into_owned();
             let theirs = ref_correct_custom_vocabulary(&text, &vocab);
             assert_eq!(
                 mine, theirs,

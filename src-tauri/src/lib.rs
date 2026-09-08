@@ -193,6 +193,9 @@ pub fn run() {
     let (inference_tx, inference_rx) =
         crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
     let (overlay_tx, overlay_rx) = crossbeam_channel::unbounded::<String>();
+    // One pending nudge is all the capture supervisor needs: it re-reads every
+    // flag when it wakes, so a second nudge would tell it nothing new.
+    let (audio_wake_tx, audio_wake_rx) = crossbeam_channel::bounded::<()>(1);
 
     let hotkey_health = Arc::new(voxctrl_hotkeys::ListenerHealth::default());
 
@@ -221,6 +224,7 @@ pub fn run() {
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(targets.clone())),
         audio_tx: audio_tx.clone(),
+        audio_wake: audio_wake_tx,
         tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         stop_key_held: Arc::new(AtomicBool::new(false)),
@@ -245,7 +249,8 @@ pub fn run() {
             app_state.input_device_index.clone(),
             app_state.gain.clone(),
             app_state.noise_suppression.clone(),
-        );
+        )
+        .with_wake(audio_wake_rx);
         let _ = recorder.run(
             audio_tx,
             Some(audio_level_tx),

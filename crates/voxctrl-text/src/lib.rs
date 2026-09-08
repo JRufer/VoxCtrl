@@ -8,6 +8,7 @@
 #[cfg(test)]
 mod reference;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use regex::Regex;
@@ -298,23 +299,37 @@ pub fn correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> String 
             .into_owned();
     }
 
-    // 3. Dynamic VoxCtrl brand homophone fallback
-    // Matches any remaining "<word> control/ctrl" phrase within edit distance <= 1 of "vox control"
-    result = brand_re()
-        .replace_all(&result, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
-            let matched_lower = matched.to_lowercase();
-            let is_already_brand =
-                matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
-            if !is_already_brand && within(&matched_lower, "vox control", 1) {
-                "VoxCtrl".to_string()
-            } else {
-                matched.to_string()
-            }
-        })
-        .into_owned();
-
     result
+}
+
+/// Rewrite a mis-heard "<word> control" to the brand name.
+///
+/// Speech recognisers hear "VoxCtrl" as two words far more often than as one,
+/// and the voice-command router only strips a wake word it recognises — so a
+/// transcript that says "vax control" is a command the user spoke and the app
+/// silently typed out instead. Any "<word> control/ctrl/ctl/kontrol" phrase
+/// within one edit of "vox control" becomes "VoxCtrl".
+///
+/// This used to be the tail of [`correct_custom_vocabulary`], which the
+/// pipeline calls only when the user has a custom vocabulary — so the users
+/// most likely to hit the mis-hearing, the ones who had configured nothing,
+/// were the only ones it never ran for. It stands alone so it can run for
+/// everyone.
+///
+/// Borrows when there is nothing to rewrite, which is almost every
+/// transcript: the regex needs a literal "control"-ish word to match at all.
+pub fn normalize_brand_name(text: &str) -> Cow<'_, str> {
+    brand_re().replace_all(text, |caps: &regex::Captures| {
+        let matched = caps.get(0).unwrap().as_str();
+        let matched_lower = matched.to_lowercase();
+        let is_already_brand =
+            matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
+        if !is_already_brand && within(&matched_lower, "vox control", 1) {
+            "VoxCtrl".to_string()
+        } else {
+            matched.to_string()
+        }
+    })
 }
 
 #[cfg(test)]
@@ -437,6 +452,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn brand_name_is_repaired_without_any_custom_vocabulary() {
+        // The bug this fixes: the repair used to live inside
+        // `correct_custom_vocabulary`, which the pipeline skips when no
+        // vocabulary is configured — so it never ran for the default install.
+        for heard in ["vox control", "vax control", "Vox Control", "box control"] {
+            assert_eq!(
+                normalize_brand_name(&format!("{heard} say hello")),
+                "VoxCtrl say hello",
+                "{heard:?} was not repaired"
+            );
+        }
+    }
+
+    /// "vox ctrl" is already the brand with a space in it, and the voice-command
+    /// router accepts that spelling verbatim as an exact trigger — so it is
+    /// deliberately left alone rather than rewritten.
+    #[test]
+    fn the_already_spelled_brand_is_untouched() {
+        for spelled in ["VoxCtrl", "Vox Ctrl", "vox ctrl"] {
+            let text = format!("{spelled} say hello");
+            assert_eq!(normalize_brand_name(&text), text);
+        }
+    }
+
+    #[test]
+    fn ordinary_speech_about_control_is_left_alone() {
+        for innocent in [
+            "The foxes control the hen house",
+            "remote control is missing",
+            "version control please",
+        ] {
+            assert_eq!(normalize_brand_name(innocent), innocent);
+        }
+    }
+
+    #[test]
+    fn brand_repair_borrows_when_there_is_nothing_to_do() {
+        // Every transcript runs through this, so the no-match path must not
+        // allocate a copy of the text.
+        assert!(matches!(
+            normalize_brand_name("nothing to see here"),
+            Cow::Borrowed(_)
+        ));
     }
 
     #[test]
