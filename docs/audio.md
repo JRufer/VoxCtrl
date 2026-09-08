@@ -35,8 +35,13 @@ The device can be **hot-reloaded** at runtime: if `audio.input_device_index` cha
 The microphone stream is opened when recording starts and closed when it stops.
 
 - Lower CPU/battery usage when idle
-- A small startup latency (~30ms polling interval) on hotkey press
+- Startup latency is whatever the audio device takes to open — typically tens
+  of milliseconds. The capture supervisor itself adds none: starting a
+  recording signals it directly rather than leaving it to a poll.
 - Suitable for most users
+- Anything spoken while the device is still opening is not recorded, because
+  nothing is listening yet. This is the mode to leave if your first word keeps
+  going missing.
 
 ### Always-On Streaming (`dynamic_stream: false`)
 The stream stays open permanently. Chunks are forwarded to the recording buffer only while recording is active; they are discarded otherwise.
@@ -44,8 +49,18 @@ The stream stays open permanently. Chunks are forwarded to the recording buffer 
 - Zero startup latency
 - Higher idle CPU usage
 - The stream also runs during VU meter monitoring (Settings → Audio tab)
+- **Nothing is clipped from the start of an utterance.** The last
+  `PREROLL_MS` (300 ms) of audio is kept in a ring buffer while idle and
+  prepended to the recording, so speech that began before the shortcut landed
+  is still in the audio the recogniser sees. That matters most for the wake
+  word in a voice command, which is the first thing said and the first thing
+  lost.
 
 Both modes also serve the live audio monitoring flag used by the VU meter in the Settings → Audio tab.
+
+The pre-roll can only hold what the microphone was already hearing, so it
+applies whenever the stream is open ahead of the recording: always-on mode, or
+a dynamic stream still up because the Audio tab is monitoring.
 
 ---
 
@@ -58,7 +73,8 @@ Hardware input (e.g. 48000 Hz, f32 samples)
    apply_gain()         — multiply each sample by gain (atomic f32, live-updated)
         │
         ▼
-   rms() → level_tx     — f32 RMS forwarded to UI every ~30ms for VU meter
+   rms() → level_tx     — f32 RMS, produced only while recording or monitoring
+                          and coalesced downstream to one event per frame
         │
         ▼
    resample_chunk()      — linear interpolation to 16000 Hz (if hardware rate differs)
@@ -165,4 +181,4 @@ pub struct AudioRecorder {
 }
 ```
 
-It is started via `.run(audio_tx, level_tx, audio_ready)` which spawns the `capture_loop` on a dedicated OS thread. The loop polls every 30ms to check for device index changes, dynamic stream preference changes, and recording/monitoring state transitions.
+It is started via `.run(audio_tx, level_tx, audio_ready)` which spawns the `capture_loop` on a dedicated OS thread. The loop watches for device index changes, dynamic stream preference changes, and recording/monitoring state transitions. It is signalled the moment one of those flags is set — `AudioRecorder::with_wake` supplies the channel — so a dynamic stream opens the microphone on the keypress rather than at the next poll; the 200 ms interval underneath is only a backstop.
