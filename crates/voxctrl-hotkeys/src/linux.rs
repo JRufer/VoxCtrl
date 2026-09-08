@@ -261,8 +261,12 @@ fn run_reader(device_path: String, event_tx: crossbeam_channel::Sender<ReaderEve
                         evdev::InputEventKind::Key(key) => format!("{:?}", key),
                         _ => format!("{:?}", ev.code()),
                     };
+                    // Trimmed in place: this runs for every key the user
+                    // presses anywhere on the desktop, so the second string is
+                    // worth not allocating.
                     if key_name.starts_with("Key(") && key_name.ends_with(')') {
-                        key_name = key_name[4..key_name.len() - 1].to_string();
+                        key_name.pop();
+                        key_name.drain(..4);
                     }
                     // 2 is auto-repeat, which is not a new press.
                     let down = match ev.value() {

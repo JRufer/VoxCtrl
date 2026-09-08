@@ -76,7 +76,58 @@
   let targetVolume = 0;
   let currentVolume = $state(0);
   let unlistenAudioLevel: (() => void) | null = null;
-  let animationFrameId: number;
+  let animationFrameId: number | null = null;
+
+  /**
+   * Drive the level smoothing while there is something to smooth.
+   *
+   * The loop used to run for the lifetime of the window, so an idle VoxCtrl
+   * kept a 60 Hz callback alive — writing a CSS variable and forcing a style
+   * recalculation every frame — for a volume that had decayed to a rounding
+   * error. It now stops once the level has settled at zero and nothing is on
+   * screen, and any new level restarts it.
+   */
+  function startAnimation() {
+    if (animationFrameId !== null) return;
+    animationFrameId = requestAnimationFrame(updateAnimation);
+  }
+
+  function updateAnimation() {
+    // Smooth interpolation for visual reaction
+    currentVolume += (targetVolume - currentVolume) * 0.42;
+    targetVolume *= 0.82;
+    // Snap the tail of the decay to zero so "settled" is a state the loop can
+    // actually reach instead of an asymptote.
+    if (targetVolume < 0.0005) targetVolume = 0;
+    if (currentVolume < 0.0005) currentVolume = 0;
+
+    // Dispatch high-performance window-level custom events
+    if (activeCustomOverlay) {
+      window.dispatchEvent(new CustomEvent("voxctrl-status", {
+        detail: {
+          recording: $recording,
+          processing: $status.processing,
+          speaking: $speaking,
+          audio_ready: $status.audio_ready !== false,
+          active_target_label: $status.active_target_label || "Focused Window",
+          audio_level: currentVolume,
+        }
+      }));
+    }
+
+    if (currentVolume === 0 && targetVolume === 0 && !renderOverlay) {
+      animationFrameId = null;
+      return;
+    }
+    animationFrameId = requestAnimationFrame(updateAnimation);
+  }
+
+  // Anything that puts the overlay on screen also needs the loop running, even
+  // before the first level arrives (a custom overlay reads its status from the
+  // events the loop dispatches).
+  $effect(() => {
+    if (renderOverlay) startAnimation();
+  });
 
   $effect(() => {
     // Whenever the overlay style changes, temporarily unmount the visualizer for 1 tick
@@ -125,6 +176,7 @@
     // Listen to real-time audio levels from Rust backend
     listen<number>("audio-level", (event) => {
       targetVolume = Math.min(1.0, event.payload * 100.0);
+      startAnimation();
       window.dispatchEvent(new CustomEvent("voxctrl-audio-level", { detail: event.payload }));
     }).then((unlisten) => {
       unlistenAudioLevel = unlisten;
@@ -144,37 +196,13 @@
       unlistenCommandExecuted = unlisten;
     });
 
-    let time = 0;
-    function updateAnimation() {
-      // Smooth interpolation for visual reaction
-      currentVolume += (targetVolume - currentVolume) * 0.42;
-      targetVolume *= 0.82;
-
-      // Dispatch high-performance window-level custom events
-      if (activeCustomOverlay) {
-        window.dispatchEvent(new CustomEvent("voxctrl-status", {
-          detail: {
-            recording: $recording,
-            processing: $status.processing,
-            speaking: $speaking,
-            audio_ready: $status.audio_ready !== false,
-            active_target_label: $status.active_target_label || "Focused Window",
-            audio_level: currentVolume,
-          }
-        }));
-      }
-
-      animationFrameId = requestAnimationFrame(updateAnimation);
-    }
-    animationFrameId = requestAnimationFrame(updateAnimation);
-
     return () => {
       document.documentElement.classList.remove("overlay-window");
       document.body.classList.remove("overlay-window");
       if (unlistenAudioLevel) unlistenAudioLevel();
       if (unlistenCommandExecuted) unlistenCommandExecuted();
       if (commandTimerId) clearTimeout(commandTimerId);
-      cancelAnimationFrame(animationFrameId);
+      if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
     };
   });
 

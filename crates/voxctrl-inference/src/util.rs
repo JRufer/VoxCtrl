@@ -1,6 +1,32 @@
-//! Small filesystem helpers shared by the transcription backends.
+//! Small helpers shared by the transcription backends.
 
 use std::path::PathBuf;
+
+/// How many threads a transcription backend should run on.
+///
+/// Physical cores, not logical ones: whisper.cpp and ONNX Runtime are both
+/// memory-bandwidth bound here, and two hyperthreads sharing one core's load
+/// units finish no faster than one while costing the scheduler a context to
+/// juggle. Counting cores directly also stops a machine without SMT — most
+/// ARM laptops, and any desktop with it switched off — from being told to use
+/// half its CPU, which is what dividing the logical count by two did.
+///
+/// Computed once: `get_physical` reads sysfs (or the platform equivalent) and
+/// the answer does not change while the app runs.
+pub(crate) fn inference_threads() -> usize {
+    static THREADS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *THREADS.get_or_init(|| {
+        let physical = num_cpus::get_physical();
+        if physical > 0 {
+            physical
+        } else {
+            // Detection failed; fall back to the old logical-core heuristic.
+            std::thread::available_parallelism()
+                .map(|n| (n.get() / 2).max(1))
+                .unwrap_or(2)
+        }
+    })
+}
 
 /// Base directory for on-device models: `<data-local>/voxctrl/models`.
 /// Each backend places its files in a subfolder of this (whisper-cpp directly,

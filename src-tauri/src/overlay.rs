@@ -1810,10 +1810,12 @@ fn main() {
             None => return,
         };
 
-        let (rec, proc, speak, ready, raw_level, target, anchor, monitor_pref, pos_dirty, style, cmd_active, cmd_name, cmd_text) = {
+        // Only the flags that decide whether anything is on screen. The
+        // labels and style are strings, and this tick runs sixty times a
+        // second for the whole session — copying five of them on every frame
+        // of an overlay nobody can see was the idle cost of showing nothing.
+        let (rec, proc, speak, ready, raw_level, cmd_active) = {
             if let Ok(mut s) = state_clone2.lock() {
-                let dirty = s.position_dirty;
-                s.position_dirty = false;
                 let is_cmd = if let Some(until) = s.command_until {
                     if std::time::Instant::now() < until {
                         true
@@ -1824,11 +1826,7 @@ fn main() {
                 } else {
                     false
                 };
-                (
-                    s.recording, s.processing, s.speaking, s.audio_ready, s.audio_level,
-                    s.active_target_label.clone(), s.overlay_position.clone(), s.overlay_monitor.clone(),
-                    dirty, s.overlay_style.clone(), is_cmd, s.command_name.clone(), s.command_text.clone()
-                )
+                (s.recording, s.processing, s.speaking, s.audio_ready, s.audio_level, is_cmd)
             } else {
                 return;
             }
@@ -1886,6 +1884,25 @@ fn main() {
         if !shown {
             return;
         }
+
+        // On screen, so the rest of the state is worth reading.
+        let (target, anchor, monitor_pref, pos_dirty, style, cmd_name, cmd_text) = {
+            if let Ok(mut s) = state_clone2.lock() {
+                let dirty = s.position_dirty;
+                s.position_dirty = false;
+                (
+                    s.active_target_label.clone(),
+                    s.overlay_position.clone(),
+                    s.overlay_monitor.clone(),
+                    dirty,
+                    s.overlay_style.clone(),
+                    s.command_name.clone(),
+                    s.command_text.clone(),
+                )
+            } else {
+                return;
+            }
+        };
 
         if !clickthrough_initialized {
             apply_topmost(&ui, false);

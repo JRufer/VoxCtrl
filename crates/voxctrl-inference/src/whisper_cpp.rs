@@ -160,7 +160,7 @@ impl WhisperCppBackend {
 
     fn threads(&self) -> u32 {
         if self.cfg.threads == 0 {
-            (num_cpus() / 2).max(1)
+            crate::util::inference_threads() as u32
         } else {
             self.cfg.threads
         }
@@ -268,12 +268,6 @@ fn transcribe_with_state(
         inference_ms,
         word_timestamps: None,
     })
-}
-
-fn num_cpus() -> u32 {
-    std::thread::available_parallelism()
-        .map(|n| n.get() as u32)
-        .unwrap_or(4)
 }
 
 pub fn is_model_downloaded(size: &str, model_dir: &str) -> bool {

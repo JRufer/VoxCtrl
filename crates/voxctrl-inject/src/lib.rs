@@ -33,8 +33,14 @@ async fn inject_linux(text: &str) -> Result<()> {
     }
 
     // 2. xdotool (X11 / XWayland)
+    //
+    // The delay is per character, so it sets how long a transcription takes to
+    // appear: at xdotool's own default of 12 ms a 200-character paragraph
+    // types for two and a half seconds. 4 ms still leaves a gap far wider than
+    // an X client needs to keep up — `wtype`, the Wayland path above, inserts
+    // no gap at all — while cutting that wait to a third.
     if voxctrl_config::find_in_path("xdotool").is_some() {
-        if run_cmd("xdotool", &["type", "--clearmodifiers", "--delay", "12", "--", text]).await {
+        if run_cmd("xdotool", &["type", "--clearmodifiers", "--delay", "4", "--", text]).await {
             debug!("Injected via xdotool");
             return Ok(());
         }

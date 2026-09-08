@@ -336,8 +336,27 @@ pub fn spawn_audio_level_forwarder(
     state_for_audio_level: Arc<AppState>,
     audio_level_rx: crossbeam_channel::Receiver<f32>,
 ) {
+    // The capture callback produces a level for every buffer the device
+    // delivers — well over a hundred a second on a small buffer size. Nothing
+    // downstream can show more than the display refreshes, so levels are
+    // coalesced to this interval: the newest value wins and the ones that
+    // arrived in between are dropped instead of each costing a Tauri event,
+    // a JSON encode and a message to the overlay process.
+    const MIN_INTERVAL: Duration = Duration::from_millis(16);
+
     std::thread::spawn(move || {
-        while let Ok(level) = audio_level_rx.recv() {
+        let mut last_sent = std::time::Instant::now() - MIN_INTERVAL;
+        while let Ok(mut level) = audio_level_rx.recv() {
+            // Drain whatever queued up behind this one and keep the latest.
+            while let Ok(newer) = audio_level_rx.try_recv() {
+                level = newer;
+            }
+            let now = std::time::Instant::now();
+            if now.duration_since(last_sent) < MIN_INTERVAL {
+                continue;
+            }
+            last_sent = now;
+
             let _ = handle.emit("audio-level", level);
 
             // Forward to Slint overlay channel. When the overlay is
@@ -349,12 +368,9 @@ pub fn spawn_audio_level_forwarder(
             let is_processing = overlay_on && state_for_audio_level.is_processing();
             let is_speaking = overlay_on && state_for_audio_level.is_speaking();
             let audio_ready = state_for_audio_level.is_audio_ready();
-            let active_target_label = {
-                if let Ok(label) = state_for_audio_level.active_binding_label.try_lock() {
-                    label.clone()
-                } else {
-                    "Focused Window".to_string()
-                }
+            let active_target_label = match state_for_audio_level.active_binding_label.try_lock() {
+                Ok(label) if !label.is_empty() => label.clone(),
+                _ => "Focused Window".to_string(),
             };
 
             let msg = serde_json::json!({
@@ -364,7 +380,7 @@ pub fn spawn_audio_level_forwarder(
                 "speaking": is_speaking,
                 "audio_ready": audio_ready,
                 "audio_level": level,
-                "active_target_label": if active_target_label.is_empty() { "Focused Window".to_string() } else { active_target_label },
+                "active_target_label": active_target_label,
             });
 
             if let Ok(json_str) = serde_json::to_string(&msg) {

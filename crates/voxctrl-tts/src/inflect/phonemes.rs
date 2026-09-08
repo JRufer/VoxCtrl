@@ -300,13 +300,17 @@ impl PhonemeVocab {
         let mut sequence = Vec::new();
         let mut skipped = Vec::new();
 
+        // Encoded into a stack buffer rather than a `String` per character:
+        // a sentence is hundreds of characters and only the unknown ones —
+        // rare, by construction — need to own their symbol.
+        let mut buf = [0u8; 4];
         for c in ipa.chars() {
-            let sym = c.to_string();
-            match self.id(&sym) {
+            let sym: &str = c.encode_utf8(&mut buf);
+            match self.id(sym) {
                 Some(id) => sequence.push(id),
                 None => {
-                    if !skipped.contains(&sym) {
-                        skipped.push(sym);
+                    if !skipped.iter().any(|s| s == sym) {
+                        skipped.push(sym.to_string());
                     }
                 }
             }

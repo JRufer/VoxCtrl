@@ -86,12 +86,28 @@ pub fn spawn_status_ticker(
     processing_frames: [tauri::image::Image<'static>; 6],
 ) {
     tokio::spawn(async move {
+        // The tray animation frame rate, and the ceiling on how quickly a
+        // state change reaches the UI.
         let mut interval = tokio::time::interval(Duration::from_millis(150));
+        // The status window falls back to polling when ticks stop arriving,
+        // so an idle app still sends one of these — just not seven a second.
+        const HEARTBEAT: Duration = Duration::from_millis(900);
+
         let mut last_recording = false;
         let mut was_animating = false;
         let mut frame_idx = 0;
         let mut last_pos: Option<(String, String, String)> = None;
         let mut startup_tick_count: u32 = 0;
+        // What the last emitted payload said, so a tick that changes nothing
+        // costs a few atomic loads instead of building a payload, two JSON
+        // encodes, a webview event and a message to the overlay process.
+        let mut last_flags: Option<(bool, bool, bool, bool, bool, u32)> = None;
+        let mut last_emit = tokio::time::Instant::now() - HEARTBEAT;
+        // The label is derived from three rarely-changing strings; caching it
+        // keeps the common tick from rebuilding and re-joining it.
+        let mut label_inputs: Option<(String, String, bool)> = None;
+        let mut cached_label = String::new();
+
         loop {
             interval.tick().await;
             startup_tick_count = startup_tick_count.saturating_add(1);
@@ -127,83 +143,117 @@ pub fn spawn_status_ticker(
                 });
             }
 
-            let is_mcp_recording = state_for_ticker.is_mcp_recording();
+            last_recording = is_recording;
 
-            // Update overlay window coordinates if user config changes
-            let (overlay_position, overlay_monitor, overlay_style) = {
+            // Overlay placement follows the user's config, which is compared
+            // under the lock so an unchanged setting costs no allocation.
+            let mut position_changed = false;
+            {
                 let cfg = state_for_ticker.config.lock().await;
-                (
-                    cfg.data.ui.overlay_position.clone(),
-                    cfg.data.ui.overlay_monitor.clone(),
-                    cfg.data.ui.overlay_style.clone(),
-                )
-            };
-
-            let current_pos = (overlay_position.clone(), overlay_monitor.clone(), overlay_style.clone());
-            let mut should_reposition = false;
-            if last_pos.as_ref() != Some(&current_pos) || last_pos.is_none() {
-                last_pos = Some(current_pos);
-                should_reposition = true;
-            } else if startup_tick_count < 40 {
-                should_reposition = true;
+                let ui = &cfg.data.ui;
+                let unchanged = last_pos.as_ref().is_some_and(|(pos, mon, style)| {
+                    pos == &ui.overlay_position && mon == &ui.overlay_monitor && style == &ui.overlay_style
+                });
+                if !unchanged {
+                    last_pos = Some((
+                        ui.overlay_position.clone(),
+                        ui.overlay_monitor.clone(),
+                        ui.overlay_style.clone(),
+                    ));
+                    position_changed = true;
+                }
             }
-
-            if should_reposition {
+            if position_changed || startup_tick_count < 40 {
                 // Send the anchor + monitor; the overlay computes pixel
                 // coordinates itself using its own display scale.
+                let (position, monitor) = last_pos
+                    .as_ref()
+                    .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
+                    .expect("set above");
                 let pos_msg = serde_json::json!({
                     "type": "position",
-                    "position": overlay_position,
-                    "monitor": overlay_monitor,
+                    "position": position,
+                    "monitor": monitor,
                 });
                 if let Ok(json_str) = serde_json::to_string(&pos_msg) {
                     let _ = state_for_ticker.overlay_tx.send(json_str);
                 }
             }
 
-            last_recording = is_recording;
-
             let active_target_id = state_for_ticker.active_target.lock().await.clone();
             let binding_label = state_for_ticker.active_binding_label.lock().await.clone();
-            let target_label = if (is_recording || is_processing) && !binding_label.is_empty() {
-                binding_label
-            } else {
-                let targets_guard = state_for_ticker.targets.lock().await;
-                let ids: Vec<&str> = active_target_id
-                    .split(',')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                let labels: Vec<String> = ids
-                    .iter()
-                    .map(|id| {
-                        targets_guard
-                            .iter()
-                            .find(|t| &t.id == id)
-                            .map(|t| t.label.clone())
-                            .unwrap_or_else(|| {
-                                if *id == "default" {
-                                    "Focused Window".to_string()
-                                } else {
-                                    id.to_string()
-                                }
-                            })
-                    })
-                    .collect();
-                labels.join(" + ")
+            let use_binding_label = (is_recording || is_processing) && !binding_label.is_empty();
+            let label_changed = match &label_inputs {
+                Some((target, binding, from_binding)) => {
+                    target != &active_target_id
+                        || binding != &binding_label
+                        || *from_binding != use_binding_label
+                }
+                None => true,
             };
+            if label_changed {
+                label_inputs = Some((
+                    active_target_id.clone(),
+                    binding_label.clone(),
+                    use_binding_label,
+                ));
+                cached_label = if use_binding_label {
+                    binding_label
+                } else {
+                    let targets_guard = state_for_ticker.targets.lock().await;
+                    active_target_id
+                        .split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .map(|id| {
+                            targets_guard
+                                .iter()
+                                .find(|t| t.id == id)
+                                .map(|t| t.label.clone())
+                                .unwrap_or_else(|| {
+                                    if id == "default" {
+                                        "Focused Window".to_string()
+                                    } else {
+                                        id.to_string()
+                                    }
+                                })
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                };
+            }
+
+            // Everything the payload carries, compared before one is built:
+            // the label and target id are the cached strings above, so an
+            // unchanged tick allocates nothing at all.
+            let flags = (
+                is_recording,
+                is_processing,
+                state_for_ticker.is_speaking(),
+                state_for_ticker.is_mcp_recording(),
+                state_for_ticker.is_audio_ready(),
+                state_for_ticker.total_words(),
+            );
+            let now = tokio::time::Instant::now();
+            let unchanged = last_flags == Some(flags) && !label_changed;
+            if unchanged && now.duration_since(last_emit) < HEARTBEAT {
+                continue;
+            }
+            last_flags = Some(flags);
+            last_emit = now;
 
             let payload = serde_json::json!({
-                "recording": is_recording,
-                "processing": is_processing,
-                "speaking": state_for_ticker.is_speaking(),
-                "mcp_recording": is_mcp_recording,
-                "audio_ready": state_for_ticker.is_audio_ready(),
-                "word_count": state_for_ticker.total_words(),
-                "active_target_id": active_target_id,
-                "active_target_label": target_label,
+                "recording": flags.0,
+                "processing": flags.1,
+                "speaking": flags.2,
+                "mcp_recording": flags.3,
+                "audio_ready": flags.4,
+                "word_count": flags.5,
+                "active_target_id": &active_target_id,
+                "active_target_label": &cached_label,
             });
-            let _ = handle.emit("status-tick", payload.clone());
+
+            let _ = handle.emit("status-tick", &payload);
 
             // Forward status to Slint overlay channel. When the overlay is
             // disabled, force the visibility flags off so the native window
@@ -214,6 +264,7 @@ pub fn spawn_status_ticker(
             if let Some(obj) = payload_value.as_object_mut() {
                 obj.insert("type".to_string(), serde_json::json!("status"));
                 obj.insert("audio_level".to_string(), serde_json::json!(0.0));
+                let overlay_style = last_pos.as_ref().map(|(_, _, style)| style.as_str());
                 obj.insert("overlay_style".to_string(), serde_json::json!(overlay_style));
                 if !overlay_on {
                     obj.insert("recording".to_string(), serde_json::json!(false));

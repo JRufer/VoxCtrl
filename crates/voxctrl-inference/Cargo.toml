@@ -20,6 +20,8 @@ dirs = { workspace = true }
 reqwest = { workspace = true }
 whisper-rs = { version = "0.16" }
 ndarray = { workspace = true }
+# Physical-core count for the backend thread pools (already in the graph).
+num_cpus = "1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
