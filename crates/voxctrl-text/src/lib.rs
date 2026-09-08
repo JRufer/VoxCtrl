@@ -5,6 +5,9 @@
 //! single source of truth for that logic so a fix or tuning change only
 //! needs to happen once.
 
+#[cfg(test)]
+mod reference;
+
 use std::collections::HashMap;
 
 use regex::Regex;
