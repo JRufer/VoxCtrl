@@ -378,6 +378,47 @@ pub async fn download_pocket_tts_assets(voice: &str, voice_dir: &str, hf_token: 
 
 // ── pocket-tts synthesis (pure Rust / Candle) ─────────────────────────────────
 
+/// Loads the pocket-tts model and the selected voice's cloned state into the
+/// worker's caches if they are not already there. Idempotent and cheap once
+/// warm, so both the pre-load path (`TtsCommand::Preload`) and synthesis call
+/// it unconditionally.
+///
+/// This is the expensive step the on-demand memory mode defers and then
+/// reclaims: everything the model occupies lives in `model` + `voice_states`,
+/// so dropping those two gives the memory straight back.
+pub(crate) fn ensure_pocket_tts_loaded(
+    config: &voxctrl_config::TtsConfig,
+    voice: &str,
+    model: &mut Option<pocket_tts::TTSModel>,
+    voice_states: &mut HashMap<String, pocket_tts::ModelState>,
+) -> Result<()> {
+    if !is_pocket_tts_ready(voice, &config.pocket_tts.voice_dir) {
+        anyhow::bail!("pocket-tts assets for voice '{voice}' not found. Download them from TTS settings.");
+    }
+
+    if model.is_none() {
+        let started = std::time::Instant::now();
+        info!("Loading pocket-tts model (variant={POCKET_TTS_VARIANT})");
+        *model =
+            Some(load_pocket_tts_model(POCKET_TTS_VARIANT).context("load pocket-tts model")?);
+        info!("pocket-tts model loaded in {:?}", started.elapsed());
+    }
+    let loaded = model.as_ref().unwrap();
+
+    if !voice_states.contains_key(voice) {
+        let reference_clip = resolve_pocket_tts_voice_clip(voice, &config.pocket_tts.voice_dir)
+            .ok_or_else(|| anyhow::anyhow!("unknown pocket-tts voice: {voice}"))?;
+        let clip_path = pocket_tts::weights::download_if_necessary(&reference_clip)
+            .context("resolve pocket-tts reference voice clip")?;
+        let state = loaded
+            .get_voice_state(&clip_path)
+            .context("compute pocket-tts voice state")?;
+        voice_states.insert(voice.to_string(), state);
+    }
+
+    Ok(())
+}
+
 /// Called from `TtsEngineWorker::run` (in `engine.rs`) when `config.engine ==
 /// TtsEngine::PocketTts`. Takes the worker's model/voice-state caches by
 /// mutable reference so they persist across calls for the worker's lifetime.
@@ -394,28 +435,8 @@ pub(crate) fn speak_pocket_tts(
     let is_prewarm = u.source_label.as_deref() == Some("prewarm");
     let voice = u.voice.as_deref().unwrap_or(&config.pocket_tts.voice);
 
-    if !is_pocket_tts_ready(voice, &config.pocket_tts.voice_dir) {
-        anyhow::bail!("pocket-tts assets for voice '{voice}' not found. Download them from TTS settings.");
-    }
-
-    // Lazily load the model — stays alive for the worker thread lifetime.
-    if model.is_none() {
-        info!("Loading pocket-tts model (variant={POCKET_TTS_VARIANT})");
-        *model =
-            Some(load_pocket_tts_model(POCKET_TTS_VARIANT).context("load pocket-tts model")?);
-    }
+    ensure_pocket_tts_loaded(config, voice, model, voice_states)?;
     let model = model.as_ref().unwrap();
-
-    if !voice_states.contains_key(voice) {
-        let reference_clip = resolve_pocket_tts_voice_clip(voice, &config.pocket_tts.voice_dir)
-            .ok_or_else(|| anyhow::anyhow!("unknown pocket-tts voice: {voice}"))?;
-        let clip_path = pocket_tts::weights::download_if_necessary(&reference_clip)
-            .context("resolve pocket-tts reference voice clip")?;
-        let state = model
-            .get_voice_state(&clip_path)
-            .context("compute pocket-tts voice state")?;
-        voice_states.insert(voice.to_string(), state);
-    }
     let voice_state = voice_states.get(voice).unwrap();
 
     if is_prewarm {

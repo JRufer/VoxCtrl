@@ -57,6 +57,8 @@ pub async fn start_recording(state: State<'_, Arc<AppState>>) -> Result<(), Stri
     *state.active_binding_id.lock().await = String::new();
     state.begin_recording().await;
     info!("Recording started via command");
+    let active_target = state.active_target.lock().await.clone();
+    state.preload_tts_for_target(&active_target).await;
     Ok(())
 }
 
@@ -72,6 +74,8 @@ pub async fn toggle_recording(state: State<'_, Arc<AppState>>) -> Result<bool, S
     let was = state.is_recording();
     if !was {
         *state.active_binding_id.lock().await = String::new();
+        let active_target = state.active_target.lock().await.clone();
+        state.preload_tts_for_target(&active_target).await;
     }
     state.set_recording(!was);
     Ok(!was)
@@ -163,6 +167,9 @@ pub async fn save_config(
             }
         }
     }
+
+    // Keep the tray checkbox in step with the TTS memory setting.
+    crate::tray::update_tray_tts_memory(&app, new_config.tts.unloads_when_idle());
 
     // Emit config-changed event to all windows to enable instant reactivity
     let _ = app.emit("config-changed", new_config);

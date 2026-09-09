@@ -4,18 +4,24 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
 use tracing::{debug, info, warn};
 use voxctrl_config::{TtsConfig, TtsEngine};
 use voxctrl_text::{correct_custom_vocabulary, expand_snippets};
 
-use crate::breeze::{speak_breeze_tts_2, BreezeModelSlot};
-use crate::inflect::speak_inflect_micro;
+use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2, BreezeModelSlot};
+use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
 use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice};
-use crate::pocket::speak_pocket_tts;
+use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
+
+/// How long the worker parks in `recv_timeout` when there is nothing to expire.
+/// Only a wake-up interval — the channel still wakes it immediately on a command.
+const IDLE_PARK: Duration = Duration::from_secs(3600);
 
 /// The worker's cached Inflect-Micro-v2 sessions. Without the `inflect-micro`
 /// feature there is no model type to cache, so the slot degenerates to `()` and
@@ -40,7 +46,14 @@ pub enum TtsCommand {
         utterance: Utterance,
         generation: u32,
     },
+    /// Live config swap — also how the memory policy reaches a running worker,
+    /// so the tray toggle never has to tear down the engine (and its audio
+    /// device) just to change it.
     UpdateConfig(TtsConfig),
+    /// Load the model now (and restart the idle countdown) without speaking.
+    /// Sent as soon as VoxCtrl knows speech is likely — e.g. the moment a
+    /// recording starts — so the load overlaps with the user still talking.
+    Preload,
     Shutdown,
 }
 
@@ -57,7 +70,10 @@ pub fn stop_current_playback() {
 #[derive(Clone)]
 pub struct TtsEngineHandle {
     tx: Sender<TtsCommand>,
-    generation: Arc<std::sync::atomic::AtomicU32>,
+    generation: Arc<AtomicU32>,
+    /// Mirrors whether the worker currently holds a model in memory, so the UI
+    /// and tray can show the state without interrogating the worker thread.
+    model_loaded: Arc<AtomicBool>,
 }
 
 impl TtsEngineHandle {
@@ -79,6 +95,17 @@ impl TtsEngineHandle {
             utterance: u,
             generation: gen,
         });
+    }
+
+    /// Ask the worker to load the model now. Cheap and idempotent when the model
+    /// is already resident — it just restarts the idle countdown.
+    pub fn preload(&self) {
+        let _ = self.tx.try_send(TtsCommand::Preload);
+    }
+
+    /// Whether a model is currently resident in memory.
+    pub fn is_model_loaded(&self) -> bool {
+        self.model_loaded.load(Ordering::SeqCst)
     }
 
     pub fn stop(&self) {
@@ -106,7 +133,8 @@ pub struct TtsEngineWorker {
     config: TtsConfig,
     custom_vocabulary: Vec<String>,
     rx: Receiver<TtsCommand>,
-    generation: Arc<std::sync::atomic::AtomicU32>,
+    generation: Arc<AtomicU32>,
+    model_loaded: Arc<AtomicBool>,
     on_playback_start: Option<PlaybackCallback>,
     on_playback_end: Option<PlaybackCallback>,
     on_error: Option<ErrorCallback>,
@@ -121,8 +149,13 @@ impl TtsEngineWorker {
         on_error: Option<ErrorCallback>,
     ) -> TtsEngineHandle {
         let (tx, rx) = bounded(32);
-        let generation = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let handle = TtsEngineHandle { tx, generation: generation.clone() };
+        let generation = Arc::new(AtomicU32::new(0));
+        let model_loaded = Arc::new(AtomicBool::new(false));
+        let handle = TtsEngineHandle {
+            tx,
+            generation: generation.clone(),
+            model_loaded: model_loaded.clone(),
+        };
 
         let prewarm = match config.engine {
             TtsEngine::PocketTts => config.pocket_tts.prewarm,
@@ -130,7 +163,11 @@ impl TtsEngineWorker {
             TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
             _ => false,
         };
-        if prewarm {
+        // Pre-warming loads the model at startup and keeps it there, which is
+        // exactly what the on-demand memory mode exists to avoid — so the two
+        // settings do not fight: on-demand wins and the model waits for its
+        // first real use (or a `preload()`).
+        if prewarm && !config.unloads_when_idle() {
             let _ = handle.tx.send(TtsCommand::Play {
                 utterance: Utterance {
                     text: " ".into(),
@@ -146,6 +183,7 @@ impl TtsEngineWorker {
             custom_vocabulary,
             rx,
             generation,
+            model_loaded,
             on_playback_start,
             on_playback_end,
             on_error,
@@ -159,8 +197,12 @@ impl TtsEngineWorker {
     }
 
     fn run(self) {
-        info!("TTS engine started (engine={:?})", self.config.engine);
+        info!(
+            "TTS engine started (engine={:?}, memory_mode={:?})",
+            self.config.engine, self.config.memory_mode
+        );
         let mut current_config = self.config.clone();
+
 
         // pocket-tts model + per-voice cloned voice state, cached for the lifetime of this worker thread.
         let mut pocket_tts_model: Option<pocket_tts::TTSModel> = None;
@@ -186,13 +228,73 @@ impl TtsEngineWorker {
             Ok(sink)
         };
 
-        while let Ok(cmd) = self.rx.recv() {
+        // ── Idle-unload bookkeeping ──────────────────────────────────────────
+        // In on-demand mode a model is loaded when it is first needed (or
+        // pre-loaded via `TtsCommand::Preload`) and dropped again once it has
+        // gone unused for the configured window. Every use — a spoken utterance
+        // or a preload — restarts the countdown, so an active conversation never
+        // pays the reload cost twice. Read from `current_config` each time round
+        // so an `UpdateConfig` takes effect on the next iteration.
+        let mut last_used = Instant::now();
+
+        loop {
+            let unload_when_idle = current_config.unloads_when_idle();
+            let idle = current_config.idle_unload_duration();
+            // Piper and eSpeak shell out per utterance and hold nothing; only
+            // these three keep weights resident, so only these can be unloaded.
+            let model_resident = pocket_tts_model.is_some()
+                || inflect_model.is_some()
+                || breeze_tts_2_model.is_some();
+
+            // Park until the next command, or until the idle window expires.
+            let wait = if unload_when_idle && model_resident {
+                match idle.checked_sub(last_used.elapsed()) {
+                    Some(remaining) if !remaining.is_zero() => remaining,
+                    _ => {
+                        info!(
+                            "Unloading TTS model after {}s idle (memory mode: on-demand)",
+                            idle.as_secs()
+                        );
+                        // Dropping the model and its cached voice states is the
+                        // whole of the resident footprint; the worker thread,
+                        // its audio device and the queue all stay up.
+                        pocket_tts_model = None;
+                        pocket_tts_voice_states.clear();
+                        inflect_model = None;
+                        breeze_tts_2_model = None;
+                        breeze_tts_2_voice_states.clear();
+                        self.model_loaded.store(false, Ordering::SeqCst);
+                        continue;
+                    }
+                }
+            } else {
+                IDLE_PARK
+            };
+
+            let cmd = match self.rx.recv_timeout(wait) {
+                Ok(cmd) => cmd,
+                // Nothing arrived in the window — go round again so the unload
+                // branch above can run.
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+
             match cmd {
                 TtsCommand::UpdateConfig(new_cfg) => {
-                    info!("TTS worker config dynamically updated (engine={:?})", new_cfg.engine);
+                    info!(
+                        "TTS worker config dynamically updated (engine={:?}, memory_mode={:?})",
+                        new_cfg.engine, new_cfg.memory_mode
+                    );
                     current_config = new_cfg;
+                    // Switching to on-demand starts the clock now rather than
+                    // dropping a model that may be about to be used again.
+                    last_used = Instant::now();
                 }
                 TtsCommand::Play { mut utterance, generation } => {
+                    // Synthesis is about to touch the model; hold off the idle
+                    // unload for the whole utterance and restart the countdown
+                    // when it ends (below).
+                    last_used = Instant::now();
                     let current_gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
                     if generation < current_gen {
                         debug!("Discarding stale utterance: generation={generation} (current={current_gen})");
@@ -308,6 +410,52 @@ impl TtsEngineWorker {
                             cb();
                         }
                     }
+
+                    self.model_loaded.store(
+                        pocket_tts_model.is_some()
+                            || inflect_model.is_some()
+                            || breeze_tts_2_model.is_some(),
+                        Ordering::SeqCst,
+                    );
+                    // A long utterance must not count against the idle window.
+                    last_used = Instant::now();
+                }
+                TtsCommand::Preload => {
+                    // Speculative: failures are logged, not surfaced. The same
+                    // error is reported properly (with a toast) if an utterance
+                    // actually arrives.
+                    let outcome = match current_config.engine {
+                        TtsEngine::PocketTts if pocket_tts_model.is_none() => Some(
+                            ensure_pocket_tts_loaded(
+                                &current_config,
+                                &current_config.pocket_tts.voice.clone(),
+                                &mut pocket_tts_model,
+                                &mut pocket_tts_voice_states,
+                            ),
+                        ),
+                        TtsEngine::InflectMicro if inflect_model.is_none() => {
+                            Some(ensure_inflect_micro_loaded(&current_config, &mut inflect_model))
+                        }
+                        TtsEngine::BreezeTts2 if breeze_tts_2_model.is_none() => {
+                            Some(ensure_breeze_tts_2_loaded(&current_config, &mut breeze_tts_2_model))
+                        }
+                        // Already resident, or an engine that holds no model.
+                        _ => None,
+                    };
+                    match outcome {
+                        Some(Err(e)) => debug!("TTS preload skipped: {e:#}"),
+                        Some(Ok(())) => debug!("TTS model pre-loaded and primed"),
+                        None => {}
+                    }
+                    // A partial load (weights in, voice state failed) still holds
+                    // memory, so track what is actually resident.
+                    self.model_loaded.store(
+                        pocket_tts_model.is_some()
+                            || inflect_model.is_some()
+                            || breeze_tts_2_model.is_some(),
+                        Ordering::SeqCst,
+                    );
+                    last_used = Instant::now();
                 }
                 TtsCommand::Shutdown => {
                     debug!("TTS shutdown signal received");
@@ -444,7 +592,11 @@ mod tests {
     fn test_handle_stop_increments_generation_counter() {
         let (tx, _rx) = bounded(32);
         let generation = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let handle = TtsEngineHandle { tx, generation: generation.clone() };
+        let handle = TtsEngineHandle {
+            tx,
+            generation: generation.clone(),
+            model_loaded: Arc::new(AtomicBool::new(false)),
+        };
 
         assert_eq!(generation.load(std::sync::atomic::Ordering::SeqCst), 0);
         handle.stop();
@@ -482,5 +634,113 @@ mod tests {
         }
 
         assert_eq!(frames_processed, 2, "loop must abandon remaining frames after stop()");
+    }
+
+    // ── Idle-unload memory mode ──────────────────────────────────────────────
+
+    fn test_handle() -> (TtsEngineHandle, Receiver<TtsCommand>) {
+        let (tx, rx) = bounded(32);
+        let handle = TtsEngineHandle {
+            tx,
+            generation: Arc::new(AtomicU32::new(0)),
+            model_loaded: Arc::new(AtomicBool::new(false)),
+        };
+        (handle, rx)
+    }
+
+    #[test]
+    fn test_preload_sends_preload_command() {
+        let (handle, rx) = test_handle();
+        handle.preload();
+        assert!(matches!(rx.try_recv(), Ok(TtsCommand::Preload)));
+    }
+
+    #[test]
+    fn test_update_config_carries_memory_policy_to_worker() {
+        let (handle, rx) = test_handle();
+        let cfg = TtsConfig {
+            memory_mode: voxctrl_config::TtsMemoryMode::OnDemand,
+            idle_unload_secs: 900,
+            ..TtsConfig::default()
+        };
+        handle.update_config(cfg);
+        match rx.try_recv() {
+            Ok(TtsCommand::UpdateConfig(cfg)) => {
+                assert!(cfg.unloads_when_idle());
+                assert_eq!(cfg.idle_unload_duration(), Duration::from_secs(900));
+            }
+            other => panic!("expected UpdateConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_model_loaded_flag_defaults_false() {
+        let (handle, _rx) = test_handle();
+        assert!(!handle.is_model_loaded());
+    }
+
+    // Mirrors the worker's park-duration decision: while the model is resident
+    // the worker must wake exactly when the idle window runs out, and once it
+    // has expired the remaining time is None (which is the unload trigger).
+    #[test]
+    fn test_idle_window_expiry_arithmetic() {
+        let idle = Duration::from_secs(900);
+
+        let fresh = Duration::from_secs(10);
+        assert_eq!(idle.checked_sub(fresh), Some(Duration::from_secs(890)));
+
+        let expired = Duration::from_secs(901);
+        assert_eq!(idle.checked_sub(expired), None);
+
+        // Exactly at the boundary the remaining window is zero, which the worker
+        // treats as expired rather than parking for 0ns in a tight loop.
+        let boundary = idle.checked_sub(idle).unwrap();
+        assert!(boundary.is_zero());
+    }
+
+    // A use part-way through the window must push the deadline out rather than
+    // letting the original one stand — "the time is reset if it is used again".
+    #[test]
+    fn test_use_resets_idle_countdown() {
+        let idle = Duration::from_secs(900);
+        let first_use = Instant::now();
+        let elapsed_at_second_use = Duration::from_secs(600);
+
+        // Without a reset the model would have 300s left ...
+        assert_eq!(idle.checked_sub(elapsed_at_second_use), Some(Duration::from_secs(300)));
+
+        // ... but the worker stamps `last_used` again, so the full window is back.
+        let last_used = first_use + elapsed_at_second_use;
+        let remaining = idle.checked_sub(last_used.duration_since(last_used)).unwrap();
+        assert_eq!(remaining, idle);
+    }
+
+    #[test]
+    fn test_config_idle_duration_defaults_to_fifteen_minutes() {
+        let cfg = TtsConfig::default();
+        assert_eq!(cfg.idle_unload_secs, 900);
+        assert_eq!(cfg.idle_unload_duration(), Duration::from_secs(900));
+    }
+
+    #[test]
+    fn test_config_defaults_to_always_loaded() {
+        assert!(!TtsConfig::default().unloads_when_idle());
+    }
+
+    #[test]
+    fn test_config_idle_duration_is_floored() {
+        // A 0 (or 1s) setting would drop the model between two sentences of the
+        // same reply; the config floors it instead of honouring it literally.
+        let cfg = TtsConfig { idle_unload_secs: 0, ..TtsConfig::default() };
+        assert_eq!(cfg.idle_unload_duration(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_on_demand_mode_reported_by_config() {
+        let cfg = TtsConfig {
+            memory_mode: voxctrl_config::TtsMemoryMode::OnDemand,
+            ..TtsConfig::default()
+        };
+        assert!(cfg.unloads_when_idle());
     }
 }

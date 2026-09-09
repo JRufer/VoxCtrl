@@ -259,6 +259,47 @@ impl AppState {
         self.word_count.load(Ordering::SeqCst)
     }
 
+    /// Start loading the TTS model now, before anything asks it to speak.
+    ///
+    /// Only meaningful in the on-demand memory mode, where the model is not
+    /// resident between uses: the load takes seconds, so kicking it off the
+    /// moment we know speech is coming (the user has just started dictating)
+    /// hides most of that behind the time they spend talking. In always-loaded
+    /// mode the model is already there and this is a no-op.
+    pub async fn preload_tts(&self) {
+        let unloads_when_idle = {
+            let cfg = self.config.lock().await;
+            cfg.data.tts.enabled && cfg.data.tts.unloads_when_idle()
+        };
+        if !unloads_when_idle {
+            return;
+        }
+        if let Some(tts) = self.tts_handle.lock().await.as_ref() {
+            tts.preload();
+        }
+    }
+
+    /// True when dictating through `target_id` is likely to end in speech —
+    /// either the target speaks the transcript itself, or it has a response
+    /// pipe whose reply VoxCtrl reads back. Used to decide whether a recording
+    /// is worth pre-loading the TTS model for; dictating into an editor is not.
+    pub async fn target_leads_to_speech(&self, target_id: &str) -> bool {
+        use voxctrl_routing::DeliveryType;
+        let targets = self.targets.lock().await;
+        targets.iter().any(|t| {
+            t.id == target_id
+                && (t.delivery == DeliveryType::Speak
+                    || t.response_pipe.as_deref().is_some_and(|p| !p.trim().is_empty()))
+        })
+    }
+
+    /// Pre-load the TTS model if `target_id` is one that ends in speech.
+    pub async fn preload_tts_for_target(&self, target_id: &str) {
+        if target_id.is_empty() || self.target_leads_to_speech(target_id).await {
+            self.preload_tts().await;
+        }
+    }
+
     pub async fn spawn_fifo_responders(&self, tts: voxctrl_tts::TtsEngineHandle) {
         let targets_guard = self.targets.lock().await;
         let mut active_fifos_guard = self.active_fifos.lock().await;

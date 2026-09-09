@@ -278,6 +278,49 @@ Pocket-TTS loads its model weights on first synthesis. Enable `prewarm` to avoid
 
 When `prewarm` is `true`, `TtsEngineWorker::start()` enqueues a silent synthesis immediately after spawning the worker thread. The worker processes this short request (a single space) at startup, loading the model into memory and computing the configured voice's reference embedding. Subsequent user-triggered syntheses are faster because the model is already warm. This adds startup latency depending on model size and disk speed.
 
+Pre-warming is ignored when `memory_mode` is `"on_demand"` — the two settings want opposite things, and the memory mode wins. The same applies to `breeze_tts_2.prewarm` and `inflect_micro.prewarm`.
+
+---
+
+## Model Memory (on-demand loading)
+
+The neural engines — Pocket-TTS, Breeze-TTS-2 and Inflect-Micro-v2 — are the only parts of the
+TTS stack that occupy significant memory; Piper and eSpeak-NG run a process per utterance and
+hold nothing in between. `memory_mode` decides whether those weights stay resident:
+
+```json
+"tts": {
+  "engine": "pocket_tts",
+  "memory_mode": "on_demand",
+  "idle_unload_secs": 900
+}
+```
+
+| Mode | Behaviour |
+|---|---|
+| `"always_loaded"` (default) | The model is loaded on first use and stays resident for the life of the TTS worker. Fastest, highest memory. |
+| `"on_demand"` | The model is loaded when VoxCtrl knows it is needed, kept primed while it keeps being used, and dropped after `idle_unload_secs` (default 900 = 15 minutes) of inactivity. |
+
+In `"on_demand"` mode TTS itself stays enabled the whole time — only the weights come and go:
+
+* **Loading starts as early as possible.** `TtsCommand::Preload` is sent the moment a recording
+  starts against a target that ends in speech (a `speak` target, or one with a `response_pipe`),
+  so the model loads while the user is still talking rather than after they stop. Dictating into
+  an ordinary injection target does not load it.
+* **The idle countdown restarts on every use.** Speaking an utterance or pre-loading stamps the
+  worker's `last_used`, so a back-and-forth conversation never reloads mid-flow. A long utterance
+  does not count against the window either — the clock restarts when playback ends.
+* **Unloading drops the model and every cached voice state**, which is the whole of the resident
+  footprint. The worker thread, its audio device, and the utterance queue stay up, so nothing
+  else about TTS changes.
+* **The floor is 30 seconds.** A shorter `idle_unload_secs` is clamped, since dropping the model
+  between two sentences of the same reply would cost far more than it saves.
+
+The mode is settable in **Settings → TTS → Model Memory** and from the **VoxCtrl tray icon**
+("Unload TTS model when idle"), which toggles it live — the running worker is told about the new
+policy (through `TtsCommand::UpdateConfig`) rather than restarted, so playback and the audio
+device are untouched.
+
 ---
 
 ## Stopping Playback
@@ -322,6 +365,8 @@ Under `tts` in `config.json`:
 | `breeze_tts_2.model_dir` | string | `""` | Model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
 | `breeze_tts_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
 | `breeze_tts_2.gpu` | bool | `false` | Run synthesis on the GPU; needs a `breeze-cuda` / `breeze-metal` build, CPU otherwise |
+| `memory_mode` | string | `"always_loaded"` | `"always_loaded"` or `"on_demand"` — see [Model Memory](#model-memory-on-demand-loading) |
+| `idle_unload_secs` | int | `900` | Idle seconds before the model is unloaded in `"on_demand"` mode (minimum 30) |
 | `snippets` | object | *(VoxCtrl pronunciations)* | Word → spoken expansion map, applied to speech only |
 
 **Example Pocket-TTS config:**
@@ -362,6 +407,8 @@ pub enum TtsCommand {
         utterance: Utterance,
         generation: u32,
     },
+    UpdateConfig(TtsConfig), // live config swap, including the memory mode
+    Preload,                 // load the model now, without speaking
     Shutdown,
 }
 

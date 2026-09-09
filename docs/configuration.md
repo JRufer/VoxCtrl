@@ -87,7 +87,9 @@ Full schema with defaults:
       "seed": 0,
       "noise_scale": 0.667,
       "prewarm": false
-    }
+    },
+    "memory_mode": "always_loaded",
+    "idle_unload_secs": 900
   },
   "mcp": {
     "server_enabled": false,
@@ -235,6 +237,8 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `breeze_tts_2` | object | | Breeze-TTS-2 engine sub-configuration (see below) |
 | `pocket_tts` | object | | Pocket-TTS engine sub-configuration (see below) |
 | `inflect_micro` | object | | Inflect-Micro-v2 engine sub-configuration (see below) |
+| `memory_mode` | string | `"always_loaded"` | `"always_loaded"` keeps the model resident for the session; `"on_demand"` loads it when it is needed and unloads it again after `idle_unload_secs` of no use. Affects the model-backed engines (Pocket-TTS, Breeze-TTS-2, Inflect-Micro-v2) — Piper and eSpeak hold no model between utterances. |
+| `idle_unload_secs` | int | `900` (15 min) | Idle time before the model is unloaded in `"on_demand"` mode. The countdown restarts on every use. Values below 30s are clamped to 30s. |
 
 **`breeze_tts_2` sub-object:**
 

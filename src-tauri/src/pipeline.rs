@@ -219,6 +219,16 @@ async fn run_gesture_loop(
                 *state_for_gesture.active_binding_id.lock().await = event.binding_id.clone();
                 state_for_gesture.begin_recording().await;
 
+                // Earliest point at which we know speech is probably coming.
+                // In the on-demand memory mode the model is not resident, so
+                // start pulling it in now — the load runs while the user is
+                // still talking instead of after they stop.
+                let preload_state = state_for_gesture.clone();
+                let preload_target = event.target_id.clone();
+                tokio::spawn(async move {
+                    preload_state.preload_tts_for_target(&preload_target).await;
+                });
+
                 // The user just tried to dictate. If the install is not
                 // finished, say so now — otherwise the shortcut records
                 // audio that can never become text, which reads as

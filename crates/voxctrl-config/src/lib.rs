@@ -330,6 +330,37 @@ impl Default for TtsEngine {
     }
 }
 
+/// How the TTS engine manages the memory of model-backed engines (currently
+/// Pocket-TTS; Piper and eSpeak shell out to a process and hold nothing).
+///
+/// * `AlwaysLoaded` — once loaded, the model stays resident for the lifetime of
+///   the TTS worker. Fastest, but the weights sit in RAM even when unused.
+/// * `OnDemand` — the model is loaded the moment VoxCtrl knows it will be
+///   needed, kept "primed" while it keeps getting used, and dropped again after
+///   [`TtsConfig::idle_unload_secs`] of inactivity to give the memory back.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsMemoryMode {
+    AlwaysLoaded,
+    OnDemand,
+}
+
+impl Default for TtsMemoryMode {
+    fn default() -> Self {
+        // Existing installs keep the behaviour they already had; opting into
+        // the memory saving is a deliberate choice (it costs first-word latency).
+        Self::AlwaysLoaded
+    }
+}
+
+/// 15 minutes — long enough that a back-and-forth conversation never pays the
+/// reload cost twice, short enough that an idle session gives the RAM back.
+pub const DEFAULT_TTS_IDLE_UNLOAD_SECS: u64 = 900;
+
+fn default_tts_idle_unload_secs() -> u64 {
+    DEFAULT_TTS_IDLE_UNLOAD_SECS
+}
+
 fn default_pocket_tts_voice() -> String {
     "alba".into()
 }
@@ -493,6 +524,13 @@ pub struct TtsConfig {
     pub hf_token: Option<String>,
     #[serde(default)]
     pub pocket_tts: PocketTtsConfig,
+    /// Whether a model-backed engine stays resident or is unloaded when idle.
+    #[serde(default)]
+    pub memory_mode: TtsMemoryMode,
+    /// Idle time before the model is unloaded in [`TtsMemoryMode::OnDemand`].
+    /// The countdown restarts every time the model is used or pre-loaded.
+    #[serde(default = "default_tts_idle_unload_secs")]
+    pub idle_unload_secs: u64,
     #[serde(default)]
     pub inflect_micro: InflectMicroConfig,
     #[serde(default)]
@@ -518,6 +556,8 @@ impl Default for TtsConfig {
             gpu: false,
             hf_token: None,
             pocket_tts: PocketTtsConfig::default(),
+            memory_mode: TtsMemoryMode::default(),
+            idle_unload_secs: DEFAULT_TTS_IDLE_UNLOAD_SECS,
             inflect_micro: InflectMicroConfig::default(),
             breeze_tts_2: BreezeTts2Config::default(),
             snippets: {
@@ -528,6 +568,21 @@ impl Default for TtsConfig {
                 map
             },
         }
+    }
+}
+
+impl TtsConfig {
+    /// True when the model should be dropped after an idle period.
+    pub fn unloads_when_idle(&self) -> bool {
+        self.memory_mode == TtsMemoryMode::OnDemand
+    }
+
+    /// Idle window before unloading, clamped to a sane range. A zero or absurdly
+    /// small value would thrash the loader (the model would be dropped between
+    /// two sentences of the same reply), so the floor is 30s.
+    pub fn idle_unload_duration(&self) -> std::time::Duration {
+        const MIN_SECS: u64 = 30;
+        std::time::Duration::from_secs(self.idle_unload_secs.max(MIN_SECS))
     }
 }
 

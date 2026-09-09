@@ -732,6 +732,8 @@ interface TtsConfig {
   pocket_tts: PocketTtsConfig;
   inflect_micro: InflectMicroConfig;  // fixed-voice, so no voice field
   breeze_tts_2: BreezeTts2Config;
+  memory_mode: "always_loaded" | "on_demand"; // "on_demand" unloads the model when idle
+  idle_unload_secs: number;  // idle seconds before unloading in "on_demand" mode (default 900)
   snippets: Record<string, string>;   // pronunciation guide, speech only
 }
 

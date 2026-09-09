@@ -33,6 +33,68 @@ pub fn update_tray_for_setup(app: &tauri::AppHandle, ok: bool) {
     });
 }
 
+/// The tray entry that mirrors (and toggles) the TTS memory mode.
+static TTS_MEMORY_MENU_ITEM: OnceLock<tauri::menu::CheckMenuItem<tauri::Wry>> = OnceLock::new();
+
+pub const TRAY_TTS_MEMORY: &str = "🧠  Unload TTS model when idle";
+
+/// Keep the tray checkbox in step with the setting, whichever side changed it
+/// (the tray item itself, or the TTS settings tab).
+pub fn update_tray_tts_memory(app: &tauri::AppHandle, on_demand: bool) {
+    let app = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(item) = TTS_MEMORY_MENU_ITEM.get() {
+            let _ = item.set_checked(on_demand);
+        }
+    });
+}
+
+/// Flip the TTS memory mode from the tray: persist it, tell the running worker
+/// (no restart — that would tear down the engine and its audio device), and
+/// mirror the new state back into the settings window.
+fn toggle_tts_memory_mode(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<Arc<AppState>>().inner().clone();
+
+        let new_data = {
+            let mut guard = state.config.lock().await;
+            let on_demand = !guard.data.tts.unloads_when_idle();
+            guard.data.tts.memory_mode = if on_demand {
+                voxctrl_config::TtsMemoryMode::OnDemand
+            } else {
+                voxctrl_config::TtsMemoryMode::AlwaysLoaded
+            };
+            if let Err(e) = guard.save() {
+                tracing::error!("Failed to save TTS memory mode from tray: {e}");
+            }
+            guard.data.clone()
+        };
+
+        let on_demand = new_data.tts.unloads_when_idle();
+        if let Some(tts) = state.tts_handle.lock().await.as_ref() {
+            tts.update_config(new_data.tts.clone());
+        }
+
+        update_tray_tts_memory(&app, on_demand);
+        let _ = app.emit("config-changed", new_data.clone());
+
+        voxctrl_inject::show_notification(
+            "VoxCtrl",
+            &if on_demand {
+                format!(
+                    "TTS model will unload after {} minutes idle to save memory.",
+                    new_data.tts.idle_unload_duration().as_secs() / 60
+                )
+            } else {
+                "TTS model will stay loaded in memory for the fastest response.".to_string()
+            },
+        );
+    });
+}
+
 pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Error> {
     let record_off_icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/record_off.png"))
         .expect("Failed to load record_off icon");
@@ -40,13 +102,24 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
 
     let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
     let setup_i = tauri::menu::MenuItem::with_id(app, "setup", TRAY_SETUP_OK, true, None::<&str>)?;
+    let tts_memory_i = tauri::menu::CheckMenuItem::with_id(
+        app,
+        "tts_memory",
+        TRAY_TTS_MEMORY,
+        true,
+        // The real value is applied right after the tray is built (see
+        // `sync_tts_memory_item`); a `try_lock` here can miss at startup.
+        false,
+        None::<&str>,
+    )?;
     let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
     let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtrl", true, None::<&str>)?;
     let menu = tauri::menu::Menu::with_items(
         app,
-        &[&settings_i, &setup_i, &separator, &quit_i],
+        &[&settings_i, &setup_i, &tts_memory_i, &separator, &quit_i],
     )?;
     let _ = SETUP_MENU_ITEM.set(setup_i);
+    let _ = TTS_MEMORY_MENU_ITEM.set(tts_memory_i);
 
     TrayIconBuilder::with_id("main-tray")
         .icon(tray_icon)
@@ -62,6 +135,9 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
                 "setup" => {
                     crate::window::show_setup_window();
                 }
+                "tts_memory" => {
+                    toggle_tts_memory_mode(app);
+                }
                 "quit" => {
                     app.exit(0);
                 }
@@ -76,6 +152,14 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
             }
         })
         .build(app)
+}
+
+/// Show the stored TTS memory mode on the freshly built tray item.
+pub fn sync_tts_memory_item(app: tauri::AppHandle, state: Arc<AppState>) {
+    tauri::async_runtime::spawn(async move {
+        let on_demand = state.config.lock().await.data.tts.unloads_when_idle();
+        update_tray_tts_memory(&app, on_demand);
+    });
 }
 
 pub fn spawn_status_ticker(

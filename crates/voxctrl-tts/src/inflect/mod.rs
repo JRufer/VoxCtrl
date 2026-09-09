@@ -538,6 +538,33 @@ fn split_sentences(text: &str) -> Vec<String> {
 
 // ── Synthesis ─────────────────────────────────────────────────────────────────
 
+/// Loads the Inflect-Micro-v2 ONNX sessions into the worker's cache if they are
+/// not already there. Idempotent, so both the pre-load path and synthesis call
+/// it unconditionally — and since the sessions are the engine's whole resident
+/// footprint, dropping `model` is what the on-demand memory mode reclaims.
+#[cfg(feature = "inflect-micro")]
+pub(crate) fn ensure_inflect_micro_loaded(
+    config: &voxctrl_config::TtsConfig,
+    model: &mut Option<model::InflectModel>,
+) -> Result<()> {
+    let cfg = &config.inflect_micro;
+
+    if !is_inflect_micro_downloaded(&cfg.model_dir) {
+        anyhow::bail!(
+            "Inflect-Micro-v2 model files not found in {}. Download them from TTS settings.",
+            resolve_model_dir(&cfg.model_dir).display()
+        );
+    }
+
+    if model.is_none() {
+        let started = std::time::Instant::now();
+        let dir = resolve_model_dir(&cfg.model_dir);
+        *model = Some(model::InflectModel::load(&dir)?);
+        tracing::info!("Inflect-Micro-v2 sessions loaded in {:?}", started.elapsed());
+    }
+    Ok(())
+}
+
 /// Called from `TtsEngineWorker::run` when `config.engine == TtsEngine::InflectMicro`.
 ///
 /// Takes the worker's model cache by mutable reference so the loaded ONNX
@@ -559,18 +586,7 @@ pub(crate) fn speak_inflect_micro(
     let cfg = &config.inflect_micro;
     let is_prewarm = u.source_label.as_deref() == Some("prewarm");
 
-    if !is_inflect_micro_downloaded(&cfg.model_dir) {
-        anyhow::bail!(
-            "Inflect-Micro-v2 model files not found in {}. Download them from TTS settings.",
-            resolve_model_dir(&cfg.model_dir).display()
-        );
-    }
-
-    // Lazily load — the sessions stay alive for the worker thread's lifetime.
-    if model.is_none() {
-        let dir = resolve_model_dir(&cfg.model_dir);
-        *model = Some(model::InflectModel::load(&dir)?);
-    }
+    ensure_inflect_micro_loaded(config, model)?;
     let model = model.as_mut().unwrap();
 
     if is_prewarm {
@@ -644,6 +660,17 @@ pub(crate) fn speak_inflect_micro(
     }
 
     sink.sleep_until_end();
+    Ok(())
+}
+
+/// Stand-in for builds without the `inflect-micro` feature: there is no model to
+/// load, so a pre-load is a no-op rather than an error (the real message comes
+/// from `speak_inflect_micro` if the engine is actually used).
+#[cfg(not(feature = "inflect-micro"))]
+pub(crate) fn ensure_inflect_micro_loaded(
+    _config: &voxctrl_config::TtsConfig,
+    _model: &mut Option<()>,
+) -> Result<()> {
     Ok(())
 }
 

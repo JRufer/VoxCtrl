@@ -83,6 +83,8 @@ export interface PocketTtsConfig {
   voice_dir: string;
 }
 
+export type TtsMemoryMode = "always_loaded" | "on_demand";
+
 export interface InflectMicroConfig {
   model_dir: string;
   seed: number;
@@ -111,6 +113,8 @@ export interface TtsConfig {
   pocket_tts: PocketTtsConfig;
   inflect_micro: InflectMicroConfig;
   breeze_tts_2: BreezeTts2Config;
+  memory_mode: TtsMemoryMode;
+  idle_unload_secs: number;
   snippets: Record<string, string>;
 }
 
@@ -202,6 +206,8 @@ const defaultConfig: AppConfig = {
       prewarm: false,
       gpu: false,
     },
+    memory_mode: "always_loaded",
+    idle_unload_secs: 900,
     snippets: {
       "VoxCtrl": "Vox Control"
     },

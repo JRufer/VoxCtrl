@@ -276,6 +276,37 @@
     }))
   );
 
+  // ── Model memory ───────────────────────────────────────────────────────────
+  //
+  // Only the neural engines (Pocket-TTS, Breeze-TTS-2, Inflect-Micro-v2) keep
+  // weights resident; Piper and eSpeak shell out to a process per utterance and
+  // hold nothing between them.
+
+  const memoryModeOptions = [
+    { value: "always_loaded", label: "Always loaded (fastest response)" },
+    { value: "on_demand", label: "Load when needed, unload when idle (saves memory)" }
+  ];
+
+  // Derived rather than local state so a change made elsewhere — the tray
+  // toggle, another settings window — shows up here immediately.
+  let idleMinutes = $derived(Math.round((cfg.tts.idle_unload_secs ?? 900) / 60));
+
+  function onMemoryModeChanged() {
+    if (cfg.tts.memory_mode === "on_demand" && !cfg.tts.idle_unload_secs) {
+      cfg.tts.idle_unload_secs = 900;
+    }
+    markDirty();
+  }
+
+  function onIdleMinutesChange(e: Event) {
+    const raw = Number((e.currentTarget as HTMLInputElement).value);
+    // 1 minute floor: anything shorter would drop the model between two
+    // sentences of the same reply. 8 hours is effectively "never".
+    const minutes = Math.min(480, Math.max(1, Math.round(raw) || 15));
+    cfg.tts.idle_unload_secs = minutes * 60;
+    markDirty();
+  }
+
   const engineOptions = [
     { value: "breeze_tts_2", label: "Breeze-TTS-2 (neural, voice design)" },
     { value: "pocket_tts", label: "Pocket-TTS (neural, voice cloning)" },
@@ -721,6 +752,47 @@
     {#if !ttsError && isTestTtsDisabled() && testTtsDisabledReason()}
       <p class="hint">Test TTS unavailable: {testTtsDisabledReason()}</p>
     {/if}
+  </div>
+
+  <!-- ── Model memory section ───────────────────────────────────────────── -->
+  <div class="field-group">
+    <h3>Model Memory</h3>
+    <label class="field col">
+      <span class="field-title">When TTS is enabled</span>
+      <CustomSelect bind:value={cfg.tts.memory_mode} options={memoryModeOptions} onchange={onMemoryModeChanged} />
+    </label>
+
+    {#if cfg.tts.memory_mode === "on_demand"}
+      <label class="field">
+        <span>Unload after (minutes idle)</span>
+        <input
+          type="number"
+          min="1"
+          max="480"
+          step="1"
+          value={idleMinutes}
+          onchange={onIdleMinutesChange}
+          class="idle-minutes-input"
+        />
+      </label>
+      <p class="hint">
+        The model is loaded the moment VoxCtrl knows it will be needed — as soon as you start
+        dictating to a target that speaks — and stays primed while you keep using it. The
+        countdown restarts on every use, so it only unloads after {idleMinutes}
+        {idleMinutes === 1 ? "minute" : "minutes"} of no speech. The first reply after an
+        unload takes a few seconds longer while the model loads again.
+      </p>
+    {:else}
+      <p class="hint">
+        The model stays in memory for the whole session — the fastest possible response, at
+        the cost of holding its memory even while TTS sits unused.
+      </p>
+    {/if}
+    <p class="hint">
+      Applies to the neural engines that hold a model in memory — Pocket-TTS, Breeze-TTS-2 and
+      Inflect-Micro-v2. Piper and eSpeak-NG run a process per utterance and are unaffected. This
+      setting can also be toggled from the VoxCtrl tray icon.
+    </p>
   </div>
 
   <!-- ── Piper section ──────────────────────────────────────────────────── -->
@@ -1215,6 +1287,10 @@
   }
   .btn-preview:disabled {
     @apply opacity-40 cursor-not-allowed;
+  }
+
+  .idle-minutes-input {
+    @apply w-20 bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] rounded-[var(--radius)] p-1.5 px-2.5 text-[13px] text-right;
   }
 
   .voice-status-container {

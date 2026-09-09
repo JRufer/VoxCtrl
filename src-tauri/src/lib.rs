@@ -408,6 +408,7 @@ pub fn run() {
 
             // Setup system tray
             let _tray = tray::create_tray(app)?;
+            tray::sync_tts_memory_item(app.handle().clone(), app_state.clone());
 
             let record_on_icon =
                 tauri::image::Image::from_bytes(include_bytes!("../../assets/record_on.png"))

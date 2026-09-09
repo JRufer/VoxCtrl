@@ -141,6 +141,33 @@ fn read_voice_transcript_file(wav_path_str: &str) -> Option<String> {
 
 /// Called from TtsEngineWorker::run when config.engine == TtsEngine::BreezeTts2
 #[allow(clippy::too_many_arguments)]
+/// Loads the Breeze-TTS-2 session into the worker's cache if it is not already
+/// there (or if the GPU preference changed under it). Idempotent, so both the
+/// pre-load path and synthesis call it unconditionally.
+///
+/// This is the expensive step the on-demand memory mode defers and then
+/// reclaims: the session lives entirely in `model`, so dropping it gives the
+/// memory straight back.
+pub(crate) fn ensure_breeze_tts_2_loaded(
+    config: &TtsConfig,
+    model: &mut BreezeModelSlot,
+) -> Result<()> {
+    let cfg = &config.breeze_tts_2;
+    crate::hf::apply_hf_token(config.hf_token.as_deref());
+
+    if model.as_ref().is_none_or(|m| m.gpu != cfg.gpu) {
+        let started = std::time::Instant::now();
+        info!("Loading Breeze-TTS-2 neural speech model session in pure Rust...");
+        *model = Some(LoadedBreezeModel {
+            gpu: cfg.gpu,
+            model: load_pocket_tts_model_on_gpu(POCKET_TTS_VARIANT, cfg.gpu)
+                .context("load Breeze-TTS-2 neural model")?,
+        });
+        info!("Breeze-TTS-2 model loaded in {:?}", started.elapsed());
+    }
+    Ok(())
+}
+
 pub(crate) fn speak_breeze_tts_2(
     config: &TtsConfig,
     u: &Utterance,
@@ -154,16 +181,7 @@ pub(crate) fn speak_breeze_tts_2(
     let cfg = &config.breeze_tts_2;
     let is_prewarm = u.source_label.as_deref() == Some("prewarm");
 
-    crate::hf::apply_hf_token(config.hf_token.as_deref());
-
-    if model.as_ref().is_none_or(|m| m.gpu != cfg.gpu) {
-        info!("Loading Breeze-TTS-2 neural speech model session in pure Rust...");
-        *model = Some(LoadedBreezeModel {
-            gpu: cfg.gpu,
-            model: load_pocket_tts_model_on_gpu(POCKET_TTS_VARIANT, cfg.gpu)
-                .context("load Breeze-TTS-2 neural model")?,
-        });
-    }
+    ensure_breeze_tts_2_loaded(config, model)?;
     let tts_model = &model.as_ref().unwrap().model;
 
     // Determine reference audio clip and transcript based on voice_mode
