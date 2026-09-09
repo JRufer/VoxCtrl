@@ -341,13 +341,153 @@ pub async fn submit_bug_report(
 pub async fn save_bug_report(
     state: State<'_, Arc<AppState>>,
     statement: UserStatement,
-    path: String,
+    path: Option<String>,
 ) -> Result<String, String> {
     let report = assemble(&state, statement).await?;
-    std::fs::write(&path, report.to_markdown())
-        .map_err(|e| format!("could not write {path}: {e}"))?;
-    tracing::info!("Bug report saved to a file");
-    Ok(path)
+    let target_path = match path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => std::path::PathBuf::from(p),
+        None => {
+            let filename = suggested_bug_report_filename();
+            dirs::download_dir()
+                .or_else(dirs::document_dir)
+                .or_else(dirs::home_dir)
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(filename)
+        }
+    };
+    if let Some(parent) = target_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&target_path, report.to_markdown())
+        .map_err(|e| format!("could not write {}: {e}", target_path.display()))?;
+    let path_str = target_path.to_string_lossy().into_owned();
+    tracing::info!("Bug report saved to a file: {path_str}");
+    Ok(path_str)
+}
+
+/// Open an external URL using host environment so AppImage library paths
+/// do not crash host browsers or mail clients.
+#[tauri::command]
+pub async fn open_external_url(_app: tauri::AppHandle, url: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut cmd = crate::host_env::host_command("xdg-open");
+        cmd.arg(&url);
+        cmd.spawn()
+            .map_err(|e| format!("Could not open link with xdg-open: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        use tauri_plugin_shell::ShellExt;
+        app.shell()
+            .open(&url, None)
+            .map_err(|e| format!("Could not open link: {e}"))
+    }
+}
+
+/// Open the folder containing the saved bug report so the user can easily drag & drop it.
+#[tauri::command]
+pub async fn open_report_folder(path: Option<String>) -> Result<(), String> {
+    let target = match path {
+        Some(p) => {
+            let path_buf = std::path::PathBuf::from(p);
+            if path_buf.is_file() {
+                path_buf.parent().unwrap_or(&path_buf).to_path_buf()
+            } else {
+                path_buf
+            }
+        }
+        None => dirs::download_dir()
+            .or_else(dirs::document_dir)
+            .unwrap_or_else(|| std::path::PathBuf::from(".")),
+    };
+    #[cfg(target_os = "linux")]
+    {
+        let mut cmd = crate::host_env::host_command("xdg-open");
+        cmd.arg(target.to_string_lossy().as_ref());
+        cmd.spawn()
+            .map_err(|e| format!("Could not open file manager: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        use tauri_plugin_shell::ShellExt;
+        app.shell()
+            .open(&target.to_string_lossy(), None)
+            .map_err(|e| format!("Could not open folder: {e}"))
+    }
+}
+
+/// Open an email composer, passing the attachment to xdg-email if possible.
+#[tauri::command]
+pub async fn send_bug_report_email(
+    app: tauri::AppHandle,
+    mailto_url: String,
+    attachment_path: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(ref path) = attachment_path {
+            if std::path::Path::new(path).exists() {
+                let mut cmd = crate::host_env::host_command("xdg-email");
+                cmd.arg("--utf8");
+                cmd.arg("--attach").arg(path);
+
+                if let Some(rest) = mailto_url.strip_prefix("mailto:") {
+                    let mut parts = rest.splitn(2, '?');
+                    let to = parts.next().unwrap_or("");
+                    let query = parts.next().unwrap_or("");
+                    let mut subject = None;
+                    let mut body = None;
+                    for param in query.split('&') {
+                        if let Some(val) = param.strip_prefix("subject=") {
+                            subject = Some(percent_decode_simple(val));
+                        } else if let Some(val) = param.strip_prefix("body=") {
+                            body = Some(percent_decode_simple(val));
+                        }
+                    }
+                    if let Some(s) = subject {
+                        cmd.arg("--subject").arg(s);
+                    }
+                    if let Some(b) = body {
+                        cmd.arg("--body").arg(b);
+                    }
+                    cmd.arg(to);
+                } else {
+                    cmd.arg(&mailto_url);
+                }
+
+                if let Ok(mut child) = cmd.spawn() {
+                    let _ = child.wait();
+                    return Ok(());
+                }
+            }
+        }
+        open_external_url(app, mailto_url).await
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        open_external_url(app, mailto_url).await
+    }
+}
+
+fn percent_decode_simple(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&input[i + 1..i + 3], 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A suggested filename for the save dialog.

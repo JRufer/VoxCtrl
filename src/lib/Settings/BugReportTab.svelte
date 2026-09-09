@@ -67,6 +67,13 @@
     frequency: "always",
   });
 
+  type ActionStatus = {
+    type: "ok" | "error";
+    message: string;
+    url?: string;
+    path?: string;
+  };
+
   let context = $state<Context | null>(null);
   let preview = $state<Preview | null>(null);
   let previewing = $state(false);
@@ -74,6 +81,7 @@
   let showPreview = $state(false);
   let sending = $state(false);
   let outcome = $state<Outcome | null>(null);
+  let actionStatus = $state<ActionStatus | null>(null);
   let savedPath = $state<string | null>(null);
   let copied = $state(false);
   let identityReset = $state(false);
@@ -127,16 +135,104 @@
     }
   }
 
+  async function ensurePreview(): Promise<Preview | null> {
+    if (!preview) {
+      await buildPreview({ ...statement });
+    }
+    return preview;
+  }
+
   async function send() {
-    if (!formComplete) return;
+    if (!statement.summary.trim()) {
+      actionStatus = {
+        type: "error",
+        message: "Please provide a one-line summary above before submitting.",
+      };
+      return;
+    }
+    if (descriptionLength < minChars) {
+      actionStatus = {
+        type: "error",
+        message: `Please write at least ${minChars} characters in the description so we can understand what happened.`,
+      };
+      return;
+    }
+    const currentPreview = await ensurePreview();
+    if (!currentPreview) {
+      actionStatus = {
+        type: "error",
+        message: previewError ?? "Could not build bug report preview. Please check your inputs.",
+      };
+      return;
+    }
+    if (context?.relay_configured && currentPreview.blocked_reason) {
+      actionStatus = {
+        type: "error",
+        message: currentPreview.blocked_reason,
+      };
+      return;
+    }
     sending = true;
     outcome = null;
+    actionStatus = null;
     try {
-      outcome = await invoke<Outcome>("submit_bug_report", {
-        statement: { ...statement },
-      });
+      if (context?.relay_configured) {
+        outcome = await invoke<Outcome>("submit_bug_report", {
+          statement: { ...statement },
+        });
+        if (outcome.ok) {
+          actionStatus = {
+            type: "ok",
+            message: "Bug report submitted successfully! Thank you — your report has been filed.",
+            url: outcome.issue_url ?? undefined,
+          };
+        }
+      } else {
+        // Direct bug submission via GitHub route
+        try {
+          await navigator.clipboard.writeText(currentPreview.markdown);
+        } catch (_) {}
+
+        // Ensure report file is auto-saved to Downloads so the user has the file to attach
+        let reportFile = savedPath;
+        if (!reportFile) {
+          try {
+            reportFile = await invoke<string>("save_bug_report", {
+              statement: { ...statement, summary: statement.summary.trim() || "Bug report" },
+              path: null,
+            });
+            savedPath = reportFile;
+          } catch (e) {
+            console.warn("Could not auto-save report file for submit:", e);
+          }
+        }
+
+        const targetUrl = currentPreview.github_url ?? context?.issues_new_url ?? "https://github.com/JRufer/VoxCtrl/issues/new";
+        const ok = await openLink(targetUrl);
+        if (ok) {
+          actionStatus = {
+            type: "ok",
+            message: reportFile
+              ? `Bug report submission initiated! Issue form opened on GitHub (and full report copied to clipboard). Report file saved to ${reportFile}. (Note: Web browsers cannot auto-attach local files for security — please drag & drop the saved file into GitHub or press Ctrl+V to paste).`
+              : "Bug report submission initiated! Issue form opened on GitHub (and copied to clipboard). Review and click 'Submit new issue' on GitHub to finalize.",
+            url: targetUrl,
+            path: reportFile ?? undefined,
+          };
+        } else {
+          actionStatus = {
+            type: "error",
+            message: previewError ?? "Could not open GitHub in your browser. The report has been copied to your clipboard.",
+            url: targetUrl,
+            path: reportFile ?? undefined,
+          };
+        }
+      }
     } catch (e) {
       outcome = { ok: false, issue_url: null, message: String(e) };
+      actionStatus = {
+        type: "error",
+        message: `Submission failed: ${e}`,
+      };
     } finally {
       sending = false;
       await refreshContext();
@@ -144,40 +240,236 @@
     }
   }
 
-  async function saveToFile() {
-    if (!formComplete) return;
+  async function openGitHub() {
+    if (!statement.summary.trim() || descriptionLength < minChars) {
+      actionStatus = {
+        type: "error",
+        message: `Please provide a summary and at least ${minChars} characters of description before opening on GitHub.`,
+      };
+      return;
+    }
+    const currentPreview = await ensurePreview();
+    if (!currentPreview) {
+      actionStatus = {
+        type: "error",
+        message: previewError ?? "Could not build bug report preview.",
+      };
+      return;
+    }
+
+    // Ensure report file is auto-saved to Downloads
+    let reportFile = savedPath;
+    if (!reportFile) {
+      try {
+        reportFile = await invoke<string>("save_bug_report", {
+          statement: { ...statement, summary: statement.summary.trim() || "Bug report" },
+          path: null,
+        });
+        savedPath = reportFile;
+      } catch (e) {
+        console.warn("Could not auto-save report file for GitHub:", e);
+      }
+    }
+
     try {
-      const suggested = await invoke<string>("suggested_bug_report_filename");
-      const path = await saveDialog({
-        defaultPath: suggested,
-        filters: [{ name: "Markdown", extensions: ["md"] }],
-      });
-      if (!path) return;
+      await navigator.clipboard.writeText(currentPreview.markdown);
+    } catch (_) {}
+    outcome = null;
+    actionStatus = null;
+    const ok = await openLink(currentPreview.github_url);
+    if (ok) {
+      actionStatus = {
+        type: "ok",
+        message: reportFile
+          ? `Action complete: Opened issue form on GitHub in your browser. Full report saved to ${reportFile} and copied to clipboard — drag & drop the file into GitHub or press Ctrl+V to paste.`
+          : "Action complete: Opened issue form on GitHub in your browser.",
+        url: currentPreview.github_url,
+        path: reportFile ?? undefined,
+      };
+    } else {
+      actionStatus = {
+        type: "error",
+        message: previewError ?? "Could not open GitHub in your browser. Full report has been copied to your clipboard.",
+        url: currentPreview.github_url,
+        path: reportFile ?? undefined,
+      };
+    }
+  }
+
+  async function saveToFile() {
+    if (!statement.summary.trim() || descriptionLength < minChars) {
+      actionStatus = {
+        type: "error",
+        message: `Please provide a summary and at least ${minChars} characters of description before saving.`,
+      };
+      return;
+    }
+    actionStatus = null;
+    try {
+      let path: string | null = null;
+      try {
+        const suggested = await invoke<string>("suggested_bug_report_filename");
+        path = await saveDialog({
+          defaultPath: suggested,
+          filters: [{ name: "Markdown", extensions: ["md"] }],
+        });
+      } catch (dialogErr) {
+        console.warn("Save dialog not available or canceled:", dialogErr);
+      }
       savedPath = await invoke<string>("save_bug_report", {
-        statement: { ...statement },
-        path,
+        statement: {
+          ...statement,
+          summary: statement.summary.trim() || "Bug report",
+        },
+        path: path ?? null,
       });
+      actionStatus = {
+        type: "ok",
+        message: `Action complete: Bug report saved to ${savedPath}`,
+        path: savedPath,
+      };
     } catch (e) {
-      previewError = `Could not save the report: ${e}`;
+      actionStatus = {
+        type: "error",
+        message: `Could not save the report: ${e}`,
+      };
     }
   }
 
   async function copyReport() {
-    if (!preview) return;
+    if (!statement.summary.trim() || descriptionLength < minChars) {
+      actionStatus = {
+        type: "error",
+        message: `Please provide a summary and at least ${minChars} characters of description before copying.`,
+      };
+      return;
+    }
+    const currentPreview = await ensurePreview();
+    if (!currentPreview) {
+      actionStatus = {
+        type: "error",
+        message: previewError ?? "Could not build bug report preview.",
+      };
+      return;
+    }
+    actionStatus = null;
     try {
-      await navigator.clipboard.writeText(preview.markdown);
+      await navigator.clipboard.writeText(currentPreview.markdown);
       copied = true;
+      actionStatus = {
+        type: "ok",
+        message: "Action complete: Full bug report copied to clipboard.",
+      };
       setTimeout(() => (copied = false), 2500);
     } catch (e) {
-      previewError = `Could not copy the report: ${e}`;
+      actionStatus = {
+        type: "error",
+        message: `Could not copy the report: ${e}`,
+      };
     }
   }
 
-  async function openLink(url: string) {
+  async function sendEmail() {
+    if (!statement.summary.trim() || descriptionLength < minChars) {
+      actionStatus = {
+        type: "error",
+        message: `Please provide a summary and at least ${minChars} characters of description before sending email.`,
+      };
+      return;
+    }
+    const currentPreview = await ensurePreview();
+    if (!currentPreview) {
+      actionStatus = {
+        type: "error",
+        message: previewError ?? "Could not build bug report preview.",
+      };
+      return;
+    }
+    outcome = null;
+    actionStatus = null;
+
+    // 1. Copy full markdown report to clipboard
     try {
-      await openExternal(url);
+      await navigator.clipboard.writeText(currentPreview.markdown);
+    } catch (_) {}
+
+    // 2. Automatically save report to Downloads so the user has the file to attach
+    let savedLocation = savedPath;
+    if (!savedLocation) {
+      try {
+        savedLocation = await invoke<string>("save_bug_report", {
+          statement: {
+            ...statement,
+            summary: statement.summary.trim() || "Bug report",
+          },
+          path: null,
+        });
+        savedPath = savedLocation;
+      } catch (e) {
+        console.warn("Auto-save report for email failed:", e);
+      }
+    }
+
+    try {
+      await invoke("send_bug_report_email", {
+        mailtoUrl: currentPreview.mailto_url,
+        attachmentPath: savedLocation ?? null,
+      });
+      actionStatus = {
+        type: "ok",
+        message: savedLocation
+          ? `Action complete: Opened bug report draft in your email client. Full report saved to ${savedLocation} and copied to clipboard. (If your mail client is webmail in a browser, browser security blocks auto-attaching files — please attach the saved file or press Ctrl+V to paste).`
+          : "Action complete: Opened bug report draft in your email client.",
+        path: savedLocation ?? undefined,
+      };
     } catch (e) {
-      previewError = `Could not open that link: ${e}`;
+      const ok = await openLink(currentPreview.mailto_url);
+      if (ok) {
+        actionStatus = {
+          type: "ok",
+          message: savedLocation
+            ? `Action complete: Opened bug report draft in your email client. Full report saved to ${savedLocation} and copied to clipboard.`
+            : "Action complete: Opened bug report draft in your email client.",
+          path: savedLocation ?? undefined,
+        };
+      } else {
+        actionStatus = {
+          type: "error",
+          message: previewError ?? "Could not open your email client.",
+        };
+      }
+    }
+  }
+
+  async function openFolder(path?: string) {
+    try {
+      await invoke("open_report_folder", { path: path ?? savedPath ?? null });
+    } catch (e) {
+      console.warn("Could not open folder:", e);
+    }
+  }
+
+  async function openLink(url: string): Promise<boolean> {
+    previewError = null;
+    try {
+      await invoke("open_external_url", { url });
+      return true;
+    } catch (e) {
+      try {
+        await openExternal(url);
+        return true;
+      } catch (err) {
+        const msg = String(err || e);
+        previewError = `Could not open that link: ${msg}`;
+        if (actionStatus) {
+          actionStatus = {
+            type: "error",
+            message: `Could not open link in browser: ${msg}`,
+            url,
+          };
+        }
+        return false;
+      }
     }
   }
 
@@ -318,9 +610,7 @@
       {/if}
     </div>
 
-    {#if !formComplete}
-      <p class="hint">Fill in the summary and description above and the finished report appears here.</p>
-    {:else if previewing && !preview}
+    {#if previewing && !preview}
       <p class="hint">Building the report…</p>
     {:else if preview}
       <p class="hint">
@@ -330,48 +620,82 @@
       {#if showPreview}
         <pre class="preview">{preview.markdown}</pre>
       {/if}
+    {:else}
+      <p class="hint">Fill in the summary and description above and the finished report appears here.</p>
+    {/if}
 
-      <div class="actions">
-        {#if context?.relay_configured}
-          <button
-            class="btn-primary"
-            type="button"
-            disabled={sending || !preview.can_submit}
-            onclick={send}
-          >
-            {sending ? "Sending…" : "Send report"}
-          </button>
-        {/if}
-        <button class="btn-secondary" type="button" onclick={() => openLink(preview!.github_url)}>
-          Open on GitHub
+    <div class="actions">
+      {#if context?.relay_configured}
+        <button
+          class="btn-primary"
+          type="button"
+          disabled={sending || (preview && !preview.can_submit)}
+          onclick={send}
+        >
+          {sending ? "Sending…" : "Send report"}
         </button>
-        <button class="btn-secondary" type="button" onclick={saveToFile}>
-          Save report to a file
+      {:else}
+        <button
+          class="btn-primary"
+          type="button"
+          disabled={sending}
+          onclick={send}
+        >
+          {sending ? "Submitting…" : "Submit bug report"}
         </button>
-        <button class="btn-secondary" type="button" onclick={copyReport}>
-          {copied ? "Copied ✓" : "Copy report"}
-        </button>
-        <button class="btn-secondary" type="button" onclick={() => openLink(preview!.mailto_url)}>
-          Email it
-        </button>
-      </div>
-
-      <p class="hint">
-        {#if context?.relay_configured}
-          <strong>Send report</strong> files it for you — no GitHub account needed.
-        {:else}
-          This build has no automatic submission set up, so the routes below are the ones to use.
-        {/if}
-        <strong>Open on GitHub</strong> fills in the issue form in your browser and waits for you to
-        press Submit there; it needs a free GitHub account, and nothing is sent until you do.
-        <strong>Save</strong>, <strong>Copy</strong> and <strong>Email</strong> put the report in your
-        hands to send however you like — attach the saved file to an email to
-        <code>{context?.support_email ?? "the address on the project page"}</code>.
-      </p>
-
-      {#if savedPath}
-        <div class="ok-alert">Saved to <code>{savedPath}</code></div>
       {/if}
+      <button class="btn-secondary" type="button" onclick={openGitHub}>
+        Open on GitHub
+      </button>
+      <button class="btn-secondary" type="button" onclick={saveToFile}>
+        Save report to a file
+      </button>
+      <button class="btn-secondary" type="button" onclick={copyReport}>
+        {copied ? "Copied ✓" : "Copy report"}
+      </button>
+      <button class="btn-secondary" type="button" onclick={sendEmail}>
+        Email it
+      </button>
+    </div>
+
+    {#if actionStatus}
+      <div class={actionStatus.type === "ok" ? "ok-alert" : "warning-alert"}>
+        <div class="alert-body">
+          <div class="alert-msg">{actionStatus.message}</div>
+          {#if actionStatus.path || actionStatus.url}
+            <div class="alert-actions">
+              {#if actionStatus.path}
+                <button class="link-button" type="button" onclick={() => openFolder(actionStatus!.path)}>
+                  📁 Open report folder
+                </button>
+              {/if}
+              {#if actionStatus.url}
+                <button class="link-button" type="button" onclick={() => openLink(actionStatus!.url!)}>
+                  View link
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <p class="hint">
+      {#if context?.relay_configured}
+        <strong>Send report</strong> files it for you — no GitHub account needed.
+      {:else}
+        This build has no automatic submission set up, so the routes below are the ones to use.
+        <strong>Submit bug report</strong> opens the pre-filled issue form on GitHub and copies the report to your clipboard so you can submit directly.
+      {/if}
+      <strong>Open on GitHub</strong> fills in the issue form in your browser and waits for you to
+      press Submit there.
+      <strong>Save</strong>, <strong>Copy</strong> and <strong>Email</strong> put the report in your
+      hands to send however you like — attach the saved file to an email to
+      <code>{context?.support_email ?? "the address on the project page"}</code>.
+    </p>
+
+    {#if savedPath && !actionStatus}
+      <div class="ok-alert">Saved to <code>{savedPath}</code></div>
     {/if}
 
     {#if outcome}
@@ -517,6 +841,18 @@
 
   .link-button {
     @apply underline font-semibold ml-1;
+  }
+
+  .alert-body {
+    @apply flex flex-col gap-1.5 w-full;
+  }
+
+  .alert-msg {
+    @apply leading-relaxed;
+  }
+
+  .alert-actions {
+    @apply flex flex-wrap gap-3 items-center mt-1;
   }
 
   .ok-alert {

@@ -538,6 +538,9 @@ pub fn run() {
             bug_report::preview_bug_report,
             bug_report::submit_bug_report,
             bug_report::save_bug_report,
+            bug_report::open_external_url,
+            bug_report::open_report_folder,
+            bug_report::send_bug_report_email,
             bug_report::suggested_bug_report_filename,
             bug_report::reset_bug_report_identity,
         ])
