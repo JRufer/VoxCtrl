@@ -74,6 +74,9 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.stop_key", Safe),
     ("tts.hf_token", Secret),
     ("tts.snippets", FreeText),
+    // "always_loaded" or "on_demand" — which one is in force decides whether a
+    // "TTS took seconds to start" report is a reload or a real problem.
+    ("tts.memory_mode", Safe),
     ("tts.pocket_tts.voice", Safe),
     ("tts.pocket_tts.voice_dir", Path),
     ("tts.pocket_tts.hf_token", Secret),
