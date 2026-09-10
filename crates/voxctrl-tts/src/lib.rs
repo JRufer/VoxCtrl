@@ -18,10 +18,15 @@ mod fifo;
 pub mod inflect;
 mod piper;
 mod pocket;
+pub mod voxcpm;
 
 pub use breeze::{
     breeze_tts_2_model_dir, download_breeze_tts_2_assets, is_breeze_tts_2_ready,
 };
+pub use voxcpm::{
+    download_vox_cpm_2_assets, is_vox_cpm_2_ready, vox_cpm_2_model_dir,
+};
+pub use voxcpm::is_vox_cpm_2_ready as is_vox_cpm_2_downloaded;
 pub use engine::{
     stop_current_playback, ErrorCallback, PlaybackCallback, TtsCommand, TtsEngineHandle,
     TtsEngineWorker, Utterance,

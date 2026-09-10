@@ -91,6 +91,14 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.breeze_tts_2.speaker_prompt", FreeText),
     ("tts.breeze_tts_2.model_dir", Path),
     ("tts.breeze_tts_2.hf_token", Secret),
+    ("tts.vox_cpm_2.voice_mode", Safe),
+    ("tts.vox_cpm_2.cloned_voice", Safe),
+    ("tts.vox_cpm_2.voice_dir", Path),
+    ("tts.vox_cpm_2.speaker_prompt", FreeText),
+    ("tts.vox_cpm_2.ultimate_cloning", Safe),
+    ("tts.vox_cpm_2.model_dir", Path),
+    ("tts.vox_cpm_2.prewarm", Safe),
+    ("tts.vox_cpm_2.gpu", Safe),
     ("updates.skipped_version", Safe),
 ];
 
