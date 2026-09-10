@@ -148,6 +148,9 @@ pub async fn save_config(
     guard.save().map_err(|e| e.to_string())?;
     info!("Config saved");
 
+    // Hot-reload inference engine configuration
+    let _ = state.inference_config_tx.send(Arc::new(new_config.clone()));
+
     let (overlay_position, overlay_monitor) = (
         guard.data.ui.overlay_position.clone(),
         guard.data.ui.overlay_monitor.clone(),

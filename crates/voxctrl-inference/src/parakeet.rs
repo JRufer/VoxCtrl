@@ -170,31 +170,19 @@ fn load_vocab(path: &Path) -> Result<Vec<String>> {
 }
 
 fn detokenize(tokens: &[usize], vocab: &[String]) -> String {
-    let mut text = String::new();
+    let mut raw = String::new();
     for &tok_id in tokens {
         if tok_id >= vocab.len() {
             continue;
         }
         let tok = &vocab[tok_id];
-        if tok == "<blk>" || tok == "<unk>" || tok.is_empty() {
+        if tok == "<blk>" || tok == "<unk>" || tok == "<pad>" || tok.starts_with("<|") || tok.is_empty() {
             continue;
         }
-        // Handle SentencePiece whitespace prefix (  or Ġ)
-        if let Some(stripped) = tok.strip_prefix(' ') {
-            if !text.is_empty() {
-                text.push(' ');
-            }
-            text.push_str(stripped);
-        } else if let Some(stripped) = tok.strip_prefix('Ġ') {
-            if !text.is_empty() {
-                text.push(' ');
-            }
-            text.push_str(stripped);
-        } else {
-            text.push_str(tok);
-        }
+        raw.push_str(tok);
     }
-    text
+    let converted = raw.replace('\u{2581}', " ").replace('Ġ', " ");
+    converted.trim().to_string()
 }
 
 // ── Loaded State ──────────────────────────────────────────────────────────────
@@ -206,6 +194,9 @@ struct Loaded {
     vocab: Vec<String>,
     targets_is_i32: bool,
     decoder_enc_shape_time_first: bool,
+    logits_idx: usize,
+    state_1_idx: usize,
+    state_2_idx: usize,
 }
 
 // ── Backend ───────────────────────────────────────────────────────────────────
@@ -331,6 +322,24 @@ impl TranscriptionBackend for ParakeetBackend {
             })
             .unwrap_or(false);
 
+        let logits_idx = decoder
+            .outputs()
+            .iter()
+            .position(|o| o.name() == "outputs")
+            .unwrap_or(0);
+
+        let state_1_idx = decoder
+            .outputs()
+            .iter()
+            .position(|o| o.name() == "output_states_1")
+            .unwrap_or(2);
+
+        let state_2_idx = decoder
+            .outputs()
+            .iter()
+            .position(|o| o.name() == "output_states_2")
+            .unwrap_or(3);
+
         *self.state.lock().unwrap() = Some(Loaded {
             preprocessor,
             encoder,
@@ -338,6 +347,9 @@ impl TranscriptionBackend for ParakeetBackend {
             vocab,
             targets_is_i32,
             decoder_enc_shape_time_first,
+            logits_idx,
+            state_1_idx,
+            state_2_idx,
         });
         self.loaded = true;
         Ok(())
@@ -472,7 +484,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     }
 
     // ── 3. Decoder: TDT Greedy Search Loop ───────────────────────────────────
-    let vocab_size = state.vocab.len().min(BLANK_TOKEN_ID);
+    let vocab_size = state.vocab.len();
     let output_dim = vocab_size + NUM_DURATION_CLASSES;
     let blank_idx = BLANK_TOKEN_ID;
 
@@ -547,7 +559,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
             ];
 
             let dec_out = state.decoder.run(dec_feed).context("decoder step run")?;
-            let (_, ldata) = dec_out[0]
+            let (_, ldata) = dec_out[state.logits_idx]
                 .try_extract_tensor::<f32>()
                 .context("extract decoder logits")?;
 
@@ -567,10 +579,10 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
                 emitted_tokens.push(best_token);
                 current_token = best_token;
 
-                let (_, next_s1) = dec_out[1]
+                let (_, next_s1) = dec_out[state.state_1_idx]
                     .try_extract_tensor::<f32>()
                     .context("extract next state_1")?;
-                let (_, next_s2) = dec_out[2]
+                let (_, next_s2) = dec_out[state.state_2_idx]
                     .try_extract_tensor::<f32>()
                     .context("extract next state_2")?;
                 state_1 = next_s1.to_vec();
@@ -613,5 +625,39 @@ mod tests {
         let tokens = vec![0, 1, 2];
         let text = detokenize(&tokens, &vocab);
         assert_eq!(text, "Hello world!");
+    }
+    #[test]
+    fn test_inspect_decoder() {
+        let path = std::path::Path::new("/home/jrufer/.local/share/voxctrl/models/parakeet/tdt-0.6b-v3/decoder_joint-model.int8.onnx");
+        if !path.exists() {
+            return;
+        }
+        let session = ParakeetBackend::build_session(path).unwrap();
+        let outputs = session.outputs();
+        let s1_idx = outputs.iter().position(|o| o.name() == "output_states_1").unwrap_or(2);
+        let s2_idx = outputs.iter().position(|o| o.name() == "output_states_2").unwrap_or(3);
+        let logits_idx = outputs.iter().position(|o| o.name() == "outputs").unwrap_or(0);
+        assert_eq!(logits_idx, 0);
+        assert_eq!(s1_idx, 2);
+        assert_eq!(s2_idx, 3);
+    }
+
+    #[test]
+    fn test_parakeet_transcribe_silence() {
+        let _dir = model_size_dir("", "tdt-0.6b-v3");
+        if !is_model_downloaded("tdt-0.6b-v3", "") {
+            return;
+        }
+        let mut backend = ParakeetBackend::new(ParakeetConfig::default());
+        backend.load().expect("load parakeet");
+        let req = TranscribeRequest {
+            audio: vec![0.0f32; 16000],
+            language: None,
+            word_timestamps: false,
+            initial_prompt: None,
+        };
+        let res = backend.transcribe(&req).expect("transcribe silence");
+        println!("Parakeet transcribe silence result: {:?}", res.text);
+        assert_eq!(res.text, "");
     }
 }

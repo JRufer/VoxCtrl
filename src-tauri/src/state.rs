@@ -69,6 +69,9 @@ pub struct AppState {
     /// syllable of the utterance.
     pub audio_wake: crossbeam_channel::Sender<()>,
 
+    /// Channel sender for notifying the inference worker thread of configuration changes
+    pub inference_config_tx: crossbeam_channel::Sender<Arc<voxctrl_config::AppConfig>>,
+
     /// Playback engine handle
     pub tts_handle: Arc<Mutex<Option<voxctrl_tts::TtsEngineHandle>>>,
 

@@ -15,7 +15,7 @@ pub enum ConfigError {
 
 // ── Engine sub-configs ────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WhisperCppConfig {
     /// Directory containing GGUF model files. Empty = platform default.
     pub model_dir: String,
@@ -42,7 +42,7 @@ impl Default for WhisperCppConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MoonshineConfig {
     /// "base" or "tiny"
     pub model_size: String,
@@ -59,7 +59,7 @@ impl Default for MoonshineConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParakeetConfig {
     pub model_size: String,
     pub language: String,
@@ -74,7 +74,7 @@ impl Default for ParakeetConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteOpenAiConfig {
     /// Remote OpenAI-compatible endpoint URL, e.g. "http://localhost:8000/v1"
     pub endpoint: String,
@@ -120,7 +120,7 @@ impl Default for BackendChoice {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct EngineConfig {
     #[serde(default)]
     pub backend: BackendChoice,

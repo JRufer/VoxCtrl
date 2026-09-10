@@ -60,6 +60,7 @@ fn make_test_state() -> AppState {
     let (audio_tx, _) = crossbeam_channel::bounded(1);
     let (audio_wake, _) = crossbeam_channel::bounded(1);
     let (overlay_tx, _) = crossbeam_channel::unbounded();
+    let (inference_config_tx, _) = crossbeam_channel::unbounded();
     AppState {
         config: Arc::new(Mutex::new(Config::load())),
         router: Arc::new(OutputTargetRouter::new(Vec::new())),
@@ -84,6 +85,7 @@ fn make_test_state() -> AppState {
         targets: Arc::new(Mutex::new(Vec::new())),
         audio_tx,
         audio_wake,
+        inference_config_tx,
         overlay_tx,
         tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),

@@ -192,6 +192,8 @@ pub fn run() {
     let (text_tx, text_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceOutput>(32);
     let (inference_tx, inference_rx) =
         crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
+    let (inference_cfg_tx, inference_cfg_rx) =
+        crossbeam_channel::unbounded::<Arc<voxctrl_config::AppConfig>>();
     let (overlay_tx, overlay_rx) = crossbeam_channel::unbounded::<String>();
     // One pending nudge is all the capture supervisor needs: it re-reads every
     // flag when it wakes, so a second nudge would tell it nothing new.
@@ -225,6 +227,7 @@ pub fn run() {
         targets: Arc::new(Mutex::new(targets.clone())),
         audio_tx: audio_tx.clone(),
         audio_wake: audio_wake_tx,
+        inference_config_tx: inference_cfg_tx,
         tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         stop_key_held: Arc::new(AtomicBool::new(false)),
@@ -268,8 +271,13 @@ pub fn run() {
         rt_handle.clone(),
     );
 
-    // Inference worker
-    voxctrl_inference::run_worker(cfg_data.clone(), inference_rx, text_tx.clone());
+    // Inference worker with live config reloading
+    voxctrl_inference::run_worker_with_config(
+        cfg_data.clone(),
+        inference_rx,
+        text_tx.clone(),
+        inference_cfg_rx,
+    );
 
     // TTS initial worker
     let _tts_handle = if cfg_data.tts.enabled {
