@@ -52,6 +52,10 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.moonshine.language", Safe),
     ("engine.parakeet.model_size", Safe),
     ("engine.parakeet.language", Safe),
+    ("engine.remote_openai.endpoint", Endpoint),
+    ("engine.remote_openai.api_key", Secret),
+    ("engine.remote_openai.model", Safe),
+    ("engine.remote_openai.language", Safe),
     // A device node such as /dev/input/event4. No account name, no home
     // directory, and which node was picked is the whole question when a
     // hotkey does not fire.

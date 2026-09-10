@@ -14,10 +14,19 @@ export interface AppConfig {
 }
 
 export interface EngineConfig {
-  backend: "whisper-cpp" | "moonshine" | "parakeet";
+  backend: "whisper-cpp" | "moonshine" | "parakeet" | "remote-openai";
   whisper_cpp: WhisperCppConfig;
   moonshine: MoonshineConfig;
   parakeet: ParakeetConfig;
+  remote_openai: RemoteOpenAiConfig;
+}
+
+export interface RemoteOpenAiConfig {
+  endpoint: string;
+  api_key: string | null;
+  model: string;
+  language: string;
+  timeout_secs: number;
 }
 
 export interface WhisperCppConfig {
@@ -142,6 +151,13 @@ const defaultConfig: AppConfig = {
     },
     moonshine: { model_size: "base", language: "en" },
     parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },
+    remote_openai: {
+      endpoint: "http://localhost:8000/v1",
+      api_key: null,
+      model: "whisper-1",
+      language: "",
+      timeout_secs: 30,
+    },
   },
   audio: {
     vad_threshold: 0.5,

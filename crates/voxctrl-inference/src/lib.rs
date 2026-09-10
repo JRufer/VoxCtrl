@@ -4,8 +4,13 @@ pub mod moonshine;
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
 pub mod postprocess;
+pub mod remote_openai;
 mod util;
 pub mod whisper_cpp;
+
+pub use remote_openai::{
+    test_remote_speech_engine, RemoteOpenAiBackend, RemoteSttTestResult, RemoteStreamingSession,
+};
 
 /// Whether the Moonshine ONNX backend was compiled into this build. When false,
 /// selecting Moonshine transparently falls back to whisper-cpp, and callers
@@ -508,6 +513,15 @@ fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
                 Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))
             }
         }
+        BackendChoice::RemoteOpenAi => {
+            info!(
+                "Using Remote OpenAI speech engine ({})",
+                config.engine.remote_openai.endpoint
+            );
+            Box::new(remote_openai::RemoteOpenAiBackend::new(
+                config.engine.remote_openai.clone(),
+            ))
+        }
     }
 }
 
@@ -624,5 +638,15 @@ mod tests {
     fn default_backend_is_whisper_cpp() {
         let cfg = AppConfig::default();
         assert_eq!(build_backend(&cfg).name(), "whisper-cpp");
+    }
+
+    #[test]
+    fn remote_openai_backend_builds_correctly() {
+        let mut cfg = AppConfig::default();
+        cfg.engine.backend = BackendChoice::RemoteOpenAi;
+        cfg.engine.remote_openai.endpoint = "http://192.168.1.100:8000/v1".to_string();
+        let backend = build_backend(&cfg);
+        assert_eq!(backend.name(), "remote-openai");
+        assert!(backend.is_loaded());
     }
 }
