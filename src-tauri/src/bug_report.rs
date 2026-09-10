@@ -368,9 +368,10 @@ pub async fn save_bug_report(
 /// Open an external URL using host environment so AppImage library paths
 /// do not crash host browsers or mail clients.
 #[tauri::command]
-pub async fn open_external_url(_app: tauri::AppHandle, url: String) -> Result<(), String> {
+pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
+        let _ = &app;
         let mut cmd = crate::host_env::host_command("xdg-open");
         cmd.arg(&url);
         cmd.spawn()
@@ -388,7 +389,7 @@ pub async fn open_external_url(_app: tauri::AppHandle, url: String) -> Result<()
 
 /// Open the folder containing the saved bug report so the user can easily drag & drop it.
 #[tauri::command]
-pub async fn open_report_folder(path: Option<String>) -> Result<(), String> {
+pub async fn open_report_folder(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
     let target = match path {
         Some(p) => {
             let path_buf = std::path::PathBuf::from(p);
@@ -404,6 +405,7 @@ pub async fn open_report_folder(path: Option<String>) -> Result<(), String> {
     };
     #[cfg(target_os = "linux")]
     {
+        let _ = &app;
         let mut cmd = crate::host_env::host_command("xdg-open");
         cmd.arg(target.to_string_lossy().as_ref());
         cmd.spawn()
@@ -468,6 +470,7 @@ pub async fn send_bug_report_email(
     }
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = attachment_path;
         open_external_url(app, mailto_url).await
     }
 }
