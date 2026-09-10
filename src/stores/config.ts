@@ -13,12 +13,18 @@ export interface AppConfig {
   updates: UpdateConfig;
 }
 
+export interface S1MiniConfig {
+  enabled: boolean;
+  styling: string;
+}
+
 export interface EngineConfig {
   backend: "whisper-cpp" | "moonshine" | "parakeet" | "remote-openai";
   whisper_cpp: WhisperCppConfig;
   moonshine: MoonshineConfig;
   parakeet: ParakeetConfig;
   remote_openai: RemoteOpenAiConfig;
+  s1_mini: S1MiniConfig;
 }
 
 export interface RemoteOpenAiConfig {
@@ -172,6 +178,10 @@ const defaultConfig: AppConfig = {
       model: "whisper-1",
       language: "",
       timeout_secs: 30,
+    },
+    s1_mini: {
+      enabled: false,
+      styling: "semi-formal",
     },
   },
   audio: {

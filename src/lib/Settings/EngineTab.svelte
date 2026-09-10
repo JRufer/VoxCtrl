@@ -145,6 +145,53 @@
     }
   }
 
+  // ── S1-mini Dictation Cleanup ────────────────────────────────────────────
+  let s1MiniDownloaded = $state(false);
+  let s1MiniChecking = $state(false);
+  let s1MiniDownloading = $state(false);
+
+  function ensureS1MiniConfig() {
+    if (!cfg.engine.s1_mini) {
+      cfg.engine.s1_mini = {
+        enabled: false,
+        styling: "semi-formal",
+      };
+    }
+  }
+
+  async function checkS1MiniDownloaded() {
+    s1MiniChecking = true;
+    try {
+      s1MiniDownloaded = await invoke<boolean>("check_s1_mini_downloaded");
+    } catch (e) {
+      console.error("Failed to check S1-mini download status", e);
+      s1MiniDownloaded = false;
+    } finally {
+      s1MiniChecking = false;
+    }
+  }
+
+  async function triggerS1MiniDownload() {
+    if (s1MiniDownloading) return;
+    s1MiniDownloading = true;
+    try {
+      await invoke("download_s1_mini_model");
+      s1MiniDownloaded = true;
+    } catch (e) {
+      alert(`Failed to download S1-mini model: ${e}`);
+    } finally {
+      s1MiniDownloading = false;
+    }
+  }
+
+  async function onS1MiniToggle() {
+    ensureS1MiniConfig();
+    markDirty();
+    if (cfg.engine.s1_mini.enabled && !s1MiniDownloaded) {
+      await triggerS1MiniDownload();
+    }
+  }
+
   // ── Remote Speech Engine (OpenAI API) ────────────────────────────────────
   interface RemoteSttTestResult {
     success: boolean;
@@ -301,6 +348,8 @@
   }
 
   onMount(async () => {
+    ensureS1MiniConfig();
+    checkS1MiniDownloaded();
     checkAllModelsDownloaded();
     try {
       moonshineAvailable = await invoke<boolean>("moonshine_available");
@@ -369,6 +418,55 @@
       <span>Backend</span>
       <CustomSelect bind:value={cfg.engine.backend} options={backendOptions} onchange={markDirty} />
     </label>
+
+    <div class="s1-mini-card">
+      <div class="s1-mini-header">
+        <label class="s1-mini-toggle">
+          <input
+            type="checkbox"
+            bind:checked={cfg.engine.s1_mini.enabled}
+            onchange={onS1MiniToggle}
+          />
+          <span class="toggle-title">Enable S1-mini dictation cleanup</span>
+        </label>
+        {#if s1MiniDownloaded}
+          <span class="status-badge ready">✔ Ready</span>
+        {:else if s1MiniDownloading}
+          <span class="status-badge downloading">⏳ Downloading</span>
+        {:else if cfg.engine.s1_mini?.enabled}
+          <span class="status-badge missing">Missing</span>
+        {/if}
+      </div>
+      <p class="s1-mini-desc">
+        Uses Superwhisper's local Qwen-based text normalizer to clean speech-to-text transcripts into natural punctuation, casing, and spoken corrections.
+        <span class="s1-mini-size-note">Note: S1-Mini is a ~480 MB download.</span>
+      </p>
+
+      {#if cfg.engine.s1_mini?.enabled}
+        <div class="model-status-container mt-2">
+          {#if s1MiniChecking}
+            <span class="status-checking">⏳ Checking S1-mini model files...</span>
+          {:else if s1MiniDownloading}
+            <span class="status-downloading"
+              >⏳ Downloading S1-mini model (s1-mini-q4_k_m.gguf & tokenizer.json)...</span
+            >
+          {:else if s1MiniDownloaded}
+            <span class="status-downloaded">✔ Model downloaded and ready</span>
+          {:else}
+            <div class="status-missing-wrapper">
+              <span class="status-missing">❌ Model files missing</span>
+              <button
+                class="btn-download"
+                type="button"
+                onclick={triggerS1MiniDownload}
+              >
+                📥 Download S1-mini
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 
   {#if cfg.engine.backend === "whisper-cpp"}
@@ -764,5 +862,36 @@
   }
   .tag-btn.active {
     @apply border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10;
+  }
+
+  .s1-mini-card {
+    @apply mt-4 p-4 rounded-[var(--radius)] border border-[var(--border)] bg-white/[0.02] flex flex-col gap-2;
+  }
+  .s1-mini-header {
+    @apply flex items-center justify-between gap-3;
+  }
+  .s1-mini-toggle {
+    @apply flex items-center gap-2.5 cursor-pointer font-medium text-sm text-slate-100;
+  }
+  .s1-mini-toggle input[type="checkbox"] {
+    @apply w-4 h-4 cursor-pointer accent-[var(--accent)];
+  }
+  .s1-mini-desc {
+    @apply text-xs text-[var(--text-muted)] leading-relaxed m-0;
+  }
+  .s1-mini-size-note {
+    @apply block mt-1 text-[11px] font-medium text-cyan-300/80;
+  }
+  .status-badge {
+    @apply text-xs px-2.5 py-0.5 rounded-[var(--radius)] font-medium;
+  }
+  .status-badge.ready {
+    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
+  }
+  .status-badge.downloading {
+    @apply bg-cyan-500/15 text-cyan-300 border border-cyan-500/30;
+  }
+  .status-badge.missing {
+    @apply bg-amber-500/15 text-amber-300 border border-amber-500/30;
   }
 </style>

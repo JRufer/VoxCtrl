@@ -378,6 +378,7 @@ mod suppress_tests {
             openai_mode: None,
             openai_prompt: None,
             openai_system_prompt: None,
+            s1_mini_enabled: None,
         }
     }
 

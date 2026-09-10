@@ -58,4 +58,5 @@ export interface HotkeyBinding {
   openai_mode?: string;
   openai_prompt?: string;
   openai_system_prompt?: string;
+  s1_mini_enabled?: boolean;
 }

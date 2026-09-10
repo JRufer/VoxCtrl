@@ -120,6 +120,27 @@ impl Default for BackendChoice {
     }
 }
 
+fn default_s1_mini_styling() -> String {
+    "semi-formal".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct S1MiniConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_s1_mini_styling")]
+    pub styling: String,
+}
+
+impl Default for S1MiniConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            styling: default_s1_mini_styling(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct EngineConfig {
     #[serde(default)]
@@ -132,6 +153,8 @@ pub struct EngineConfig {
     pub parakeet: ParakeetConfig,
     #[serde(default)]
     pub remote_openai: RemoteOpenAiConfig,
+    #[serde(default)]
+    pub s1_mini: S1MiniConfig,
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────

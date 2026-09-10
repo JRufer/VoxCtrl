@@ -145,6 +145,7 @@ pub fn stop_binding(stop_key: Vec<String>) -> HotkeyBinding {
         openai_mode: None,
         openai_prompt: None,
         openai_system_prompt: None,
+        s1_mini_enabled: None,
     }
 }
 

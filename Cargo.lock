@@ -9794,6 +9794,8 @@ version = "0.5.4"
 dependencies = [
  "anyhow",
  "bytes",
+ "candle-core",
+ "candle-transformers",
  "cc",
  "crossbeam-channel",
  "dirs 5.0.1",

@@ -60,6 +60,7 @@ Applied after transcription before delivery:
 - Snippet expansion (custom shorthand → full text)
 - Custom vocabulary fuzzy correction (Levenshtein matching for proper nouns/domain terms)
 - Code mode (camelCase conversion, spoken operators)
+- **On-device S1-mini dictation cleanup** (Superwhisper Qwen3-0.6B model running via Candle for offline text normalization and punctuation correction)
 - Optional LLM rewrite via any OpenAI-compatible API server (clean, formal, casual, bullet, concise, or custom prompt)
 
 ### Text-to-Speech

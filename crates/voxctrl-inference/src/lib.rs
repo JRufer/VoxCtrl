@@ -5,6 +5,7 @@ pub mod moonshine;
 pub mod parakeet;
 pub mod postprocess;
 pub mod remote_openai;
+pub mod s1_mini;
 mod util;
 pub mod whisper_cpp;
 
@@ -222,6 +223,7 @@ pub struct InferenceRequest {
 pub struct InferenceOutput {
     pub text: String,
     pub target_id: String,
+    pub binding_id: Option<String>,
     pub raw_text: String,
     pub inference_ms: u32,
     pub language: String,
@@ -286,6 +288,7 @@ impl InferenceEngine {
             return Ok(InferenceOutput {
                 text: String::new(),
                 target_id: req.target_id,
+                binding_id: req.binding_id,
                 raw_text: String::new(),
                 inference_ms: 0,
                 language: "en".into(),
@@ -324,6 +327,7 @@ impl InferenceEngine {
             return Ok(InferenceOutput {
                 text: String::new(),
                 target_id: req.target_id,
+                binding_id: req.binding_id,
                 raw_text: String::new(),
                 inference_ms: 0,
                 language: "en".into(),
@@ -455,6 +459,7 @@ impl InferenceEngine {
         Ok(InferenceOutput {
             text: processed,
             target_id: req.target_id,
+            binding_id: req.binding_id,
             raw_text,
             inference_ms: result.inference_ms,
             language: result.language,
@@ -614,6 +619,7 @@ pub fn run_worker_with_config(
                                     let _ = tx.send(InferenceOutput {
                                         text: String::new(),
                                         target_id: req.target_id,
+                                        binding_id: req.binding_id,
                                         raw_text: String::new(),
                                         inference_ms: 0,
                                         language: String::new(),
@@ -633,6 +639,7 @@ pub fn run_worker_with_config(
                                 let _ = tx.send(InferenceOutput {
                                     text: "".to_string(),
                                     target_id: "".to_string(),
+                                    binding_id: None,
                                     raw_text: "".to_string(),
                                     inference_ms: 0,
                                     language: "".to_string(),

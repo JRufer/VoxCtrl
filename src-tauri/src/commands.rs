@@ -609,6 +609,18 @@ pub async fn download_parakeet_model(model_size: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn check_s1_mini_downloaded(model_dir: Option<String>) -> Result<bool, String> {
+    Ok(voxctrl_inference::s1_mini::is_s1_mini_downloaded(model_dir.as_deref()))
+}
+
+#[tauri::command]
+pub async fn download_s1_mini_model(model_dir: Option<String>) -> Result<(), String> {
+    voxctrl_inference::s1_mini::download_s1_mini_assets(model_dir.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn check_directory_exists(path: String) -> Result<bool, String> {
     if path.is_empty() {
         return Ok(true);

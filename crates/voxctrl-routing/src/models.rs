@@ -41,6 +41,8 @@ pub struct HotkeyBinding {
     pub openai_prompt: Option<String>,
     #[serde(default, alias = "ollama_system_prompt")]
     pub openai_system_prompt: Option<String>,
+    #[serde(default)]
+    pub s1_mini_enabled: Option<bool>,
 }
 
 impl HotkeyBinding {

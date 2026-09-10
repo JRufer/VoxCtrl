@@ -524,6 +524,8 @@ pub fn run() {
             parakeet_available,
             check_parakeet_downloaded,
             download_parakeet_model,
+            check_s1_mini_downloaded,
+            download_s1_mini_model,
             check_directory_exists,
             test_openai,
             test_remote_stt,
