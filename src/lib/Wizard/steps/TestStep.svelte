@@ -29,7 +29,11 @@
   const keys = $derived(wizard.combo ?? []);
 
   const engineSummary = $derived(
-    $config.engine.backend === "moonshine"
+    $config.engine.backend === "remote-openai"
+      ? `Remote Speech Engine · ${$config.engine.remote_openai?.model || "whisper-1"}`
+      : $config.engine.backend === "parakeet"
+      ? `Parakeet TDT · ${$config.engine.parakeet.model_size}`
+      : $config.engine.backend === "moonshine"
       ? `Moonshine · ${$config.engine.moonshine.model_size}`
       : `whisper.cpp · ${$config.engine.whisper_cpp.model_size} · ${
           $config.engine.whisper_cpp.device === "cpu" ? "cpu" : "gpu/auto"
@@ -138,7 +142,7 @@
         <div>
           <div class="tick">✓</div>
           <div class="won-title">It works.</div>
-          <div class="won-sub">Transcribed on-device in {elapsedMs} ms · delivered via inject</div>
+          <div class="won-sub">Transcribed{$config.engine.backend === "remote-openai" ? " via Remote Speech Engine" : " on-device"} in {elapsedMs} ms · delivered via inject</div>
           <button class="vx-btn" onclick={reset}>Try again</button>
         </div>
       </div>

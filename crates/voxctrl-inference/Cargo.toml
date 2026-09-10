@@ -18,6 +18,8 @@ crossbeam-channel = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true }
+bytes = { workspace = true }
+futures-util = { workspace = true }
 whisper-rs = { version = "0.16" }
 ndarray = { workspace = true }
 # Physical-core count for the backend thread pools (already in the graph).

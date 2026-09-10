@@ -41,12 +41,21 @@ const A_REAL_DESCRIPTION =
   "I press the dictation hotkey, the overlay appears, and no text is ever typed anywhere.";
 
 function respondWith(overrides: Record<string, unknown> = {}) {
-  invoke.mockImplementation(async (cmd: string) => {
+  invoke.mockImplementation(async (cmd: string, args?: any) => {
     if (cmd === "bug_report_context") return { ...CONTEXT, ...(overrides.context ?? {}) };
     if (cmd === "preview_bug_report") return { ...PREVIEW, ...(overrides.preview ?? {}) };
     if (cmd === "submit_bug_report") return overrides.outcome ?? { ok: true, issue_url: null, message: "Filed." };
+    if (cmd === "save_bug_report") return args?.path ?? "/home/tester/Downloads/voxctrl-bug-report.md";
+    if (cmd === "suggested_bug_report_filename") return "voxctrl-bug-report-20260909.md";
+    if (cmd === "open_external_url") return {};
     return {};
   });
+}
+
+if (!navigator.clipboard) {
+  Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+} else {
+  vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
 }
 
 /** Fill the form in far enough that a report can be built. */
@@ -151,5 +160,47 @@ describe("BugReportTab", () => {
     await fireEvent.click(reset);
     await screen.findByRole("button", { name: /Reset ✓/i });
     expect(screen.getByText(/ffffffffffff/)).toBeTruthy();
+  });
+
+  test("Open on GitHub executes action and updates UI to say action is complete", async () => {
+    render(BugReportTab);
+    await fillForm();
+    const btn = await screen.findByRole("button", { name: /Open on GitHub/i }, { timeout: 3000 });
+    await fireEvent.click(btn);
+    await screen.findByText(/Action complete: Opened issue form on GitHub in your browser/i);
+  });
+
+  test("Save report to a file executes action and updates UI with the saved path", async () => {
+    render(BugReportTab);
+    await fillForm();
+    const btn = await screen.findByRole("button", { name: /Save report to a file/i }, { timeout: 3000 });
+    await fireEvent.click(btn);
+    await screen.findByText(/Action complete: Bug report saved to/i);
+  });
+
+  test("Copy report copies markdown and updates UI to say action is complete", async () => {
+    render(BugReportTab);
+    await fillForm();
+    const btn = await screen.findByRole("button", { name: /Copy report/i }, { timeout: 3000 });
+    await fireEvent.click(btn);
+    await screen.findByText(/Action complete: Full bug report copied to clipboard/i);
+    expect(screen.getByText(/Copied ✓/i)).toBeTruthy();
+  });
+
+  test("Email it executes action and updates UI to say action is complete", async () => {
+    render(BugReportTab);
+    await fillForm();
+    const btn = await screen.findByRole("button", { name: /Email it/i }, { timeout: 3000 });
+    await fireEvent.click(btn);
+    await screen.findByText(/Action complete: Opened bug report draft in your email client/i);
+  });
+
+  test("Submit bug report when no relay submits via GitHub and updates UI", async () => {
+    respondWith({ context: { relay_configured: false } });
+    render(BugReportTab);
+    await fillForm();
+    const submitBtn = await screen.findByRole("button", { name: /Submit bug report/i }, { timeout: 3000 });
+    await fireEvent.click(submitBtn);
+    await screen.findByText(/Bug report submission initiated! Issue form opened on GitHub/i);
   });
 });

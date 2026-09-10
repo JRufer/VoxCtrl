@@ -12,7 +12,7 @@ Everything below describes what the code does, with pointers to where it does it
 |---|---|
 | Can VoxCtrl read what I type in other applications? | **No.** Your desktop delivers shortcuts; VoxCtrl is never given keystrokes. |
 | Does installing it grant any process new access to my keyboard? | **No.** No udev rule, no `input` group, nothing. |
-| Does my audio leave the machine? | **No**, unless you configure a target that sends it somewhere. |
+| Does my audio leave the machine? | **No by default.** Audio only leaves your machine if you explicitly configure the Remote Speech Engine pointing to an external or LAN server. |
 | Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
 | Does it phone home at all? | **Once, for updates.** On launch it asks GitHub what the latest release is — no identifiers, nothing about you — and one setting turns it off. [Details](#network). |
 | Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
@@ -104,9 +104,10 @@ VoxCtrl also ignores its own synthesised keystrokes: every event it generates ca
 ## Audio
 
 - The microphone is opened when a gesture starts recording and closed when it stops. It is not held open in between.
-- Audio is transcribed on your machine by `whisper.cpp` (or Moonshine). No audio is uploaded anywhere.
+- For all local backends (`whisper.cpp`, `Moonshine`, `Parakeet TDT`), audio is transcribed 100% on your machine. No audio is ever uploaded anywhere.
+- **Remote Speech Engine ("Bring Your Own Voice Engine")**: If you explicitly configure `backend = "remote-openai"`, captured audio is encoded as a 16 kHz 16-bit mono WAV payload and transmitted via HTTP POST multipart request solely to the destination endpoint URL you configure (such as a server on your local network or a cloud API).
 
-The one exception is one you configure: `http`, `webhook`, `chat` and `mcp` targets send **transcribed text** to wherever you point them, and LLM post-processing sends text to the endpoint you configure. Those are opt-in, per-target, and visible in `targets.toml`. Audio itself is never sent by any target.
+The other destination for network traffic is one you configure: `http`, `webhook`, `chat` and `mcp` targets send **transcribed text** to wherever you point them, and LLM post-processing sends text to the endpoint you configure. Those are opt-in, per-target, and visible in `targets.toml`. Audio itself is never sent by any target.
 
 ---
 
@@ -125,6 +126,7 @@ check**. Everything else on the network happens because you asked for it:
 | Installing an offered update | `github.com` release download | Nothing beyond the request for the file |
 | Downloading a speech model | HuggingFace / the model host, on demand | Nothing beyond the request for the file |
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
+| Remote Speech Engine transcription (`backend = "remote-openai"`) | The speech-to-text endpoint you configured (LAN server or API) | 16 kHz mono WAV audio recorded during the gesture |
 | LLM post-processing | The OpenAI-compatible endpoint you configured | The transcribed text |
 | `http` / `webhook` / `chat` / `mcp` targets | The destination you configured | The transcribed text |
 | Pressing **Send report** in Settings → Bug Report | The bug-report relay, or GitHub if you choose that route | The report you were shown first — see [Bug reports](#bug-reports) |

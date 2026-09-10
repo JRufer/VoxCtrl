@@ -9,7 +9,7 @@
  * is still reachable in Settings afterwards.
  */
 
-export type SttEngineId = "whisper-cpp" | "moonshine" | "parakeet";
+export type SttEngineId = "whisper-cpp" | "moonshine" | "parakeet" | "remote-openai";
 
 export interface ModelOption {
   /** Value written into the config (`whisper_cpp.model_size` / `moonshine.model_size` / `parakeet.model_size`). */
@@ -40,6 +40,11 @@ export const MOONSHINE_MODELS: ModelOption[] = [
 /** NVIDIA Parakeet TDT 0.6B v3. */
 export const PARAKEET_MODELS: ModelOption[] = [
   { id: "tdt-0.6b-v3", mb: 665, speed: 0.95, accuracy: 0.94 },
+];
+
+/** Remote OpenAI-compatible Speech Engine (offloaded, network-based). */
+export const REMOTE_OPENAI_MODELS: ModelOption[] = [
+  { id: "remote", mb: 0, speed: 0.95, accuracy: 0.95 },
 ];
 
 export interface SttEngineInfo {
@@ -84,6 +89,16 @@ export const STT_ENGINES: SttEngineInfo[] = [
     models: PARAKEET_MODELS,
     gpu: true,
     noiseRetention: 0.88,
+  },
+  {
+    id: "remote-openai",
+    name: "Remote Speech Engine",
+    glyph: "🌐",
+    tagline:
+      "Connect to an OpenAI-compatible speech-to-text server on your network or cloud (Faster-Whisper, vLLM, etc.).",
+    models: REMOTE_OPENAI_MODELS,
+    gpu: false,
+    noiseRetention: 0.92,
   },
 ];
 

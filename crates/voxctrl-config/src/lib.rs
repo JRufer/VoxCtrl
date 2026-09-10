@@ -74,6 +74,32 @@ impl Default for ParakeetConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteOpenAiConfig {
+    /// Remote OpenAI-compatible endpoint URL, e.g. "http://localhost:8000/v1"
+    pub endpoint: String,
+    /// Optional API key for Bearer authorization
+    pub api_key: Option<String>,
+    /// Model identifier, e.g. "whisper-1", "whisper-large-v3"
+    pub model: String,
+    /// Optional language code, e.g. "en" (empty string = auto-detect)
+    pub language: String,
+    /// Request timeout in seconds
+    pub timeout_secs: u64,
+}
+
+impl Default for RemoteOpenAiConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: "http://localhost:8000/v1".into(),
+            api_key: None,
+            model: "whisper-1".into(),
+            language: "".into(),
+            timeout_secs: 30,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendChoice {
@@ -84,6 +110,8 @@ pub enum BackendChoice {
     WhisperCpp,
     Moonshine,
     Parakeet,
+    #[serde(rename = "remote-openai", alias = "remote-open-ai", alias = "remote_openai", alias = "openai-compatible", alias = "remote")]
+    RemoteOpenAi,
 }
 
 impl Default for BackendChoice {
@@ -102,6 +130,8 @@ pub struct EngineConfig {
     pub moonshine: MoonshineConfig,
     #[serde(default)]
     pub parakeet: ParakeetConfig,
+    #[serde(default)]
+    pub remote_openai: RemoteOpenAiConfig,
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
@@ -1200,6 +1230,14 @@ mod tests {
             serde_json::to_string(&BackendChoice::Parakeet).unwrap(),
             r#""parakeet""#
         );
+        assert_eq!(
+            serde_json::to_string(&BackendChoice::RemoteOpenAi).unwrap(),
+            r#""remote-openai""#
+        );
+        let parsed: BackendChoice = serde_json::from_str(r#""remote-openai""#).unwrap();
+        assert_eq!(parsed, BackendChoice::RemoteOpenAi);
+        let parsed_alias: BackendChoice = serde_json::from_str(r#""openai-compatible""#).unwrap();
+        assert_eq!(parsed_alias, BackendChoice::RemoteOpenAi);
     }
 
     #[test]

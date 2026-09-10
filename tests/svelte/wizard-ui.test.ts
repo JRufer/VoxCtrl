@@ -41,6 +41,13 @@ function baseConfig(): any {
       whisper_cpp: { model_dir: "", model_size: "small", device: "auto", threads: 0 },
       moonshine: { model_size: "base", language: "en" },
       parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },
+      remote_openai: {
+        endpoint: "http://localhost:8000/v1",
+        api_key: null,
+        model: "whisper-1",
+        language: "",
+        timeout_secs: 30,
+      },
     },
     audio: {},
     ui: {
@@ -218,7 +225,7 @@ describe("EngineStep", () => {
     render(EngineStep, { registerGate: noopGate, setBlocker: noopBlocker });
 
     const cards = await screen.findAllByRole("radio");
-    const [whisper, moonshine, parakeet] = cards;
+    const [whisper, moonshine, parakeet, remote] = cards;
     expect(whisper.getAttribute("aria-checked")).toBe("true");
 
     await fireEvent.click(moonshine);
@@ -231,6 +238,11 @@ describe("EngineStep", () => {
     await waitFor(() => expect(parakeet.getAttribute("aria-checked")).toBe("true"));
     expect(whisper.getAttribute("aria-checked")).toBe("false");
     expect(moonshine.getAttribute("aria-checked")).toBe("false");
+
+    await fireEvent.click(remote);
+    await waitFor(() => expect(remote.getAttribute("aria-checked")).toBe("true"));
+    expect(whisper.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Remote Speech Engine Settings")).toBeTruthy();
   });
 
   test("picking a model size highlights that size on screen", async () => {
@@ -460,6 +472,71 @@ describe("EngineStep", () => {
     expect(ok).toBe(false);
     expect(wizard.issues.map((i) => i.id)).toEqual(["model-download"]);
     expect(wizard.issues[0].detail).toContain("network unreachable");
+  });
+
+  test("Remote Speech Engine pops up modal on selection and blocks continue until tested", async () => {
+    let blocker: string | null = null;
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "check_model_downloaded") return true;
+      if (cmd === "moonshine_available") return true;
+      if (cmd === "accelerator_support") return { whisper_gpu: null, moonshine_gpu: null };
+      return undefined;
+    });
+
+    render(EngineStep, {
+      registerGate: noopGate,
+      setBlocker: (_step: number, reason: string | null) => {
+        blocker = reason;
+      },
+    });
+
+    const cards = await screen.findAllByRole("radio");
+    const remote = cards[3];
+    await fireEvent.click(remote);
+
+    // Modal pops up
+    expect(await screen.findByText("Remote Speech Engine Settings")).toBeTruthy();
+    // Continue is blocked until connection test succeeds
+    await waitFor(() => expect(blocker).toBe("Test the remote connection successfully to continue."));
+  });
+
+  test("successful test on Remote Speech Engine enables progression", async () => {
+    let blocker: string | null = null;
+    let gate: any = null;
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "check_model_downloaded") return true;
+      if (cmd === "moonshine_available") return true;
+      if (cmd === "accelerator_support") return { whisper_gpu: null, moonshine_gpu: null };
+      if (cmd === "test_remote_stt") {
+        return { success: true, message: "Connected to Faster-Whisper", models: ["whisper-1", "large-v3"] };
+      }
+      return undefined;
+    });
+
+    render(EngineStep, {
+      registerGate: (_step: number, g: any) => (gate = g ?? gate),
+      setBlocker: (_step: number, reason: string | null) => {
+        blocker = reason;
+      },
+    });
+
+    const cards = await screen.findAllByRole("radio");
+    const remote = cards[3];
+    await fireEvent.click(remote);
+
+    // Click test button
+    const testBtn = await screen.findByRole("button", { name: /Test Connection/ });
+    await fireEvent.click(testBtn);
+
+    // Status pill displays success
+    expect(await screen.findByText(/Connected to Faster-Whisper/)).toBeTruthy();
+    // Blocker is cleared
+    await waitFor(() => expect(blocker).toBeNull());
+
+    // Gate passes
+    expect(gate).toBeTruthy();
+    const ok = await gate();
+    expect(ok).toBe(true);
   });
 });
 

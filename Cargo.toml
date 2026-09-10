@@ -19,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.3"
+version = "0.5.4"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -57,7 +57,8 @@ regex = "1"
 arboard = "3"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+bytes = "1"
 
 # DBus (Linux only)
 zbus = { version = "4", features = ["tokio"] }

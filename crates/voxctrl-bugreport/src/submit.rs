@@ -52,14 +52,14 @@ pub const ISSUES_NEW_URL: &str = "https://github.com/JRufer/VoxCtrl/issues/new";
 /// Where a report can be emailed when there is no relay and no GitHub account.
 pub const SUPPORT_EMAIL: &str = "jrufer@jrufer.com";
 
-/// GitHub answers a `GET` longer than about 8 KB with an error page rather than
-/// the form, so the prefilled body is trimmed well inside that.
-const MAX_URL_BODY_CHARS: usize = 5500;
+/// GitHub answers a `GET` longer than about 4-8 KB with an error page (414 URI Too Long)
+/// rather than the form, so the prefilled body is kept compact and safe.
+const MAX_URL_BODY_CHARS: usize = 1200;
 
 /// A mail client's command line is shorter still, and a body that overflows it
 /// is silently cut — so the email route carries a pointer to the saved file
-/// rather than the report.
-const MAX_MAILTO_BODY_CHARS: usize = 1500;
+/// along with key system specs rather than the entire raw log.
+const MAX_MAILTO_BODY_CHARS: usize = 1000;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -189,15 +189,35 @@ pub fn interpret(status: u16, body: &str) -> Result<SubmitResponse, SubmitError>
 /// the reporter to read it and press Submit. That is worth saying in the UI,
 /// because "open a GitHub issue" sounds like it files one.
 pub fn github_issue_url(report: &BugReport) -> String {
-    let body = report.to_markdown();
-    let trimmed = if body.chars().count() > MAX_URL_BODY_CHARS {
+    let s = &report.system;
+    let description = crate::report::neutralize_user_text(report.statement.description.trim());
+    let base_body = format!(
+        "### What happened\n\n{}\n\n| | |\n|---|---|\n| Area | {} |\n| How often | {} |\n| VoxCtrl | {} ({}) |\n| OS | {} — {} {} |\n| Desktop | {} ({}) |\n| Display / GPU | {} |\n| Report ID | `{}` |\n\n",
+        description,
+        crate::report::md_cell(&report.statement.area),
+        crate::report::md_cell(&report.statement.frequency),
+        s.app_version,
+        s.install_kind,
+        s.os,
+        s.os_name.as_deref().unwrap_or("unknown"),
+        s.os_version.as_deref().unwrap_or(""),
+        s.desktop.as_deref().unwrap_or("unknown"),
+        s.session_type.as_deref().unwrap_or("unknown"),
+        crate::report::or_none(&s.gpus.join(" · ")),
+        &report.fingerprint[..12.min(report.fingerprint.len())],
+    );
+
+    let trimmed = if base_body.chars().count() > MAX_URL_BODY_CHARS {
         format!(
             "{}\n\n_The rest of this report did not fit in a link. Use **Copy report** on \
              VoxCtrl's Bug Report page and paste it here to include all of it._\n",
-            truncate_chars(&body, MAX_URL_BODY_CHARS)
+            truncate_chars(&base_body, MAX_URL_BODY_CHARS)
         )
     } else {
-        body
+        format!(
+            "{}_Note: Web browsers cannot auto-attach local files from a link for security reasons. The rest of this report (settings, targets, and logs) did not fit in a link. Use **Copy report** on VoxCtrl's Bug Report page and paste it here, or drag & drop the saved report file._\n",
+            base_body
+        )
     };
     format!(
         "{ISSUES_NEW_URL}?labels=bug&title={}&body={}",
@@ -208,22 +228,34 @@ pub fn github_issue_url(report: &BugReport) -> String {
 
 /// A prefilled email, for reporters with neither a relay nor an account.
 ///
-/// The body is a covering note, not the report: mail clients truncate long
-/// `mailto:` bodies without saying so, and a silently halved report is worse
-/// than none. The report goes as the saved file, attached by hand.
+/// The body includes a structured summary and system hardware details,
+/// and points to the saved report file so long logs can be attached.
 pub fn mailto_url(report: &BugReport, saved_file: Option<&str>) -> String {
+    let s = &report.system;
     let attachment_line = match saved_file {
-        Some(path) => format!("The full report is saved at:\n{path}\nPlease attach that file."),
+        Some(path) => format!("The full report is saved at:\n{path}\nPlease attach that file (or press Ctrl+V to paste the report)."),
         None => "Use \"Save report to a file\" on VoxCtrl's Bug Report page and attach the file \
                  it writes."
             .to_string(),
     };
     let body = format!(
-        "{}\n\n---\n{attachment_line}\n\nVoxCtrl {} on {} ({})\nReport ID: {}\n",
+        "{}\n\n---\n{attachment_line}\n\n### System\n- VoxCtrl: {} ({})\n- OS: {} — {} {}\n- Desktop / Session: {} ({})\n- CPU: {} ({} cores)\n- Memory: {}\n- Display / GPU: {}\n- Report ID: {}\n",
         truncate_chars(report.statement.description.trim(), MAX_MAILTO_BODY_CHARS),
-        report.system.app_version,
-        report.system.os,
-        report.system.install_kind,
+        s.app_version,
+        s.install_kind,
+        s.os,
+        s.os_name.as_deref().unwrap_or("unknown"),
+        s.os_version.as_deref().unwrap_or(""),
+        s.desktop.as_deref().unwrap_or("unknown"),
+        s.session_type.as_deref().unwrap_or("unknown"),
+        s.cpu_model.as_deref().unwrap_or("unknown"),
+        s.cpu_logical_cores
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "?".into()),
+        s.memory_total_mb
+            .map(|mb| format!("{} MB", mb))
+            .unwrap_or_else(|| "unknown".into()),
+        crate::report::or_none(&s.gpus.join(" · ")),
         &report.fingerprint[..12.min(report.fingerprint.len())],
     );
     format!(

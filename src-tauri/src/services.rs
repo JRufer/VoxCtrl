@@ -292,8 +292,9 @@ pub fn auto_download_speech_model_if_needed(
     // Only the whisper-cpp path needs a GGUF model on disk. A Moonshine
     // or Parakeet selection uses whisper-cpp (and thus its model) unless their
     // backend is actually compiled into this build.
-    let uses_whisper_model = (cfg_data.engine.backend != voxctrl_config::BackendChoice::Moonshine
-        || !voxctrl_inference::MOONSHINE_COMPILED)
+    let uses_whisper_model = cfg_data.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
+        && (cfg_data.engine.backend != voxctrl_config::BackendChoice::Moonshine
+            || !voxctrl_inference::MOONSHINE_COMPILED)
         && (cfg_data.engine.backend != voxctrl_config::BackendChoice::Parakeet
             || !voxctrl_inference::PARAKEET_COMPILED);
     if uses_whisper_model {

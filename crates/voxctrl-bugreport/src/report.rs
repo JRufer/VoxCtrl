@@ -219,7 +219,7 @@ impl BugReport {
 ///
 /// This happens at render time, so the preview the reporter reads is exactly
 /// the text that gets filed.
-fn neutralize_user_text(text: &str) -> String {
+pub(crate) fn neutralize_user_text(text: &str) -> String {
     const ZERO_WIDTH_SPACE: char = '\u{200b}';
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -244,7 +244,7 @@ fn neutralize_user_text(text: &str) -> String {
     out
 }
 
-fn or_none(text: &str) -> String {
+pub(crate) fn or_none(text: &str) -> String {
     if text.trim().is_empty() {
         "none reported".into()
     } else {
@@ -275,7 +275,7 @@ fn fenced(language: &str, body: &str) -> String {
 
 /// A pipe inside a table cell ends the cell, so it has to be escaped; a newline
 /// ends the row entirely, so it becomes a space.
-fn md_cell(text: &str) -> String {
+pub(crate) fn md_cell(text: &str) -> String {
     collapse_whitespace(text).replace('|', "\\|")
 }
 

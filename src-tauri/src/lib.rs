@@ -259,7 +259,14 @@ pub fn run() {
     }
 
     // Audio chunk coordinator thread
-    pipeline::spawn_audio_coordinator(app_state.clone(), audio_rx, inference_tx);
+    let rt_handle = tokio::runtime::Handle::current();
+    pipeline::spawn_audio_coordinator(
+        app_state.clone(),
+        audio_rx,
+        inference_tx,
+        text_tx.clone(),
+        rt_handle.clone(),
+    );
 
     // Inference worker
     voxctrl_inference::run_worker(cfg_data.clone(), inference_rx, text_tx.clone());
@@ -336,7 +343,6 @@ pub fn run() {
     pipeline::spawn_hotkey_gesture_handler(app_state.clone(), gesture_rx);
 
     // Text delivery worker
-    let rt_handle = tokio::runtime::Handle::current();
     pipeline::spawn_text_delivery_worker(app_state.clone(), text_rx, rt_handle);
 
     // DBus service
@@ -509,6 +515,7 @@ pub fn run() {
             download_parakeet_model,
             check_directory_exists,
             test_openai,
+            test_remote_stt,
             cuda_enabled,
             accelerator_support,
             check_hotkey_status,
@@ -538,6 +545,9 @@ pub fn run() {
             bug_report::preview_bug_report,
             bug_report::submit_bug_report,
             bug_report::save_bug_report,
+            bug_report::open_external_url,
+            bug_report::open_report_folder,
+            bug_report::send_bug_report_email,
             bug_report::suggested_bug_report_filename,
             bug_report::reset_bug_report_identity,
         ])

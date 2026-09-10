@@ -79,7 +79,7 @@
         const cfg = $config;
         if (cfg && cfg.engine && cfg.engine.whisper_cpp) {
           const modelSize = cfg.engine.whisper_cpp.model_size;
-          if (cfg.engine.backend !== "moonshine") {
+          if (cfg.engine.backend === "whisper-cpp") {
             invoke<boolean>("check_model_downloaded", {
               modelSize,
               modelDir: cfg.engine.whisper_cpp.model_dir || "",

@@ -58,6 +58,7 @@
         ? `Parakeet TDT (${gpuLabel(parakeetGpu)})`
         : "Parakeet TDT (CPU only)",
     },
+    { value: "remote-openai", label: "Remote Speech Engine (OpenAI API)" },
   ]);
 
   let whisperModelSizeOptions = $derived(
@@ -141,6 +142,56 @@
     const selected = cfg.engine.parakeet?.model_size ?? "tdt-0.6b-v3";
     if (parakeetAvailable && !parakeetDownloadedMap[selected]) {
       await triggerParakeetDownload(selected);
+    }
+  }
+
+  // ── Remote Speech Engine (OpenAI API) ────────────────────────────────────
+  interface RemoteSttTestResult {
+    success: boolean;
+    message: string;
+    models: string[];
+  }
+
+  let remoteTesting = $state(false);
+  let remoteTestStatus = $state<{ success: boolean; message: string } | null>(null);
+  let remoteDiscoveredModels = $state<string[]>([]);
+
+  function ensureRemoteConfig() {
+    if (!cfg.engine.remote_openai) {
+      cfg.engine.remote_openai = {
+        endpoint: "http://localhost:8000/v1",
+        api_key: null,
+        model: "whisper-1",
+        language: "",
+        timeout_secs: 30,
+      };
+    }
+  }
+
+  async function testRemoteConnection() {
+    ensureRemoteConfig();
+    if (remoteTesting) return;
+    remoteTesting = true;
+    remoteTestStatus = null;
+    try {
+      const res = await invoke<RemoteSttTestResult>("test_remote_stt", {
+        endpoint: cfg.engine.remote_openai.endpoint || "http://localhost:8000/v1",
+        apiKey: cfg.engine.remote_openai.api_key || null,
+        model: cfg.engine.remote_openai.model || "whisper-1",
+        timeoutSecs: cfg.engine.remote_openai.timeout_secs || 30,
+      });
+      remoteTestStatus = { success: res.success, message: res.message };
+      if (res.models && res.models.length > 0) {
+        remoteDiscoveredModels = res.models;
+        if (!cfg.engine.remote_openai.model) {
+          cfg.engine.remote_openai.model = res.models[0];
+          markDirty();
+        }
+      }
+    } catch (e: any) {
+      remoteTestStatus = { success: false, message: e.toString() };
+    } finally {
+      remoteTesting = false;
     }
   }
 
@@ -528,6 +579,125 @@
         NVIDIA FastConformer TDT 0.6B with 128-mel ONNX preprocessor and INT8 quantization (~665 MB total).
       </p>
     </div>
+  {:else if cfg.engine.backend === "remote-openai"}
+    {@const _ = ensureRemoteConfig()}
+    <div class="field-group">
+      <h3>Remote Speech Engine Settings</h3>
+      <p class="hint">
+        Connect to a network speech-to-text service supporting the OpenAI
+        <code>/v1/audio/transcriptions</code> API (e.g., Faster-Whisper-Server, vLLM, LocalAI, Whisper-standalone, or OpenAI Whisper).
+        Audio will begin streaming to the endpoint as soon as your keybind is triggered.
+      </p>
+
+      <label class="field">
+        <span>Endpoint URL</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.remote_openai.endpoint}
+          placeholder="http://192.168.1.50:8000/v1"
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        Base URL or full transcriptions path (e.g. <code>http://192.168.1.50:8000/v1</code> or <code>https://api.openai.com/v1</code>).
+      </p>
+
+      <label class="field">
+        <span>API Key (optional)</span>
+        <input
+          type="password"
+          bind:value={cfg.engine.remote_openai.api_key}
+          placeholder="Bearer token or leave blank"
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        Leave blank if your local network server does not require authentication.
+      </p>
+
+      <label class="field">
+        <span>Model</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.remote_openai.model}
+          placeholder="whisper-1"
+          onchange={markDirty}
+        />
+      </label>
+      {#if remoteDiscoveredModels.length > 0}
+        <div class="discovered-models">
+          <span class="hint">Discovered models from server:</span>
+          <div class="model-tags">
+            {#each remoteDiscoveredModels as m}
+              <button
+                type="button"
+                class="tag-btn"
+                class:active={cfg.engine.remote_openai.model === m}
+                onclick={() => {
+                  cfg.engine.remote_openai.model = m;
+                  markDirty();
+                }}
+              >
+                {m}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <label class="field">
+        <span>Language (optional)</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.remote_openai.language}
+          placeholder="auto"
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        Language code (e.g. <code>en</code>, <code>es</code>, <code>fr</code>) or leave blank/auto for automatic detection.
+      </p>
+
+      <label class="field">
+        <span>Timeout (seconds)</span>
+        <input
+          type="number"
+          min="5"
+          max="300"
+          bind:value={cfg.engine.remote_openai.timeout_secs}
+          onchange={markDirty}
+        />
+      </label>
+
+      <div class="test-row">
+        <button
+          type="button"
+          class="btn-test"
+          onclick={testRemoteConnection}
+          disabled={remoteTesting}
+        >
+          {#if remoteTesting}
+            ⏳ Testing Connection...
+          {:else}
+            🧪 Test Connection
+          {/if}
+        </button>
+
+        {#if remoteTestStatus}
+          <div
+            class="status-pill"
+            class:success={remoteTestStatus.success}
+            class:error={!remoteTestStatus.success}
+          >
+            {#if remoteTestStatus.success}
+              ✔ {remoteTestStatus.message}
+            {:else}
+              ⚠️ {remoteTestStatus.message}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
   {/if}
 </section>
 
@@ -566,5 +736,33 @@
   }
   .field-error-msg {
     @apply mt-1 text-sm leading-5 text-red-400;
+  }
+
+  .test-row {
+    @apply flex items-center gap-3 mt-4 flex-wrap;
+  }
+  .btn-test {
+    @apply bg-[var(--accent)] hover:bg-[var(--accent2)] text-white text-xs font-semibold py-2 px-4 rounded-[var(--radius)] border-none cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .status-pill {
+    @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;
+  }
+  .status-pill.success {
+    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
+  }
+  .status-pill.error {
+    @apply bg-red-500/15 text-red-300 border border-red-500/30;
+  }
+  .discovered-models {
+    @apply flex items-center gap-2 flex-wrap mb-3;
+  }
+  .model-tags {
+    @apply flex items-center gap-1.5 flex-wrap;
+  }
+  .tag-btn {
+    @apply text-xs px-2 py-0.5 rounded bg-[var(--bg)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--text-muted)] hover:text-white cursor-pointer transition-colors;
+  }
+  .tag-btn.active {
+    @apply border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10;
   }
 </style>

@@ -825,6 +825,23 @@ pub async fn test_openai(
     }
 }
 
+#[tauri::command]
+pub async fn test_remote_stt(
+    endpoint: String,
+    api_key: Option<String>,
+    model: String,
+    timeout_secs: u64,
+) -> Result<voxctrl_inference::RemoteSttTestResult, String> {
+    voxctrl_inference::test_remote_speech_engine(
+        &endpoint,
+        api_key.as_deref(),
+        &model,
+        timeout_secs,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct HotkeyStatusPayload {
     /// Global shortcuts can fire right now.
@@ -1563,8 +1580,9 @@ pub async fn get_setup_status(
         (
             eng.whisper_cpp.model_size.clone(),
             eng.whisper_cpp.model_dir.clone(),
-            (eng.backend != voxctrl_config::BackendChoice::Moonshine
-                || !voxctrl_inference::MOONSHINE_COMPILED)
+            eng.backend != voxctrl_config::BackendChoice::RemoteOpenAi
+                && (eng.backend != voxctrl_config::BackendChoice::Moonshine
+                    || !voxctrl_inference::MOONSHINE_COMPILED)
                 && (eng.backend != voxctrl_config::BackendChoice::Parakeet
                     || !voxctrl_inference::PARAKEET_COMPILED),
         )
