@@ -379,6 +379,7 @@ pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(),
         Ok(())
     }
     #[cfg(not(target_os = "linux"))]
+    #[allow(deprecated)]
     {
         use tauri_plugin_shell::ShellExt;
         app.shell()
@@ -413,10 +414,11 @@ pub async fn open_report_folder(app: tauri::AppHandle, path: Option<String>) -> 
         Ok(())
     }
     #[cfg(not(target_os = "linux"))]
+    #[allow(deprecated)]
     {
         use tauri_plugin_shell::ShellExt;
         app.shell()
-            .open(&target.to_string_lossy(), None)
+            .open(target.to_string_lossy().into_owned(), None)
             .map_err(|e| format!("Could not open folder: {e}"))
     }
 }
