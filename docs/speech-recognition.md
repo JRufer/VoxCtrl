@@ -4,7 +4,14 @@
 
 ## Overview
 
-VoxCtrl uses **Whisper** (via `whisper-rs`, native bindings to whisper.cpp) for speech-to-text. Whisper runs entirely on-device using downloaded GGUF model files. No audio is ever sent to a remote server.
+VoxCtrl supports four speech-to-text engine backends to match your hardware and workflow:
+
+1. **`whisper.cpp`**: Reference-grade on-device Whisper transcription (via `whisper-rs`) supporting multi-threaded CPU, Vulkan, and CUDA GPU acceleration.
+2. **`Moonshine`**: Streaming ONNX speech recognition tuned for real rooms with ambient background noise; runs efficiently on CPU.
+3. **`Parakeet TDT`**: NVIDIA FastConformer TDT 0.6B delivering ultra-fast non-autoregressive transcription with zero repetition loops.
+4. **`Remote Speech Engine (Bring Your Own Voice Engine)`**: Offload transcription to any local network or remote speech-to-text service implementing the OpenAI-compatible `/v1/audio/transcriptions` API (e.g. Faster-Whisper-Server, vLLM, LocalAI, Whisper standalone, or cloud providers).
+
+By default, VoxCtrl runs 100% on-device and offline with no data leaving your machine. If you configure a Remote Speech Engine, audio is streamed directly to your designated endpoint.
 
 ---
 
@@ -241,3 +248,71 @@ Settings → Engine fetches the two ONNX graphs (`encoder_model.onnx` and
 `decoder_model_merged.onnx`) into
 `~/.local/share/voxctrl/models/moonshine/<size>/`. You can also drop those two
 files there manually to run fully offline; the tokenizer ships inside the app.
+
+---
+
+## Parakeet TDT Backend
+
+[Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is an NVIDIA FastConformer transducer model offering state-of-the-art accuracy, real-time transcription speeds, and immune to the autoregressive repetition loops that Whisper can occasionally experience on background noise.
+
+- **Model size**: ~665 MB (INT8 quantized ONNX).
+- **Execution**: Runs through ONNX Runtime with optional GPU offloading.
+- **Language**: English-focused with automatic language token routing.
+- **Storage**: Downloaded into `~/.local/share/voxctrl/models/parakeet/`.
+
+---
+
+## Remote Speech Engine (Bring Your Own Voice Engine)
+
+The **Remote Speech Engine** (`backend = "remote-openai"`) allows you to decouple VoxCtrl's desktop UI and hotkey management from local model inference. Instead of running weights locally, VoxCtrl streams captured audio directly to an external, network-accessible speech-to-text service that implements the OpenAI-compatible `/v1/audio/transcriptions` API.
+
+### Why "Bring Your Own Voice Engine"?
+
+- **Zero Local Footprint**: Requires **0 MB RAM** and **0 MB VRAM** locally. Perfect for battery-constrained laptops, mini-PCs, or development environments where system memory and GPU resources are reserved for compilers, IDEs, or LLMs.
+- **Centralized Homelab GPU**: Run high-end speech models (`whisper-large-v3`, `distil-whisper`, or fine-tuned variants) on a dedicated GPU server on your local network (e.g. via [Faster-Whisper-Server](https://github.com/fedirz/faster-whisper-server), [vLLM](https://docs.vllm.ai/), or [LocalAI](https://localai.io/)).
+- **Multi-Device Dictation**: Point multiple workstations or laptops running VoxCtrl at a single shared transcription server.
+- **Cloud Provider Compatibility**: Connect to hosted speech-to-text APIs (OpenAI Whisper, Groq, Fireworks, Together, or any provider implementing standard `/v1/audio/transcriptions`).
+
+### Configuration Options
+
+Under `engine.remote_openai` in `config.json`:
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `endpoint` | string | `"http://localhost:8000/v1"` | Base URL or full endpoint path (e.g. `http://192.168.1.50:8000/v1` or `https://api.openai.com/v1`). |
+| `api_key` | string or null | `null` | Optional Bearer authentication token. Leave blank for unauthenticated LAN servers. |
+| `model` | string | `"whisper-1"` | Model identifier expected by the server (e.g. `whisper-1`, `Systran/faster-whisper-large-v3`, `large-v3`). |
+| `language` | string | `""` | Optional ISO language code (e.g. `en`, `es`, `fr`, or blank for automatic detection). |
+| `timeout_secs` | integer | `30` | Request timeout in seconds (5–300). |
+
+### Connection Testing & Model Discovery
+
+Both the **Onboarding Wizard** and **Settings → Engine** include an interactive **Test Connection** button:
+- **Ping & Auth Verification**: Submits a sample audio test payload to the configured endpoint.
+- **Model Discovery**: Queries `/v1/models` on the server and surfaces discovered models as clickable tag chips, allowing you to select models directly from the server's catalog.
+- **Visual Feedback**: Displays connection latency, model readiness, and clear diagnostics on failure (connection refused, 401 unauthorized, timeouts).
+- **Onboarding Gate**: When selected during first-run setup, the wizard requires a successful test before proceeding to guarantee working dictation.
+
+### How It Works Under the Hood
+
+When you press your dictation hotkey:
+1. Audio is recorded and VAD-filtered using VoxCtrl's low-latency capture pipeline.
+2. The audio buffer is packaged as a standard 16 kHz 16-bit mono WAV payload.
+3. An asynchronous HTTP `POST` multipart request is dispatched to `{endpoint}/audio/transcriptions` (or `{endpoint}` if the path already ends with `/audio/transcriptions`).
+4. The server's JSON transcription response (`{ "text": "..." }`) is parsed and passed straight into VoxCtrl's post-processing pipeline (filler removal, punctuation conversion, snippet expansion, custom vocabulary, and output routing).
+
+---
+
+## STT Engine Comparison
+
+| Feature | `whisper.cpp` | `Moonshine` | `Parakeet TDT` | `Remote Speech Engine` |
+|---|---|---|---|---|
+| **Location** | 100% On-device | 100% On-device | 100% On-device | Network / Server |
+| **Local RAM** | 75 MB – 3.1 GB | ~240 – 530 MB | ~665 MB | **~0 MB** |
+| **Local VRAM** | 0 – 3.5 GB (CUDA/Vulkan) | 0 MB (CPU native) | 0 – 1 GB (optional) | **0 MB** |
+| **Speed** | Fast (GPU) / Medium (CPU) | Fast (CPU) | Ultra-fast (non-autoregressive) | Network + Server speed |
+| **Quiet Room Accuracy** | Reference-grade (0.97) | High (0.77) | SOTA (0.94) | Server-model dependent |
+| **Noisy Room Accuracy** | Moderate | Very high (0.93 retention) | High (0.88 retention) | Server-model dependent |
+| **Repetition Loops** | Possible on silent/noisy audio | Rare | None (TDT alignment) | Server-model dependent |
+| **Offline Operation** | Yes | Yes | Yes | LAN / Internet |
+

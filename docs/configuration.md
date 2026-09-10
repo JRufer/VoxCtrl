@@ -29,6 +29,17 @@ Full schema with defaults:
     "moonshine": {
       "model_size": "base",
       "language": "en"
+    },
+    "parakeet": {
+      "model_size": "tdt-0.6b-v3",
+      "language": "auto"
+    },
+    "remote_openai": {
+      "endpoint": "http://localhost:8000/v1",
+      "api_key": null,
+      "model": "whisper-1",
+      "language": "",
+      "timeout_secs": 30
     }
   },
   "audio": {
@@ -106,13 +117,13 @@ Full schema with defaults:
 ### `engine` section
 
 
-The engine config is nested into two backend sub-objects.
+The engine config supports four distinct speech-recognition backends.
 
 **Top-level fields:**
 
 | Key | Type | Values | Description |
 |---|---|---|---|
-| `backend` | string | `"whisper-cpp"` (default), `"moonshine"` | Which speech-recognition backend to use. A config still holding the retired `"auto"` value loads as `"whisper-cpp"` |
+| `backend` | string | `"whisper-cpp"` (default), `"moonshine"`, `"parakeet"`, `"remote-openai"` | Which speech-recognition backend to use. |
 
 **`whisper_cpp` sub-object:**
 
@@ -140,12 +151,23 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 > and selecting `"moonshine"` then transparently falls back to `whisper-cpp`,
 > still using the Whisper model configured above. The Settings → Engine panel
 > shows whether Moonshine is available in the running build.
->
-> A Moonshine model is two upstream ONNX graphs (`encoder_model.onnx` and
-> `decoder_model_merged.onnx`), downloaded on demand into
-> `~/.local/share/voxctrl/models/moonshine/<size>/`. You can also place those
-> two files there manually to run fully offline. The tokenizer is bundled into
-> the app, so it is not downloaded.
+
+**`parakeet` sub-object** (only used when `backend = "parakeet"`):
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model_size` | string | `"tdt-0.6b-v3"` | Parakeet model size (INT8 ONNX) |
+| `language` | string | `"auto"` | Target language code |
+
+**`remote_openai` sub-object** (used when `backend = "remote-openai"` — Bring Your Own Voice Engine):
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `endpoint` | string | `"http://localhost:8000/v1"` | URL of the OpenAI-compatible speech-to-text service (e.g. `http://192.168.1.50:8000/v1` or `https://api.openai.com/v1`). |
+| `api_key` | string or null | `null` | Optional Bearer token authentication. |
+| `model` | string | `"whisper-1"` | Remote model name (e.g. `whisper-1`, `large-v3`). |
+| `language` | string | `""` | Language code for transcription, or blank/auto. |
+| `timeout_secs` | integer | `30` | Request timeout in seconds (min 5, max 300). |
 
 ### `audio` section
 

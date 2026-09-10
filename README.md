@@ -14,10 +14,11 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing your speech to any
 In an era of cloud processing, VoxCtrl is built from the ground up to guarantee absolute data sovereignty:
 * **VoxCtrl does not read your keyboard**: Global shortcuts are registered with your desktop through the XDG `GlobalShortcuts` portal. Your desktop owns the key grab and tells VoxCtrl exactly one thing — that its own shortcut fired. VoxCtrl cannot see what you type in your browser, your terminal, or your password manager, because it is never given the data.
 * **No permissions to grant**: No udev rule, no `input` group, no logout, no reboot. There is nothing to undo later, and installing VoxCtrl does not change your machine's security posture. *(Earlier versions installed a udev rule granting read access to every input device. That has been removed — see [why](docs/hotkeys.md#why-this-changed).)*
-* **No Cloud API Keys Required**: VoxCtrl relies exclusively on OpenAI's Whisper models (via native CPU/GPU accelerated `whisper-rs`) running directly on your local hardware.
+* **No Cloud API Keys Required (100% On-Device by Default)**: VoxCtrl runs entirely offline on your local hardware using your choice of `whisper.cpp`, `Moonshine`, or `Parakeet TDT`.
+* **Bring Your Own Voice Engine**: Want to offload transcription to a homelab GPU server or custom backend? VoxCtrl supports connecting to any network speech-to-text service via the OpenAI-compatible `/v1/audio/transcriptions` API (Faster-Whisper, vLLM, Whisper standalone, or cloud APIs) with zero local compute overhead.
 * **No Telemetry**: Your ambient microphone data never leaves your machine. There are no hidden tracking scripts or analytical pings. The one request VoxCtrl makes on its own is the update check — a plain GET to GitHub's public release listing, carrying nothing about you, and off with one tick in Settings → General.
 * **Diagnostics only when you send them**: Settings → **Bug Report** gathers a diagnostic bundle and sends it — but only when you press a button, and it shows you the entire report first. Everything you dictated, every API key, every file path, your username and your custom vocabulary are stripped before you ever see it, let alone before it is sent. See [docs/bug_reports.md](docs/bug_reports.md).
-* **Air-Gapped Ready**: Once the application and models are downloaded, VoxCtrl requires zero internet access to function.
+* **Air-Gapped Ready**: When using local inference backends, once application weights and models are downloaded, VoxCtrl requires zero internet access to function.
 * **Local Neural Voices**: All text-to-speech feedback is generated offline by a local engine — Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, or eSpeak-NG.
 
 **Full detail, including how to verify each claim yourself: [docs/privacy.md](docs/privacy.md).**
@@ -38,8 +39,9 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 
 ## 🌟 Key Features
 
-* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`) supporting multi-threaded CPU execution. NVIDIA CUDA GPU acceleration is available as an opt-in compile-time feature (`--features cuda`); Vulkan acceleration (AMD/Intel/NVIDIA) works in the standard build. The Moonshine ONNX backend is compiled in by default, and **runs on the CPU** in every build published today: ONNX Runtime has no Vulkan backend, so the Vulkan build accelerates whisper.cpp only. Moonshine holds its weights in RAM as fp32 (~530 MB for `base`, ~240 MB for `tiny`) where whisper.cpp puts a quantized model in VRAM, which is worth knowing before switching engines on a memory budget. GPU offload for Moonshine is available opt-in at build time with `--features moonshine-cuda` (or `moonshine-coreml` on macOS), both of which need the matching runtime. Settings → Engine reports which of these is true for the build you are running.
-* **First-Run Setup Wizard**: A new machine is walked through setup in seven steps — pick a transcription engine and model size (downloaded before you continue), bind a hotkey and register it with your desktop, choose an overlay, dictate a live test, and optionally add a voice — instead of being dropped into a settings window full of defaults nobody chose. Every choice is written to the config as it is made, so quitting halfway keeps what you picked. Reachable again afterwards with `voxctrl --setup`, or Settings → General → "Open setup wizard".
+* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`), streaming ONNX with `Moonshine`, or ultra-fast non-autoregressive transcription via NVIDIA `Parakeet TDT`. CUDA and Vulkan GPU acceleration available.
+* **Bring Your Own Voice Engine (Remote Speech Engine)**: Connect VoxCtrl to any OpenAI-compatible `/v1/audio/transcriptions` network endpoint (such as [Faster-Whisper-Server](https://github.com/fedirz/faster-whisper-server), vLLM, LocalAI, Whisper standalone, or cloud STT APIs). Offload 100% of speech processing to your home server or external GPU instance with zero local RAM/VRAM load. Set up custom endpoints, Bearer auth, model selection with automatic server model discovery, and live connection testing directly in Settings → Engine or during initial onboarding.
+* **First-Run Setup Wizard**: A new machine is walked through setup in seven steps — choose from 4 transcription engine options (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine`), bind a hotkey and register it with your desktop, choose an overlay, dictate a live test, and optionally add a voice — instead of being dropped into a settings window full of defaults nobody chose. Every choice is written to the config as it is made, so quitting halfway keeps what you picked. Reachable again afterwards with `voxctrl --setup`, or Settings → General → "Open setup wizard".
 * **Self-Updating**: VoxCtrl checks GitHub for a newer release on launch, shows what changed, and — if you say yes — downloads the build matching your installation (Linux AppImage or Windows installer), verifies it against the checksum GitHub published, replaces itself and restarts. Nothing is replaced until a complete, verified file is on disk, so a failed update leaves the working version alone. The check is one unauthenticated request carrying no identifier, and Settings → General turns it off.
 * **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable, fully animated overlays (Ocean Wave, Voice Card, Waveform, and Pulse Ring), and a native desktop System Tray utility.
 * **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency, with optional RNNoise background-noise suppression on the capture path.
@@ -112,8 +114,9 @@ Below are the 11 delivery types supported by VoxCtrl and what they are used for:
                                  │ float32 raw audio chunks
                                  ▼
                   ┌──────────────────────────────┐
-                  │   Whisper Inference Engine   │
-                  │  (whisper.cpp via CUDA/CPU)  │
+                  │    Speech Engine Backend     │
+                  │ (whisper.cpp / Moonshine /   │
+                  │  Parakeet TDT / Remote STT)  │
                   └──────────────┬───────────────┘
                                  │ (transcription, target_id)
                                  ▼
@@ -301,6 +304,26 @@ Once set up, you can execute the application in three ways:
 ## ⚙️ Configuration File Schema
 
 All configurations are stored locally inside `~/.config/voxctrl/`.
+
+### `config.json`
+Main application settings, including audio capture, UI styling, and the speech-to-text inference engine (`whisper-cpp`, `moonshine`, `parakeet`, or `remote-openai`):
+```json
+{
+  "engine": {
+    "backend": "remote-openai",
+    "remote_openai": {
+      "endpoint": "http://192.168.1.50:8000/v1",
+      "api_key": null,
+      "model": "whisper-1",
+      "language": "auto",
+      "timeout_secs": 30
+    },
+    "whisper_cpp": { "model_size": "base", "device": "auto" },
+    "moonshine": { "model_size": "base", "language": "en" },
+    "parakeet": { "model_size": "tdt-0.6b-v3", "language": "auto" }
+  }
+}
+```
 
 ### `targets.toml`
 Defines your Output Commands. The file and its `[[target]]` blocks keep their

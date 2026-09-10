@@ -6,26 +6,29 @@ VoxCtrl ("Voice Controller") is a desktop dictation application that turns your 
 
 It is designed as a **programmable voice input broker**: you define output commands (where text goes) and hotkey bindings (what keys trigger recording for which commands), and VoxCtrl handles the rest. A command can also be picked mid-sentence by saying "VoxCtrl" and its name.
 
-Everything runs locally. No audio ever leaves your machine.
+By default, everything runs locally on-device. You can also choose the **Remote Speech Engine** ("Bring Your Own Voice Engine") to offload speech recognition to a dedicated server on your local network or a cloud API.
 
 ---
 
 ## Key Features
 
 ### Core Dictation
-- **Hold-to-record, toggle, double-tap, or double-tap & hold** gesture modes per hotkey binding
-- **Global shortcuts without keyboard access** — registered with your desktop through the XDG `GlobalShortcuts` portal, so VoxCtrl is told only when its own shortcut fires and never reads a keystroke ([details](privacy.md))
-- **Whisper speech recognition** — the same model family powering OpenAI's transcription API, running entirely on-device
-- **GPU acceleration** — automatic CUDA or Vulkan selection when available; falls back to CPU
-- **Multiple model sizes** — tiny through large-v3, trading speed for accuracy
+- **Four speech recognition engines**:
+  - **`whisper.cpp`** — OpenAI Whisper running entirely on-device with multi-threaded CPU or Vulkan/CUDA GPU acceleration (tiny through large-v3).
+  - **`Moonshine`** — On-device ONNX speech recognition tuned for noisy rooms and conversational audio.
+  - **`Parakeet TDT`** — Ultra-fast non-autoregressive FastConformer transcription with zero repetition loops.
+  - **`Remote Speech Engine` ("Bring Your Own Voice Engine")** — Offload transcription to any OpenAI-compatible `/v1/audio/transcriptions` server (Faster-Whisper-Server, vLLM, LocalAI, or cloud APIs) with **0 MB local RAM/VRAM footprint**.
+- **Hold-to-record, toggle, double-tap, or double-tap & hold** gesture modes per hotkey binding.
+- **Global shortcuts without keyboard access** — registered with your desktop through the XDG `GlobalShortcuts` portal, so VoxCtrl is told only when its own shortcut fires and never reads a keystroke ([details](privacy.md)).
 
 ### First-Run Setup
-A seven-step wizard runs the first time VoxCtrl starts on a machine with no config file, covering the choices the app cannot make for you: transcription engine and model size, hotkey gesture and key combination, on-screen overlay, a live end-to-end dictation test, and optional speech output. Choices are written to the config as they are made rather than at the end, so a wizard that is quit halfway still leaves the app configured as far as it got. The final screen reports anything that failed — a model that would not download, a shortcut the desktop refused — with the underlying error, rather than claiming the app is ready.
+A seven-step wizard runs the first time VoxCtrl starts on a machine with no config file, covering the choices the app cannot make for you: speech engine (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine` with live connection testing and model discovery), model size, hotkey gesture and key combination, on-screen overlay, a live end-to-end dictation test, and optional speech output. Choices are written to the config as they are made rather than at the end, so a wizard that is quit halfway still leaves the app configured as far as it got. The final screen reports anything that failed — a model that would not download, a shortcut the desktop refused — with the underlying error, rather than claiming the app is ready.
 
 ### Privacy & Offline Operation
-- Zero network requests during normal operation
-- No analytics, crash reporting, or telemetry
-- All models and voices stored locally under `~/.local/share/voxctrl/`
+- Zero network requests during normal operation for all on-device backends (`whisper.cpp`, `Moonshine`, `Parakeet TDT`).
+- Audio only leaves your machine if you explicitly configure a **Remote Speech Engine** pointing to a LAN or remote server.
+- No analytics, crash reporting, or telemetry.
+- All local models and voices stored under `~/.local/share/voxctrl/`.
 
 ### Flexible Output Routing
 Nine output delivery types:
