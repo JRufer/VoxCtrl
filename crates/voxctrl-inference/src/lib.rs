@@ -252,6 +252,34 @@ impl InferenceEngine {
         self.backend.unload();
     }
 
+    /// Update engine configuration. If backend or backend model settings changed,
+    /// re-creates the backend and returns `true` (meaning the caller should reload).
+    pub fn update_config(&mut self, new_config: Arc<AppConfig>) -> bool {
+        let backend_changed = self.config.engine.backend != new_config.engine.backend
+            || (new_config.engine.backend == BackendChoice::WhisperCpp
+                && self.config.engine.whisper_cpp != new_config.engine.whisper_cpp)
+            || (new_config.engine.backend == BackendChoice::Moonshine
+                && self.config.engine.moonshine != new_config.engine.moonshine)
+            || (new_config.engine.backend == BackendChoice::Parakeet
+                && self.config.engine.parakeet != new_config.engine.parakeet)
+            || (new_config.engine.backend == BackendChoice::RemoteOpenAi
+                && self.config.engine.remote_openai != new_config.engine.remote_openai);
+
+        self.config = new_config.clone();
+
+        if backend_changed {
+            info!(
+                "Inference backend configuration changed, switching backend to {:?}",
+                new_config.engine.backend
+            );
+            self.backend.unload();
+            self.backend = build_backend(&new_config);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Transcribe and post-process. Returns the final text.
     pub fn process(&self, req: InferenceRequest) -> Result<InferenceOutput> {
         if req.audio.is_empty() {
@@ -534,6 +562,19 @@ pub fn run_worker(
     rx: Receiver<InferenceRequest>,
     tx: Sender<InferenceOutput>,
 ) {
+    let (_dummy_tx, dummy_rx) = crossbeam_channel::unbounded();
+    run_worker_with_config(config, rx, tx, dummy_rx);
+}
+
+/// Run the inference engine on a dedicated OS thread with dynamic config reloading.
+/// Receives `InferenceRequest` from `rx`, sends `InferenceOutput` to `tx`,
+/// and updates/reloads the backend whenever `config_rx` receives a new `AppConfig`.
+pub fn run_worker_with_config(
+    config: Arc<AppConfig>,
+    rx: Receiver<InferenceRequest>,
+    tx: Sender<InferenceOutput>,
+    config_rx: Receiver<Arc<AppConfig>>,
+) {
     std::thread::Builder::new()
         .name("voxctrl-inference".into())
         .spawn(move || {
@@ -554,42 +595,70 @@ pub fn run_worker(
                 }
             };
 
-            while let Ok(req) = rx.recv() {
-                if !loaded {
-                    match engine.load() {
-                        Ok(()) => {
-                            info!("Inference engine ready (loaded on demand)");
-                            loaded = true;
-                        }
-                        Err(e) => {
-                            error!("Inference backend still not loadable: {e:#}");
-                            let _ = tx.send(InferenceOutput {
-                                text: String::new(),
-                                target_id: req.target_id,
-                                raw_text: String::new(),
-                                inference_ms: 0,
-                                language: String::new(),
-                                error: Some(format!("{e:#}")),
-                            });
-                            continue;
-                        }
-                    }
-                }
+            loop {
+                crossbeam_channel::select! {
+                    recv(rx) -> req_res => {
+                        let req = match req_res {
+                            Ok(r) => r,
+                            Err(_) => break,
+                        };
 
-                match engine.process(req) {
-                    Ok(output) => {
-                        let _ = tx.send(output);
+                        if !loaded {
+                            match engine.load() {
+                                Ok(()) => {
+                                    info!("Inference engine ready (loaded on demand)");
+                                    loaded = true;
+                                }
+                                Err(e) => {
+                                    error!("Inference backend still not loadable: {e:#}");
+                                    let _ = tx.send(InferenceOutput {
+                                        text: String::new(),
+                                        target_id: req.target_id,
+                                        raw_text: String::new(),
+                                        inference_ms: 0,
+                                        language: String::new(),
+                                        error: Some(format!("{e:#}")),
+                                    });
+                                    continue;
+                                }
+                            }
+                        }
+
+                        match engine.process(req) {
+                            Ok(output) => {
+                                let _ = tx.send(output);
+                            }
+                            Err(e) => {
+                                error!("Inference error: {:?}", e);
+                                let _ = tx.send(InferenceOutput {
+                                    text: "".to_string(),
+                                    target_id: "".to_string(),
+                                    raw_text: "".to_string(),
+                                    inference_ms: 0,
+                                    language: "".to_string(),
+                                    error: Some(format!("{e:#}")),
+                                });
+                            }
+                        }
                     }
-                    Err(e) => {
-                        error!("Inference error: {:?}", e);
-                        let _ = tx.send(InferenceOutput {
-                            text: "".to_string(),
-                            target_id: "".to_string(),
-                            raw_text: "".to_string(),
-                            inference_ms: 0,
-                            language: "".to_string(),
-                            error: Some(format!("{e:#}")),
-                        });
+                    recv(config_rx) -> new_cfg_res => {
+                        let new_cfg = match new_cfg_res {
+                            Ok(c) => c,
+                            Err(_) => break,
+                        };
+                        let needs_reload = engine.update_config(new_cfg);
+                        if needs_reload {
+                            loaded = match engine.load() {
+                                Ok(()) => {
+                                    info!("Inference engine ready with new backend");
+                                    true
+                                }
+                                Err(e) => {
+                                    error!("Failed to load new inference backend: {e:#}");
+                                    false
+                                }
+                            };
+                        }
                     }
                 }
             }
@@ -648,5 +717,26 @@ mod tests {
         let backend = build_backend(&cfg);
         assert_eq!(backend.name(), "remote-openai");
         assert!(backend.is_loaded());
+    }
+
+    #[test]
+    fn test_engine_update_config_switches_backend() {
+        let cfg = AppConfig::default();
+        let mut engine = InferenceEngine::new(Arc::new(cfg.clone()));
+        assert_eq!(engine.backend.name(), "whisper-cpp");
+
+        let mut new_cfg = cfg.clone();
+        new_cfg.engine.backend = BackendChoice::RemoteOpenAi;
+        new_cfg.engine.remote_openai.endpoint = "http://localhost:5000/v1".to_string();
+        let reloaded = engine.update_config(Arc::new(new_cfg));
+        assert!(reloaded);
+        assert_eq!(engine.backend.name(), "remote-openai");
+
+        // Non-backend config change should not trigger backend reload
+        let mut features_cfg = engine.config.as_ref().clone();
+        features_cfg.features.remove_fillers = !features_cfg.features.remove_fillers;
+        let reloaded_features = engine.update_config(Arc::new(features_cfg));
+        assert!(!reloaded_features);
+        assert_eq!(engine.backend.name(), "remote-openai");
     }
 }

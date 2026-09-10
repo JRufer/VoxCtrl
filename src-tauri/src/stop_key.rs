@@ -302,8 +302,11 @@ mod tests {
         list.iter().map(|s| s.to_string()).collect()
     }
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn escape_is_held_only_while_speaking_where_the_desktop_owns_the_grab() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // The bug this exists for: a standing portal grab on Escape meant no
         // other app ever saw the key. Playback is the one stretch where taking
         // it is what the user wants.
@@ -368,6 +371,7 @@ mod tests {
 
     #[test]
     fn the_arming_switch_stands_the_whole_mechanism_down() {
+        let _lock = ENV_LOCK.lock().unwrap();
         // The escape hatch for a compositor that mishandles a session closing.
         // With it set, nothing is taken and nothing is given back — the stop key
         // on bare Escape is simply not registered, and a modified one is
