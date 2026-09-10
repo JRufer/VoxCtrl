@@ -175,10 +175,11 @@ describe("wizard tables", () => {
   });
 
   test("STT engines carry the backend values the config expects", () => {
-    expect(STT_ENGINES.map((e) => e.id)).toEqual(["whisper-cpp", "moonshine", "parakeet"]);
+    expect(STT_ENGINES.map((e) => e.id)).toEqual(["whisper-cpp", "moonshine", "parakeet", "remote-openai"]);
     expect(STT_ENGINES[0].models).toBe(WHISPER_MODELS);
     expect(STT_ENGINES[1].models).toBe(MOONSHINE_MODELS);
     expect(STT_ENGINES[2].models).toBe(PARAKEET_MODELS);
+    expect(STT_ENGINES[3].models).toBeDefined();
   });
 
   test("model tables are ordered smallest to largest", () => {

@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { config } from "../../../stores/config";
   import { patchConfig, wizard } from "../wizard-state.svelte";
+  import RemoteEngineModal from "../RemoteEngineModal.svelte";
   import {
     STT_ENGINES,
     accuracyBars,
@@ -45,8 +46,13 @@
    *  deciding anything before then would report every model as missing. */
   let readinessChecked = $state(false);
 
+  let showRemoteModal = $state(false);
+  let remoteTestedSuccessfully = $state(false);
+
   const selectedEngine = $derived<SttEngineId>(
-    $config.engine.backend === "parakeet"
+    $config.engine.backend === "remote-openai"
+      ? "remote-openai"
+      : $config.engine.backend === "parakeet"
       ? "parakeet"
       : $config.engine.backend === "moonshine"
       ? "moonshine"
@@ -65,7 +71,9 @@
 
   /** The model the current engine will actually load. */
   const selectedModel = $derived(
-    selectedEngine === "parakeet" && parakeetAvailable
+    selectedEngine === "remote-openai"
+      ? ($config.engine.remote_openai?.model || "whisper-1")
+      : selectedEngine === "parakeet" && parakeetAvailable
       ? $config.engine.parakeet.model_size
       : selectedEngine === "moonshine" && moonshineAvailable
       ? $config.engine.moonshine.model_size
@@ -73,7 +81,9 @@
   );
 
   const selectedReady = $derived(
-    selectedEngine === "parakeet" && parakeetAvailable
+    selectedEngine === "remote-openai"
+      ? remoteTestedSuccessfully
+      : selectedEngine === "parakeet" && parakeetAvailable
       ? !!parakeetDownloaded[selectedModel]
       : selectedEngine === "moonshine" && moonshineAvailable
       ? !!moonshineDownloaded[selectedModel]
@@ -82,7 +92,9 @@
 
   function isSelected(engine: SttEngineId, model: ModelOption): boolean {
     if (engine !== selectedEngine) return false;
-    return model.id === (engine === "parakeet"
+    return model.id === (engine === "remote-openai"
+      ? ($config.engine.remote_openai?.model || "whisper-1")
+      : engine === "parakeet"
       ? $config.engine.parakeet.model_size
       : engine === "moonshine"
       ? $config.engine.moonshine.model_size
@@ -90,6 +102,7 @@
   }
 
   function downloadedFor(engine: SttEngineId, model: ModelOption): boolean {
+    if (engine === "remote-openai") return remoteTestedSuccessfully;
     if (engine === "parakeet") return !!parakeetDownloaded[model.id];
     return engine === "moonshine" ? !!moonshineDownloaded[model.id] : !!whisperDownloaded[model.id];
   }
@@ -97,8 +110,21 @@
   function pickEngine(id: SttEngineId) {
     patchConfig((cfg) => {
       cfg.engine.backend = id;
+      if (id === "remote-openai" && !cfg.engine.remote_openai) {
+        cfg.engine.remote_openai = {
+          endpoint: "http://localhost:8000/v1",
+          api_key: null,
+          model: "whisper-1",
+          language: "",
+          timeout_secs: 30,
+        };
+      }
     });
     wizard.engineChosen = true;
+    if (id === "remote-openai") {
+      wizard.modelChosen = true;
+      showRemoteModal = true;
+    }
   }
 
   function pickModel(engine: SttEngineId, model: ModelOption) {
@@ -106,7 +132,19 @@
       cfg.engine.backend = engine;
       if (engine === "parakeet") cfg.engine.parakeet.model_size = model.id;
       else if (engine === "moonshine") cfg.engine.moonshine.model_size = model.id;
-      else cfg.engine.whisper_cpp.model_size = model.id;
+      else if (engine === "remote-openai") {
+        if (!cfg.engine.remote_openai) {
+          cfg.engine.remote_openai = {
+            endpoint: "http://localhost:8000/v1",
+            api_key: null,
+            model: model.id,
+            language: "",
+            timeout_secs: 30,
+          };
+        } else {
+          cfg.engine.remote_openai.model = model.id;
+        }
+      } else cfg.engine.whisper_cpp.model_size = model.id;
     });
     downloadError = null;
     wizard.engineChosen = true;
@@ -180,6 +218,14 @@
    * cannot work without weights on disk.
    */
   async function ensureModel(): Promise<boolean> {
+    if (selectedEngine === "remote-openai") {
+      if (!remoteTestedSuccessfully) {
+        setBlocker(STEP, "Test the remote connection successfully to continue.");
+        showRemoteModal = true;
+        return false;
+      }
+      return true;
+    }
     if (selectedReady) return true;
     const engine = selectedEngine;
     const model = selectedModel;
@@ -232,6 +278,8 @@
       setBlocker(STEP, `Downloading ${downloading}…`);
     } else if (!readinessChecked) {
       setBlocker(STEP, "Checking which models are already on disk…");
+    } else if (selectedEngine === "remote-openai" && !remoteTestedSuccessfully) {
+      setBlocker(STEP, "Test the remote connection successfully to continue.");
     } else if (selectedReady) {
       setBlocker(STEP, null);
     } else if (!wizard.engineChosen) {
@@ -269,6 +317,28 @@
 
   /** Metrics for one engine card, recomputed from the model it has selected. */
   function metricsFor(engine: (typeof STT_ENGINES)[number]) {
+    if (engine.id === "remote-openai") {
+      const remoteModel = $config.engine.remote_openai?.model || "whisper-1";
+      return {
+        model: { id: remoteModel, mb: 0, speed: 0.95, accuracy: 0.95 },
+        rows: [
+          { label: "speed", pct: 95, value: "network", color: "var(--vx-cyan-0)", dim: false },
+          { label: "accuracy", pct: 95, value: "server", color: "var(--vx-cyan-2)", dim: false },
+          { label: "RAM", pct: 2, value: "offloaded", color: "var(--vx-gold-1)", dim: false },
+          {
+            label: "VRAM",
+            pct: 0,
+            value: "0 MB",
+            color: "var(--vx-gold-0)",
+            dim: true,
+          },
+        ],
+        quiet: accuracyBars(12, 0.95),
+        noisy: accuracyBars(12, 0.92),
+        quietPct: "server",
+        noisyPct: "server",
+      };
+    }
     const chosen =
       engine.id === "parakeet"
         ? $config.engine.parakeet.model_size
@@ -308,9 +378,8 @@
       <span class="vx-eyebrow">// 01 · transcription engine</span>
       <h2 class="vx-title">Which ears should VoxCtrl use?</h2>
       <p class="vx-lede">
-        Both run 100% on-device. <b>whisper.cpp</b> is most accurate in a quiet room and scales to
-        very large models. <b>Moonshine</b> keeps its accuracy in noisy rooms and stays fast on CPU.
-        Pick a model size inside each card — larger is more accurate, smaller is faster and lighter.
+        Choose between on-device engines (<b>whisper.cpp</b>, <b>Moonshine</b>, <b>Parakeet TDT</b>) or connect to a <b>Remote Speech Engine</b> over your network.
+        Pick a model size inside each card or configure your remote endpoint to get started.
       </p>
     </div>
 
@@ -357,11 +426,19 @@
         role="radio"
         aria-checked={on}
         tabindex="0"
-        onclick={() => pickEngine(engine.id)}
+        onclick={() => {
+          pickEngine(engine.id);
+          if (engine.id === "remote-openai") {
+            showRemoteModal = true;
+          }
+        }}
         onkeydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             pickEngine(engine.id);
+            if (engine.id === "remote-openai") {
+              showRemoteModal = true;
+            }
           }
         }}
       >
@@ -387,36 +464,92 @@
         </div>
 
         <div class="left-col">
-          <div class="vx-label">model size</div>
-          <div class="sizes">
-            {#each engine.models as model}
+          {#if engine.id === "remote-openai"}
+            <div class="vx-label">server configuration</div>
+            <div class="remote-summary-box">
+              <div class="remote-row">
+                <span class="remote-k">URL</span>
+                <span class="remote-v" title={$config.engine.remote_openai?.endpoint || "http://localhost:8000/v1"}>
+                  {$config.engine.remote_openai?.endpoint || "http://localhost:8000/v1"}
+                </span>
+              </div>
+              <div class="remote-row">
+                <span class="remote-k">Model</span>
+                <span class="remote-v">{$config.engine.remote_openai?.model || "whisper-1"}</span>
+              </div>
+              <div class="remote-row status">
+                <span class="remote-k">Status</span>
+                <span class="remote-v" class:remote-v-ok={remoteTestedSuccessfully} class:remote-v-warn={!remoteTestedSuccessfully}>
+                  {#if remoteTestedSuccessfully}
+                    ✔ Verified
+                  {:else}
+                    ⚠️ Untested
+                  {/if}
+                </span>
+              </div>
+            </div>
+            <div class="remote-btn-row">
               <button
-                class="size"
-                class:on={isSelected(engine.id, model)}
+                type="button"
+                class="vx-btn vx-btn-sm remote-cfg-btn"
+                class:vx-primary={!remoteTestedSuccessfully}
                 onclick={(e) => {
                   e.stopPropagation();
-                  pickModel(engine.id, model);
+                  pickEngine("remote-openai");
+                  showRemoteModal = true;
                 }}
               >
-                <span class="size-id">{model.id}</span>
-                <span class="size-mb">
-                  {formatSize(model.mb)}{downloadedFor(engine.id, model) ? " ✔" : ""}
-                </span>
+                {#if remoteTestedSuccessfully}
+                  ⚙ Configure Server
+                {:else}
+                  ⚡ Setup & Test
+                {/if}
               </button>
-            {/each}
-          </div>
+            </div>
 
-          <div class="metrics">
-            {#each m.rows as row}
-              <div class="metric" class:dim={row.dim}>
-                <span class="metric-label">{row.label}</span>
-                <div class="vx-meter">
-                  <div style:width="{row.pct}%" style:background={row.color}></div>
+            <div class="metrics">
+              {#each m.rows as row}
+                <div class="metric" class:dim={row.dim}>
+                  <span class="metric-label">{row.label}</span>
+                  <div class="vx-meter">
+                    <div style:width="{row.pct}%" style:background={row.color}></div>
+                  </div>
+                  <span class="metric-value">{row.value}</span>
                 </div>
-                <span class="metric-value">{row.value}</span>
-              </div>
-            {/each}
-          </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="vx-label">model size</div>
+            <div class="sizes">
+              {#each engine.models as model}
+                <button
+                  class="size"
+                  class:on={isSelected(engine.id, model)}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    pickModel(engine.id, model);
+                  }}
+                >
+                  <span class="size-id">{model.id}</span>
+                  <span class="size-mb">
+                    {formatSize(model.mb)}{downloadedFor(engine.id, model) ? " ✔" : ""}
+                  </span>
+                </button>
+              {/each}
+            </div>
+
+            <div class="metrics">
+              {#each m.rows as row}
+                <div class="metric" class:dim={row.dim}>
+                  <span class="metric-label">{row.label}</span>
+                  <div class="vx-meter">
+                    <div style:width="{row.pct}%" style:background={row.color}></div>
+                  </div>
+                  <span class="metric-value">{row.value}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <div class="right-col">
@@ -448,6 +581,12 @@
       <span class="vx-pill vx-err">✕ Download failed: {downloadError}</span>
     {:else if !readinessChecked}
       <span class="vx-pill vx-busy"><span class="vx-spinner"></span> Checking local models…</span>
+    {:else if selectedEngine === "remote-openai"}
+      {#if remoteTestedSuccessfully}
+        <span class="vx-pill vx-ok">✓ Remote engine connected ({selectedModel})</span>
+      {:else}
+        <span class="vx-pill vx-warn">⚠️ Test connection required before continuing</span>
+      {/if}
     {:else if selectedReady}
       <span class="vx-pill vx-ok">✓ {selectedModel} is on disk and ready</span>
     {:else if !wizard.engineChosen || !wizard.modelChosen}
@@ -458,6 +597,13 @@
       <span class="vx-pill">↓ {selectedModel} will download when you continue</span>
     {/if}
   </div>
+
+  <RemoteEngineModal
+    bind:isOpen={showRemoteModal}
+    onSuccess={() => {
+      remoteTestedSuccessfully = true;
+    }}
+  />
 </div>
 
 <style>
@@ -571,7 +717,7 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
   }
 
@@ -673,6 +819,60 @@
   .size-mb {
     font-size: 10px;
     opacity: 0.7;
+  }
+
+  .remote-summary-box {
+    margin-top: 6px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--vx-line);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .remote-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--vx-mono);
+    font-size: 11px;
+  }
+
+  .remote-k {
+    color: var(--vx-txt-2);
+    flex: none;
+  }
+
+  .remote-v {
+    color: var(--vx-txt-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 190px;
+    text-align: right;
+  }
+
+  .remote-v-ok {
+    color: var(--vx-good);
+    font-weight: 600;
+  }
+
+  .remote-v-warn {
+    color: var(--vx-warn);
+    font-weight: 600;
+  }
+
+  .remote-btn-row {
+    margin-top: 8px;
+  }
+
+  .remote-cfg-btn {
+    width: 100%;
+    height: 36px;
+    font-size: 12px;
   }
 
   .metrics {

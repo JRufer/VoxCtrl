@@ -94,7 +94,11 @@
     {
       k: "engine",
       v:
-        $config.engine.backend === "moonshine"
+        $config.engine.backend === "remote-openai"
+          ? `Remote Speech Engine · ${$config.engine.remote_openai?.model || "whisper-1"}`
+          : $config.engine.backend === "parakeet"
+          ? `Parakeet TDT · ${$config.engine.parakeet.model_size}`
+          : $config.engine.backend === "moonshine"
           ? `Moonshine · ${$config.engine.moonshine.model_size}`
           : `whisper.cpp · ${$config.engine.whisper_cpp.model_size}`,
     },
@@ -117,7 +121,15 @@
   const report = $derived(
     [
       "VoxCtrl setup report",
-      `engine: ${$config.engine.backend} / ${$config.engine.backend === "moonshine" ? $config.engine.moonshine.model_size : $config.engine.whisper_cpp.model_size}`,
+      `engine: ${$config.engine.backend} / ${
+        $config.engine.backend === "remote-openai"
+          ? ($config.engine.remote_openai?.model || "whisper-1")
+          : $config.engine.backend === "parakeet"
+          ? $config.engine.parakeet.model_size
+          : $config.engine.backend === "moonshine"
+          ? $config.engine.moonshine.model_size
+          : $config.engine.whisper_cpp.model_size
+      }`,
       `device: ${$config.engine.whisper_cpp.device}`,
       `hotkey: ${combo} (${wizard.gesture})`,
       `overlay: ${$config.ui.show_overlay ? `${$config.ui.overlay_style} / ${$config.ui.overlay_position}` : "off"}`,
