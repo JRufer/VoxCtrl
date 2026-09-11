@@ -42,7 +42,9 @@ pub const SETTINGS_MIN_HEIGHT: f64 = 640.0;
 /// Fraction of the display the window may occupy, leaving room for the title
 /// bar and a desktop panel. Height is the tighter of the two: panels are
 /// usually horizontal, and the title bar eats from the same axis.
+#[allow(dead_code)]
 const WIZARD_FIT_W: f64 = 0.94;
+#[allow(dead_code)]
 const WIZARD_FIT_H: f64 = 0.90;
 
 /// The largest window in the wizard's design proportions that fits the space
@@ -72,6 +74,7 @@ pub fn wizard_size_for(available_width: f64, available_height: f64) -> (f64, f64
 }
 
 /// Resize a window to fit the display it is on, and re-centre it.
+#[allow(dead_code)]
 fn fit_to_display(window: &tauri::WebviewWindow) {
     let Ok(Some(monitor)) = window.current_monitor() else {
         return;
@@ -140,12 +143,13 @@ pub fn open_settings_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWind
 /// is what the first launch of a fresh install uses.
 pub fn open_wizard_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window(WIZARD_WINDOW) {
-        fit_to_display(&existing);
+        let _ = existing.set_size(tauri::LogicalSize::new(WIZARD_WIDTH, WIZARD_HEIGHT));
+        let _ = existing.center();
         show_and_focus_window(&existing);
         return Ok(());
     }
 
-    tauri::WebviewWindowBuilder::new(
+    let window = tauri::WebviewWindowBuilder::new(
         app,
         WIZARD_WINDOW,
         tauri::WebviewUrl::App("/wizard".into()),
@@ -159,10 +163,8 @@ pub fn open_wizard_window(app: &tauri::AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| format!("Could not open the setup wizard: {e}"))?;
 
-    // Only measurable once the window exists and knows which display it is on.
-    if let Some(window) = app.get_webview_window(WIZARD_WINDOW) {
-        fit_to_display(&window);
-    }
+    let _ = window.set_size(tauri::LogicalSize::new(WIZARD_WIDTH, WIZARD_HEIGHT));
+    let _ = window.center();
 
     Ok(())
 }

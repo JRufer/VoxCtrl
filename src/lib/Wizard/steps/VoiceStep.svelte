@@ -26,6 +26,7 @@
 
   const enabled = $derived($config.tts.enabled);
   const selected = $derived($config.tts.engine as TtsEngineId);
+  const selectedEngine = $derived(TTS_ENGINES.find((e) => e.id === selected) ?? TTS_ENGINES[0]);
 
   /** engine id → its model/voice files are on disk. */
   let ready = $state<Record<string, boolean>>({ espeak: true });
@@ -38,12 +39,7 @@
 
   /**
    * The single HuggingFace access token, shared by every gated model. Without
-   * it those engines cannot be downloaded at all, which is why the wizard asks
-   * for it here rather than leaving the user to discover the failure.
-   *
-   * A token exported as `HF_TOKEN` belongs to the session and wins at download
-   * time, so it is shown here and the field goes read-only: it is never copied
-   * into the config, and a value typed over it would be saved and then ignored.
+   * it those engines cannot be downloaded at all.
    */
   let envToken = $state<string | null>(null);
   const fromEnv = $derived(!!envToken);
@@ -52,11 +48,7 @@
   const gatedEngines = TTS_ENGINES.filter((e) => e.needsHfToken);
 
   function setHfToken(value: string) {
-    // The environment's token is displayed, never stored: saving it would put a
-    // copy in the config that the app ignores anyway.
     if (fromEnv) return;
-    // A new token deserves a fresh verdict; leaving the old one up would read
-    // as this one having been refused too, before it has been tried.
     tokenRejected = false;
     patchConfig((cfg) => {
       cfg.tts.hf_token = value.trim() ? value.trim() : null;
@@ -65,23 +57,12 @@
 
   /**
    * Whether a gated engine is still out of reach.
-   *
-   * The token is only needed to *fetch* the weights. Someone who downloaded
-   * Breeze-TTS-2 or Pocket TTS on an earlier run — or in Settings, or with an
-   * `HF_TOKEN` exported into a shell they are no longer in — already has them
-   * on disk, and locking them out of a voice their machine can speak with
-   * would be asking for a token to unlock something that needs no unlocking.
    */
   function locked(id: TtsEngineId) {
     const engine = TTS_ENGINES.find((e) => e.id === id);
     return !!engine?.needsHfToken && !hasHfToken && !ready[id];
   }
 
-  /**
-   * Set when HuggingFace turns our credentials away, cleared the moment the
-   * token changes. The backend tags those failures so this does not depend on
-   * the wording of an error from somewhere down in the HTTP stack.
-   */
   let tokenRejected = $state(false);
 
   const HF_TOKEN_REJECTED_TAG = "hf-token-rejected";
@@ -92,34 +73,15 @@
 
   let playing = $state<string | null>(null);
   let playError = $state<string | null>(null);
-  const bars = waveBars(14);
+  const bars = waveBars(12);
 
-  /**
-   * Getting back out of the "playing" state.
-   *
-   * A card left mid-playback disables every other engine, so this must not
-   * depend on anything that can go missing — and in this window, pushed events
-   * do. Neither `tts-playback-end` nor the 150ms status tick arrives here,
-   * while `invoke` plainly works: the sample itself is played through it. So
-   * the state is settled by asking, not by waiting to be told.
-   *
-   * The event stays wired as the fast path for windows where it does arrive.
-   */
   let playWatchdog: ReturnType<typeof setTimeout> | null = null;
   let playPoll: ReturnType<typeof setInterval> | null = null;
   let playStartedAt = 0;
-  /** Whether the engine has been observed actually speaking this run. */
   let sawSpeaking = false;
 
-  /** How often to ask the backend whether it is still speaking. */
   const PLAY_POLL_MS = 300;
-
-  /** Synthesis takes a moment before the first sample reaches the speakers, so
-   *  "not speaking" is only meaningful once this has passed — otherwise every
-   *  play would end the instant it began. */
   const PLAY_SETTLE_MS = 1500;
-
-  /** Last resort, for an IPC call that never comes back at all. */
   const PLAY_TIMEOUT_MS = 30_000;
 
   function clearPlayTimers() {
@@ -138,27 +100,15 @@
     clearPlayTimers();
   }
 
-  /**
-   * Ask the backend whether it is still speaking, and finish when it is not.
-   *
-   * Two ways to be finished: the engine was heard speaking and has now stopped,
-   * or it never started and the settle window has passed — which covers a
-   * sample too short to catch between polls as well as an engine that failed
-   * without saying so.
-   */
   async function pollSpeaking() {
     if (!playing) return;
     let payload: { speaking?: boolean } | undefined;
     try {
       payload = await invoke<{ speaking?: boolean }>("get_status");
     } catch (e) {
-      // A failed status call is not evidence of anything; the watchdog is the
-      // backstop if they keep failing.
       console.error("Wizard: status poll failed:", e);
       return;
     }
-    // Everything else in the window reads the same store, so keep it current
-    // rather than holding a private copy of the answer.
     if (payload) status.set(payload as any);
 
     if (payload?.speaking) {
@@ -194,11 +144,15 @@
           });
         case "inflect_micro":
           return await invoke<boolean>("check_inflect_micro_downloaded", {
-            modelDir: cfg.tts.inflect_micro.model_dir,
+            modelDir: cfg.tts.inflect_micro?.model_dir ?? "",
           });
         case "breeze_tts_2":
           return await invoke<boolean>("check_breeze_tts_2_ready", {
-            modelDir: cfg.tts.breeze_tts_2.model_dir,
+            modelDir: cfg.tts.breeze_tts_2?.model_dir ?? "",
+          });
+        case "vox_cpm_2":
+          return await invoke<boolean>("check_vox_cpm_2_ready", {
+            modelDir: cfg.tts.vox_cpm_2?.model_dir ?? "",
           });
       }
     } catch (e) {
@@ -208,16 +162,16 @@
   }
 
   async function refreshAll() {
-    for (const engine of TTS_ENGINES) {
-      checking = { ...checking, [engine.id]: true };
-      const ok = await checkEngine(engine.id);
-      ready = { ...ready, [engine.id]: ok };
-      checking = { ...checking, [engine.id]: false };
-    }
+    await Promise.all(
+      TTS_ENGINES.map(async (engine) => {
+        checking = { ...checking, [engine.id]: true };
+        const ok = await checkEngine(engine.id);
+        ready = { ...ready, [engine.id]: ok };
+        checking = { ...checking, [engine.id]: false };
+      }),
+    );
   }
 
-  /** Fetch one engine's assets. Each card drives its own download so the user
-   *  can audition several voices before committing to one. */
   async function download(id: TtsEngineId) {
     if (downloading) return;
     downloading = id;
@@ -233,27 +187,31 @@
           break;
         case "pocket_tts":
           await invoke("download_pocket_tts", {
-            voice: cfg.tts.pocket_tts.voice,
-            voiceDir: cfg.tts.pocket_tts.voice_dir,
+            voice: cfg.tts.pocket_tts?.voice,
+            voiceDir: cfg.tts.pocket_tts?.voice_dir,
             hfToken: cfg.tts.hf_token,
           });
           break;
         case "inflect_micro":
           await invoke("download_inflect_micro", {
-            modelDir: cfg.tts.inflect_micro.model_dir,
+            modelDir: cfg.tts.inflect_micro?.model_dir ?? "",
           });
           break;
         case "breeze_tts_2":
           await invoke("download_breeze_tts_2", {
-            modelDir: cfg.tts.breeze_tts_2.model_dir,
+            modelDir: cfg.tts.breeze_tts_2?.model_dir ?? "",
+            hfToken: cfg.tts.hf_token,
+          });
+          break;
+        case "vox_cpm_2":
+          await invoke("download_vox_cpm_2", {
+            modelDir: cfg.tts.vox_cpm_2?.model_dir ?? "",
             hfToken: cfg.tts.hf_token,
           });
           break;
         case "espeak":
           break;
       }
-      // A download that reached the end proves the token was good, whatever an
-      // earlier attempt said.
       tokenRejected = false;
       ready = { ...ready, [id]: true };
       wizard.clearIssue(`tts-download-${id}`);
@@ -262,10 +220,6 @@
       const rejected = isTokenRejection(e);
       if (rejected) tokenRejected = true;
 
-      // Reported on the card rather than in a dialog: the backend lists every
-      // URL it tried, and a modal would leave no way to read or copy it. A
-      // refused token is the one failure with a single obvious cause, so it
-      // gets a sentence the user can act on instead of the raw chain.
       setErr(
         id,
         rejected
@@ -306,14 +260,11 @@
    * Settings → TTS uses, so a sample that works here works in the app.
    */
   async function play(id: TtsEngineId) {
-    // A second press on the card that is speaking stops it. Without this the
-    // only way out of a long sample is to wait it out.
-    if (playing === id) {
+    if (playing) {
       stopPlaying();
       void invoke("stop_tts").catch(() => {});
       return;
     }
-    if (playing) return;
     pick(id);
     playError = null;
     playing = id;
@@ -332,8 +283,6 @@
     const voice =
       id === "piper" ? cfg.tts.voice : id === "pocket_tts" ? cfg.tts.pocket_tts.voice : null;
     try {
-      // The worker is (re)started from the saved config, so the engine has to
-      // be on disk in its final form before the sample is requested.
       await invoke("save_config", { newConfig: cfg });
       await invoke("speak_text", { text: `Hi this is ${engine.name} speaking from VoxCtrl`, voice });
     } catch (e) {
@@ -402,6 +351,13 @@
       void invoke("stop_tts").catch(() => {});
     };
   });
+
+  const isSelectedReady = $derived(!!ready[selected]);
+  const isSelectedLocked = $derived(locked(selected));
+  const isSelectedUnavailable = $derived(selected === "inflect_micro" && !inflectAvailable);
+  const canPlaySelected = $derived(
+    isSelectedReady && !isSelectedUnavailable && !isSelectedLocked && !downloading,
+  );
 </script>
 
 <div class="voice-step">
@@ -412,7 +368,6 @@
       <p class="vx-lede">
         Agents can stream replies back through a response pipe and VoxCtrl speaks them aloud. Richer
         voices need bigger models and more time per sentence; lighter engines answer instantly.
-        Download one and play a sample before deciding.
       </p>
     </div>
 
@@ -434,47 +389,102 @@
     </div>
   </div>
 
-  <div
-    class="hf"
-    class:needed={enabled && (tokenRejected || gatedEngines.some((e) => locked(e.id)))}
-    class:muted={!enabled}
-  >
-    <div class="hf-copy">
-      <span class="hf-title">HuggingFace access token</span>
-      <span class="hf-desc">
-        {gatedEngines.map((e) => e.name).join(" and ")} are gated downloads: HuggingFace only
-        serves their weights to an account that has accepted the licence. Create a token at
-        <code>huggingface.co/settings/tokens</code>, accept the licence at
-        {#each gatedEngines as engine, i}<code>{engine.licenceUrl}</code>{#if i < gatedEngines.length - 1}{" and "}{/if}{/each}, then paste the
-        token here. One token covers both, and it is saved with your settings — the same place
-        Settings → TTS keeps it. Export <code>HF_TOKEN</code> instead and VoxCtrl uses that: it is
-        shown here, kept out of your config, and takes precedence over a saved token.
-      </span>
+  <!-- Unified Audition & Simplified HuggingFace Token Toolbar -->
+  <div class="toolbar">
+    <div class="audition-panel">
+      <button
+        class="vx-btn audition-btn"
+        class:playing={!!playing}
+        disabled={!canPlaySelected && !playing}
+        title={playing
+          ? "Stop"
+          : isSelectedReady
+            ? "Play a sample"
+            : isSelectedLocked
+              ? "Needs a HuggingFace access token"
+              : "Download this voice first"}
+        onclick={() => {
+          if (playing) {
+            stopPlaying();
+            void invoke("stop_tts").catch(() => {});
+          } else {
+            void play(selected);
+          }
+        }}
+      >
+        {#if playing}
+          <span class="stop-icon">■</span>
+          <span class="btn-text">Stop</span>
+          <span class="play-bars">
+            {#each bars as b}
+              <div style:animation-duration="{b.d}s" style:animation-delay="{b.dl}s"></div>
+            {/each}
+          </span>
+        {:else}
+          <span class="tri">▶</span>
+          <span class="btn-text">play sample</span>
+        {/if}
+      </button>
+
+      <div class="audition-meta">
+        <span class="audition-label">
+          Audition: {selectedEngine.name}
+        </span>
+        <span class="audition-hint">
+          {#if playing}
+            <span class="good">Speaking sample aloud…</span>
+          {:else if downloading}
+            <span class="warn">Downloading voice…</span>
+          {:else if isSelectedLocked}
+            <span class="bad">Locked (token required)</span>
+          {:else if isSelectedReady}
+            <span class="ready">Ready for playback</span>
+          {:else}
+            <span class="dim">Download voice first</span>
+          {/if}
+        </span>
+      </div>
     </div>
-    <input
-      class="hf-input"
-      type="password"
-      autocomplete="off"
-      spellcheck="false"
-      placeholder="hf_…"
-      readonly={fromEnv}
-      title={fromEnv ? "Set by the HF_TOKEN environment variable" : undefined}
-      value={hfToken}
-      oninput={(e) => setHfToken((e.currentTarget as HTMLInputElement).value)}
-    />
-    <span class="hf-state" class:ok={hasHfToken && !tokenRejected} class:bad={tokenRejected}>
-      {#if tokenRejected}
-        ✗ HuggingFace did not accept this token
-      {:else if fromEnv}
-        ✓ using the HF_TOKEN environment variable — not saved to your config
-      {:else if hasHfToken}
-        ✓ token saved
-      {:else}
-        no token — gated voices are locked
-      {/if}
-    </span>
+
+    <!-- Simplified HuggingFace Token UI -->
+    <div
+      class="hf-bar"
+      class:needed={enabled && (tokenRejected || gatedEngines.some((e) => locked(e.id)))}
+    >
+      <div class="hf-header">
+        <span class="hf-title">HuggingFace access token</span>
+        <span class="hf-sub">needed for Breeze-TTS-2 &amp; Pocket TTS</span>
+      </div>
+      <div class="hf-control">
+        <input
+          class="hf-input"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="hf_…"
+          readonly={fromEnv}
+          title={fromEnv
+            ? "Set by the HF_TOKEN environment variable"
+            : "Enter a HuggingFace read token for gated models"}
+          value={hfToken}
+          oninput={(e) => setHfToken((e.currentTarget as HTMLInputElement).value)}
+        />
+        <span class="hf-state" class:ok={hasHfToken && !tokenRejected} class:bad={tokenRejected}>
+          {#if tokenRejected}
+            did not accept this token
+          {:else if fromEnv}
+            HF_TOKEN environment variable
+          {:else if hasHfToken}
+            ✓ token saved
+          {:else}
+            token required for gated voices
+          {/if}
+        </span>
+      </div>
+    </div>
   </div>
 
+  <!-- 3-Column × 2-Row Responsive Grid -->
   <div class="grid" class:muted={!enabled}>
     {#each TTS_ENGINES as engine}
       {@const on = enabled && selected === engine.id}
@@ -499,20 +509,20 @@
         }}
       >
         <div class="card-head">
-          <div>
+          <div class="card-title-group">
             <div class="name">{engine.name}</div>
             <div class="kind">{engine.kind}</div>
           </div>
-          <div class="vx-check"><span>✓</span></div>
+          <div class="vx-check"><span>{on ? "✓" : ""}</span></div>
         </div>
 
         <div class="actions">
           {#if engine.mb === 0}
-            <div class="bundled">bundled · nothing to download</div>
+            <div class="bundled">bundled · zero download</div>
           {:else if busy}
             <button class="vx-btn dl" disabled><span class="vx-spinner"></span> Downloading…</button>
           {:else if isReady}
-            <div class="bundled ok">✓ downloaded</div>
+            <div class="bundled ok">✓ Downloaded ({formatSize(engine.mb)})</div>
           {:else}
             <button
               class="vx-btn dl"
@@ -525,35 +535,14 @@
               ↓ Download {formatSize(engine.mb)}
             </button>
           {/if}
-
-          <button
-            class="play"
-            class:playing={playing === engine.id}
-            disabled={!isReady || unavailable || needsToken || (!!playing && playing !== engine.id)}
-            title={playing === engine.id
-              ? "Stop"
-              : isReady
-                ? "Play a sample"
-                : "Download this voice first"}
-            onclick={(e) => {
-              e.stopPropagation();
-              void play(engine.id);
-            }}
-          >
-            {#if playing === engine.id}
-              <span class="play-bars">
-                {#each bars as b}
-                  <div style:animation-duration="{b.d}s" style:animation-delay="{b.dl}s"></div>
-                {/each}
-              </span>
-            {:else}
-              <span class="tri">▶</span><span class="play-label">play sample</span>
-            {/if}
-          </button>
         </div>
 
         <div class="metrics">
-          {#each [{ label: "quality", pct: Math.round(engine.quality * 100), value: formatPercent(engine.quality), color: "var(--vx-cyan-0)" }, { label: "speed", pct: Math.round(engine.speed * 100), value: ttsSpeedLabel(engine.speed), color: "var(--vx-cyan-2)" }, { label: "model size", pct: modelSizeShare(engine.mb), value: formatSize(engine.mb), color: "var(--vx-gold-1)" }] as m}
+          {#each [
+            { label: "quality", pct: Math.round(engine.quality * 100), value: formatPercent(engine.quality), color: "var(--vx-cyan-0)" },
+            { label: "speed", pct: Math.round(engine.speed * 100), value: ttsSpeedLabel(engine.speed), color: "var(--vx-cyan-2)" },
+            { label: "model size", pct: modelSizeShare(engine.mb), value: formatSize(engine.mb), color: "var(--vx-gold-1)" }
+          ] as m}
             <div class="metric">
               <div class="metric-head"><span>{m.label}</span><span>{m.value}</span></div>
               <div class="vx-meter"><div style:width="{m.pct}%" style:background={m.color}></div></div>
@@ -597,12 +586,12 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
   }
 
   .head {
     display: flex;
-    gap: 24px;
+    gap: 20px;
     align-items: flex-end;
     justify-content: space-between;
     flex: none;
@@ -610,8 +599,14 @@
   }
 
   .copy {
-    max-width: 720px;
+    max-width: 680px;
     min-width: 0;
+  }
+
+  .copy .vx-lede {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
   }
 
   .choice {
@@ -619,15 +614,15 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     flex: none;
-    width: 520px;
+    width: 480px;
   }
 
   .mode {
-    height: 66px;
-    padding: 0 16px;
+    height: 58px;
+    padding: 0 14px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
 
   .mode.off-on {
@@ -638,7 +633,7 @@
 
   .mode-glyph {
     font-family: var(--vx-mono);
-    font-size: 22px;
+    font-size: 20px;
     color: var(--vx-txt-2);
   }
 
@@ -649,96 +644,194 @@
   .mode-title {
     display: block;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13.5px;
   }
 
   .mode-desc {
     display: block;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--vx-txt-2);
   }
 
-  .grid {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    transition: opacity 0.4s, filter 0.4s;
-  }
-
-  .grid.muted {
-    opacity: 0.18;
-    filter: grayscale(1) blur(1px);
-    pointer-events: none;
-  }
-
-  /* The HuggingFace token, above the engine grid: gated voices stay locked
-     until it is filled in, so it has to read as a prerequisite, not a detail. */
-  .hf {
-    display: grid;
-    grid-template-columns: 1fr minmax(220px, 320px);
-    grid-template-areas: "copy input" "copy state";
-    gap: 4px 18px;
-    align-items: start;
-    padding: 12px 14px;
+  /* Toolbar: Audition Controls + Simplified HF Token */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 14px;
     border: 1px solid var(--vx-line);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.02);
+    flex: none;
+    transition: opacity 0.4s, filter 0.4s;
   }
 
-  .hf.muted {
-    opacity: 0.18;
-    filter: grayscale(1) blur(1px);
-    pointer-events: none;
+  .audition-panel {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
   }
 
-  .hf.needed {
+  .audition-btn {
+    height: 38px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: rgba(34, 212, 239, 0.09);
+    border: 1px solid var(--vx-cyan-0);
+    color: var(--vx-cyan-0);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .audition-btn:hover:not(:disabled) {
+    background: rgba(34, 212, 239, 0.18);
+    box-shadow: 0 0 12px rgba(34, 212, 239, 0.25);
+  }
+
+  .audition-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: var(--vx-line-2);
+    color: var(--vx-txt-3);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .audition-btn.playing {
+    border-color: var(--vx-gold-1);
+    color: var(--vx-gold-1);
+    background: rgba(234, 179, 8, 0.12);
+  }
+
+  .tri {
+    font-family: var(--vx-mono);
+    font-size: 14px;
+    color: inherit;
+  }
+
+  .stop-icon {
+    font-size: 14px;
+    color: inherit;
+  }
+
+  .btn-text {
+    font-family: var(--vx-mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+
+  .play-bars {
+    display: flex;
+    align-items: center;
+    gap: 2.5px;
+    height: 18px;
+    margin-left: 4px;
+  }
+
+  .play-bars > div {
+    width: 3px;
+    height: 18px;
+    border-radius: 1.5px;
+    background: currentColor;
+    transform-origin: center;
+    animation-name: vxBar;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-in-out;
+  }
+
+  .audition-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .audition-label {
+    font-size: 12px;
+    color: var(--vx-cyan-0);
+    font-weight: 600;
+  }
+
+  .audition-hint {
+    font-size: 11px;
+    font-family: var(--vx-mono);
+  }
+
+  .audition-hint .ready {
+    color: var(--vx-good);
+  }
+
+  .audition-hint .good {
+    color: var(--vx-cyan-0);
+  }
+
+  .audition-hint .warn {
+    color: var(--vx-gold-1);
+  }
+
+  .audition-hint .bad {
+    color: var(--vx-bad);
+  }
+
+  .audition-hint .dim {
+    color: var(--vx-txt-3);
+  }
+
+  /* Compact HuggingFace Token Bar */
+  .hf-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .hf-bar.needed {
     border-color: color-mix(in srgb, var(--vx-gold-1) 45%, transparent);
     background: color-mix(in srgb, var(--vx-gold-1) 6%, transparent);
   }
 
-  .hf-copy {
-    grid-area: copy;
+  .hf-header {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-width: 0;
+    gap: 1px;
+    text-align: right;
   }
 
   .hf-title {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    font-size: 11.5px;
+    font-weight: 600;
   }
 
-  .hf-desc {
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--vx-txt-2);
-  }
-
-  .hf-desc code {
+  .hf-sub {
     font-size: 10px;
-    padding: 1px 4px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.35);
-    color: var(--vx-cyan-0);
-    word-break: break-all;
+    color: var(--vx-txt-3);
+  }
+
+  .hf-control {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .hf-input {
-    grid-area: input;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 10px;
-    font-size: 12px;
+    width: 170px;
+    padding: 5px 8px;
+    font-size: 11.5px;
     font-family: inherit;
     color: inherit;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.45);
     border: 1px solid var(--vx-line);
-    border-radius: 8px;
+    border-radius: 6px;
     outline: none;
+    transition: border-color 0.2s;
   }
 
   .hf-input:focus {
@@ -751,10 +844,10 @@
   }
 
   .hf-state {
-    grid-area: state;
-    font-size: 10px;
-    letter-spacing: 0.02em;
-    color: var(--vx-gold-1);
+    font-size: 9.5px;
+    font-family: var(--vx-mono);
+    color: var(--vx-txt-3);
+    white-space: nowrap;
   }
 
   .hf-state.ok {
@@ -765,11 +858,31 @@
     color: var(--vx-bad);
   }
 
-  @media (max-width: 720px) {
-    .hf {
-      grid-template-columns: 1fr;
-      grid-template-areas: "copy" "input" "state";
-    }
+  /* 3-Column × 2-Row Grid for 6 Engines */
+  .grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    transition: opacity 0.4s, filter 0.4s;
+  }
+
+  .grid.muted {
+    opacity: 0.18;
+    filter: grayscale(1) blur(1px);
+    pointer-events: none;
+  }
+
+  .card {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    cursor: pointer;
+    transition: all 0.2s;
   }
 
   .card.locked {
@@ -780,14 +893,6 @@
     color: var(--vx-txt-2);
   }
 
-  .card {
-    padding: 16px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    min-height: 0;
-  }
-
   .card-head {
     display: flex;
     justify-content: space-between;
@@ -795,40 +900,49 @@
     gap: 8px;
   }
 
+  .card-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
   .name {
     font-weight: 600;
-    font-size: 15px;
+    font-size: 14.5px;
     letter-spacing: -0.01em;
+    white-space: nowrap;
   }
 
   .kind {
     font-family: var(--vx-mono);
-    font-size: 10.5px;
+    font-size: 10px;
     color: var(--vx-txt-2);
-    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .actions {
     display: grid;
-    gap: 8px;
   }
 
   .dl {
-    height: 36px;
+    height: 30px;
     width: 100%;
-    font-size: 12px;
+    font-size: 11.5px;
     padding: 0 10px;
   }
 
   .bundled {
-    height: 36px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px dashed var(--vx-line);
     font-family: var(--vx-mono);
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--vx-txt-3);
     text-align: center;
   }
@@ -839,69 +953,10 @@
     color: var(--vx-good);
   }
 
-  .play {
-    height: 62px;
-    border-radius: 12px;
-    border: 1px solid var(--vx-line-2);
-    background: rgba(255, 255, 255, 0.03);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    color: inherit;
-    font: inherit;
-    transition: all 0.25s;
-  }
-
-  .play:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .play:hover:not(:disabled) {
-    border-color: var(--vx-cyan-b);
-  }
-
-  .play.playing {
-    border-color: var(--vx-cyan-b);
-    background: rgba(34, 212, 239, 0.08);
-  }
-
-  .tri {
-    font-family: var(--vx-mono);
-    font-size: 20px;
-    color: var(--vx-cyan-1);
-  }
-
-  .play-label {
-    font-family: var(--vx-mono);
-    font-size: 11.5px;
-    color: var(--vx-txt-1);
-  }
-
-  .play-bars {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    height: 28px;
-  }
-
-  .play-bars > div {
-    width: 4px;
-    height: 28px;
-    border-radius: 2px;
-    background: var(--vx-cyan-0);
-    transform-origin: center;
-    animation-name: vxBar;
-    animation-iteration-count: infinite;
-    animation-timing-function: ease-in-out;
-  }
-
   .metrics {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
 
   .metric-head {
@@ -910,7 +965,7 @@
     font-family: var(--vx-mono);
     font-size: 10.5px;
     color: var(--vx-txt-2);
-    margin-bottom: 5px;
+    margin-bottom: 4px;
   }
 
   .metric-head span:last-child {
@@ -918,10 +973,15 @@
   }
 
   .note {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--vx-txt-2);
-    line-height: 1.45;
+    line-height: 1.35;
     margin-top: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   .bad {
@@ -935,17 +995,16 @@
 
   .play-error {
     flex: none;
-    font-size: 12.5px;
+    font-size: 12px;
     color: var(--vx-bad);
   }
 
-  @media (max-width: 1200px) {
+  @media (max-width: 1100px) {
     .grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(3, minmax(0, 1fr));
     }
-  }
 
-  @media (max-width: 1000px) {
     .head {
       flex-direction: column;
       align-items: stretch;
@@ -954,9 +1013,20 @@
     .choice {
       width: 100%;
     }
+  }
 
-    .grid {
-      grid-template-columns: repeat(2, 1fr);
+  @media (max-width: 800px) {
+    .toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .hf-header {
+      text-align: left;
+    }
+
+    .hf-input {
+      width: 100%;
     }
   }
 </style>

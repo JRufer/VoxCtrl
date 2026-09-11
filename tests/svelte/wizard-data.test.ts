@@ -165,7 +165,7 @@ describe("wizard tables", () => {
 
   test("TTS engine ids match the TtsConfig engine union", () => {
     expect(TTS_ENGINES.map((t) => t.id).sort()).toEqual(
-      ["breeze_tts_2", "espeak", "inflect_micro", "piper", "pocket_tts"].sort(),
+      ["breeze_tts_2", "espeak", "inflect_micro", "piper", "pocket_tts", "vox_cpm_2"].sort(),
     );
   });
 

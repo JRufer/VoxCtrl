@@ -242,6 +242,8 @@ const defaultConfig: AppConfig = {
       prewarm: false,
     },
     breeze_tts_2: {
+      voice_mode: "prompt",
+      cloned_voice: "alba",
       speaker_prompt: "A calm and clear female voice speaking at a natural pace",
       model_dir: "",
       prewarm: false,
@@ -249,7 +251,7 @@ const defaultConfig: AppConfig = {
     },
     vox_cpm_2: {
       voice_mode: "prompt",
-      cloned_voice: "",
+      cloned_voice: "alba",
       voice_dir: "",
       speaker_prompt: "A calm young female voice speaking clearly with a gentle tone.",
       ultimate_cloning: false,
