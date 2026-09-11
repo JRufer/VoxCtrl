@@ -13,12 +13,18 @@ export interface AppConfig {
   updates: UpdateConfig;
 }
 
+export interface S1MiniConfig {
+  enabled: boolean;
+  styling: string;
+}
+
 export interface EngineConfig {
   backend: "whisper-cpp" | "moonshine" | "parakeet" | "remote-openai";
   whisper_cpp: WhisperCppConfig;
   moonshine: MoonshineConfig;
   parakeet: ParakeetConfig;
   remote_openai: RemoteOpenAiConfig;
+  s1_mini: S1MiniConfig;
 }
 
 export interface RemoteOpenAiConfig {
@@ -102,7 +108,21 @@ export interface InflectMicroConfig {
 }
 
 export interface BreezeTts2Config {
+  voice_mode?: string;
+  cloned_voice?: string;
+  voice_dir?: string;
   speaker_prompt: string;
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
+export interface VoxCpm2Config {
+  voice_mode: string;
+  cloned_voice: string;
+  voice_dir: string;
+  speaker_prompt: string;
+  ultimate_cloning: boolean;
   model_dir: string;
   prewarm: boolean;
   gpu: boolean;
@@ -110,7 +130,7 @@ export interface BreezeTts2Config {
 
 export interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2";
+  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2";
   voice: string;
   voice_dir: string;
   stop_key: string[];
@@ -122,6 +142,7 @@ export interface TtsConfig {
   pocket_tts: PocketTtsConfig;
   inflect_micro: InflectMicroConfig;
   breeze_tts_2: BreezeTts2Config;
+  vox_cpm_2: VoxCpm2Config;
   memory_mode: TtsMemoryMode;
   idle_unload_secs: number;
   snippets: Record<string, string>;
@@ -157,6 +178,10 @@ const defaultConfig: AppConfig = {
       model: "whisper-1",
       language: "",
       timeout_secs: 30,
+    },
+    s1_mini: {
+      enabled: false,
+      styling: "semi-formal",
     },
   },
   audio: {
@@ -218,6 +243,16 @@ const defaultConfig: AppConfig = {
     },
     breeze_tts_2: {
       speaker_prompt: "A calm and clear female voice speaking at a natural pace",
+      model_dir: "",
+      prewarm: false,
+      gpu: false,
+    },
+    vox_cpm_2: {
+      voice_mode: "prompt",
+      cloned_voice: "",
+      voice_dir: "",
+      speaker_prompt: "A calm young female voice speaking clearly with a gentle tone.",
+      ultimate_cloning: false,
       model_dir: "",
       prewarm: false,
       gpu: false,

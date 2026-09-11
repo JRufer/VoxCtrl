@@ -61,21 +61,43 @@ if (isDirectRun) {
   const isWindows = process.platform === 'win32';
   const exeSuffix = isWindows ? '.exe' : '';
 
-  const candidates = [
+  const destDir = join(repoRoot, 'src-tauri', 'binaries');
+  mkdirSync(destDir, { recursive: true });
+
+  // 1. Stage voxctrl-overlay
+  const overlayCandidates = [
     join(repoRoot, 'target', 'release', `voxctrl-overlay${exeSuffix}`),
     join(repoRoot, 'target', 'debug', `voxctrl-overlay${exeSuffix}`),
   ];
 
-  const srcBinary = selectBinary(candidates, existsSync, statSync);
-
-  const destDir = join(repoRoot, 'src-tauri', 'binaries');
-  mkdirSync(destDir, { recursive: true });
-  const destBinary = join(destDir, `voxctrl-overlay-${triple}${exeSuffix}`);
-
-  copyFileSync(srcBinary, destBinary);
+  const srcOverlay = selectBinary(overlayCandidates, existsSync, statSync);
+  const destOverlay = join(destDir, `voxctrl-overlay-${triple}${exeSuffix}`);
+  copyFileSync(srcOverlay, destOverlay);
   if (!isWindows) {
-    chmodSync(destBinary, 0o755);
+    chmodSync(destOverlay, 0o755);
   }
+  console.log(`[prepare-sidecar] staged ${srcOverlay} -> ${destOverlay}`);
 
-  console.log(`[prepare-sidecar] staged ${srcBinary} -> ${destBinary}`);
+  // 2. Stage voxctrl-llm-sidecar
+  const llmCandidates = [
+    join(repoRoot, 'target', 'release', `voxctrl-llm-sidecar${exeSuffix}`),
+    join(repoRoot, 'target', 'debug', `voxctrl-llm-sidecar${exeSuffix}`),
+  ];
+  const existingLlm = llmCandidates.filter((p) => existsSync(p));
+  if (existingLlm.length > 0) {
+    let srcLlm = existingLlm[0];
+    if (existingLlm.length > 1) {
+      const stats = existingLlm.map((p) => ({ path: p, mtime: statSync(p).mtimeMs }));
+      stats.sort((a, b) => b.mtime - a.mtime);
+      srcLlm = stats[0].path;
+    }
+    const destLlm = join(destDir, `voxctrl-llm-sidecar-${triple}${exeSuffix}`);
+    copyFileSync(srcLlm, destLlm);
+    if (!isWindows) {
+      chmodSync(destLlm, 0o755);
+    }
+    console.log(`[prepare-sidecar] staged ${srcLlm} -> ${destLlm}`);
+  } else {
+    console.warn(`[prepare-sidecar] Note: voxctrl-llm-sidecar binary not found yet in target/release or target/debug`);
+  }
 }

@@ -18,6 +18,7 @@ use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2, BreezeModelS
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
 use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice};
 use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
+use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2, VoxCpmModelSlot};
 
 /// How long the worker parks in `recv_timeout` when there is nothing to expire.
 /// Only a wake-up interval — the channel still wakes it immediately on a command.
@@ -161,6 +162,7 @@ impl TtsEngineWorker {
             TtsEngine::PocketTts => config.pocket_tts.prewarm,
             TtsEngine::InflectMicro => config.inflect_micro.prewarm,
             TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
+            TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
             _ => false,
         };
         // Pre-warming loads the model at startup and keeps it there, which is
@@ -212,6 +214,9 @@ impl TtsEngineWorker {
         // Breeze-TTS-2 session + per-voice cloned state, cached for the same lifetime.
         let mut breeze_tts_2_model: BreezeModelSlot = None;
         let mut breeze_tts_2_voice_states: HashMap<String, pocket_tts::ModelState> = HashMap::new();
+        // VoxCPM2 session + per-voice cloned state, cached for the same lifetime.
+        let mut vox_cpm_2_model: VoxCpmModelSlot = None;
+        let mut vox_cpm_2_voice_states: HashMap<String, pocket_tts::ModelState> = HashMap::new();
 
         // Persistent Rodio Output Stream - kept alive for the lifetime of this thread!
         let mut audio_context: Option<(rodio::OutputStream, rodio::OutputStreamHandle, Arc<rodio::Sink>)> = None;
@@ -244,7 +249,8 @@ impl TtsEngineWorker {
             // these three keep weights resident, so only these can be unloaded.
             let model_resident = pocket_tts_model.is_some()
                 || inflect_model.is_some()
-                || breeze_tts_2_model.is_some();
+                || breeze_tts_2_model.is_some()
+                || vox_cpm_2_model.is_some();
 
             // Park until the next command, or until the idle window expires.
             let wait = if unload_when_idle && model_resident {
@@ -263,6 +269,8 @@ impl TtsEngineWorker {
                         inflect_model = None;
                         breeze_tts_2_model = None;
                         breeze_tts_2_voice_states.clear();
+                        vox_cpm_2_model = None;
+                        vox_cpm_2_voice_states.clear();
                         self.model_loaded.store(false, Ordering::SeqCst);
                         continue;
                     }
@@ -377,6 +385,16 @@ impl TtsEngineWorker {
                             &self.generation,
                             generation,
                         ),
+                        TtsEngine::VoxCpm2 => speak_vox_cpm_2(
+                            &current_config,
+                            &utterance,
+                            &mut vox_cpm_2_model,
+                            &mut vox_cpm_2_voice_states,
+                            &self.on_playback_start,
+                            &sink,
+                            &self.generation,
+                            generation,
+                        ),
                         }
                     }))
                     .unwrap_or_else(|payload| {
@@ -414,7 +432,8 @@ impl TtsEngineWorker {
                     self.model_loaded.store(
                         pocket_tts_model.is_some()
                             || inflect_model.is_some()
-                            || breeze_tts_2_model.is_some(),
+                            || breeze_tts_2_model.is_some()
+                            || vox_cpm_2_model.is_some(),
                         Ordering::SeqCst,
                     );
                     // A long utterance must not count against the idle window.
@@ -439,6 +458,9 @@ impl TtsEngineWorker {
                         TtsEngine::BreezeTts2 if breeze_tts_2_model.is_none() => {
                             Some(ensure_breeze_tts_2_loaded(&current_config, &mut breeze_tts_2_model))
                         }
+                        TtsEngine::VoxCpm2 if vox_cpm_2_model.is_none() => {
+                            Some(ensure_vox_cpm_2_loaded(&current_config, &mut vox_cpm_2_model))
+                        }
                         // Already resident, or an engine that holds no model.
                         _ => None,
                     };
@@ -452,7 +474,8 @@ impl TtsEngineWorker {
                     self.model_loaded.store(
                         pocket_tts_model.is_some()
                             || inflect_model.is_some()
-                            || breeze_tts_2_model.is_some(),
+                            || breeze_tts_2_model.is_some()
+                            || vox_cpm_2_model.is_some(),
                         Ordering::SeqCst,
                     );
                     last_used = Instant::now();

@@ -191,6 +191,7 @@ fn test_hotkey_binding_multi_target_roundtrip() {
         openai_mode: None,
         openai_prompt: None,
         openai_system_prompt: None,
+        s1_mini_enabled: None,
     };
 
     assert_eq!(binding.resolved_target_ids(), vec!["target1", "target2"]);

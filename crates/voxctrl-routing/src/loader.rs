@@ -128,6 +128,8 @@ struct RawBinding {
     openai_prompt: Option<String>,
     #[serde(default, alias = "ollama_system_prompt")]
     openai_system_prompt: Option<String>,
+    #[serde(default)]
+    s1_mini_enabled: Option<bool>,
 }
 
 fn bool_true() -> bool {
@@ -365,6 +367,7 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
         openai_mode: r.openai_mode,
         openai_prompt: r.openai_prompt,
         openai_system_prompt: r.openai_system_prompt,
+        s1_mini_enabled: r.s1_mini_enabled,
     }
 }
 
@@ -391,6 +394,7 @@ fn binding_to_raw(b: &HotkeyBinding) -> RawBinding {
         openai_mode: b.openai_mode.clone(),
         openai_prompt: b.openai_prompt.clone(),
         openai_system_prompt: b.openai_system_prompt.clone(),
+        s1_mini_enabled: b.s1_mini_enabled,
     }
 }
 
@@ -417,6 +421,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             openai_mode: None,
             openai_prompt: None,
             openai_system_prompt: None,
+            s1_mini_enabled: None,
         },
         HotkeyBinding {
             id: "default_toggle".into(),
@@ -437,6 +442,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
             openai_mode: None,
             openai_prompt: None,
             openai_system_prompt: None,
+            s1_mini_enabled: None,
         },
     ]
 }

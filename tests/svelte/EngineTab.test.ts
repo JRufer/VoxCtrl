@@ -116,7 +116,7 @@ describe("EngineTab.svelte GPU support", () => {
   /** Answer `accelerator_support` with a given build, keeping the model checks. */
   function buildWith(support: { whisper_gpu: string | null; moonshine_gpu: string | null; parakeet_gpu?: string | null }) {
     vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
-      if (cmd === "accelerator_support") return { parakeet_gpu: null, ...support };
+      if (cmd === "accelerator_support") return { parakeet_gpu: null, s1_mini_gpu: null, ...support };
       if (cmd === "check_model_downloaded") return args?.modelSize === "base";
       return true;
     });

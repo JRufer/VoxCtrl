@@ -155,6 +155,9 @@
     } else if (cfg.tts.engine === "breeze_tts_2") {
       engineName = "Breeze-TTS-2";
       voice = null;
+    } else if (cfg.tts.engine === "vox_cpm_2") {
+      engineName = "VoxCPM2";
+      voice = null;
     } else if (cfg.tts.engine === "inflect_micro") {
       engineName = "Inflect Micro";
       voice = null;
@@ -202,6 +205,11 @@
       if (breezeDownloading) return "Downloading the model...";
       if (!breezeReady) return "Download the model first.";
     }
+    if (cfg.tts.engine === "vox_cpm_2") {
+      if (voxCpmChecking) return "Checking local model files...";
+      if (voxCpmDownloading) return "Downloading the model...";
+      if (!voxCpmReady) return "Download the model first.";
+    }
     return null;
   }
 
@@ -218,6 +226,9 @@
     }
     if (cfg.tts.engine === "breeze_tts_2") {
       return breezeChecking || breezeDownloading || !breezeReady;
+    }
+    if (cfg.tts.engine === "vox_cpm_2") {
+      return voxCpmChecking || voxCpmDownloading || !voxCpmReady;
     }
     if (cfg.tts.engine === "inflect_micro") {
       return inflectChecking || inflectDownloading || !inflectReady || !inflectAvailable;
@@ -308,6 +319,7 @@
   }
 
   const engineOptions = [
+    { value: "vox_cpm_2", label: "VoxCPM2 (neural, voice cloning & design)" },
     { value: "breeze_tts_2", label: "Breeze-TTS-2 (neural, voice design)" },
     { value: "pocket_tts", label: "Pocket-TTS (neural, voice cloning)" },
     { value: "piper", label: "Piper (neural, high quality)" },
@@ -435,6 +447,43 @@
     checkPocketTtsReady();
   }
 
+  // ── VoxCPM2 ───────────────────────────────────────────────────────────────
+
+  let voxCpmReady = $state(false);
+  let voxCpmChecking = $state(false);
+  let voxCpmDownloading = $state(false);
+
+  async function checkVoxCpmReady() {
+    voxCpmChecking = true;
+    try {
+      voxCpmReady = await invoke<boolean>("check_vox_cpm_2_ready", {
+        modelDir: cfg.tts.vox_cpm_2.model_dir,
+      });
+    } catch (e) {
+      console.error("check_vox_cpm_2_ready:", e);
+      voxCpmReady = false;
+    } finally {
+      voxCpmChecking = false;
+    }
+  }
+
+  async function downloadVoxCpm2() {
+    if (voxCpmDownloading) return;
+    voxCpmDownloading = true;
+    try {
+      const token = cfg.tts.hf_token;
+      await invoke("download_vox_cpm_2", {
+        modelDir: cfg.tts.vox_cpm_2.model_dir,
+        hfToken: token,
+      });
+      voxCpmReady = true;
+    } catch (e) {
+      alert(`Failed to download VoxCPM2 assets: ${e}`);
+    } finally {
+      voxCpmDownloading = false;
+    }
+  }
+
   // ── Breeze-TTS-2 ───────────────────────────────────────────────────────────
 
   let breezeReady = $state(false);
@@ -496,7 +545,11 @@
     markDirty();
     engineSwitching = true;
     try {
-      if (cfg.tts.engine === "breeze_tts_2") {
+      if (cfg.tts.engine === "vox_cpm_2") {
+        voxCpmReady = false;
+        await checkVoxCpmReady();
+        await loadPocketTtsVoices();
+      } else if (cfg.tts.engine === "breeze_tts_2") {
         breezeReady = false;
         await checkBreezeReady();
       } else if (cfg.tts.engine === "pocket_tts") {
@@ -531,6 +584,11 @@
       validateVoiceDir();
     } else {
       checkAllVoicesDownloaded();
+    }
+
+    if (cfg.tts.engine === "vox_cpm_2") {
+      checkVoxCpmReady();
+      loadPocketTtsVoices();
     }
 
     if (cfg.tts.engine === "breeze_tts_2") {
@@ -836,6 +894,165 @@
       {/if}
     </div>
     <p class="hint">Default voice directory: <code>~/.local/share/voxctrl/piper-voices/</code></p>
+  </div>
+  {/if}
+
+  <!-- ── VoxCPM2 section ─────────────────────────────────────────────── -->
+  {#if cfg.tts.engine === "vox_cpm_2"}
+  <div class="field-group">
+    <h3>VoxCPM2 Voice</h3>
+
+    <div class="info-banner" style="background: rgba(45, 140, 255, 0.1); border: 1px solid rgba(45, 140, 255, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: #4fa3ff; margin-bottom: 4px;">
+        <span>⚡</span>
+        <span>OpenBMB VoxCPM2 — 2B Autoregressive Diffusion TTS</span>
+      </div>
+      <p style="font-size: 0.85rem; line-height: 1.4; color: #d0d7de; margin: 0;">
+        Pure Rust neural speech synthesis with real-time streaming playback. Supports natural language <strong>Voice Design</strong>, reference <strong>Voice Cloning</strong>, and <strong>Ultimate Cloning</strong> (reference audio + transcript matching). Licensed under <strong>Apache 2.0</strong>.
+      </p>
+    </div>
+
+    <div class="field col">
+      <span class="field-title">Voice Selection Method</span>
+      <div class="engine-radio-group">
+        <label class="engine-radio-option {cfg.tts.vox_cpm_2.voice_mode !== 'clone' ? 'selected' : ''}">
+          <div class="engine-radio-header">
+            <input
+              type="radio"
+              name="voxcpm_voice_mode"
+              value="prompt"
+              checked={cfg.tts.vox_cpm_2.voice_mode !== 'clone'}
+              onchange={() => { cfg.tts.vox_cpm_2.voice_mode = 'prompt'; markDirty(); }}
+            />
+            <span class="engine-radio-name">🗣️ Voice Design (Prompt)</span>
+          </div>
+          <span class="engine-radio-desc">Describe vocal characteristics in natural language</span>
+        </label>
+
+        <label class="engine-radio-option {cfg.tts.vox_cpm_2.voice_mode === 'clone' ? 'selected' : ''}">
+          <div class="engine-radio-header">
+            <input
+              type="radio"
+              name="voxcpm_voice_mode"
+              value="clone"
+              checked={cfg.tts.vox_cpm_2.voice_mode === 'clone'}
+              onchange={() => { cfg.tts.vox_cpm_2.voice_mode = 'clone'; markDirty(); loadPocketTtsVoices(); }}
+            />
+            <span class="engine-radio-name">🎙️ Voice Cloning (Shared Folder)</span>
+          </div>
+          <span class="engine-radio-desc">Clone voice from reference .wav audio clip</span>
+        </label>
+      </div>
+    </div>
+
+    {#if cfg.tts.vox_cpm_2.voice_mode === 'clone'}
+      <label class="field col">
+        <span class="field-title">Cloned Voice Reference Clip</span>
+        <CustomSelect
+          bind:value={cfg.tts.vox_cpm_2.cloned_voice}
+          options={pocketTtsVoiceOptions}
+          onchange={markDirty}
+        />
+      </label>
+
+      <div class="field">
+        <span>Shared Voice Folder (leave blank for default)</span>
+        <input
+          type="text"
+          bind:value={cfg.tts.vox_cpm_2.voice_dir}
+          onchange={() => { markDirty(); validatePocketTtsVoiceDir(); }}
+        />
+      </div>
+      <p class="hint">Default directory: <code>~/.local/share/voxctrl/pocket-tts-voices/</code></p>
+
+      <div class="field" style="margin-top: 6px;">
+        <span>Enable Ultimate Cloning</span>
+        <input
+          type="checkbox"
+          bind:checked={cfg.tts.vox_cpm_2.ultimate_cloning}
+          onchange={markDirty}
+        />
+      </div>
+      <p class="hint" style="margin-top: -6px;">
+        When enabled, VoxCPM2 reads a companion <code>.txt</code> transcript file next to the <code>.wav</code> reference audio (e.g. <code>voice_name.txt</code> alongside <code>voice_name.wav</code>) for maximum phoneme alignment, nuanced breathing, and exact prosodic preservation.
+      </p>
+    {:else}
+      <label class="field col">
+        <span class="field-title">Speaker Voice Prompt (Voice Design)</span>
+        <textarea
+          bind:value={cfg.tts.vox_cpm_2.speaker_prompt}
+          onchange={markDirty}
+          placeholder="Describe the voice of the speaker in natural language..."
+          rows="2"
+          class="field-input-textarea"
+        ></textarea>
+      </label>
+      <p class="hint" style="margin-top: -4px;">
+        Natural language description used by VoxCPM2 to design the speaker's vocal timbre (e.g. <em>"A calm young female voice speaking clearly with a gentle tone"</em> or <em>"A deep, confident male narrator"</em>).
+      </p>
+    {/if}
+
+    <div class="voice-status-container">
+      {#if voxCpmChecking}
+        <span class="status-checking">⏳ Checking local model files...</span>
+      {:else if voxCpmDownloading}
+        <span class="status-downloading">⏳ Downloading VoxCPM2 model weights from HuggingFace (4.5 GB)...</span>
+      {:else}
+        <div class="status-missing-wrapper">
+          <span class={voxCpmReady ? "status-downloaded" : "status-missing"}>
+            {voxCpmReady ? "✔ Model weights downloaded and ready" : "❌ Model files missing"}
+          </span>
+          <button class="btn-download" onclick={downloadVoxCpm2} disabled={voxCpmReady || voxCpmDownloading}>
+            {voxCpmReady ? "Downloaded" : "📥 Download"}
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="field">
+      <span>HuggingFace access token</span>
+      <input
+        type="password"
+        value={hfTokenShown}
+        readonly={hfFromEnv}
+        title={hfFromEnv ? "Set by the HF_TOKEN environment variable" : undefined}
+        oninput={onHfTokenChanged}
+      />
+    </div>
+    {#if hfFromEnv}
+      <p class="hint">
+        Using the <code>HF_TOKEN</code> environment variable. It takes precedence over a saved
+        token and is not written to your config.
+      </p>
+    {/if}
+    <p class="hint">
+      VoxCPM2 model files are hosted on HuggingFace at <code>huggingface.co/openbmb/VoxCPM2</code>.
+      An optional token can avoid anonymous download rate limits.
+    </p>
+
+    <label class="field">
+      <span>GPU Acceleration</span>
+      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.gpu} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">
+      Runs synthesis on the GPU for fastest inference speed. When disabled, or whenever no GPU can be opened, synthesis stays on the CPU. The model reloads when you change this.
+    </p>
+
+    <label class="field">
+      <span>Pre-warm Model on Startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Pre-loads model tensors into memory on startup so the first speech generation is instant.</p>
+
+    <div class="field">
+      <span>Model directory (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.vox_cpm_2.model_dir}
+        onchange={markDirty}
+      />
+    </div>
+    <p class="hint">Default directory: <code>~/.local/share/voxctrl/models/voxcpm2/</code></p>
   </div>
   {/if}
 

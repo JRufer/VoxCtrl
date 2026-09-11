@@ -115,7 +115,7 @@ jobs:
       # before the release run does.
       - name: cargo check (vulkan)
         if: runner.os == 'Linux'
-        run: cargo check -p voxctrl-app --features vulkan
+        run: cargo check -p voxctrl-app -p voxctrl-llm-sidecar --features vulkan
 
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:

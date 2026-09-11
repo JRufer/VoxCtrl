@@ -9,12 +9,13 @@ fn main() {
     // placeholder exists here, before tauri_build::build() runs its validation,
     // so ordinary development builds never fail. Packaging overwrites this with
     // the real binary via scripts/prepare-sidecar.mjs before Tauri bundles.
-    ensure_overlay_sidecar_placeholder();
+    ensure_sidecar_placeholder("voxctrl-overlay");
+    ensure_sidecar_placeholder("voxctrl-llm-sidecar");
 
     tauri_build::build()
 }
 
-fn ensure_overlay_sidecar_placeholder() {
+fn ensure_sidecar_placeholder(name: &str) {
     let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
         Ok(dir) => PathBuf::from(dir),
         Err(_) => return,
@@ -27,7 +28,7 @@ fn ensure_overlay_sidecar_placeholder() {
     let exe_suffix = if target.contains("windows") { ".exe" } else { "" };
 
     let dir = manifest_dir.join("binaries");
-    let sidecar = dir.join(format!("voxctrl-overlay-{target}{exe_suffix}"));
+    let sidecar = dir.join(format!("{name}-{target}{exe_suffix}"));
     if sidecar.exists() {
         return;
     }

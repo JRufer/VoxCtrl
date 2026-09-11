@@ -56,6 +56,7 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.remote_openai.api_key", Secret),
     ("engine.remote_openai.model", Safe),
     ("engine.remote_openai.language", Safe),
+    ("engine.s1_mini.styling", Safe),
     // A device node such as /dev/input/event4. No account name, no home
     // directory, and which node was picked is the whole question when a
     // hotkey does not fire.
@@ -91,6 +92,14 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.breeze_tts_2.speaker_prompt", FreeText),
     ("tts.breeze_tts_2.model_dir", Path),
     ("tts.breeze_tts_2.hf_token", Secret),
+    ("tts.vox_cpm_2.voice_mode", Safe),
+    ("tts.vox_cpm_2.cloned_voice", Safe),
+    ("tts.vox_cpm_2.voice_dir", Path),
+    ("tts.vox_cpm_2.speaker_prompt", FreeText),
+    ("tts.vox_cpm_2.ultimate_cloning", Safe),
+    ("tts.vox_cpm_2.model_dir", Path),
+    ("tts.vox_cpm_2.prewarm", Safe),
+    ("tts.vox_cpm_2.gpu", Safe),
     ("updates.skipped_version", Safe),
 ];
 

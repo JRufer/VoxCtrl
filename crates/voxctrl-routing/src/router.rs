@@ -110,6 +110,39 @@ impl OutputTargetRouter {
         }
     }
 
+    /// Deliver text directly to the named target without re-evaluating voice commands.
+    /// Used when voice command resolution and S1-mini post-processing have already
+    /// resolved the destination and processed the remaining payload.
+    pub async fn deliver_direct(&self, target_id: &str, text: &str) -> DeliveryResult {
+        let configs_guard = self.configs.read().await;
+        let target_config = configs_guard.iter().find(|t| t.id == target_id).cloned();
+        drop(configs_guard);
+
+        if let Some(cfg) = target_config {
+            if cfg.delivery == DeliveryType::Command {
+                let inject_target = InjectTarget(cfg);
+                return inject_target.deliver(text).await;
+            }
+        }
+
+        let guard = self.targets.read().await;
+        match guard.get(target_id) {
+            Some(target) => {
+                let result = target.deliver(text).await;
+                if !result.success {
+                    error!(target_id, error = ?result.error, "Delivery failed");
+                } else {
+                    info!(target_id, bytes = text.len(), "Delivered");
+                }
+                result
+            }
+            None => {
+                error!(target_id, "Unknown target");
+                DeliveryResult::err(format!("Unknown target: {target_id}"))
+            }
+        }
+    }
+
     /// Hot-reload: replace all targets atomically.
     pub async fn reload(&self, targets: Vec<OutputTarget>) {
         let map: HashMap<_, _> = targets

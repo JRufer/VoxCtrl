@@ -49,6 +49,7 @@ In an era of cloud processing, VoxCtrl is built from the ground up to guarantee 
 * **Privacy-Preserving Global Hotkeys**: Shortcuts are registered with your desktop through the XDG `GlobalShortcuts` portal (KDE Plasma, GNOME 48+, Hyprland), so VoxCtrl receives its own shortcuts and never reads a keystroke. Bind hold-to-talk, toggle-to-talk, double-tap, or double-tap & hold gestures. Works identically on Wayland and X11, with no permission setup at all.
 * **DBus Dictation Service**: Exposes `ai.voxctrl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
 * **Neural Text-to-Speech (TTS)**: Built-in local voice feedback with a choice of engines — **Breeze-TTS-2** (neural, voice design from natural language prompts; gated HF download under non-commercial license, optional CUDA/Metal GPU offload), **Piper** (neural, high quality), **Pocket-TTS** (neural, clones a voice from a reference clip), **Inflect-Micro-v2** (neural, 38 MB ONNX), and **eSpeak-NG** (lightweight, always available) — with automatic local package installation and an in-app model downloader.
+* **On-Device S1-mini Dictation Cleanup**: Optional local text normalization powered by Superwhisper's [s1-mini](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download). Accelerated by the host GPU (NVIDIA, AMD, Intel) via a dedicated Vulkan LLM sidecar with automatic CPU fallback, S1-mini transforms raw speech-to-text transcripts into polished prose with natural punctuation and spoken self-corrections while strictly preserving voice commands and trigger keywords. Enable it in Settings → Engine, with per-keybind toggles available in Hotkey settings.
 * **Intelligent Post-Processing & LLM Rewriting**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional post-processing through any **OpenAI-compatible API server** (a local [Ollama](https://ollama.ai/) or LM Studio instance, or a hosted provider) for real-time grammar correction, tone rewriting, or custom formatting. Point it at any URL and supply an API key when the server requires one.
 
 ---
@@ -320,7 +321,8 @@ Main application settings, including audio capture, UI styling, and the speech-t
     },
     "whisper_cpp": { "model_size": "base", "device": "auto" },
     "moonshine": { "model_size": "base", "language": "en" },
-    "parakeet": { "model_size": "tdt-0.6b-v3", "language": "auto" }
+    "parakeet": { "model_size": "tdt-0.6b-v3", "language": "auto" },
+    "s1_mini": { "enabled": true, "styling": "semi-formal" }
   }
 }
 ```
@@ -362,6 +364,7 @@ label = "Dictate into Focused Window (Hold)"
 keys = ["KEY_LEFTMETA", "KEY_SPACE"]
 gesture = "hold"
 target_id = "default"
+s1_mini_enabled = true          # Optional per-binding toggle for S1-mini cleanup (null = inherit engine setting)
 
 [[binding]]
 id = "dictate_and_log"

@@ -120,6 +120,27 @@ impl Default for BackendChoice {
     }
 }
 
+fn default_s1_mini_styling() -> String {
+    "semi-formal".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct S1MiniConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_s1_mini_styling")]
+    pub styling: String,
+}
+
+impl Default for S1MiniConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            styling: default_s1_mini_styling(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct EngineConfig {
     #[serde(default)]
@@ -132,6 +153,8 @@ pub struct EngineConfig {
     pub parakeet: ParakeetConfig,
     #[serde(default)]
     pub remote_openai: RemoteOpenAiConfig,
+    #[serde(default)]
+    pub s1_mini: S1MiniConfig,
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
@@ -352,6 +375,8 @@ pub enum TtsEngine {
     InflectMicro,
     #[serde(rename = "breeze_tts_2", alias = "breeze_tts2")]
     BreezeTts2,
+    #[serde(rename = "vox_cpm_2", alias = "voxcpm2", alias = "vox_cpm2")]
+    VoxCpm2,
 }
 
 impl Default for TtsEngine {
@@ -486,6 +511,61 @@ impl Default for BreezeTts2Config {
     }
 }
 
+/// VoxCPM2 — neural text-to-speech with natural-language voice design speaker
+/// prompts and reference voice cloning (including Ultimate Cloning with paired audio + transcript).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoxCpm2Config {
+    /// Voice selection mode: "prompt" (Voice Design) or "clone" (Voice Cloning)
+    #[serde(default = "default_vox_cpm_2_voice_mode")]
+    pub voice_mode: String,
+    /// Selected cloned voice ID from the shared voice folder (e.g. "alba", "my_voice")
+    #[serde(default)]
+    pub cloned_voice: String,
+    /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/pocket-tts-voices/`)
+    #[serde(default)]
+    pub voice_dir: String,
+    /// Text prompt describing speaker characteristics (for Voice Design)
+    #[serde(default = "default_vox_cpm_2_speaker_prompt")]
+    pub speaker_prompt: String,
+    /// Enable Ultimate Cloning (requires reference audio + transcript in the same folder)
+    #[serde(default)]
+    pub ultimate_cloning: bool,
+    /// Directory containing downloaded model weights & tokenizer. Empty = platform default
+    /// (`~/.local/share/voxctrl/models/voxcpm2/`).
+    #[serde(default)]
+    pub model_dir: String,
+    /// Pre-warm model on startup so first synthesis is instant
+    #[serde(default)]
+    pub prewarm: bool,
+    /// Enable GPU acceleration (CUDA)
+    #[serde(default)]
+    pub gpu: bool,
+}
+
+fn default_vox_cpm_2_voice_mode() -> String {
+    "prompt".into()
+}
+
+fn default_vox_cpm_2_speaker_prompt() -> String {
+    "A calm young female voice speaking clearly with a gentle tone.".into()
+}
+
+impl Default for VoxCpm2Config {
+    fn default() -> Self {
+        Self {
+            voice_mode: default_vox_cpm_2_voice_mode(),
+            cloned_voice: String::new(),
+            voice_dir: String::new(),
+            speaker_prompt: default_vox_cpm_2_speaker_prompt(),
+            ultimate_cloning: false,
+            model_dir: String::new(),
+            prewarm: false,
+            gpu: false,
+        }
+    }
+}
+
+
 fn default_inflect_micro_seed() -> u64 {
     0
 }
@@ -566,6 +646,8 @@ pub struct TtsConfig {
     #[serde(default)]
     pub breeze_tts_2: BreezeTts2Config,
     #[serde(default)]
+    pub vox_cpm_2: VoxCpm2Config,
+    #[serde(default)]
     pub snippets: std::collections::HashMap<String, String>,
 }
 
@@ -590,6 +672,7 @@ impl Default for TtsConfig {
             idle_unload_secs: DEFAULT_TTS_IDLE_UNLOAD_SECS,
             inflect_micro: InflectMicroConfig::default(),
             breeze_tts_2: BreezeTts2Config::default(),
+            vox_cpm_2: VoxCpm2Config::default(),
             snippets: {
                 let mut map = std::collections::HashMap::new();
                 map.insert("VoxCtrl".into(), "Voks Con-trol".into());
@@ -1019,29 +1102,34 @@ mod tests {
         assert!(found.is_file());
     }
 
-    /// Puts a directory at the front of `PATH` and restores it on drop.
-    struct PathGuard(Option<std::ffi::OsString>);
+    static PATH_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    impl PathGuard {
+    /// Puts a directory at the front of `PATH` and restores it on drop.
+    #[allow(dead_code)]
+    struct PathGuard<'a>(Option<std::ffi::OsString>, std::sync::MutexGuard<'a, ()>);
+
+    impl<'a> PathGuard<'a> {
         #[cfg(target_os = "windows")]
         fn replacing_with_nothing() -> Self {
+            let guard = PATH_MUTEX.lock().unwrap();
             let previous = std::env::var_os("PATH");
             std::env::set_var("PATH", "");
-            Self(previous)
+            Self(previous, guard)
         }
 
         fn prepending(dir: &std::path::Path) -> Self {
+            let guard = PATH_MUTEX.lock().unwrap();
             let previous = std::env::var_os("PATH");
             let mut entries = vec![dir.to_path_buf()];
             if let Some(existing) = &previous {
                 entries.extend(std::env::split_paths(existing));
             }
             std::env::set_var("PATH", std::env::join_paths(entries).unwrap());
-            Self(previous)
+            Self(previous, guard)
         }
     }
 
-    impl Drop for PathGuard {
+    impl Drop for PathGuard<'_> {
         fn drop(&mut self) {
             match self.0.take() {
                 Some(previous) => std::env::set_var("PATH", previous),
@@ -1469,6 +1557,22 @@ mod tests {
 
         let parsed2: TtsEngine = serde_json::from_str(r#""breeze_tts2""#).unwrap();
         assert_eq!(parsed2, TtsEngine::BreezeTts2);
+    }
+
+    #[test]
+    fn test_vox_cpm_2_serde() {
+        let engine = TtsEngine::VoxCpm2;
+        let json = serde_json::to_string(&engine).unwrap();
+        assert_eq!(json, r#""vox_cpm_2""#);
+
+        let parsed1: TtsEngine = serde_json::from_str(r#""vox_cpm_2""#).unwrap();
+        assert_eq!(parsed1, TtsEngine::VoxCpm2);
+
+        let parsed2: TtsEngine = serde_json::from_str(r#""voxcpm2""#).unwrap();
+        assert_eq!(parsed2, TtsEngine::VoxCpm2);
+
+        let parsed3: TtsEngine = serde_json::from_str(r#""vox_cpm2""#).unwrap();
+        assert_eq!(parsed3, TtsEngine::VoxCpm2);
     }
 
     #[test]

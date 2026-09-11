@@ -48,7 +48,7 @@ vulkan = ["whisper-rs/vulkan"]
 # system `libonnxruntime` at runtime (nothing else in the workspace provides
 # one). Decoding uses the `tokenizers` crate with a tokenizer embedded in the
 # binary (see `assets/moonshine_tokenizer.json`).
-moonshine = ["dep:ort", "dep:tokenizers"]
+moonshine = ["dep:ort"]
 
 # GPU offload for the Moonshine backend. Opt-in for the same reason as
 # voxctrl-tts's `breeze-cuda`: the CUDA execution provider needs the CUDA
@@ -84,9 +84,8 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 # `x86_64-pc-windows-msvc+wgpu` is a prebuilt that exists.
 moonshine-webgpu = ["moonshine", "ort/webgpu"]
 
-# Parakeet ONNX backend via onnxruntime. Shares the same ONNX Runtime and
-# tokenizers dependencies as Moonshine.
-parakeet = ["dep:ort", "dep:tokenizers"]
+# Parakeet ONNX backend via onnxruntime.
+parakeet = ["dep:ort"]
 parakeet-cuda = ["parakeet", "ort/cuda"]
 parakeet-coreml = ["parakeet", "ort/coreml"]
 parakeet-webgpu = ["parakeet", "ort/webgpu"]
@@ -94,17 +93,15 @@ parakeet-webgpu = ["parakeet", "ort/webgpu"]
 [dependencies.ort]
 version = "2.0.0-rc.12"
 optional = true
-# Default features include `download-binaries`, which fetches a prebuilt ONNX
-# Runtime at build time and links it statically, so the resulting binary is
-# self-contained (no system libonnxruntime needed at runtime). Building the
-# `moonshine` feature therefore requires network access to the ONNX Runtime
-# binary host at compile time. To build fully offline instead, switch to
-# `default-features = false, features = ["load-dynamic", "std", "api-24"]` and
-# ship a `libonnxruntime` alongside the app.
 
 [dependencies.tokenizers]
 version = "0.21"
-optional = true
 default-features = false
 features = ["onig"]
+
+[dependencies.candle-core]
+version = "0.9"
+
+[dependencies.candle-transformers]
+version = "0.9"
 

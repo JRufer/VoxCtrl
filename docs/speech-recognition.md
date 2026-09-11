@@ -98,12 +98,21 @@ The worker runs:
 
 7. Optional LLM post-processing via the OpenAI API (if target.processing.openai_enabled)
 
-8. Return InferenceOutput {
+8. Voice Command Resolution & S1-mini Dictation Cleanup:
+   a. Check for leading voice command trigger ("VoxCtrl <target> <payload>")
+   b. If command matches: target resolved, payload isolated
+   c. If trigger word used without matching command: preserve entire string intact
+   d. S1-mini cleanup: if enabled globally or on the triggering keybind, normalize
+      text/payload via local S1-mini (Qwen3-0.6B) model
+   e. Deliver final text directly to resolved target(s)
+
+9. Return InferenceOutput {
        text: String,            // Final processed text
        raw_text: String,        // Pre-processing Whisper output
        inference_ms: u32,       // Whisper wall time
        language: String,        // Detected language code
        target_id: String,
+       binding_id: Option<String>,
    }
 ```
 
@@ -183,6 +192,31 @@ Enabled via target `processing.code_mode = true`.
 Converts spoken phrases to code-style syntax:
 - Maps spoken operators: `"equals"` → `=`, `"plus"` → `+`, `"minus"` → `-`, `"times"` → `*`, `"divided by"` → `/`, `"modulo"` → `%`
 - Converts multi-word lowercase phrases to camelCase: `"my function name"` → `"myFunctionName"`
+
+---
+
+## On-Device S1-mini Dictation Cleanup Processor
+
+VoxCtrl includes integrated support for Superwhisper's fine-tuned [s1-mini-GGUF](https://huggingface.co/superwhisper/s1-mini-GGUF) as an on-device dictation cleanup processor.
+
+### What S1-mini Does
+While standard speech-to-text models (Whisper, Moonshine, Parakeet) generate literal phonetic transcripts that often contain speech hesitations, unpunctuated clauses, or spoken self-corrections (e.g., *"wait no, make that next Tuesday"*), S1-mini is fine-tuned specifically as a speech transcript normalizer. It transforms raw transcripts into clean, readable, natural prose while faithfully preserving your meaning.
+
+### Architecture & Runtime
+- **Model:** Qwen3-0.6B fine-tuned specifically for transcript normalization and quantized to `s1-mini-q4_k_m.gguf` (~462 MB) alongside `tokenizer.json` (~11.4 MB), totaling **~480 MB** for the model files.
+- **Pure Rust Engine:** Executed natively using Hugging Face's [Candle](https://github.com/huggingface/candle) framework (`candle-core` and `candle-transformers`). This avoids linking C++ runtime libraries and eliminates symbol collisions with `whisper-rs`.
+- **Memory & Latency:** Once loaded on first use, the model weights remain cached in memory for sub-second cleanup operations across successive utterances.
+- **Structured ChatML Formatting:** Uses Superwhisper's prompt structure with pre-closed `<think>` tags to skip extraneous reasoning tokens and produce direct normalizations immediately.
+
+### Pipeline Ordering & Command Preservation
+S1-mini runs **after voice command resolution** to ensure that trigger keywords and target names are never altered:
+1. **Command Matches:** If speech begins with a registered voice command (e.g., *"VoxCtrl notes, remind me to check the furnace tomorrow morning"*), the routing engine resolves the destination to `notes`, and **only** the command payload (*"remind me to check the furnace tomorrow morning"*) is processed by S1-mini before delivery.
+2. **Non-Command Sentences Starting with Trigger Word:** If the user dictates a sentence starting with the trigger keyword that is not followed by any valid command (e.g., *"VoxCtrl is an exceptional piece of software."*), the entire string is preserved intact—the trigger word is **not** stripped—and the complete sentence is cleaned by S1-mini.
+
+### Configuration & Controls
+- **Global Toggle:** In **Settings → Engine** under **Backend**, check **Enable S1-mini dictation cleanup**. If model files are not yet present, VoxCtrl will automatically download `s1-mini-q4_k_m.gguf` and `tokenizer.json` into `~/.local/share/voxctrl/models/s1-mini/` (~480 MB total download) and display reactive progress.
+- **Per-Keybind Override:** In **Settings → Hotkeys**, open any keybind to enable or disable S1-mini dictation cleanup specifically for that shortcut. If unset, keybinds inherit the global engine setting. Active keybinds show a distinctive cyan `S1-mini` badge in the UI.
+- **Styling:** Configured via `engine.s1_mini.styling` in `config.json` (defaults to `"semi-formal"`).
 
 ---
 
@@ -315,4 +349,17 @@ When you press your dictation hotkey:
 | **Noisy Room Accuracy** | Moderate | Very high (0.93 retention) | High (0.88 retention) | Server-model dependent |
 | **Repetition Loops** | Possible on silent/noisy audio | Rare | None (TDT alignment) | Server-model dependent |
 | **Offline Operation** | Yes | Yes | Yes | LAN / Internet |
+
+---
+
+## S1-mini Dictation Cleanup Processor
+
+The **S1-mini Dictation Cleanup Processor** provides optional on-device intelligent text normalization powered by Superwhisper's [s1-mini-q4_k_m.gguf](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download).
+
+### Key Highlights
+- **Vulkan GPU Acceleration**: Offloads all 29 model layers directly to your host GPU (NVIDIA, AMD, Intel) via an isolated `voxctrl-llm-sidecar` process, keeping transcription and cleanup lightning fast with zero CUDA runtime bloat.
+- **Safe Fallback**: If no Vulkan GPU or driver is detected, S1-mini automatically falls back to CPU inference.
+- **Isolated Architecture**: Running in a dedicated sidecar process guarantees zero C-symbol conflicts with `whisper.cpp` and prevents memory fragmentation in the main desktop UI process.
+- **Trigger & Command Preservation**: S1-mini runs *after* voice command extraction, ensuring trigger words and command routing are never distorted by grammar normalization.
+- **Per-Keybind Granularity**: Enable globally in **Settings → Engine**, and toggle on or off per individual shortcut in **Settings → Hotkeys**.
 

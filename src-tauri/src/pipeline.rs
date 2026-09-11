@@ -31,6 +31,7 @@ async fn process_remote_transcription(
             let _ = text_tx.send(InferenceOutput {
                 text: String::new(),
                 target_id,
+                binding_id: Some(binding_id),
                 raw_text: String::new(),
                 inference_ms: 0,
                 language: String::new(),
@@ -63,6 +64,7 @@ async fn process_remote_transcription(
         let _ = text_tx.send(InferenceOutput {
             text: String::new(),
             target_id,
+            binding_id: Some(binding_id),
             raw_text: String::new(),
             inference_ms: result.inference_ms,
             language: result.language,
@@ -181,6 +183,7 @@ async fn process_remote_transcription(
     let _ = text_tx.send(InferenceOutput {
         text: processed,
         target_id,
+        binding_id: Some(binding_id),
         raw_text,
         inference_ms: result.inference_ms,
         language: result.language,
@@ -308,24 +311,74 @@ pub fn spawn_text_delivery_worker(
             if output.text.trim().is_empty() {
                 continue;
             }
+
+            // ── S1-mini & Command Processing ──────────────────────────────────
+            // Command resolution runs first to prevent S1-mini from altering the
+            // trigger word or command syntax. If a command matches, the remaining
+            // text (payload) is cleaned by S1-mini before delivery to the matched target.
+            // If dictation starts with the trigger word but does not match a command
+            // (e.g. "VoxCtrl is a great app."), the full sentence including the
+            // trigger word is retained as the result text and cleaned by S1-mini.
+            let (global_s1_mini_enabled, s1_mini_styling) = {
+                let cfg_lock = state.config.blocking_lock();
+                (cfg_lock.data.engine.s1_mini.enabled, cfg_lock.data.engine.s1_mini.styling.clone())
+            };
+
+            let dir = voxctrl_routing::config_dir();
+            let bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
+            let binding = output.binding_id.as_ref().and_then(|bid| bindings.iter().find(|b| &b.id == bid));
+            let s1_mini_enabled = binding
+                .and_then(|b| b.s1_mini_enabled)
+                .unwrap_or(global_s1_mini_enabled);
+
+            let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
+            let (target_id, text) = if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
+                let matched_id = parsed.matched_target_id.clone();
+                let payload = parsed.payload;
+                let matched_label = targets
+                    .iter()
+                    .find(|t| t.id == matched_id)
+                    .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
+                    .unwrap_or_else(|| matched_id.clone());
+                voxctrl_routing::targets::notify_command_trigger(&matched_label, &payload);
+
+                let cleaned_payload = if s1_mini_enabled && !payload.trim().is_empty() {
+                    voxctrl_inference::s1_mini::clean_dictation(&payload, &s1_mini_styling, None)
+                } else {
+                    payload
+                };
+                (matched_id, cleaned_payload)
+            } else {
+                let cleaned_text = if s1_mini_enabled && !output.text.trim().is_empty() {
+                    voxctrl_inference::s1_mini::clean_dictation(&output.text, &s1_mini_styling, None)
+                } else {
+                    output.text.clone()
+                };
+                (output.target_id.clone(), cleaned_text)
+            };
+
+            if text.trim().is_empty() {
+                continue;
+            }
+
             tracing::info!(
                 "Received transcription: \"{}\" for target '{}' (took {}ms)",
-                output.text,
-                output.target_id,
+                text,
+                target_id,
                 output.inference_ms
             );
-            let words = output.text.split_whitespace().count() as u32;
+            let words = text.split_whitespace().count() as u32;
             state.increment_words(words);
 
             // Deliver text via the output target router.
             // Write last_text BEFORE launching deliveries so that MCP
             // transcribe_voice can detect the result without waiting for
             // potentially slow targets (webhooks, sockets, etc.).
-            let text = output.text.clone();
-            let target_id = output.target_id.clone();
             let router = state.router.clone();
             let state_lt = state.clone();
-            let text_lt = output.text.clone();
+            let text_lt = text.clone();
+            let text_to_deliver = text.clone();
+            let target_to_deliver = target_id.clone();
             rt_handle.spawn(async move {
                 {
                     let mut lt = state_lt.last_text.lock().await;
@@ -334,13 +387,13 @@ pub fn spawn_text_delivery_worker(
                         .last_text_version
                         .fetch_add(1, Ordering::SeqCst);
                 }
-                let target_ids: Vec<String> = target_id
+                let target_ids: Vec<String> = target_to_deliver
                     .split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
                 for tid in target_ids {
-                    router.deliver(&tid, &text).await;
+                    router.deliver_direct(&tid, &text_to_deliver).await;
                 }
             });
 
@@ -349,7 +402,7 @@ pub fn spawn_text_delivery_worker(
                 cfg_lock.data.ui.show_notification
             };
             if show_notif {
-                voxctrl_inject::show_notification("VoxCtrl", &output.text);
+                voxctrl_inject::show_notification("VoxCtrl", &text);
             }
         }
     });

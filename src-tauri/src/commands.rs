@@ -225,6 +225,8 @@ pub struct AcceleratorSupport {
     pub moonshine_gpu: Option<String>,
     /// `"cuda"`, `"coreml"`, `"webgpu"`, or `None`.
     pub parakeet_gpu: Option<String>,
+    /// `"vulkan"` or `None`.
+    pub s1_mini_gpu: Option<String>,
 }
 
 #[tauri::command]
@@ -233,6 +235,7 @@ pub fn accelerator_support() -> AcceleratorSupport {
         whisper_gpu: voxctrl_inference::whisper_gpu_backend().map(str::to_string),
         moonshine_gpu: voxctrl_inference::moonshine_gpu_backend().map(str::to_string),
         parakeet_gpu: voxctrl_inference::parakeet_gpu_backend().map(str::to_string),
+        s1_mini_gpu: voxctrl_inference::s1_mini_gpu_backend().map(str::to_string),
     }
 }
 
@@ -447,6 +450,23 @@ pub async fn download_breeze_tts_2(model_dir: String, hf_token: Option<String>) 
 }
 
 #[tauri::command]
+pub async fn check_vox_cpm_2_ready(model_dir: String) -> Result<bool, String> {
+    Ok(voxctrl_tts::is_vox_cpm_2_ready(&model_dir))
+}
+
+#[tauri::command]
+pub async fn check_vox_cpm_2_downloaded(model_dir: String) -> Result<bool, String> {
+    Ok(voxctrl_tts::is_vox_cpm_2_ready(&model_dir))
+}
+
+#[tauri::command]
+pub async fn download_vox_cpm_2(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
+    voxctrl_tts::download_vox_cpm_2_assets(&model_dir, hf_token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn check_pocket_tts_ready(voice: String, voice_dir: String) -> Result<bool, String> {
     Ok(voxctrl_tts::is_pocket_tts_ready(&voice, &voice_dir))
 }
@@ -589,6 +609,18 @@ pub async fn download_parakeet_model(model_size: String) -> Result<(), String> {
         let _ = model_size;
         Err("This build was compiled without the Parakeet backend. Rebuild with `--features parakeet` to use it.".into())
     }
+}
+
+#[tauri::command]
+pub async fn check_s1_mini_downloaded(model_dir: Option<String>) -> Result<bool, String> {
+    Ok(voxctrl_inference::s1_mini::is_s1_mini_downloaded(model_dir.as_deref()))
+}
+
+#[tauri::command]
+pub async fn download_s1_mini_model(model_dir: Option<String>) -> Result<(), String> {
+    voxctrl_inference::s1_mini::download_s1_mini_assets(model_dir.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

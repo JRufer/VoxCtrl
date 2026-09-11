@@ -40,6 +40,10 @@ Full schema with defaults:
       "model": "whisper-1",
       "language": "",
       "timeout_secs": 30
+    },
+    "s1_mini": {
+      "enabled": false,
+      "styling": "semi-formal"
     }
   },
   "audio": {
@@ -168,6 +172,15 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `model` | string | `"whisper-1"` | Remote model name (e.g. `whisper-1`, `large-v3`). |
 | `language` | string | `""` | Language code for transcription, or blank/auto. |
 | `timeout_secs` | integer | `30` | Request timeout in seconds (min 5, max 300). |
+
+**`s1_mini` sub-object** (dictation cleanup processor):
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable on-device text normalization using Superwhisper's fine-tuned S1-mini (Qwen3-0.6B) model. |
+| `styling` | string | `"semi-formal"` | Text styling passed to S1-mini (`"semi-formal"`, `"formal"`, `"casual"`, etc.). |
+
+> **Model files:** Enabling S1-mini requires downloading `s1-mini-q4_k_m.gguf` (~462 MB) and `tokenizer.json` (~11.4 MB) from Hugging Face (~480 MB download total). When toggled on in Settings → Engine, VoxCtrl automatically checks for these files in `~/.local/share/voxctrl/models/s1-mini/` and downloads them if missing.
 
 ### `audio` section
 
@@ -507,6 +520,7 @@ target_ids = ["default"]
 | `openai_mode` | string | No | `null` | LLM mode override specifically for this hotkey (`clean`/`formal`/`casual`/`bullet`/`concise`/`custom`) |
 | `openai_prompt` | string | No | `null` | User prompt template override for this hotkey (must contain `{text}`) |
 | `openai_system_prompt` | string | No | `null` | System prompt override for this hotkey (empty inherits the global default) |
+| `s1_mini_enabled` | bool | No | `null` | Enable/disable S1-mini dictation cleanup specifically for this hotkey (null = inherit global engine config) |
 
 > The per-hotkey field names were renamed from `ollama_*` to `openai_*`; the
 > legacy `ollama_*` names are still accepted via serde aliases.

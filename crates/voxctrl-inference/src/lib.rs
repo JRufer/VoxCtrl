@@ -5,6 +5,7 @@ pub mod moonshine;
 pub mod parakeet;
 pub mod postprocess;
 pub mod remote_openai;
+pub mod s1_mini;
 mod util;
 pub mod whisper_cpp;
 
@@ -101,6 +102,15 @@ pub fn parakeet_gpu_backend() -> Option<&'static str> {
         Some("coreml")
     } else if cfg!(feature = "parakeet-webgpu") {
         Some("webgpu")
+    } else {
+        None
+    }
+}
+
+/// Which GPU backend S1-mini can offload to in this build, or `None` when running on the CPU.
+pub fn s1_mini_gpu_backend() -> Option<&'static str> {
+    if crate::s1_mini::sidecar_available() || cfg!(feature = "vulkan") {
+        Some("vulkan")
     } else {
         None
     }
@@ -222,6 +232,7 @@ pub struct InferenceRequest {
 pub struct InferenceOutput {
     pub text: String,
     pub target_id: String,
+    pub binding_id: Option<String>,
     pub raw_text: String,
     pub inference_ms: u32,
     pub language: String,
@@ -286,6 +297,7 @@ impl InferenceEngine {
             return Ok(InferenceOutput {
                 text: String::new(),
                 target_id: req.target_id,
+                binding_id: req.binding_id,
                 raw_text: String::new(),
                 inference_ms: 0,
                 language: "en".into(),
@@ -324,6 +336,7 @@ impl InferenceEngine {
             return Ok(InferenceOutput {
                 text: String::new(),
                 target_id: req.target_id,
+                binding_id: req.binding_id,
                 raw_text: String::new(),
                 inference_ms: 0,
                 language: "en".into(),
@@ -455,6 +468,7 @@ impl InferenceEngine {
         Ok(InferenceOutput {
             text: processed,
             target_id: req.target_id,
+            binding_id: req.binding_id,
             raw_text,
             inference_ms: result.inference_ms,
             language: result.language,
@@ -614,6 +628,7 @@ pub fn run_worker_with_config(
                                     let _ = tx.send(InferenceOutput {
                                         text: String::new(),
                                         target_id: req.target_id,
+                                        binding_id: req.binding_id,
                                         raw_text: String::new(),
                                         inference_ms: 0,
                                         language: String::new(),
@@ -633,6 +648,7 @@ pub fn run_worker_with_config(
                                 let _ = tx.send(InferenceOutput {
                                     text: "".to_string(),
                                     target_id: "".to_string(),
+                                    binding_id: None,
                                     raw_text: "".to_string(),
                                     inference_ms: 0,
                                     language: "".to_string(),

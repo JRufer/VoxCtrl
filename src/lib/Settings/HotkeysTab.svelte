@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { OutputTarget, HotkeyBinding } from "./routing-types";
+  import { config } from "../../stores/config";
   import TargetEditorModal from "./TargetEditorModal.svelte";
   import CustomSelect from "./CustomSelect.svelte";
 
@@ -20,6 +21,9 @@
   let isEditingTargetNew = $state(false);
   let targetIndexTriggeredNew = $state<number | null>(null);
   let activeDropdownIdx = $state<number | null>(null);
+
+  // S1-mini cleanup state
+  let editS1MiniEnabled = $state(false);
 
   // OpenAI LLM flat edit states
   let editOpenaiEnabled = $state(false);
@@ -278,6 +282,7 @@
     isEditingBindingNew = true;
     keysCheck = null;
     originalBindingKeys = [];
+    editS1MiniEnabled = $config?.engine?.s1_mini?.enabled ?? false;
     editOpenaiEnabled = false;
     editOpenaiModel = "";
     editOpenaiMode = "custom";
@@ -299,6 +304,7 @@
       openai_mode: "custom",
       openai_prompt: "",
       openai_system_prompt: "",
+      s1_mini_enabled: editS1MiniEnabled,
     };
   }
 
@@ -312,6 +318,11 @@
     const clone = JSON.parse(JSON.stringify(b));
     if (!clone.target_ids) {
       clone.target_ids = clone.target_id ? [clone.target_id] : [];
+    }
+    if (clone.s1_mini_enabled !== undefined && clone.s1_mini_enabled !== null) {
+      editS1MiniEnabled = clone.s1_mini_enabled;
+    } else {
+      editS1MiniEnabled = $config?.engine?.s1_mini?.enabled ?? false;
     }
     editOpenaiEnabled = clone.openai_enabled === true;
     editOpenaiModel = clone.openai_model || "";
@@ -392,6 +403,7 @@
     editingBinding.openai_mode = editOpenaiMode;
     editingBinding.openai_prompt = editOpenaiPrompt;
     editingBinding.openai_system_prompt = editOpenaiSystemPrompt;
+    editingBinding.s1_mini_enabled = editS1MiniEnabled;
 
     if (editingBinding.target_ids && editingBinding.target_ids.length > 0) {
       editingBinding.target_ids = editingBinding.target_ids.filter(id => id.trim() !== "");
@@ -789,6 +801,9 @@
             {#if b.openai_enabled}
               <span class="badge openai">LLM</span>
             {/if}
+            {#if b.s1_mini_enabled ?? $config?.engine?.s1_mini?.enabled}
+              <span class="badge s1-mini">S1-mini</span>
+            {/if}
           </div>
           <div class="binding-row2">
             <div class="keys-display">
@@ -1118,6 +1133,18 @@
             </div>
           {/if}
         </div>
+
+        <!-- S1-mini Dictation Cleanup Settings -->
+        <div class="processing-toggles border-t border-white/5 pt-[14px] mt-4">
+          <h5>S1-mini Dictation Cleanup</h5>
+          <label class="checkbox-field">
+            <input type="checkbox" bind:checked={editS1MiniEnabled} />
+            <span>Enable S1-mini dictation cleanup for this keybind</span>
+          </label>
+          <p class="hint mt-1">
+            When enabled, remaining text after command processing is normalized by S1-mini before delivery.
+          </p>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn-action secondary" onclick={() => { editingBinding = null; recordingTarget = null; }}>Cancel</button>
@@ -1335,6 +1362,10 @@
 
   .badge.openai {
     @apply bg-emerald-500/15 text-emerald-200 border border-emerald-500/30;
+  }
+
+  .badge.s1-mini {
+    @apply bg-cyan-500/15 text-cyan-200 border border-cyan-500/30;
   }
 
   .modal-backdrop {
