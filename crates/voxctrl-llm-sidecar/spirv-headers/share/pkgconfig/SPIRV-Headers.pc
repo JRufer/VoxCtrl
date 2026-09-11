@@ -1,0 +1,8 @@
+includedir=/home/jrufer/.gemini/antigravity-ide/brain/91f03705-b2e3-484a-9ca7-5d9ccbef1fa0/scratch/spirv_install/include
+
+Name: SPIRV-Headers
+Description: Header files from the SPIR-V registry
+Version: 1.5.5
+Requires:
+Libs:
+Cflags: -I${includedir}

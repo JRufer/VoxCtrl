@@ -350,3 +350,16 @@ When you press your dictation hotkey:
 | **Repetition Loops** | Possible on silent/noisy audio | Rare | None (TDT alignment) | Server-model dependent |
 | **Offline Operation** | Yes | Yes | Yes | LAN / Internet |
 
+---
+
+## S1-mini Dictation Cleanup Processor
+
+The **S1-mini Dictation Cleanup Processor** provides optional on-device intelligent text normalization powered by Superwhisper's [s1-mini-q4_k_m.gguf](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download).
+
+### Key Highlights
+- **Vulkan GPU Acceleration**: Offloads all 29 model layers directly to your host GPU (NVIDIA, AMD, Intel) via an isolated `voxctrl-llm-sidecar` process, keeping transcription and cleanup lightning fast with zero CUDA runtime bloat.
+- **Safe Fallback**: If no Vulkan GPU or driver is detected, S1-mini automatically falls back to CPU inference.
+- **Isolated Architecture**: Running in a dedicated sidecar process guarantees zero C-symbol conflicts with `whisper.cpp` and prevents memory fragmentation in the main desktop UI process.
+- **Trigger & Command Preservation**: S1-mini runs *after* voice command extraction, ensuring trigger words and command routing are never distorted by grammar normalization.
+- **Per-Keybind Granularity**: Enable globally in **Settings → Engine**, and toggle on or off per individual shortcut in **Settings → Hotkeys**.
+

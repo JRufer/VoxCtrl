@@ -1102,29 +1102,34 @@ mod tests {
         assert!(found.is_file());
     }
 
-    /// Puts a directory at the front of `PATH` and restores it on drop.
-    struct PathGuard(Option<std::ffi::OsString>);
+    static PATH_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    impl PathGuard {
+    /// Puts a directory at the front of `PATH` and restores it on drop.
+    #[allow(dead_code)]
+    struct PathGuard<'a>(Option<std::ffi::OsString>, std::sync::MutexGuard<'a, ()>);
+
+    impl<'a> PathGuard<'a> {
         #[cfg(target_os = "windows")]
         fn replacing_with_nothing() -> Self {
+            let guard = PATH_MUTEX.lock().unwrap();
             let previous = std::env::var_os("PATH");
             std::env::set_var("PATH", "");
-            Self(previous)
+            Self(previous, guard)
         }
 
         fn prepending(dir: &std::path::Path) -> Self {
+            let guard = PATH_MUTEX.lock().unwrap();
             let previous = std::env::var_os("PATH");
             let mut entries = vec![dir.to_path_buf()];
             if let Some(existing) = &previous {
                 entries.extend(std::env::split_paths(existing));
             }
             std::env::set_var("PATH", std::env::join_paths(entries).unwrap());
-            Self(previous)
+            Self(previous, guard)
         }
     }
 
-    impl Drop for PathGuard {
+    impl Drop for PathGuard<'_> {
         fn drop(&mut self) {
             match self.0.take() {
                 Some(previous) => std::env::set_var("PATH", previous),

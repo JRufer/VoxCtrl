@@ -4,7 +4,9 @@
 //! in pure Rust with zero external process dependencies and zero C symbol collisions.
 
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -147,7 +149,7 @@ impl S1MiniEngine {
 
         let device = Device::Cpu;
 
-        debug!("Loading S1-mini using quantized_qwen3 (architecture: {arch})");
+        debug!("Loading S1-mini using quantized_qwen3 (architecture: {arch}, device: {device:?})");
         let m = candle_transformers::models::quantized_qwen3::ModelWeights::from_gguf(
             content, &mut file, &device,
         )
@@ -255,6 +257,171 @@ impl S1MiniEngine {
     }
 }
 
+pub fn find_llm_sidecar_binary() -> Option<PathBuf> {
+    let bin_name = if cfg!(target_os = "windows") {
+        "voxctrl-llm-sidecar.exe"
+    } else {
+        "voxctrl-llm-sidecar"
+    };
+
+    if let Ok(mut exe) = std::env::current_exe() {
+        exe.pop();
+        let p = exe.join(bin_name);
+        if p.exists() {
+            return Some(p);
+        }
+        exe.pop();
+        let p = exe.join(bin_name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        for sub in &[
+            "target/release",
+            "target/debug",
+            "src-tauri/target/release",
+            "src-tauri/target/debug",
+        ] {
+            let p = cwd.join(sub).join(bin_name);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for sub in &["target/release", "target/debug"] {
+        let p = root.join(sub).join(bin_name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+pub fn sidecar_available() -> bool {
+    find_llm_sidecar_binary().is_some()
+}
+
+struct SidecarProcess {
+    _child: Child,
+    stdin: BufWriter<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+    next_id: u64,
+}
+
+impl SidecarProcess {
+    fn spawn(binary_path: &Path) -> Result<Self> {
+        let mut cmd = Command::new(binary_path);
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn().context("spawn voxctrl-llm-sidecar")?;
+        let stdin = BufWriter::new(child.stdin.take().context("child stdin missing")?);
+        let stdout = BufReader::new(child.stdout.take().context("child stdout missing")?);
+
+        Ok(Self {
+            _child: child,
+            stdin,
+            stdout,
+            next_id: 1,
+        })
+    }
+
+    fn call(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+
+        let mut line = serde_json::to_string(&req)?;
+        line.push('\n');
+        self.stdin.write_all(line.as_bytes())?;
+        self.stdin.flush()?;
+
+        let mut resp_line = String::new();
+        self.stdout.read_line(&mut resp_line)?;
+        if resp_line.is_empty() {
+            bail!("sidecar process closed stdout unexpectedly");
+        }
+
+        let resp: serde_json::Value = serde_json::from_str(&resp_line)?;
+        if let Some(err) = resp.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error");
+            bail!("sidecar error: {msg}");
+        }
+
+        resp.get("result")
+            .cloned()
+            .context("missing result field in response")
+    }
+}
+
+static SIDECAR_PROCESS: std::sync::Mutex<Option<SidecarProcess>> = std::sync::Mutex::new(None);
+
+fn clean_via_sidecar(
+    text: &str,
+    styling: &str,
+    custom_dir: Option<&str>,
+) -> Result<String> {
+    let binary = find_llm_sidecar_binary().context("sidecar binary not found")?;
+    let mut guard = match SIDECAR_PROCESS.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+
+    if guard.is_none() {
+        info!("Spawning LLM sidecar: {}", binary.display());
+        *guard = Some(SidecarProcess::spawn(&binary)?);
+    }
+
+    let model_path = s1_mini_dir(custom_dir).join(MODEL_FILENAME);
+    let proc = guard.as_mut().unwrap();
+
+    let res = match proc.call(
+        "clean",
+        serde_json::json!({
+            "raw_text": text,
+            "styling": styling,
+            "model_path": model_path.to_string_lossy(),
+        }),
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            // Drop process so next call can try respawning
+            *guard = None;
+            return Err(e);
+        }
+    };
+
+    let cleaned = res
+        .get("cleaned_text")
+        .and_then(|v| v.as_str())
+        .unwrap_or(text)
+        .to_string();
+
+    Ok(cleaned)
+}
+
 // Global cached engine instance
 static GLOBAL_ENGINE: std::sync::OnceLock<Arc<Mutex<Option<S1MiniEngine>>>> =
     std::sync::OnceLock::new();
@@ -276,6 +443,23 @@ pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>) -> S
         return text.to_string();
     }
 
+    // 1. Attempt accelerated cleanup via the LLM sidecar if available
+    if find_llm_sidecar_binary().is_some() {
+        match clean_via_sidecar(text, styling, custom_dir) {
+            Ok(cleaned) => {
+                return if cleaned.is_empty() && !trimmed.is_empty() {
+                    String::new()
+                } else {
+                    cleaned
+                };
+            }
+            Err(e) => {
+                warn!("Sidecar cleanup failed ({e:#}); falling back to in-process Candle CPU engine");
+            }
+        }
+    }
+
+    // 2. Fall back to in-process Candle CPU engine
     let cell = global_engine_cell();
     let mut guard = match cell.lock() {
         Ok(g) => g,
@@ -332,5 +516,14 @@ mod tests {
     fn test_s1_mini_dir_default() {
         let dir = s1_mini_dir(None);
         assert!(dir.ends_with("s1-mini"));
+    }
+
+    #[test]
+    fn test_s1_mini_clean_dictation() {
+        if is_s1_mini_downloaded(None) {
+            let res = clean_dictation("um so uh we should definitely meet at 3pm tomorrow", "semi-formal", None);
+            assert!(!res.is_empty());
+            assert!(res.contains("meet at 3") || res.contains("tomorrow"));
+        }
     }
 }

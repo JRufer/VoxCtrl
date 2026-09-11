@@ -107,6 +107,15 @@ pub fn parakeet_gpu_backend() -> Option<&'static str> {
     }
 }
 
+/// Which GPU backend S1-mini can offload to in this build, or `None` when running on the CPU.
+pub fn s1_mini_gpu_backend() -> Option<&'static str> {
+    if crate::s1_mini::sidecar_available() || cfg!(feature = "vulkan") {
+        Some("vulkan")
+    } else {
+        None
+    }
+}
+
 #[cfg_attr(
     not(any(
         feature = "parakeet-cuda",

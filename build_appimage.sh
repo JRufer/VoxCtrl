@@ -207,33 +207,28 @@ install_vulkan_deps() {
     esac
 }
 
-# Determine build mode (vulkan or cpu)
-BUILD_MODE="cpu"
+# Determine build mode (default: vulkan)
+BUILD_MODE="vulkan"
 if [ "$FORCE_CPU_FLAG" = "true" ] || [ "${FORCE_CPU:-0}" = "1" ]; then
     BUILD_MODE="cpu"
 else
-    # Check if Vulkan is requested or if a GPU is present
-    if [ "$FORCE_VULKAN_FLAG" = "true" ] || [ "$HAS_NVIDIA_GPU" = true ] || command -v vulkaninfo &>/dev/null; then
-        BUILD_MODE="vulkan"
+    BUILD_MODE="vulkan"
+    
+    # Check if we need to install dependencies
+    if ! command -v glslc &>/dev/null || [ "$HAS_VULKAN_HEADERS" = false ]; then
+        info "Vulkan compiler (glslc) or development headers (vulkan/vulkan.h) are missing."
+        install_vulkan_deps
         
-        # Check if we need to install dependencies
-        if ! command -v glslc &>/dev/null || [ "$HAS_VULKAN_HEADERS" = false ]; then
-            info "Vulkan compiler (glslc) or development headers (vulkan/vulkan.h) are missing."
-            install_vulkan_deps
-            
-            # Re-verify after installation attempt
-            HAS_VULKAN_HEADERS=false
-            if echo "#include <vulkan/vulkan.h>" | cc -E - &>/dev/null; then
-                HAS_VULKAN_HEADERS=true
-            fi
-            
-            if ! command -v glslc &>/dev/null || [ "$HAS_VULKAN_HEADERS" = false ]; then
-                fail "Vulkan build requirements (glslc and vulkan/vulkan.h) are still missing after package installation attempt."
-                exit 1
-            fi
+        # Re-verify after installation attempt
+        HAS_VULKAN_HEADERS=false
+        if echo "#include <vulkan/vulkan.h>" | cc -E - &>/dev/null; then
+            HAS_VULKAN_HEADERS=true
         fi
-    else
-        BUILD_MODE="cpu"
+        
+        if ! command -v glslc &>/dev/null || [ "$HAS_VULKAN_HEADERS" = false ]; then
+            fail "Vulkan build requirements (glslc and vulkan/vulkan.h) are still missing after package installation attempt."
+            exit 1
+        fi
     fi
 fi
 
@@ -258,17 +253,20 @@ fi
 # (whisper-cpp and Moonshine) are selectable in every AppImage. It links ONNX
 # Runtime, fetched at build time, so this step needs network access.
 if [ "$BUILD_MODE" = "vulkan" ]; then
-    info "Compiling with Vulkan GPU support (whisper-cpp + Moonshine + Inflect)..."
+    info "Compiling with Vulkan GPU support (whisper-cpp + Moonshine + Inflect + S1-mini sidecar)..."
     if [ "$CUDA_FOUND" = true ]; then
         warn "CUDA Toolkit was detected, but AppImages cannot bundle CUDA support"
         warn "because linuxdeploy attempts to bundle the massive CUDA libraries, which fails."
         warn "We are compiling with Vulkan GPU acceleration instead."
     fi
+    info "Compiling voxctrl-llm-sidecar with Vulkan GPU acceleration..."
+    cargo build --bin voxctrl-llm-sidecar --release --features vulkan
     npx tauri build --verbose -- --features vulkan
 else
     info "Compiling for CPU only (whisper-cpp + Moonshine + Inflect)..."
     # Moonshine and Inflect-Micro are default features; only GPU backends and
     # `custom-protocol` need naming here.
+    cargo build --bin voxctrl-llm-sidecar --release
     npx tauri build --verbose
 fi
 
@@ -421,13 +419,13 @@ rm -rf "$work"
 ok "AppImage successfully slimmed."
 
 if [ "$BUILD_MODE" = "vulkan" ]; then
-    PORTABLE_PATH="./${APP_NAME}_${APP_VERSION}_amd64-linux-x86_64-vulkan.appimage"
+    PORTABLE_PATH="./${APP_NAME}-linux-x86_64-vulkan.AppImage"
 else
-    PORTABLE_PATH="./${APP_NAME}_${APP_VERSION}_amd64-linux-x86_64.appimage"
+    PORTABLE_PATH="./${APP_NAME}-linux-x86_64.AppImage"
 fi
 SYMLINK_PATH="./${APP_NAME}-latest-x86_64.AppImage"
 
-info "Moving and exposing portable versioned AppImage to root..."
+info "Moving and exposing portable AppImage to root..."
 rm -f "$PORTABLE_PATH"
 cp "$LATEST_BUNDLE" "$PORTABLE_PATH"
 chmod +x "$PORTABLE_PATH"

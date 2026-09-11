@@ -263,6 +263,46 @@ mod tests {
     }
 
     #[test]
+    fn unversioned_release_assets_are_selected_correctly() {
+        let assets = vec![
+            asset("VoxCtrl-linux-x86_64-vulkan.AppImage"),
+            asset("VoxCtrl-linux-x86_64-vulkan.deb"),
+            asset("VoxCtrl-windows-x86_64.exe"),
+            asset("VoxCtrl-windows-x86_64-webgpu.exe"),
+        ];
+
+        let vk_appimage = InstallKind::AppImage {
+            path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(),
+            vulkan: true,
+        };
+        assert_eq!(
+            select_asset(&vk_appimage, &assets).unwrap().name,
+            "VoxCtrl-linux-x86_64-vulkan.AppImage"
+        );
+
+        let cpu_appimage = InstallKind::AppImage {
+            path: "/home/u/VoxCtrl.AppImage".into(),
+            vulkan: false,
+        };
+        assert_eq!(
+            select_asset(&cpu_appimage, &assets).unwrap().name,
+            "VoxCtrl-linux-x86_64-vulkan.AppImage"
+        );
+
+        let win_gpu = InstallKind::WindowsInstaller { webgpu: true };
+        assert_eq!(
+            select_asset(&win_gpu, &assets).unwrap().name,
+            "VoxCtrl-windows-x86_64-webgpu.exe"
+        );
+
+        let win_cpu = InstallKind::WindowsInstaller { webgpu: false };
+        assert_eq!(
+            select_asset(&win_cpu, &assets).unwrap().name,
+            "VoxCtrl-windows-x86_64.exe"
+        );
+    }
+
+    #[test]
     fn windows_takes_the_installer() {
         let assets = release_assets();
         let picked =

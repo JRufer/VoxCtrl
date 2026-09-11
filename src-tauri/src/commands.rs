@@ -225,6 +225,8 @@ pub struct AcceleratorSupport {
     pub moonshine_gpu: Option<String>,
     /// `"cuda"`, `"coreml"`, `"webgpu"`, or `None`.
     pub parakeet_gpu: Option<String>,
+    /// `"vulkan"` or `None`.
+    pub s1_mini_gpu: Option<String>,
 }
 
 #[tauri::command]
@@ -233,6 +235,7 @@ pub fn accelerator_support() -> AcceleratorSupport {
         whisper_gpu: voxctrl_inference::whisper_gpu_backend().map(str::to_string),
         moonshine_gpu: voxctrl_inference::moonshine_gpu_backend().map(str::to_string),
         parakeet_gpu: voxctrl_inference::parakeet_gpu_backend().map(str::to_string),
+        s1_mini_gpu: voxctrl_inference::s1_mini_gpu_backend().map(str::to_string),
     }
 }
 

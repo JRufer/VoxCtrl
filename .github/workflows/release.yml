@@ -203,6 +203,10 @@ jobs:
       #
       # Moonshine (STT) and Inflect-Micro (TTS) are default features, so both
       # ONNX engines are in every build without naming them here.
+      - name: Build LLM sidecar (Linux, Vulkan)
+        if: runner.os == 'Linux' && matrix.vulkan
+        run: cargo build --bin voxctrl-llm-sidecar --release --features vulkan
+
       - name: Build AppImage + deb (Linux, Vulkan)
         if: runner.os == 'Linux' && matrix.vulkan
         env:
@@ -378,9 +382,8 @@ jobs:
               ! -path "*/.cargo/*" | \
           while read -r f; do
             base=$(basename "$f")
-            stem="${base%.*}"
             ext="${base##*.}"
-            dest="upload/${stem}-${{ matrix.artifact_label }}.${ext}"
+            dest="upload/VoxCtrl-${{ matrix.artifact_label }}.${ext}"
             cp "$f" "$dest"
             echo "Collected: $dest ($(du -sh "$f" | cut -f1))"
           done
@@ -397,7 +400,7 @@ jobs:
           Get-ChildItem -Path . -Recurse -Include "*.exe","*.msi" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -like "*\bundle\*" -and $_.Name -notlike "*-stub*" } |
             ForEach-Object {
-              $dest = "upload\$($_.BaseName)-${{ matrix.artifact_label }}$($_.Extension)"
+              $dest = "upload\VoxCtrl-${{ matrix.artifact_label }}$($_.Extension)"
               Copy-Item $_.FullName $dest
               $size = "{0:N1} MB" -f ($_.Length / 1MB)
               Write-Host "Collected: $dest ($size)"

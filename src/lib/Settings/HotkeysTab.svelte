@@ -282,7 +282,7 @@
     isEditingBindingNew = true;
     keysCheck = null;
     originalBindingKeys = [];
-    editS1MiniEnabled = $config.engine.s1_mini?.enabled ?? false;
+    editS1MiniEnabled = $config?.engine?.s1_mini?.enabled ?? false;
     editOpenaiEnabled = false;
     editOpenaiModel = "";
     editOpenaiMode = "custom";
@@ -322,7 +322,7 @@
     if (clone.s1_mini_enabled !== undefined && clone.s1_mini_enabled !== null) {
       editS1MiniEnabled = clone.s1_mini_enabled;
     } else {
-      editS1MiniEnabled = $config.engine.s1_mini?.enabled ?? false;
+      editS1MiniEnabled = $config?.engine?.s1_mini?.enabled ?? false;
     }
     editOpenaiEnabled = clone.openai_enabled === true;
     editOpenaiModel = clone.openai_model || "";
@@ -801,7 +801,7 @@
             {#if b.openai_enabled}
               <span class="badge openai">LLM</span>
             {/if}
-            {#if b.s1_mini_enabled ?? $config.engine.s1_mini?.enabled}
+            {#if b.s1_mini_enabled ?? $config?.engine?.s1_mini?.enabled}
               <span class="badge s1-mini">S1-mini</span>
             {/if}
           </div>

@@ -7,6 +7,9 @@
   import CustomSelect from "./CustomSelect.svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
+  if (cfg.engine && !cfg.engine.s1_mini) {
+    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal" };
+  }
   function markDirty() {
     config.set(cfg);
     configDirty.set(true);
@@ -35,6 +38,7 @@
   let whisperGpu = $state<string | null>(null);
   let moonshineGpu = $state<string | null>(null);
   let parakeetGpu = $state<string | null>(null);
+  let s1MiniGpu = $state<string | null>(null);
 
   const GPU_LABELS: Record<string, string> = {
     cuda: "CUDA (NVIDIA)",
@@ -368,10 +372,12 @@
         whisper_gpu: string | null;
         moonshine_gpu: string | null;
         parakeet_gpu: string | null;
+        s1_mini_gpu: string | null;
       }>("accelerator_support");
       whisperGpu = support.whisper_gpu ?? null;
       moonshineGpu = support.moonshine_gpu ?? null;
       parakeetGpu = support.parakeet_gpu ?? null;
+      s1MiniGpu = support.s1_mini_gpu ?? null;
     } catch (e) {
       console.error("Failed to query GPU support", e);
     }
@@ -418,55 +424,77 @@
       <span>Backend</span>
       <CustomSelect bind:value={cfg.engine.backend} options={backendOptions} onchange={markDirty} />
     </label>
+  </div>
 
-    <div class="s1-mini-card">
-      <div class="s1-mini-header">
-        <label class="s1-mini-toggle">
-          <input
-            type="checkbox"
-            bind:checked={cfg.engine.s1_mini.enabled}
-            onchange={onS1MiniToggle}
-          />
-          <span class="toggle-title">Enable S1-mini dictation cleanup</span>
-        </label>
-        {#if s1MiniDownloaded}
-          <span class="status-badge ready">✔ Ready</span>
-        {:else if s1MiniDownloading}
-          <span class="status-badge downloading">⏳ Downloading</span>
-        {:else if cfg.engine.s1_mini?.enabled}
-          <span class="status-badge missing">Missing</span>
-        {/if}
-      </div>
-      <p class="s1-mini-desc">
-        Uses Superwhisper's local Qwen-based text normalizer to clean speech-to-text transcripts into natural punctuation, casing, and spoken corrections.
-        <span class="s1-mini-size-note">Note: S1-Mini is a ~480 MB download.</span>
-      </p>
-
-      {#if cfg.engine.s1_mini?.enabled}
-        <div class="model-status-container mt-2">
-          {#if s1MiniChecking}
-            <span class="status-checking">⏳ Checking S1-mini model files...</span>
-          {:else if s1MiniDownloading}
-            <span class="status-downloading"
-              >⏳ Downloading S1-mini model (s1-mini-q4_k_m.gguf & tokenizer.json)...</span
-            >
-          {:else if s1MiniDownloaded}
-            <span class="status-downloaded">✔ Model downloaded and ready</span>
-          {:else}
-            <div class="status-missing-wrapper">
-              <span class="status-missing">❌ Model files missing</span>
-              <button
-                class="btn-download"
-                type="button"
-                onclick={triggerS1MiniDownload}
-              >
-                📥 Download S1-mini
-              </button>
-            </div>
-          {/if}
-        </div>
+  <div class="field-group">
+    <div class="field-label-row">
+      <h3>S1-mini Dictation Cleanup</h3>
+      {#if s1MiniDownloaded}
+        <span class="status-pill success">✔ Ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)})` : "(CPU)"}</span>
+      {:else if s1MiniDownloading}
+        <span class="status-pill downloading">⏳ Downloading</span>
+      {:else if cfg.engine.s1_mini?.enabled}
+        <span class="status-pill error">Missing</span>
       {/if}
     </div>
+
+    <label class="field">
+      <div class="field-title-col">
+        <span>Enable S1-mini dictation cleanup</span>
+        <p class="hint">
+          Uses Superwhisper's local Qwen-based text normalizer to clean speech-to-text transcripts into natural punctuation, casing, and spoken corrections while strictly preserving voice commands.
+        </p>
+      </div>
+      <input
+        type="checkbox"
+        bind:checked={cfg.engine.s1_mini.enabled}
+        onchange={onS1MiniToggle}
+      />
+    </label>
+
+    <div class="s1-mini-note">
+      Note: S1-Mini is a ~480 MB download.
+    </div>
+
+    {#if cfg.engine.s1_mini?.enabled}
+      <div class="model-status-container mt-1">
+        {#if s1MiniChecking}
+          <span class="status-checking">⏳ Checking S1-mini model files...</span>
+        {:else if s1MiniDownloading}
+          <span class="status-downloading"
+            >⏳ Downloading S1-mini model (s1-mini-q4_k_m.gguf & tokenizer.json)...</span
+          >
+        {:else if s1MiniDownloaded}
+          <span class="status-downloaded">✔ Model downloaded and ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)} GPU accelerated)` : "on CPU"}</span>
+        {:else}
+          <div class="status-missing-wrapper">
+            <span class="status-missing">❌ Model files missing</span>
+            <button
+              class="btn-download"
+              type="button"
+              onclick={triggerS1MiniDownload}
+            >
+              📥 Download S1-mini
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <label class="field">
+        <span>Cleanup styling</span>
+        <CustomSelect
+          bind:value={cfg.engine.s1_mini.styling}
+          options={[
+            { value: "semi-formal", label: "Semi-formal (Default)" },
+            { value: "casual", label: "Casual" },
+            { value: "formal", label: "Formal" },
+            { value: "verbatim", label: "Verbatim" },
+            { value: "concise", label: "Concise" }
+          ]}
+          onchange={markDirty}
+        />
+      </label>
+    {/if}
   </div>
 
   {#if cfg.engine.backend === "whisper-cpp"}
@@ -864,34 +892,19 @@
     @apply border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10;
   }
 
-  .s1-mini-card {
-    @apply mt-4 p-4 rounded-[var(--radius)] border border-[var(--border)] bg-white/[0.02] flex flex-col gap-2;
+  .field-title-col {
+    @apply flex flex-col flex-1 mr-4;
   }
-  .s1-mini-header {
-    @apply flex items-center justify-between gap-3;
+  .field-title-col span {
+    @apply text-[13px] font-medium text-[var(--color-obsidian-100)];
   }
-  .s1-mini-toggle {
-    @apply flex items-center gap-2.5 cursor-pointer font-medium text-sm text-slate-100;
+  .field-title-col .hint {
+    @apply text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed;
   }
-  .s1-mini-toggle input[type="checkbox"] {
-    @apply w-4 h-4 cursor-pointer accent-[var(--accent)];
+  .s1-mini-note {
+    @apply text-[11.5px] font-medium text-[var(--color-accent-blue)] opacity-90 -mt-1;
   }
-  .s1-mini-desc {
-    @apply text-xs text-[var(--text-muted)] leading-relaxed m-0;
-  }
-  .s1-mini-size-note {
-    @apply block mt-1 text-[11px] font-medium text-cyan-300/80;
-  }
-  .status-badge {
-    @apply text-xs px-2.5 py-0.5 rounded-[var(--radius)] font-medium;
-  }
-  .status-badge.ready {
-    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
-  }
-  .status-badge.downloading {
+  .status-pill.downloading {
     @apply bg-cyan-500/15 text-cyan-300 border border-cyan-500/30;
-  }
-  .status-badge.missing {
-    @apply bg-amber-500/15 text-amber-300 border border-amber-500/30;
   }
 </style>
