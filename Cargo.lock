@@ -9704,7 +9704,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9747,7 +9747,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "cpal",
@@ -9762,7 +9762,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -9780,7 +9780,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -9793,7 +9793,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "serde",
@@ -9805,7 +9805,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -9827,7 +9827,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "bytes",
@@ -9858,7 +9858,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -9872,7 +9872,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -9886,7 +9886,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm-sidecar"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "encoding_rs",
  "llama-cpp-2",
@@ -9898,7 +9898,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "serde",
@@ -9910,7 +9910,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-routing"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -9935,14 +9935,14 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-text"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -9969,7 +9969,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-update"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -9986,7 +9986,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "arboard",
