@@ -510,11 +510,10 @@
             <div class="metrics">
               {#each m.rows as row}
                 <div class="metric" class:dim={row.dim}>
-                  <span class="metric-label">{row.label}</span>
+                  <div class="metric-head"><span>{row.label}</span><span>{row.value}</span></div>
                   <div class="vx-meter">
                     <div style:width="{row.pct}%" style:background={row.color}></div>
                   </div>
-                  <span class="metric-value">{row.value}</span>
                 </div>
               {/each}
             </div>
@@ -541,11 +540,10 @@
             <div class="metrics">
               {#each m.rows as row}
                 <div class="metric" class:dim={row.dim}>
-                  <span class="metric-label">{row.label}</span>
+                  <div class="metric-head"><span>{row.label}</span><span>{row.value}</span></div>
                   <div class="vx-meter">
                     <div style:width="{row.pct}%" style:background={row.color}></div>
                   </div>
-                  <span class="metric-value">{row.value}</span>
                 </div>
               {/each}
             </div>
@@ -612,12 +610,12 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
   }
 
   .head {
     display: flex;
-    gap: 28px;
+    gap: 20px;
     align-items: flex-end;
     justify-content: space-between;
     flex: none;
@@ -629,13 +627,24 @@
     min-width: 0;
   }
 
+  .copy .vx-title {
+    margin: 4px 0 3px;
+    font-size: 26px;
+  }
+
+  .copy .vx-lede {
+    margin: 2px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
   .gpu-toggle {
     flex: none;
-    width: 400px;
+    width: 380px;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 12px 16px;
+    gap: 12px;
+    padding: 8px 14px;
   }
 
   /* A CPU-only build has nothing to switch on. Dimmed and not clickable, so it
@@ -646,8 +655,8 @@
   }
 
   .switch {
-    width: 50px;
-    height: 30px;
+    width: 44px;
+    height: 26px;
     border-radius: 999px;
     position: relative;
     flex: none;
@@ -664,8 +673,8 @@
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: #fff;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
@@ -673,7 +682,7 @@
   }
 
   .switch.on .knob {
-    left: 23px;
+    left: 20px;
   }
 
   .gpu-copy {
@@ -683,9 +692,9 @@
   .gpu-title {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .gpu-title .glyph {
@@ -695,7 +704,7 @@
 
   .state {
     font-family: var(--vx-mono);
-    font-size: 10.5px;
+    font-size: 10px;
     letter-spacing: 0.1em;
     color: var(--vx-txt-3);
     transition: color 0.3s;
@@ -707,10 +716,10 @@
 
   .gpu-desc {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--vx-txt-2);
     margin-top: 2px;
-    line-height: 1.4;
+    line-height: 1.35;
   }
 
   .engines {
@@ -718,25 +727,25 @@
     min-height: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+    gap: 10px;
   }
 
   .engine-card {
     position: relative;
-    padding: 20px 22px;
-    border-radius: 18px;
+    padding: 14px 18px;
+    border-radius: 14px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px 22px;
+    grid-template-columns: 1fr 180px;
+    gap: 12px 20px;
     align-content: start;
   }
 
   .corner {
     position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 26px;
-    height: 26px;
+    top: 12px;
+    right: 12px;
+    width: 22px;
+    height: 22px;
   }
 
   .engine-head {
@@ -746,64 +755,68 @@
   .name-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 6px;
+    gap: 8px;
+    margin-bottom: 2px;
   }
 
   .engine-glyph {
     font-family: var(--vx-mono);
-    font-size: 24px;
+    font-size: 20px;
     color: var(--vx-cyan-1);
+    line-height: 1;
   }
 
   .engine-name {
-    font-size: 21px;
+    font-size: 17px;
     font-weight: 600;
     letter-spacing: -0.02em;
+    line-height: 1.1;
   }
 
   .tagline {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--vx-txt-2);
-    line-height: 1.45;
-    max-width: 90%;
+    line-height: 1.35;
+    max-width: 92%;
   }
 
   .warn {
-    margin-top: 10px;
-    padding: 8px 11px;
-    border-radius: 9px;
+    margin-top: 6px;
+    padding: 6px 9px;
+    border-radius: 8px;
     border: 1px solid rgba(255, 180, 84, 0.3);
     background: rgba(255, 180, 84, 0.06);
     color: var(--vx-warn);
-    font-size: 12px;
-    line-height: 1.45;
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   .sizes {
     display: flex;
     gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 6px;
+    margin-top: 5px;
+    flex-wrap: nowrap;
   }
 
   .size {
-    height: 46px;
-    padding: 0 13px;
-    border-radius: 10px;
+    height: 42px;
+    flex: 1 1 0;
+    max-width: 96px;
+    min-width: 0;
+    padding: 0 6px;
+    border-radius: 8px;
     border: 1px solid var(--vx-line);
     background: rgba(255, 255, 255, 0.02);
     color: var(--vx-txt-1);
     font-family: var(--vx-mono);
-    font-size: 12.5px;
     cursor: pointer;
     transition: all 0.22s;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 1px;
-    line-height: 1.1;
+    gap: 2px;
+    white-space: nowrap;
   }
 
   .size:hover {
@@ -816,20 +829,29 @@
     color: var(--vx-cyan-1);
   }
 
+  .size-id {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
   .size-mb {
     font-size: 10px;
-    opacity: 0.7;
+    line-height: 1.1;
+    opacity: 0.75;
+    white-space: nowrap;
   }
 
   .remote-summary-box {
-    margin-top: 6px;
-    padding: 10px 12px;
+    margin-top: 5px;
+    padding: 7px 10px;
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid var(--vx-line);
-    border-radius: 10px;
+    border-radius: 8px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
   .remote-row {
@@ -838,7 +860,7 @@
     align-items: center;
     gap: 8px;
     font-family: var(--vx-mono);
-    font-size: 11px;
+    font-size: 10.5px;
   }
 
   .remote-k {
@@ -851,7 +873,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 190px;
+    max-width: 320px;
     text-align: right;
   }
 
@@ -866,27 +888,25 @@
   }
 
   .remote-btn-row {
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   .remote-cfg-btn {
     width: 100%;
-    height: 36px;
-    font-size: 12px;
+    height: 32px;
+    font-size: 11.5px;
   }
 
   .metrics {
-    margin-top: 16px;
+    margin-top: 14px;
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 7px;
   }
 
   .metric {
-    display: grid;
-    grid-template-columns: 64px 1fr 58px;
-    align-items: center;
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
     transition: opacity 0.3s;
   }
 
@@ -894,28 +914,33 @@
     opacity: 0.45;
   }
 
-  .metric-label {
+  .metric-head {
+    display: flex;
+    justify-content: space-between;
     font-family: var(--vx-mono);
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--vx-txt-2);
+    margin-bottom: 3px;
+    line-height: 1.2;
   }
 
-  .metric-value {
-    font-family: var(--vx-mono);
-    font-size: 11px;
+  .metric-head span:last-child {
     color: var(--vx-txt-1);
-    text-align: right;
   }
 
   .right-col {
-    display: grid;
-    grid-template-rows: 1fr 1fr;
-    gap: 10px;
+    width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .spark {
-    padding: 10px 12px;
-    border-radius: 12px;
+    width: 180px;
+    height: 84px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border-radius: 10px;
     border: 1px solid var(--vx-line);
     background: rgba(0, 0, 0, 0.25);
     display: flex;
@@ -926,9 +951,11 @@
     display: flex;
     justify-content: space-between;
     font-family: var(--vx-mono);
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--vx-txt-2);
-    margin-bottom: 6px;
+    margin-bottom: 5px;
+    flex: none;
+    line-height: 1.2;
   }
 
   .spark-head span:last-child {
@@ -940,7 +967,7 @@
     align-items: flex-end;
     gap: 3px;
     flex: 1;
-    min-height: 28px;
+    min-height: 0;
   }
 
   .spark-bars > div {
@@ -960,7 +987,7 @@
     .head {
       flex-direction: column;
       align-items: stretch;
-      gap: 14px;
+      gap: 10px;
     }
 
     .gpu-toggle {

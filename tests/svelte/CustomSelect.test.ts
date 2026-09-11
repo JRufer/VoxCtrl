@@ -143,4 +143,34 @@ describe("CustomSelect dropdown placement", () => {
     // Trigger is at bottom: 136px + 4px, container top: 40px -> top: 100px
     expect(menu.style.top).toBe("100px");
   });
+
+  test("defaults to the first option when defaultToFirst is true and value is unset", async () => {
+    stubTriggerRect(100);
+    const onchange = vi.fn();
+    const { container } = render(CustomSelect, { value: "", options, defaultToFirst: true, onchange });
+
+    const trigger = container.querySelector(".custom-select-trigger") as HTMLElement;
+    expect(trigger.textContent).toContain("Option A");
+    expect(onchange).toHaveBeenCalledWith("a");
+  });
+
+  test("defaults to the first option when defaultToFirst is true and value is not in options", async () => {
+    stubTriggerRect(100);
+    const onchange = vi.fn();
+    const { container } = render(CustomSelect, { value: "non_existent_voice", options, defaultToFirst: true, onchange });
+
+    const trigger = container.querySelector(".custom-select-trigger") as HTMLElement;
+    expect(trigger.textContent).toContain("Option A");
+    expect(onchange).toHaveBeenCalledWith("a");
+  });
+
+  test("preserves valid value when defaultToFirst is true", async () => {
+    stubTriggerRect(100);
+    const onchange = vi.fn();
+    const { container } = render(CustomSelect, { value: "b", options, defaultToFirst: true, onchange });
+
+    const trigger = container.querySelector(".custom-select-trigger") as HTMLElement;
+    expect(trigger.textContent).toContain("Option B");
+    expect(onchange).not.toHaveBeenCalled();
+  });
 });

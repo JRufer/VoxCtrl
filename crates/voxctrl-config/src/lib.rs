@@ -468,7 +468,7 @@ pub struct BreezeTts2Config {
     #[serde(default = "default_breeze_voice_mode")]
     pub voice_mode: String,
     /// Selected cloned voice ID from the shared voice folder (e.g. "alba", "my_voice")
-    #[serde(default)]
+    #[serde(default = "default_breeze_tts_2_cloned_voice")]
     pub cloned_voice: String,
     /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/pocket-tts-voices/`)
     #[serde(default)]
@@ -496,11 +496,15 @@ fn default_breeze_voice_mode() -> String {
     "prompt".into()
 }
 
+fn default_breeze_tts_2_cloned_voice() -> String {
+    "alba".into()
+}
+
 impl Default for BreezeTts2Config {
     fn default() -> Self {
         Self {
             voice_mode: default_breeze_voice_mode(),
-            cloned_voice: String::new(),
+            cloned_voice: default_breeze_tts_2_cloned_voice(),
             voice_dir: String::new(),
             speaker_prompt: default_breeze_tts_2_speaker_prompt(),
             model_dir: String::new(),
@@ -519,7 +523,7 @@ pub struct VoxCpm2Config {
     #[serde(default = "default_vox_cpm_2_voice_mode")]
     pub voice_mode: String,
     /// Selected cloned voice ID from the shared voice folder (e.g. "alba", "my_voice")
-    #[serde(default)]
+    #[serde(default = "default_vox_cpm_2_cloned_voice")]
     pub cloned_voice: String,
     /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/pocket-tts-voices/`)
     #[serde(default)]
@@ -546,6 +550,10 @@ fn default_vox_cpm_2_voice_mode() -> String {
     "prompt".into()
 }
 
+fn default_vox_cpm_2_cloned_voice() -> String {
+    "alba".into()
+}
+
 fn default_vox_cpm_2_speaker_prompt() -> String {
     "A calm young female voice speaking clearly with a gentle tone.".into()
 }
@@ -554,7 +562,7 @@ impl Default for VoxCpm2Config {
     fn default() -> Self {
         Self {
             voice_mode: default_vox_cpm_2_voice_mode(),
-            cloned_voice: String::new(),
+            cloned_voice: default_vox_cpm_2_cloned_voice(),
             voice_dir: String::new(),
             speaker_prompt: default_vox_cpm_2_speaker_prompt(),
             ultimate_cloning: false,

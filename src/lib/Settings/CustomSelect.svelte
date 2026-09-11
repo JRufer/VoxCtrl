@@ -3,11 +3,13 @@
     value = $bindable(),
     options = [],
     disabled = false,
+    defaultToFirst = false,
     onchange
   }: {
     value: any;
     options: (string | { value: any; label: string; disabled?: boolean })[];
     disabled?: boolean;
+    defaultToFirst?: boolean;
     onchange?: (val: any) => void;
   } = $props();
 
@@ -99,9 +101,29 @@
     })
   );
 
+  $effect(() => {
+    if (defaultToFirst && normalizedOptions.length > 0) {
+      const match = normalizedOptions.find(opt => opt.value === value);
+      if (!match) {
+        const first = normalizedOptions.find(opt => !opt.disabled) || normalizedOptions[0];
+        if (first && value !== first.value) {
+          value = first.value;
+          if (onchange) {
+            onchange(first.value);
+          }
+        }
+      }
+    }
+  });
+
   let selectedLabel = $derived.by(() => {
     const selected = normalizedOptions.find(opt => opt.value === value);
-    return selected ? selected.label : (value !== undefined && value !== null ? String(value) : "");
+    if (selected) return selected.label;
+    if (defaultToFirst && normalizedOptions.length > 0) {
+      const first = normalizedOptions.find(opt => !opt.disabled) || normalizedOptions[0];
+      if (first) return first.label;
+    }
+    return (value !== undefined && value !== null ? String(value) : "");
   });
 
   // Click outside listener using Svelte 5 effect

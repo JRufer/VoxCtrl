@@ -241,18 +241,57 @@
   let pocketTtsVoices = $state<{ id: string; label: string }[]>([]);
   let pocketTtsVoiceDirError = $state<string | null>(null);
 
+  function activeClonedVoiceDir(): string {
+    if (cfg.tts.engine === "vox_cpm_2") return cfg.tts.vox_cpm_2.voice_dir || "";
+    if (cfg.tts.engine === "breeze_tts_2") return cfg.tts.breeze_tts_2.voice_dir || "";
+    return cfg.tts.pocket_tts.voice_dir || "";
+  }
+
+  function ensureDefaultClonedVoices() {
+    if (!pocketTtsVoices || pocketTtsVoices.length === 0) return;
+    const firstVoice = pocketTtsVoices[0].id;
+    let changed = false;
+
+    // VoxCPM2: default cloned voice to first voice if not selected or invalid
+    if (!cfg.tts.vox_cpm_2.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.vox_cpm_2.cloned_voice)) {
+      cfg.tts.vox_cpm_2.cloned_voice = firstVoice;
+      changed = true;
+    }
+
+    // Breeze-TTS-2: default cloned voice to first voice if not selected or invalid
+    if (!cfg.tts.breeze_tts_2.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.breeze_tts_2.cloned_voice)) {
+      cfg.tts.breeze_tts_2.cloned_voice = firstVoice;
+      changed = true;
+    }
+
+    // Pocket-TTS: default voice to first voice if not selected or invalid
+    if (!cfg.tts.pocket_tts.voice || !pocketTtsVoices.some(v => v.id === cfg.tts.pocket_tts.voice)) {
+      cfg.tts.pocket_tts.voice = firstVoice;
+      changed = true;
+    }
+
+    if (changed) {
+      markDirty();
+    }
+  }
+
+  $effect(() => {
+    ensureDefaultClonedVoices();
+  });
+
   async function loadPocketTtsVoices() {
     try {
       pocketTtsVoices = await invoke<{ id: string; label: string }[]>("list_pocket_tts_voices", {
-        voiceDir: cfg.tts.pocket_tts.voice_dir,
+        voiceDir: activeClonedVoiceDir(),
       });
+      ensureDefaultClonedVoices();
     } catch (e) {
       console.error("list_pocket_tts_voices:", e);
     }
   }
 
-  async function validatePocketTtsVoiceDir() {
-    const path = cfg.tts.pocket_tts.voice_dir;
+  async function validatePocketTtsVoiceDir(customPath?: string | Event) {
+    const path = typeof customPath === "string" ? customPath : activeClonedVoiceDir();
     if (!path) {
       pocketTtsVoiceDirError = null;
       await loadPocketTtsVoices();
@@ -552,6 +591,7 @@
       } else if (cfg.tts.engine === "breeze_tts_2") {
         breezeReady = false;
         await checkBreezeReady();
+        await loadPocketTtsVoices();
       } else if (cfg.tts.engine === "pocket_tts") {
         pocketTtsReady = false;
         await loadPocketTtsVoices();
@@ -586,9 +626,11 @@
       checkAllVoicesDownloaded();
     }
 
+    // Always load pocket TTS voices so they are ready for any cloning engine
+    loadPocketTtsVoices();
+
     if (cfg.tts.engine === "vox_cpm_2") {
       checkVoxCpmReady();
-      loadPocketTtsVoices();
     }
 
     if (cfg.tts.engine === "breeze_tts_2") {
@@ -596,7 +638,6 @@
     }
 
     if (cfg.tts.engine === "pocket_tts") {
-      await loadPocketTtsVoices();
       checkPocketTtsReady();
     }
 
@@ -936,7 +977,12 @@
               name="voxcpm_voice_mode"
               value="clone"
               checked={cfg.tts.vox_cpm_2.voice_mode === 'clone'}
-              onchange={() => { cfg.tts.vox_cpm_2.voice_mode = 'clone'; markDirty(); loadPocketTtsVoices(); }}
+              onchange={() => {
+                cfg.tts.vox_cpm_2.voice_mode = 'clone';
+                ensureDefaultClonedVoices();
+                markDirty();
+                loadPocketTtsVoices();
+              }}
             />
             <span class="engine-radio-name">🎙️ Voice Cloning (Shared Folder)</span>
           </div>
@@ -951,6 +997,7 @@
         <CustomSelect
           bind:value={cfg.tts.vox_cpm_2.cloned_voice}
           options={pocketTtsVoiceOptions}
+          defaultToFirst={true}
           onchange={markDirty}
         />
       </label>
@@ -960,7 +1007,7 @@
         <input
           type="text"
           bind:value={cfg.tts.vox_cpm_2.voice_dir}
-          onchange={() => { markDirty(); validatePocketTtsVoiceDir(); }}
+          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.vox_cpm_2.voice_dir); }}
         />
       </div>
       <p class="hint">Default directory: <code>~/.local/share/voxctrl/pocket-tts-voices/</code></p>
@@ -1096,7 +1143,12 @@
               name="breeze_voice_mode"
               value="clone"
               checked={cfg.tts.breeze_tts_2.voice_mode === 'clone'}
-              onchange={() => { cfg.tts.breeze_tts_2.voice_mode = 'clone'; markDirty(); loadPocketTtsVoices(); }}
+              onchange={() => {
+                cfg.tts.breeze_tts_2.voice_mode = 'clone';
+                ensureDefaultClonedVoices();
+                markDirty();
+                loadPocketTtsVoices();
+              }}
             />
             <span class="engine-radio-name">🎙️ Voice Cloning (Shared Folder)</span>
           </div>
@@ -1111,6 +1163,7 @@
         <CustomSelect
           bind:value={cfg.tts.breeze_tts_2.cloned_voice}
           options={pocketTtsVoiceOptions}
+          defaultToFirst={true}
           onchange={markDirty}
         />
       </label>
@@ -1120,7 +1173,7 @@
         <input
           type="text"
           bind:value={cfg.tts.breeze_tts_2.voice_dir}
-          onchange={() => { markDirty(); validatePocketTtsVoiceDir(); }}
+          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.breeze_tts_2.voice_dir); }}
         />
       </div>
       <p class="hint">Default directory: <code>~/.local/share/voxctrl/pocket-tts-voices/</code></p>
@@ -1220,7 +1273,12 @@
     <h3>Pocket-TTS Voice</h3>
     <label class="field col">
       <span class="field-title">Voice</span>
-      <CustomSelect bind:value={cfg.tts.pocket_tts.voice} options={pocketTtsVoiceOptions} onchange={onPocketTtsVoiceChanged} />
+      <CustomSelect
+        bind:value={cfg.tts.pocket_tts.voice}
+        options={pocketTtsVoiceOptions}
+        defaultToFirst={true}
+        onchange={onPocketTtsVoiceChanged}
+      />
     </label>
 
     <div class="voice-status-container">

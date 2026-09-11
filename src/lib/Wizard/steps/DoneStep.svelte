@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import appIcon from "../../../assets/app_icon.png";
+  import trayIcon from "../../../assets/record_off.png";
   import { config } from "../../../stores/config";
   import { wizard, type WizardIssue } from "../wizard-state.svelte";
   import { OVERLAY_STYLES, STEP_LABELS, TTS_ENGINES, keycapLabel } from "../wizard-data";
 
   let trayOpen = $state(false);
   let copied = $state(false);
+  let unloadTtsIdle = $state(true);
 
   type SetupStatus = {
     hotkeys_active: boolean;
@@ -162,7 +163,20 @@
 
   onMount(() => {
     void recheck();
+    if ($config.tts?.memory_mode !== undefined) {
+      unloadTtsIdle = $config.tts.memory_mode === "on_demand";
+    }
   });
+
+  function toggleUnloadTts() {
+    unloadTtsIdle = !unloadTtsIdle;
+    config.update((c) => {
+      if (c.tts) {
+        c.tts.memory_mode = unloadTtsIdle ? "on_demand" : "always_loaded";
+      }
+      return c;
+    });
+  }
 </script>
 
 <div class="done-step">
@@ -198,25 +212,56 @@
   <div class="panel">
     <div class="vx-label">system tray</div>
     <div class="panel-title">Find VoxCtrl in the tray</div>
-    <div class="panel-desc">Click the icon to open Settings, pause listening, or quit. Try it:</div>
+    <div class="panel-desc">Click the icon to open Settings, diagnostics, or toggle TTS memory. Try it:</div>
     <div class="mock-screen">
       {#if trayOpen}
         <div class="tray-menu">
-          <div class="row hot"><span>Open Settings</span><span class="mono">↗</span></div>
-          <div class="row">Pause listening</div>
-          <div class="row"><span>Status</span><span class="mono good">● idle</span></div>
-          <div class="sep"></div>
-          <div class="row">Quit VoxCtrl</div>
+          <button class="tray-row" onclick={openSettings}>
+            <span class="chk-gutter"></span>
+            <span class="tray-icon">⚙</span>
+            <span class="tray-label">Settings</span>
+          </button>
+          <button class="tray-row" onclick={() => { trayOpen = false; void recheck(); }}>
+            <span class="chk-gutter"></span>
+            <span class="tray-icon">🩺</span>
+            <span class="tray-label">Setup Diagnostics</span>
+          </button>
+          <button class="tray-row" onclick={toggleUnloadTts}>
+            <span class="chk-gutter">
+              <span class="chk" class:on={unloadTtsIdle}>
+                {#if unloadTtsIdle}
+                  <svg viewBox="0 0 16 16" width="11" height="11">
+                    <path fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.5l3 3 6-6"/>
+                  </svg>
+                {/if}
+              </span>
+            </span>
+            <span class="tray-icon">🧠</span>
+            <span class="tray-label">Unload TTS model when idle</span>
+          </button>
+          <div class="tray-sep"></div>
+          <button class="tray-row" onclick={() => (trayOpen = false)}>
+            <span class="chk-gutter"></span>
+            <span class="tray-label no-icon">Quit VoxCtrl</span>
+          </button>
         </div>
-      {:else}
-        <div class="click-me"><span>click me</span><span class="arrow">↘</span></div>
       {/if}
       <div class="mock-bar">
-        <span class="sq"></span>
-        <span class="ci"></span>
-        <button class="tray-btn" class:on={trayOpen} onclick={() => (trayOpen = !trayOpen)}>
-          <img src={appIcon} alt="Tray icon" />
-        </button>
+        <span class="mock-sys-icon" title="Network">📶</span>
+        <span class="mock-sys-icon" title="Audio">🔊</span>
+        <span class="mock-sys-icon" title="Bluetooth">ᛒ</span>
+        <div class="tray-btn-wrap">
+          <button class="tray-btn" class:on={trayOpen} onclick={() => (trayOpen = !trayOpen)}>
+            <img src={trayIcon} alt="Tray icon" />
+          </button>
+          {#if !trayOpen}
+            <div class="click-me">
+              <span>click me</span>
+              <span class="arrow">↓</span>
+            </div>
+          {/if}
+        </div>
+        <span class="mock-sys-icon chevron">⌃</span>
       </div>
     </div>
   </div>
@@ -446,7 +491,7 @@
   .mock-screen {
     position: relative;
     flex: 1;
-    min-height: 210px;
+    min-height: 230px;
     border-radius: 12px;
     border: 1px solid var(--vx-line-2);
     background: linear-gradient(180deg, var(--vx-bg-2), var(--vx-bg-0));
@@ -465,105 +510,175 @@
     align-items: center;
     justify-content: flex-end;
     padding: 0 14px;
-    gap: 14px;
+    gap: 12px;
   }
 
-  .sq,
-  .ci {
-    width: 14px;
-    height: 14px;
-    background: var(--vx-bg-4);
-    border-radius: 3px;
+  .mock-sys-icon {
+    font-size: 11px;
+    color: var(--vx-txt-3);
+    opacity: 0.65;
+    user-select: none;
   }
 
-  .ci {
-    border-radius: 50%;
+  .mock-sys-icon.chevron {
+    font-size: 14px;
+    margin-left: 2px;
+  }
+
+  .tray-btn-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .tray-btn {
-    width: 44px;
-    height: 36px;
-    border-radius: 8px;
-    border: 1px solid var(--vx-line);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
     display: grid;
     place-items: center;
-    transition: all 0.25s;
+    transition: all 0.2s;
+  }
+
+  .tray-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .tray-btn.on {
-    border-color: var(--vx-cyan-b);
-    background: rgba(34, 212, 239, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .tray-btn img {
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    box-shadow: 0 0 10px rgba(34, 212, 239, 0.5);
+    width: 22px;
+    height: 22px;
+    display: block;
+    object-fit: contain;
   }
 
   .tray-menu {
     position: absolute;
     right: 14px;
-    bottom: 52px;
-    width: 200px;
+    bottom: 48px;
+    width: 275px;
     padding: 6px;
-    border-radius: 12px;
-    border: 1px solid var(--vx-line-2);
-    background: rgba(20, 24, 31, 0.95);
-    box-shadow: var(--vx-panel-shadow);
-    animation: vxPop 0.22s var(--vx-ease);
-  }
-
-  .row {
-    padding: 10px 12px;
     border-radius: 8px;
-    color: var(--vx-txt-1);
-    font-size: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: #1f232a;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    animation: vxPop 0.18s var(--vx-ease);
+    z-index: 10;
+  }
+
+  .tray-row {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 6px 8px;
+    border-radius: 5px;
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13.5px;
+    color: #e6edf3;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
   }
 
-  .row.hot {
-    background: rgba(34, 212, 239, 0.1);
-    color: var(--vx-cyan-1);
-    font-weight: 600;
+  .tray-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
   }
 
-  .mono {
-    font-family: var(--vx-mono);
-    font-size: 11px;
+  .chk-gutter {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .good {
-    color: var(--vx-good);
+  .chk {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
   }
 
-  .sep {
+  .chk.on {
+    background: #1d8cf8;
+    border-color: #38bdf8;
+  }
+
+  .tray-icon {
+    width: 20px;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .tray-label {
+    flex: 1;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  .tray-label.no-icon {
+    padding-left: 2px;
+  }
+
+  .tray-sep {
     height: 1px;
-    background: var(--vx-line);
-    margin: 4px 8px;
+    background: rgba(255, 255, 255, 0.12);
+    margin: 5px 6px;
   }
 
   .click-me {
     position: absolute;
-    right: 46px;
-    bottom: 48px;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     gap: 2px;
     font-family: var(--vx-mono);
     font-size: 11px;
+    letter-spacing: 0.05em;
     color: var(--vx-cyan-1);
-    animation: vxPulse 2s infinite;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: vxNudge 1.6s ease-in-out infinite;
   }
 
   .arrow {
-    font-size: 16px;
-    margin-right: -8px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  @keyframes vxNudge {
+    0%,
+    100% {
+      transform: translateX(-50%) translateY(0);
+    }
+    50% {
+      transform: translateX(-50%) translateY(4px);
+    }
   }
 
   .where {

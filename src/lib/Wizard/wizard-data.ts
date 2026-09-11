@@ -178,7 +178,13 @@ export const OVERLAY_POSITIONS: { id: string; label: string; glyph: string }[] =
   { id: "bottom", label: "Bottom", glyph: "⤓" },
 ];
 
-export type TtsEngineId = "breeze_tts_2" | "pocket_tts" | "piper" | "inflect_micro" | "espeak";
+export type TtsEngineId =
+  | "vox_cpm_2"
+  | "breeze_tts_2"
+  | "pocket_tts"
+  | "piper"
+  | "inflect_micro"
+  | "espeak";
 
 export interface TtsEngineInfo {
   id: TtsEngineId;
@@ -202,6 +208,15 @@ export interface TtsEngineInfo {
 }
 
 export const TTS_ENGINES: TtsEngineInfo[] = [
+  {
+    id: "vox_cpm_2",
+    name: "VoxCPM2",
+    kind: "neural · 2B autoregressive",
+    quality: 0.98,
+    speed: 0.25,
+    mb: 4500,
+    note: "2B autoregressive diffusion. SOTA voice realism & cloning. Requires modern GPU.",
+  },
   {
     id: "breeze_tts_2",
     name: "Breeze-TTS-2",
