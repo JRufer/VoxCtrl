@@ -735,9 +735,13 @@
     padding: 14px 18px;
     border-radius: 14px;
     display: grid;
-    grid-template-columns: 1fr 180px;
-    gap: 12px 20px;
+    grid-template-columns: 1fr 144px;
+    gap: 10px 14px;
     align-content: start;
+  }
+
+  .left-col {
+    min-width: 0;
   }
 
   .corner {
@@ -793,17 +797,18 @@
 
   .sizes {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     margin-top: 5px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    min-width: 0;
   }
 
   .size {
-    height: 42px;
+    height: 40px;
     flex: 1 1 0;
     max-width: 96px;
     min-width: 0;
-    padding: 0 6px;
+    padding: 0 4px;
     border-radius: 8px;
     border: 1px solid var(--vx-line);
     background: rgba(255, 255, 255, 0.02);
@@ -830,14 +835,14 @@
   }
 
   .size-id {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
     line-height: 1.1;
     white-space: nowrap;
   }
 
   .size-mb {
-    font-size: 10px;
+    font-size: 9.5px;
     line-height: 1.1;
     opacity: 0.75;
     white-space: nowrap;
@@ -873,7 +878,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 320px;
+    max-width: 240px;
     text-align: right;
   }
 
@@ -929,17 +934,17 @@
   }
 
   .right-col {
-    width: 180px;
+    width: 144px;
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
 
   .spark {
-    width: 180px;
-    height: 84px;
+    width: 144px;
+    height: 80px;
     box-sizing: border-box;
-    padding: 8px 10px;
+    padding: 7px 9px;
     border-radius: 10px;
     border: 1px solid var(--vx-line);
     background: rgba(0, 0, 0, 0.25);
@@ -951,7 +956,7 @@
     display: flex;
     justify-content: space-between;
     font-family: var(--vx-mono);
-    font-size: 10.5px;
+    font-size: 10px;
     color: var(--vx-txt-2);
     margin-bottom: 5px;
     flex: none;
