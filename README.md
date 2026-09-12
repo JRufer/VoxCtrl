@@ -68,46 +68,7 @@ VoxCtrl turns your voice into a programmable router via `targets.toml`:
 
 VoxCtrl is designed with strict modularity, memory isolation, and high concurrency across 15 specialized Rust workspace crates:
 
-```
-┌──────────────────────────────┐
-│  Desktop Shortcuts Portal    │  (Linux XDG GlobalShortcuts / Windows Native Hooks)
-│  org.freedesktop.portal.*    │  "Shortcut Fired" event only — no keylogger
-└──────────────┬───────────────┘
-               ▼
-┌──────────────────────────────┐
-│      Gesture Recognizer      │  (Hold / Toggle / Double-Tap / Double-Tap & Hold)
-└──────────────┬───────────────┘
-               ▼
-┌──────────────────────────────┐
-│  Audio Capture & Processing  │  (cpal low-latency stream + optional RNNoise filter)
-└──────────────┬───────────────┘
-               ▼ float32 audio chunks
-┌─────────────────────────────────────────────────────────────┐
-│                    Speech Recognition                       │
-│  ┌───────────────┬──────────────┬─────────────┬──────────┐  │
-│  │  whisper.cpp  │  Moonshine   │  Parakeet   │  Remote  │  │
-│  │ (Vulkan/CUDA) │(ONNX/WebGPU) │   (ONNX)    │  (HTTP)  │  │
-│  └───────────────┴──────────────┴─────────────┴──────────┘  │
-└──────────────────────────────┬──────────────────────────────┘
-                               ▼ raw transcription
-┌─────────────────────────────────────────────────────────────┐
-│                Post-Processing & Cleanup                    │
-│  ┌──────────────────────────────┬────────────────────────┐  │
-│  │  Filler Removal & Regex      │  S1-mini LLM Sidecar   │  │
-│  │  (um, uh, stutter removal)   │ (Vulkan/CPU llama.cpp) │  │
-│  └──────────────────────────────┴────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────┘
-                               ▼ polished text
-┌─────────────────────────────────────────────────────────────┐
-│                    Output Command Router                    │
-│             (Named commands & Spoken Voice Prefix)          │
-└──────┬──────────┬──────────┬──────────┬──────────┬──────────┘
-       │          │          │          │          │
-       ▼          ▼          ▼          ▼          ▼
-   [inject]  [clipboard]   [exec]    [file/pipe] [dbus/mcp]
-   Focused     System     Terminal   Local Disk   Desktop /
-   Window    Clipboard     Script      Storage    AI Agents
-```
+![VoxCtrl Audio Pipeline Architecture](assets/audio-pipeline-diagram.svg)
 
 ### Workspace Crates
 
