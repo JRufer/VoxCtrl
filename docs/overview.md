@@ -31,25 +31,29 @@ A seven-step wizard runs the first time VoxCtrl starts on a machine with no conf
 - All local models and voices stored under `~/.local/share/voxctrl/`.
 
 ### Flexible Output Routing
-Nine output delivery types:
+Eleven output delivery types:
 
 | Type | What it does |
 |---|---|
-| `inject` | Simulates keystrokes into the focused window (wtype / xdotool / Ctrl+V) |
+| `inject` | Simulates keystrokes into the focused window (wtype on Wayland, xdotool on X11, native SendInput on Windows) |
 | `clipboard` | Copies text to the system clipboard |
 | `exec` | Runs a shell command with the text as an argument |
 | `pipe` | Writes to a named FIFO pipe |
-| `socket` | Sends over a Unix domain socket |
+| `socket` | Sends over a Unix domain socket or TCP connection |
 | `file` | Appends to a file with optional timestamp prefix |
 | `dbus` | Emits a DBus signal on the session bus |
 | `http` | POSTs to an HTTP endpoint |
 | `webhook` | POSTs with HMAC-SHA256 signed payload |
+| `speak` | Speaks transcribed text aloud using the active TTS engine |
+| `chat` | Conversational multi-turn chat with an OpenAI-compatible LLM endpoint |
 
 A single hotkey binding can route to **multiple targets simultaneously**.
 
 ### Visualization & HUD
-- Transparent floating overlay window with real-time audio visualization
-- Four overlay styles: Blue Wave (default), Voice Card, Waveform, Pulse
+- Transparent floating overlay window with real-time audio visualization rendered natively via Slint helper (`voxctrl-overlay`)
+- Four primary animated styles: Ocean Wave (default), Voice Card, Waveform, and Pulse Ring (plus Mono Bars, Neon Spectrum, Retro Terminal, Analog VU)
+- Spring-driven load and unload animations with audio-reactive geometry
+- Voice Command Trigger overlay pill with lightning badge and payload preview
 - Auto-show on recording start, auto-hide on completion
 
 ### Post-Processing Pipeline
@@ -60,12 +64,13 @@ Applied after transcription before delivery:
 - Snippet expansion (custom shorthand → full text)
 - Custom vocabulary fuzzy correction (Levenshtein matching for proper nouns/domain terms)
 - Code mode (camelCase conversion, spoken operators)
-- **On-device S1-mini dictation cleanup** (Superwhisper Qwen3-0.6B model running via Candle for offline text normalization and punctuation correction)
+- **On-device S1-mini dictation cleanup** (Superwhisper Qwen3-0.6B model running via Vulkan-accelerated `voxctrl-llm-sidecar` for offline text normalization and punctuation correction with CPU fallback)
 - Optional LLM rewrite via any OpenAI-compatible API server (clean, formal, casual, bullet, concise, or custom prompt)
 
 ### Text-to-Speech
-- Neural TTS via Piper (ONNX, ~11 English voices)
-- Espeak-ng fallback
+- Six local and neural TTS engines: Breeze-TTS-2 (voice design prompts), Piper (neural ONNX voices), Pocket-TTS (voice cloning from audio clips), Inflect-Micro-v2 (compact 38 MB ONNX), VoxCPM2 (voice design & cloning), and eSpeak-NG (lightweight fallback)
+- **On-demand model memory mode**: unloads large neural weights after 15 minutes of inactivity to conserve RAM
+- Pronunciation snippet expansion dictionary
 - `speak_text` callable from hotkeys, MCP, or routing targets
 
 ### LLM Integration (MCP Server)

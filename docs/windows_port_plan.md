@@ -28,8 +28,10 @@ readable, with corrections noted here.
   the Hotkeys tab and `docs/privacy.md` now say what the hook sees.
 - **CI.** The Windows `cargo check` no longer excludes anything and runs
   `--all-targets`; there is a Windows `cargo test` lane.
-- **Release.** The `windows-cpu` matrix row is enabled and the Downloads table
-  has its Windows row back.
+- **Release.** Both `windows-cpu` and `windows-webgpu` matrix rows are enabled, publishing `VoxCtrl-windows-x86_64.exe` and `VoxCtrl-windows-x86_64-webgpu.exe`.
+- **GPU Acceleration.** Direct3D 12 acceleration for Moonshine delivered via ONNX Runtime's WebGPU provider. S1-mini sidecar runs via Vulkan / CPU.
+- **First-run onboarding.** The 7-step Setup Wizard is fully operational on Windows.
+- **Bug Reporting.** Built-in telemetry-free, redacted diagnostics reporting implemented on Windows.
 - Overlay console window and focus stealing; the placeholder files named like
   CUDA DLLs; the MCP address advertised on Windows; the Piper installer that
   reported success while doing nothing.
@@ -44,10 +46,8 @@ readable, with corrections noted here.
   were 50-byte text files with `.dll` names, and the NSIS hook copied them next
   to `voxctrl.exe`. Removed rather than shipped.
 
-**Still outstanding** — Milestone 2 onward: notifications via
-`tauri-plugin-notification` and an AUMID, autostart, the named-pipe delivery type
-and its ACL, Piper's Windows auto-install, the Windows first-run wizard, code
-signing, DirectML, and the `voxctrl-platform` extraction.
+**Still outstanding** — notifications via an AUMID, autostart, the named-pipe delivery type
+and its ACL, Piper's Windows auto-install, code signing, and the `voxctrl-platform` extraction.
 
 ---
 

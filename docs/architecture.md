@@ -32,24 +32,26 @@ VoxCtrl/
 ├── src-tauri/         # Tauri app entry + IPC command handlers
 │   └── src/
 │       ├── main.rs    # App bootstrap
-│       ├── lib.rs     # Pipeline coordinator (~2000 LOC)
-│       ├── commands.rs# Tauri #[command] handlers (~330 LOC)
+│       ├── lib.rs     # Pipeline coordinator
+│       ├── commands.rs# Tauri #[command] handlers
 │       └── state.rs   # Shared AppState
 │
 └── crates/
     ├── voxctrl-config/     # AppConfig struct, TOML/JSON persistence
     ├── voxctrl-audio/      # Microphone capture, resampling, VU meter
-    ├── voxctrl-hotkeys/    # Global shortcuts (XDG portal / evdev / Win32)
-    ├── voxctrl-inference/  # whisper.cpp/Moonshine transcription + post-processing
-    ├── voxctrl-routing/    # OutputTarget + HotkeyBinding data models, router
-    ├── voxctrl-inject/     # Text injection via wtype/xdotool/clipboard
-    ├── voxctrl-tts/        # Piper/Espeak/Pocket-TTS/Inflect-Micro TTS engine
+    ├── voxctrl-hotkeys/    # Global shortcuts (XDG portal / evdev / Windows hook / D-Bus)
+    ├── voxctrl-inference/  # whisper.cpp/Moonshine/Parakeet/Remote STT + post-processing
+    ├── voxctrl-routing/    # OutputTarget + HotkeyBinding data models, 11-target router
+    ├── voxctrl-inject/     # Text injection orchestrator (Wayland/X11/Windows)
+    ├── voxctrl-winput/     # Windows native synthesised Unicode keyboard input
+    ├── voxctrl-tts/        # Neural & local TTS (Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak)
     ├── voxctrl-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
     ├── voxctrl-dbus/       # DBus service (Linux session bus)
     ├── voxctrl-llm/        # OpenAI-compatible LLM HTTP client
     ├── voxctrl-text/       # Shared snippet expansion + fuzzy vocab correction
-    │                        #   (used by both voxctrl-inference and voxctrl-tts)
-    └── voxctrl-update/     # GitHub release check, download, verify, self-replace
+    ├── voxctrl-update/     # GitHub release check, download, verify, self-replace
+    ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
+    └── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
 ```
 
 ---
@@ -81,7 +83,7 @@ voxctrl-hotkeys ──gesture_tx──► lib.rs coordinator
                   InferenceEngine.process()
                   (voxctrl-inference)
                     │  Noise gate (VAD)
-                    │  Whisper transcription
+                    │  Speech transcription (whisper.cpp / Moonshine / Parakeet / Remote)
                     │  Filler removal
                     │  Spoken punctuation
                     │  Auto-format lists
@@ -90,21 +92,24 @@ voxctrl-hotkeys ──gesture_tx──► lib.rs coordinator
                     │  Code mode
                     │  Silence hallucination filter
                     │  LLM rewrite via OpenAI API (optional, per-target)
+                    │  S1-mini text normalization via voxctrl-llm-sidecar
                          │
                     text_tx (InferenceOutput)
                          │
                          ▼
                   OutputTargetRouter.route()
                   (voxctrl-routing)
-                    ├── inject → voxctrl-inject
+                    ├── inject → voxctrl-inject / voxctrl-winput
                     ├── clipboard → arboard
                     ├── file → tokio::fs
                     ├── http/webhook → reqwest
                     ├── exec → std::process
-                    ├── socket → UnixStream
+                    ├── socket → UnixStream / TcpStream
                     ├── dbus → voxctrl-dbus
                     ├── mcp → voxctrl-mcp response queue
-                    └── pipe → named FIFO
+                    ├── pipe → named FIFO
+                    ├── speak → voxctrl-tts
+                    └── chat → voxctrl-llm conversational loop
                          │
                     Tauri event → frontend
                     (status-tick)

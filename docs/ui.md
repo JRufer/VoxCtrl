@@ -48,13 +48,15 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 - Manual record/stop button
 
 ### Engine Tab
-- Backend selector (`whisper-cpp`, `moonshine`)
+- Backend selector (`whisper-cpp`, `moonshine`, `parakeet`, `remote-openai`)
 - Whisper model size selector with download status
 - Compute device selector (auto / CPU / CUDA / Vulkan)
 - Thread count control
-- Moonshine model/language settings
-- "Download Model" button with progress
-- **Missing Model Warning & Auto-Redirection**: Startup check programmatically determines if the configured Whisper voice model file is downloaded on the local machine. If missing, it immediately switches the active Settings tab to "Engine" and presents a Tailwind-styled yellow warning alert prompting the user to select and download a GGUF voice model size.
+- Moonshine model and language settings
+- Parakeet TDT model selector and download controls
+- Remote Speech Engine settings (endpoint URL, Bearer API token, model identifier, ISO language, and interactive "Test Connection" button with server model discovery tag chips)
+- **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), and reactive download progress for Qwen3-0.6B model files (~480 MB)
+- **Missing Model Warning & Auto-Redirection**: Startup check programmatically determines if the configured voice model file is downloaded. If missing, it immediately switches the active Settings tab to "Engine" and presents a yellow warning alert prompting the user to select and download a model.
 
 ### Output Commands Tab
 - Visual editor for `targets.toml` — add/edit/delete output commands (the tab is
@@ -88,10 +90,12 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### TTS Tab
 - Enable/disable toggle
-- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2)
+- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2)
 - HuggingFace access token — one field, shared by every gated model; read-only, showing the value, when `HF_TOKEN` is exported
-- Voice selector with download status per voice
-- "Download Voice" button per voice
+- Voice design speaker prompt inputs for Breeze-TTS-2 and VoxCPM2
+- Reference voice selector with download status per voice and support for custom `.wav` voice clips
+- Model Memory mode selector (**Always Loaded** vs **On Demand** with idle unload minutes slider)
+- Pronunciation snippet dictionary editor
 - Stop key configuration
 - Response overlay toggle
 
@@ -175,11 +179,11 @@ config as it is made:
 | Step | Writes | Notes |
 |---|---|---|
 | Welcome | — | A read-only contents page; the cards preview the steps rather than linking to them |
-| Engine | `engine.backend`, model size, `whisper_cpp.device` | Continue downloads the chosen model and waits for it. A model already on disk needs no click; one that is not requires an explicit engine and size, so a multi-gigabyte default is never fetched unasked |
+| Engine | `engine.backend`, model size, `whisper_cpp.device`, `remote_openai.*` | Choose from 4 engines: `whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine`. For local models, Continue downloads the chosen model and waits for it. For Remote Speech Engine, an interactive connection test validates the endpoint and fetches available models before proceeding |
 | Hotkey | `bindings.toml` | Only gestures the running shortcut backend can deliver are offered, and the combination is validated by the same Rust rules the portal registration uses. Blocked until the desktop has accepted the shortcut, because the next step is a live test |
 | Overlay | `ui.show_overlay`, `ui.overlay_style`, `ui.overlay_position` | Each style previews a recording of the real overlay, bundled at `src/assets/overlays/<style id>.webm`, falling back to a CSS animation |
 | Test | — | A real dictation: the transcript is injected into the focused window, and the readout follows the pipeline's own recording and processing state |
-| Voice | `tts.enabled`, `tts.engine`, `tts.hf_token` | Each engine downloads from its own card; the play button unlocks once its assets are on disk. Pocket-TTS and Breeze-TTS-2 are gated downloads, so the step asks for a HuggingFace access token and keeps those two cards locked — unselectable, undownloadable — until one is entered. The token is saved to `tts.hf_token`, the same field Settings → TTS writes. An exported `HF_TOKEN` is shown instead, read-only, and left out of the config |
+| Voice | `tts.enabled`, `tts.engine`, `tts.hf_token` | Each engine downloads from its own card (Breeze-TTS-2, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, Piper, eSpeak-NG); the play button unlocks once its assets are on disk. Pocket-TTS and Breeze-TTS-2 are gated downloads, so the step asks for a HuggingFace access token and keeps those two cards locked until one is entered. The token is saved to `tts.hf_token`. An exported `HF_TOKEN` is shown instead, read-only |
 | Done | `ui.setup_completed` | Lists anything that failed, with the raw backend error and a copyable diagnostics report |
 
 The first hotkey is bound to a `command` delivery target named "Command",

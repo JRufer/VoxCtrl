@@ -68,7 +68,9 @@ Linux injection priority:
 2. `xdotool type --clearmodifiers` (X11)
 3. Clipboard + Ctrl+V fallback
 
-Windows: clipboard paste via PowerShell.
+Windows injection:
+- Native synthesised keystrokes via `SendInput` (`KEYEVENTF_UNICODE`) implemented in `voxctrl-winput`.
+- Automatically falls back to an atomic clipboard paste (safely restoring prior clipboard contents) for long dictations exceeding 2,000 characters.
 
 ---
 

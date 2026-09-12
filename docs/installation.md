@@ -26,20 +26,47 @@
 
 ---
 
-## Installing the AppImage (Linux)
+## Installing on Linux
 
-The recommended distribution format is an AppImage — a single portable executable with all dependencies bundled.
+### The Unified AppImage (Recommended)
+
+VoxCtrl publishes a single, universal Linux AppImage that works on any modern distribution:
 
 ```bash
-# Download the latest AppImage
-curl -LO https://github.com/jrufer/voxctrl/releases/latest/download/VoxCtrl.AppImage
+# Download the latest Linux AppImage
+curl -LO https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-linux-x86_64-vulkan.AppImage
 
 # Make executable
-chmod +x VoxCtrl.AppImage
+chmod +x VoxCtrl-linux-x86_64-vulkan.AppImage
 
 # Run it. That is the whole installation.
-./VoxCtrl-x86_64.AppImage
+./VoxCtrl-linux-x86_64-vulkan.AppImage
 ```
+
+> **One Linux build:** The Vulkan AppImage accelerates speech recognition on any NVIDIA, AMD, or Intel GPU via your host Vulkan driver, and automatically falls back to multi-threaded CPU execution if no Vulkan GPU is found. There is no longer a separate CPU-only build to choose between.
+
+### Debian / Ubuntu (.deb package)
+
+```bash
+# Download and install the .deb package
+curl -LO https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-linux-x86_64-vulkan.deb
+sudo apt install ./VoxCtrl-linux-x86_64-vulkan.deb
+```
+*(The package manager automatically pulls in `libvulkan1` and other runtime dependencies).*
+
+---
+
+## Installing on Windows
+
+Windows builds are distributed as self-contained NSIS setup installers:
+
+1. Download the installer for your system:
+   - **[VoxCtrl-windows-x86_64.exe (Standard CPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64.exe)** — For all modern Windows systems.
+   - **[VoxCtrl-windows-x86_64-webgpu.exe (Direct3D 12 GPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — Accelerates Moonshine speech recognition via Direct3D 12.
+2. Run the installer (if prompted by SmartScreen, click **More info** → **Run anyway**).
+3. Complete the installer and launch VoxCtrl. See **[Windows Testing Guide](./windows_testing.md)** for a detailed walkthrough.
+
+---
 
 ### Just run it
 
