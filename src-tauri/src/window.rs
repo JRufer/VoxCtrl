@@ -26,10 +26,10 @@ pub const UPDATE_WINDOW: &str = "update";
 /// window opens a little above it — enough slack for the layout to breathe
 /// without the dead space a much bigger window leaves behind. These must stay in step with the `wizard`
 /// entry in tauri.conf.json, which is what a fresh install's first launch uses.
-pub const WIZARD_WIDTH: f64 = 1500.0;
-pub const WIZARD_HEIGHT: f64 = 1040.0;
-pub const WIZARD_MIN_WIDTH: f64 = 1374.0;
-pub const WIZARD_MIN_HEIGHT: f64 = 1000.0;
+pub const WIZARD_WIDTH: f64 = 1280.0;
+pub const WIZARD_HEIGHT: f64 = 1057.0;
+pub const WIZARD_MIN_WIDTH: f64 = 1140.0;
+pub const WIZARD_MIN_HEIGHT: f64 = 900.0;
 
 /// Default and minimum geometry for the Settings window. Its sidebar plus the
 /// widest tab body need the width, and the longest tab needs the height before
@@ -324,7 +324,7 @@ mod tests {
     fn a_1080p_display_gets_a_usable_stage() {
         let (w, h) = wizard_size_for(1920.0 * WIZARD_FIT_W, 1080.0 * WIZARD_FIT_H);
         assert!((WIZARD_MIN_WIDTH..=WIZARD_WIDTH).contains(&w), "width {w}");
-        assert_eq!(h, WIZARD_MIN_HEIGHT);
+        assert!((WIZARD_MIN_HEIGHT..=WIZARD_HEIGHT).contains(&h), "height {h}");
         assert!(h <= 1080.0, "a {h}px window does not fit a 1080p display");
     }
 
@@ -372,8 +372,8 @@ mod tests {
             (900.0, 500.0),
         ] {
             let (w, h) = wizard_size_for(avail_w * WIZARD_FIT_W, avail_h * WIZARD_FIT_H);
-            assert!(w >= 1374.0, "{avail_w}x{avail_h} gave a {w}px-wide window");
-            assert!(h >= 1000.0, "{avail_w}x{avail_h} gave a {h}px-tall window");
+            assert!(w >= WIZARD_MIN_WIDTH, "{avail_w}x{avail_h} gave a {w}px-wide window");
+            assert!(h >= WIZARD_MIN_HEIGHT, "{avail_w}x{avail_h} gave a {h}px-tall window");
         }
     }
 
