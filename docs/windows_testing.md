@@ -2,12 +2,9 @@
 
 Thanks for helping test this. VoxCtrl is a voice dictation app: you hold a
 shortcut, speak, and what you said is typed into whatever window you were using.
-Everything runs on your own machine — no audio or text leaves your computer.
+Everything runs on your own machine — no audio or text leaves your computer (unless you explicitly configure a Remote Speech Engine).
 
-**Windows support is brand new.** The app has run on Linux for a while; this is
-the first Windows release, so the parts that touch Windows directly — the
-keyboard shortcut, typing the text, the on-screen overlay — are the parts most
-likely to misbehave. That is what would be most useful to hear about.
+**Windows support is expanding rapidly.** VoxCtrl now provides both standard CPU and Direct3D 12 GPU-accelerated builds for Windows, along with on-device S1-mini dictation cleanup, neural text-to-speech, and an interactive 7-step onboarding wizard.
 
 This should take about fifteen minutes.
 
@@ -15,22 +12,31 @@ This should take about fifteen minutes.
 
 ## 1. Install
 
-1. Download the installer — about 18 MB:
-   **[VoxCtrl_0.5.1_x64-setup-windows-x86_64.exe](https://github.com/JRufer/VoxCtrl/releases/download/v0.5.1/VoxCtrl_0.5.1_x64-setup-windows-x86_64.exe)**
-   (from the [v0.5.1 release page](https://github.com/JRufer/VoxCtrl/releases/tag/v0.5.1),
-   if you'd rather see everything).
-2. Run it. Windows will show a blue **"Windows protected your PC"** box, because
+1. Download the installer for your hardware:
+   - **[VoxCtrl-windows-x86_64.exe (Standard CPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64.exe)** — Runs on any modern Windows machine (CPU inference).
+   - **[VoxCtrl-windows-x86_64-webgpu.exe (Direct3D 12 GPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — Accelerates Moonshine speech recognition using your GPU (NVIDIA, AMD, Intel) via Direct3D 12.
+   - Or visit the **[Latest Release Page](https://github.com/JRufer/VoxCtrl/releases/latest)** to view all release assets and changelogs.
+2. Run the installer. Windows will show a blue **"Windows protected your PC"** box, because
    the installer is not yet signed with a certificate. Click **More info**, then
    **Run anyway**.
-3. Follow the installer, then launch VoxCtrl.
+3. Follow the installer steps, then launch VoxCtrl.
 
 Windows 10 (version 21H2 or newer) or Windows 11. Nothing else to install first.
 
-## 2. First run
+## 2. First run & Setup Wizard
 
-A setup window walks you through choosing a speech model, picking a shortcut,
-and doing a test dictation. The model download is a few hundred megabytes, so
-give it a minute.
+On first launch, a seven-step setup wizard automatically guides you through:
+1. **Welcome** — Overview of setup steps.
+2. **Speech Engine** — Choose from 4 transcription engines:
+   - `whisper.cpp` (OpenAI Whisper running locally on CPU)
+   - `Moonshine` (fast ONNX engine tuned for real-world ambient noise; accelerated on GPU in the WebGPU build)
+   - `Parakeet TDT` (NVIDIA FastConformer delivering ultra-fast non-autoregressive transcription)
+   - `Remote Speech Engine` (connect to an external or LAN OpenAI-compatible `/v1/audio/transcriptions` server, with live connection testing)
+3. **Hotkey** — Bind your preferred global dictation gesture (default: hold **Windows key + Space**).
+4. **Overlay HUD** — Select your visual feedback style (Ocean Wave, Voice Card, Waveform, or Pulse Ring).
+5. **Test Dictation** — Verify speech capture, inference, and typing into an active window.
+6. **Voice (TTS)** — Optionally set up neural text-to-speech feedback (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Inflect-Micro-v2, Piper, or eSpeak-NG).
+7. **Done** — Confirmation and diagnostic status.
 
 **If dictation produces nothing at all, check the microphone first.** Windows
 denies microphone access silently, with no prompt and no error. Open
@@ -38,7 +44,7 @@ denies microphone access silently, with no prompt and no error. Open
 access your microphone" is on. This catches most people once.
 
 VoxCtrl keeps running in the system tray after you close its window. Right-click
-the tray icon for Settings, or to quit.
+the tray icon for Settings, quick toggles, or to quit.
 
 ---
 
@@ -46,130 +52,102 @@ the tray icon for Settings, or to quit.
 
 The default shortcut is **hold Windows key + Space**, speak, then let go.
 
-**a. Does dictation work at all?** Open Notepad, hold the shortcut, say a
-sentence, release. The text should appear where your cursor is.
+### a. Basic Dictation
+Open Notepad, hold the shortcut, say a sentence, and release. The text should appear where your cursor is.
 
-**b. Try punctuation and symbols.** This is the single most valuable test — the
-old Windows code mangled exactly this, and the fix is new. Dictate something
-like:
+### b. Punctuation and Symbols
+This is the single most valuable test — the Windows input pipeline synthesizes keystrokes via native `SendInput` Unicode events. Dictate something with complex symbols:
 
-> "fifty percent of users, open paren a plus b close paren, and array bracket
-> zero"
+> "fifty percent of users, open paren a plus b close paren, and array bracket zero"
 
-Anything with `% ( ) + [ ] { } ^ ~` in the result is worth checking character by
-character. If any of those come out missing, doubled, or turned into something
-else, that's a real bug — please report it with the exact text you got.
+Check characters like `% ( ) + [ ] { } ^ ~` character by character. If any of those come out missing, doubled, or converted into something unexpected, please report it with the exact text you got.
 
-**c. Try it in a few different apps.** Notepad, a web browser, VS Code, Windows
-Terminal, Word. Some apps accept synthetic typing differently.
+### c. Try Multiple Speech Engines (Settings → Engine)
+- **`whisper.cpp`**: Try standard `tiny` or `base` models.
+- **`Moonshine`**: Test responsiveness. If using the `webgpu` build, verify GPU acceleration works smoothly.
+- **`Parakeet TDT`**: Test non-autoregressive transcription speed.
+- **`Remote Speech Engine`**: If you run a local or LAN transcription server (e.g. Faster-Whisper-Server, vLLM, Whisper standalone), test connecting with your custom URL and Bearer token.
 
-**d. Watch the overlay.** A small floating panel should appear while you speak
-and fade out after. Things to notice:
-- Does a **black console window** flash up or sit next to it? (It shouldn't.)
-- Does the overlay **steal focus**, so your text ends up in the wrong place?
-- On a multi-monitor or scaled display, does it appear in a sensible spot?
+### d. Try On-Device S1-mini Dictation Cleanup
+In **Settings → Engine**, enable **S1-mini dictation cleanup** (or toggle it per-keybind in **Settings → Hotkeys**). VoxCtrl runs Superwhisper's Qwen3-0.6B model via a Vulkan-accelerated sidecar (with automatic CPU fallback) to normalize raw speech, correct punctuation, and clean spoken self-corrections while strictly preserving voice command triggers.
 
-**e. Try the other gesture styles.** In Settings → Hotkeys you can set a
-shortcut to toggle on/off, or double-tap, instead of hold. All four styles
-should work.
+### e. Try Different Applications
+Test dictating into different apps:
+- Notepad / text editors
+- Web browsers (Chrome, Edge, Firefox)
+- VS Code / IDEs
+- Windows Terminal / PowerShell / Command Prompt
+- Word / Office apps
 
-**f. Long dictation.** Say a paragraph or two without stopping. Above roughly
-2000 characters the app switches to pasting instead of typing; it should hand
-your clipboard back afterwards.
+### f. Watch the Overlay HUD
+A floating overlay appears while you speak and plays a smooth spring unload animation when done:
+- Does a **black console window** flash or appear? (It shouldn't.)
+- Does the overlay **steal focus** from your active window? (It shouldn't.)
+- Try the 4 built-in animated styles in **Settings → Visual**:
+  - **Ocean Wave (`blue_wave`)**: Rising tide pool with layered waves and target buoy.
+  - **Voice Card (`voice_card`)**: Card flip with holographic sheen and LED dot matrix.
+  - **Waveform (`waveform`)**: Oscilloscope CRT power-on trace.
+  - **Pulse Ring (`pulse`)**: Radar sweep with target lock reticle.
+- Test changing overlay screen position (**Center**, **Top**, or **Bottom**) and multi-monitor selection.
+- Test the **Command Overlay Pill** by saying *"VoxCtrl notes, test note"* to see the purple lightning pill appear.
+
+### g. Try Gesture Styles (Settings → Hotkeys)
+In **Settings → Hotkeys**, you can configure shortcuts to:
+- **Hold** (record while held, transcribe on release)
+- **Toggle** (press once to start recording, press again to stop)
+- **Double-tap** (double-tap to start, press again to stop)
+- **Double-tap & hold** (double-tap and hold second tap)
+
+### h. Long Dictation & Clipboard Fallback
+Say a paragraph or two without stopping. Above roughly 2,000 characters, VoxCtrl switches from per-character typing to an atomic clipboard paste, safely restoring your prior clipboard contents afterwards.
+
+### i. Text-to-Speech (TTS) & Memory Modes
+In **Settings → TTS**, test voice playback:
+- **Pocket-TTS**: Neural voice cloning from reference clips (requires entering a HuggingFace token for gated weights).
+- **Breeze-TTS-2**: Voice design from natural-language prompts.
+- **VoxCPM2**: Voice design prompts and voice cloning clips.
+- **Inflect-Micro-v2**: Compact 38 MB ONNX model.
+- **Model Memory Mode**: Test switching between **Always Loaded** and **On Demand** (which drops model weights from memory after 15 minutes of inactivity to conserve RAM). You can also toggle this via the tray menu ("Unload TTS model when idle").
 
 ---
 
-## 4. If something goes wrong — one button does all of this
+## 4. If something goes wrong — one-button Bug Reporting
 
-Open VoxCtrl's settings (right-click the tray icon → Settings) and go to
-**Bug Report** in the sidebar. Describe what happened and press a button. It
-gathers the log, your Windows version, your CPU and GPU, and your settings —
-with API keys, file paths, your username and anything you dictated stripped out
-first — and either files it for me (no GitHub account needed) or saves it to a
-file you can email me.
+Open VoxCtrl's settings (right-click the tray icon → Settings) and navigate to **Bug Report** in the sidebar. Describe what happened and click a button. It gathers the log, your Windows version, your CPU and GPU, which build variant you are running, and your settings — with API keys, file paths, username, and dictated text stripped out — and either files it for you (no GitHub account needed) or saves it to a file you can share.
 
-**Before you press anything, it shows you the entire report.** Click
-*"Show me exactly what will be sent"* and read it. There is no fuller version
-behind it; that text is the report. The page also lists, side by side, what is
-collected and what never is.
+**Before you submit anything, it shows you the entire report.** Click
+*"Show me exactly what will be sent"* to inspect the exact payload. What you see is what is sent; there is no fuller hidden version.
 
-That is the easiest route, and it saves you the rest of this section. Everything
-below is the manual version, if you'd rather do it by hand.
-
-### Doing it by hand
-
-VoxCtrl writes a small log file. Sending me that file after reproducing the
-problem does the same job.
-
-To get a clean, short log:
-
-1. **Quit VoxCtrl** (right-click the tray icon → Quit).
-2. Press **Windows key + R**, paste this, and press Enter:
+### Manual Logs (Alternative)
+If you prefer not using the built-in Bug Report tab:
+1. **Quit VoxCtrl** (right-click tray icon → Quit).
+2. Press **Windows key + R**, paste:
    ```
    %LOCALAPPDATA%\voxctrl
    ```
-   An Explorer window opens.
-3. Delete **`startup_errors.log`** if it's there.
-4. **Start VoxCtrl and make the problem happen again.**
-5. Quit VoxCtrl, then send me the new **`startup_errors.log`** from that folder.
-
-That gives a log containing only the run where things went wrong, which is far
-easier to read than months of history.
-
-**What's in the log:** what VoxCtrl was doing, which shortcut backend it's using,
-which speech engine loaded, and any warnings or errors.
-
-**What is deliberately *not* in it:** anything you dictated. The app filters out
-transcription text before writing, so the log is safe to send as-is.
-
-Along with the log, it helps to say:
-
-- **What you did**, and **what you expected instead**.
-- **Which app** you were dictating into.
-- **Your Windows version and GPU** — press Windows key + R, type `winver` for
-  the Windows version.
-
-(The Bug Report page collects all four of these for you.)
-
-### Please don't send your settings folder
-
-`%APPDATA%\voxctrl` holds `config.json` and `targets.toml`. Those can contain
-**API keys and access tokens** if you've set any up. I don't need them, and you
-shouldn't share them. The log file above is enough.
-
-(The Bug Report page does include your settings — but it strips every key,
-token, file path and piece of text you typed out of them first, and shows you
-the result before sending. That is the difference between it and sending the
-folder yourself.)
+   and press Enter.
+3. Delete **`startup_errors.log`** if present.
+4. Start VoxCtrl and reproduce the issue.
+5. Quit VoxCtrl and retrieve the newly generated **`startup_errors.log`**.
+   The log does **not** contain transcription text or audio data.
 
 ---
 
-## 5. Known limitations — not bugs, no need to report
+## 5. Known limitations — expected behavior
 
-These are all expected in this release:
+These are known characteristics of the Windows platform:
 
-- **Elevated apps.** If a program is running as administrator, Windows blocks
-  VoxCtrl from both receiving shortcuts and typing into it. Task Manager and
-  most installers behave this way. Nothing can be done unless VoxCtrl is also
-  run as administrator.
-- **The UAC prompt and the lock screen.** Windows hides all keyboard input from
-  apps there, so shortcuts won't fire.
-- **SmartScreen's "unknown publisher" warning.** Code signing isn't set up yet.
-- **Speech runs on the CPU.** GPU acceleration for Windows is in progress. On a
-  modern machine the smaller models are still comfortably fast.
-- **Piper text-to-speech needs manual setup.** If you want to try the app
-  speaking back to you, pick **Pocket-TTS** in Settings → Text-to-Speech
-  instead — it works out of the box. Piper is the default but can't install
-  itself on Windows yet, so it will tell you so rather than failing quietly.
-- **Right-hand modifier keys.** A shortcut recorded with left Ctrl won't fire
-  from right Ctrl. This matches how it behaves on Linux.
+- **Elevated apps.** If a program is running as administrator, Windows blocks non-elevated apps from receiving global hooks and injecting keystrokes into it (e.g. Task Manager, certain installers). Run VoxCtrl as administrator if you need dictation in elevated windows.
+- **UAC prompts and Lock Screen.** Windows hides keyboard hooks on the secure desktop, so shortcuts will not fire there.
+- **SmartScreen warning.** The installer executable is not yet code-signed with an EV certificate, so Windows SmartScreen warns of an unknown publisher (**More info → Run anyway**).
+- **GPU acceleration focus.** The Windows GPU build (`VoxCtrl-windows-x86_64-webgpu.exe`) accelerates the `Moonshine` engine via Direct3D 12 WebGPU and runs `s1-mini` via Vulkan/CPU. `whisper.cpp` and `Parakeet` currently run on CPU on Windows due to an upstream whisper.cpp MSVC static Vulkan registration bug (whisper.cpp #3750).
+- **Piper TTS on Windows.** Piper requires manual binary setup on Windows; for seamless out-of-the-box local neural TTS, choose **Pocket-TTS**, **Inflect-Micro-v2**, **VoxCPM2**, or **eSpeak-NG**.
+- **Right-hand modifier keys.** A shortcut recorded with Left Ctrl does not fire from Right Ctrl.
 
 ---
 
-## 6. Anything else
+## 6. Feedback
 
-Rough edges, confusing wording, anything that made you hesitate — all of it is
-worth mentioning. A first Windows release is exactly when that feedback is
-cheapest to act on.
+Any rough edges, layout issues, confusing wording, or unexpected behavior you encounter are valuable feedback. Please file a report through **Settings → Bug Report** or on the [VoxCtrl GitHub Issues page](https://github.com/JRufer/VoxCtrl/issues).
 
-Thank you.
+Thank you for testing!

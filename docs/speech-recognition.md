@@ -204,8 +204,9 @@ While standard speech-to-text models (Whisper, Moonshine, Parakeet) generate lit
 
 ### Architecture & Runtime
 - **Model:** Qwen3-0.6B fine-tuned specifically for transcript normalization and quantized to `s1-mini-q4_k_m.gguf` (~462 MB) alongside `tokenizer.json` (~11.4 MB), totaling **~480 MB** for the model files.
-- **Pure Rust Engine:** Executed natively using Hugging Face's [Candle](https://github.com/huggingface/candle) framework (`candle-core` and `candle-transformers`). This avoids linking C++ runtime libraries and eliminates symbol collisions with `whisper-rs`.
-- **Memory & Latency:** Once loaded on first use, the model weights remain cached in memory for sub-second cleanup operations across successive utterances.
+- **Dedicated LLM Sidecar (`voxctrl-llm-sidecar`):** Executed in an isolated helper sidecar process powered by `llama.cpp` (`llama_cpp_2`), communicating with the main Tauri process via JSON-RPC over stdin/stdout. This isolates large model weights, prevents runtime symbol collisions with `whisper.cpp`, and keeps the main application responsive.
+- **Vulkan GPU Acceleration:** The sidecar automatically leverages the host GPU (NVIDIA, AMD, Intel) via Vulkan compute (`with_n_gpu_layers(99)`), offloading inference for rapid sub-second cleanup operations. If no suitable Vulkan device is found, it falls back seamlessly to multi-threaded CPU execution (`with_n_gpu_layers(0)`).
+- **Memory & Latency:** Once loaded on first use, the model weights remain cached in the sidecar process for instant cleanup operations across successive utterances.
 - **Structured ChatML Formatting:** Uses Superwhisper's prompt structure with pre-closed `<think>` tags to skip extraneous reasoning tokens and produce direct normalizations immediately.
 
 ### Pipeline Ordering & Command Preservation

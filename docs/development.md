@@ -65,18 +65,22 @@ VoxCtrl/
 │       ├── commands.rs     # IPC command handlers
 │       └── state.rs        # AppState definition
 │
-├── crates/                 # Backend library crates
+├── crates/                 # Backend library crates (15 workspace crates)
 │   ├── voxctrl-config/
 │   ├── voxctrl-audio/
 │   ├── voxctrl-hotkeys/
 │   ├── voxctrl-inference/
 │   ├── voxctrl-routing/
 │   ├── voxctrl-inject/
+│   ├── voxctrl-winput/     # Windows native synthesised Unicode keyboard input
 │   ├── voxctrl-tts/
 │   ├── voxctrl-mcp/
 │   ├── voxctrl-dbus/
 │   ├── voxctrl-llm/
-│   └── voxctrl-text/       # Shared text-processing (snippets, fuzzy vocab correction)
+│   ├── voxctrl-text/       # Shared text-processing (snippets, fuzzy vocab correction)
+│   ├── voxctrl-update/     # Self-updating engine and release asset installer
+│   ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
+│   └── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
 │
 ├── Cargo.toml              # Workspace definition
 ├── package.json            # Frontend deps

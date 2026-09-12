@@ -368,6 +368,27 @@ const signature = await invoke<unknown>('inflect_micro_inspect', { modelDir: '' 
 
 ---
 
+#### `check_breeze_tts_2_ready(modelDir: string) → boolean`
+Returns whether Breeze-TTS-2 model weights and tokenizer exist locally.
+
+#### `download_breeze_tts_2(modelDir: string, hfToken: string | null) → void`
+Downloads gated Breeze-TTS-2 model weights from HuggingFace using the provided token.
+
+---
+
+#### `check_vox_cpm_2_ready(modelDir: string) → boolean`
+Returns whether VoxCPM2 model assets (`config.json`, `generation_config.json`, weights) exist locally.
+
+#### `download_vox_cpm_2(modelDir: string, hfToken: string | null) → void`
+Downloads VoxCPM2 model assets from HuggingFace.
+
+---
+
+#### `hf_token_env() → string | null`
+Returns any `HF_TOKEN` exported in the application environment (takes precedence over UI config).
+
+---
+
 ### Speech Recognition Models
 
 #### `check_model_downloaded(modelSize: string) → boolean`
@@ -387,6 +408,33 @@ await invoke('download_model', { modelSize: 'small' });
 ```
 
 Valid sizes: `"tiny"`, `"tiny.en"`, `"base"`, `"base.en"`, `"small"`, `"small.en"`, `"medium"`, `"medium.en"`, `"large-v2"`, `"large-v3"`, `"large-v3-turbo"`
+
+---
+
+#### `download_parakeet_model(modelSize: string) → void`
+Downloads the Parakeet TDT ONNX model files.
+
+---
+
+#### `check_s1_mini_downloaded(modelDir?: string) → boolean`
+Checks whether the S1-mini GGUF model and tokenizer are downloaded locally.
+
+#### `download_s1_mini_model(modelDir?: string) → void`
+Downloads the S1-mini GGUF model (~480 MB) and tokenizer assets for on-device dictation cleanup.
+
+---
+
+#### `test_remote_stt(endpoint: string, apiKey: string | null, model: string, timeoutSecs: number) → RemoteSttTestResult`
+Tests connection to a Remote Speech Engine (OpenAI-compatible `/v1/audio/transcriptions` API) with sample audio, and queries available models.
+
+```typescript
+interface RemoteSttTestResult {
+  success: boolean;
+  message: string;
+  latency_ms: number;
+  models: string[];
+}
+```
 
 ---
 
@@ -560,6 +608,37 @@ await invoke('hide_overlay');
 
 ---
 
+### Window & Setup Management
+
+#### `get_setup_status() → SetupStatusPayload`
+Returns comprehensive first-run readiness: shortcut health, active speech model status, missing injection tools (`wtype`/`xdotool`), and polkit privileges.
+
+#### `download_configured_model() → void`
+Downloads the speech model selected by the active configuration.
+
+#### `open_setup_wizard() → void`
+Spawns the first-run Setup Wizard window on demand.
+
+#### `finish_setup_wizard(openSettings: boolean) → void`
+Marks setup complete (`ui.setup_completed = true`), emits `config-changed`, closes the wizard, and optionally opens Settings.
+
+#### `open_settings_tab(tab: string) → void`
+Opens the Settings window and switches directly to the specified tab (`"general"`, `"engine"`, `"hotkeys"`, `"audio"`, `"tts"`, `"features"`, `"visual"`, `"openai"`, `"targets"`, `"bugreport"`).
+
+#### `get_available_monitors() → MonitorInfo[]`
+Queries connected display monitors (names, dimensions, primary flag) on the main thread.
+
+```typescript
+interface MonitorInfo {
+  name: string | null;
+  width: number;
+  height: number;
+  is_primary: boolean;
+}
+```
+
+---
+
 ## Tauri Events (Backend → Frontend)
 
 Subscribe with `listen()` from `@tauri-apps/api/event`.
@@ -639,9 +718,12 @@ interface AppConfig {
 }
 
 interface EngineConfig {
-  backend: "whisper-cpp" | "moonshine";  // a legacy "auto" loads as whisper-cpp
+  backend: "whisper-cpp" | "moonshine" | "parakeet" | "remote-openai";
   whisper_cpp: WhisperCppConfig;
   moonshine: MoonshineConfig;
+  parakeet: ParakeetConfig;
+  remote_openai: RemoteOpenAiConfig;
+  s1_mini: S1MiniConfig;
 }
 
 interface WhisperCppConfig {
@@ -654,6 +736,24 @@ interface WhisperCppConfig {
 interface MoonshineConfig {
   model_size: string;
   language: string;
+}
+
+interface ParakeetConfig {
+  model_size: string;
+  language: string;
+}
+
+interface RemoteOpenAiConfig {
+  endpoint: string;
+  api_key: string | null;
+  model: string;
+  language: string;
+  timeout_secs: number;
+}
+
+interface S1MiniConfig {
+  enabled: boolean;
+  styling: string;
 }
 
 interface AudioConfig {
@@ -718,22 +818,33 @@ interface BreezeTts2Config {
   gpu: boolean;             // needs a breeze-cuda / breeze-metal build
 }
 
+interface VoxCpm2Config {
+  voice_mode: "prompt" | "clone";
+  speaker_prompt: string;
+  cloned_voice: string;
+  voice_dir: string;
+  ultimate_cloning: boolean;
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
 interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2";
+  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2";
   voice: string;
   voice_dir: string;
   stop_key: string[];       // singular field name, plural value
   response_overlay: boolean;
   speed: number;            // not used by pocket_tts
-  gpu: boolean;             // only applies to piper; Breeze has its own flag
-  hf_token: string | null;  // one token for every gated model download;
-                            // an exported HF_TOKEN wins and is never saved here
+  gpu: boolean;             // applies to piper; Breeze and VoxCPM2 have their own flag
+  hf_token: string | null;  // one token for every gated model download
   pocket_tts: PocketTtsConfig;
-  inflect_micro: InflectMicroConfig;  // fixed-voice, so no voice field
+  inflect_micro: InflectMicroConfig;
   breeze_tts_2: BreezeTts2Config;
-  memory_mode: "always_loaded" | "on_demand"; // "on_demand" unloads the model when idle
-  idle_unload_secs: number;  // idle seconds before unloading in "on_demand" mode (default 900)
+  vox_cpm_2: VoxCpm2Config;
+  memory_mode: "always_loaded" | "on_demand"; // "on_demand" unloads model after 15 min idle
+  idle_unload_secs: number;  // idle seconds before unloading (default 900)
   snippets: Record<string, string>;   // pronunciation guide, speech only
 }
 
@@ -746,7 +857,7 @@ interface McpConfig {
 interface OutputTarget {
   id: string;
   label: string;
-  delivery: "inject" | "clipboard" | "exec" | "pipe" | "socket" | "file" | "dbus" | "http" | "webhook" | "mcp" | "speak";
+  delivery: "inject" | "clipboard" | "exec" | "pipe" | "socket" | "file" | "dbus" | "http" | "webhook" | "mcp" | "speak" | "chat" | "command";
 
   // exec
   command?: string;
@@ -769,11 +880,9 @@ interface OutputTarget {
   // dbus
   dbus_signal?: string;
 
-  // http
+  // http / webhook
   http_url?: string;
-  http_method: string;
-
-  // webhook (note: webhook_url, not http_url)
+  http_method?: string;
   webhook_url?: string;
   webhook_secret?: string;
 
@@ -781,20 +890,18 @@ interface OutputTarget {
   mcp_path?: string;
   mcp_tool?: string;
 
-  // chat (OpenAI-compatible /v1/chat/completions, with conversation history)
+  // chat (conversational LLM)
   chat_url?: string;
   chat_model?: string;
-  chat_api_key?: string;
   chat_system_prompt?: string;
-  chat_max_history: number;   // default: 20 (0 = send the whole conversation)
-  chat_timeout_secs: number;  // default: 120
-  chat_reply_mode: string;    // "speak" | "inject" | "clipboard" | "none"
+  chat_reply_mode?: "speak" | "inject" | "clipboard" | "none";
+  chat_max_history?: number;
+  chat_timeout_secs?: number;
   chat_reset_phrase?: string;
+  chat_api_key?: string;
 
-  strip_newlines: boolean;    // default: false; inject and command targets
-
-  processing: TargetProcessingConfig;
-
+  strip_newlines?: boolean;    // default: false; inject and command targets
+  processing?: TargetProcessingConfig;
   response_pipe?: string;
 }
 

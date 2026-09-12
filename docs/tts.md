@@ -93,6 +93,17 @@ stage as the last line on screen. Because it writes a WAV instead of playing it,
 it also separates a synthesis fault from a playback one — something the app's
 Test button cannot distinguish.
 
+### VoxCPM2 (Neural, Voice Design & Cloning)
+[VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) is an open-source speech generation model by OpenBMB released under the **Apache-2.0 License**. It is ported to pure Rust on top of Candle and generates rich 24 kHz mono audio.
+
+**Key Features:**
+- **Voice Design**: Generate speech using a natural-language description of the speaker voice (`speaker_prompt`), e.g. *"A calm young female voice speaking clearly with a gentle tone."*
+- **Voice Cloning**: Clone a voice using reference `.wav` audio clips stored in the shared voices directory (`~/.local/share/voxctrl/pocket-tts-voices/`).
+- **Ultimate Cloning**: When paired reference audio and matching transcript files exist in the same directory, VoxCPM2 enables high-fidelity cloned synthesis.
+- **Pure Rust Engine**: Runs natively via Candle without Python or external subprocesses.
+- **Model Storage**: Model assets (`config.json`, `generation_config.json`, weights) are stored in `~/.local/share/voxctrl/models/voxcpm2/` (configurable via `tts.vox_cpm_2.model_dir`).
+- **GPU Acceleration**: Optional CUDA acceleration (`tts.vox_cpm_2.gpu`) with seamless CPU fallback.
+
 ### Espeak-ng (Lightweight)
 If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
 
@@ -100,15 +111,17 @@ If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. 
 
 ## GPU Acceleration
 
-Two engines can run on the GPU, each through its own mechanism:
+Three engines can run on the GPU, each through its own mechanism:
 
 *   **Piper** (`tts.gpu`): appends the `--cuda` CLI flag to the spawned `piper`
     subprocess at runtime. Needs the app built with the `cuda` feature.
 *   **Breeze-TTS-2** (`tts.breeze_tts_2.gpu`): loads the model onto a candle GPU
     device instead of the CPU. Needs the app built with `breeze-cuda` (NVIDIA) or
     `breeze-metal` (macOS) on `voxctrl-tts`.
+*   **VoxCPM2** (`tts.vox_cpm_2.gpu`): loads the model onto a candle GPU (CUDA)
+    device instead of the CPU.
 
-Breeze-TTS-2 runs on candle (via `pocket-tts`), whose only GPU backends are CUDA
+Breeze-TTS-2 and VoxCPM2 run on candle, whose only GPU backends are CUDA
 and Metal — **there is no Vulkan path** to select, on any platform. A build
 without one of those features logs a warning when the setting is on and
 synthesizes on the CPU.
@@ -284,7 +297,7 @@ Pre-warming is ignored when `memory_mode` is `"on_demand"` — the two settings 
 
 ## Model Memory (on-demand loading)
 
-The neural engines — Pocket-TTS, Breeze-TTS-2 and Inflect-Micro-v2 — are the only parts of the
+The neural engines — Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Inflect-Micro-v2 — are the only parts of the
 TTS stack that occupy significant memory; Piper and eSpeak-NG run a process per utterance and
 hold nothing in between. `memory_mode` decides whether those weights stay resident:
 
@@ -348,23 +361,31 @@ Under `tts` in `config.json`:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS functionality |
-| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
+| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, `"vox_cpm_2"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
 | `voice` | string | `"en-us-lessac-medium"` | Default voice for Piper (hyphen-delimited) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/` |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
-| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper. Breeze-TTS-2 has its own `breeze_tts_2.gpu` |
+| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper. Breeze-TTS-2 and VoxCPM2 have their own GPU settings |
 | `hf_token` | string or null | `null` | The single HuggingFace access token used to download every gated model (Pocket-TTS and Breeze-TTS-2). An exported `HF_TOKEN` takes precedence and is never saved here. A config written when each engine held its own copy is migrated to this key on load |
 | `pocket_tts.voice` | string | `"alba"` | Default Pocket-TTS voice ID: `"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"` |
 | `pocket_tts.prewarm` | bool | `false` | Pre-warm model on startup for faster first synthesis |
 | `pocket_tts.voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
 | `breeze_tts_2.voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` to use a reference clip |
 | `breeze_tts_2.speaker_prompt` | string | *(a calm, clear female voice)* | Natural-language description of the speaker, used in `"prompt"` mode |
-| `breeze_tts_2.cloned_voice` | string | `""` | Voice id from the shared clip folder, used in `"clone"` mode |
+| `breeze_tts_2.cloned_voice` | string | `"alba"` | Voice id from the shared clip folder, used in `"clone"` mode |
 | `breeze_tts_2.voice_dir` | string | `""` | Shared with Pocket-TTS; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
 | `breeze_tts_2.model_dir` | string | `""` | Model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
 | `breeze_tts_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
 | `breeze_tts_2.gpu` | bool | `false` | Run synthesis on the GPU; needs a `breeze-cuda` / `breeze-metal` build, CPU otherwise |
+| `vox_cpm_2.voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` for reference voice clip |
+| `vox_cpm_2.speaker_prompt` | string | *(calm young female voice)* | Natural-language voice description for Voice Design |
+| `vox_cpm_2.cloned_voice` | string | `"alba"` | Voice ID from the shared voice clip folder for cloning |
+| `vox_cpm_2.voice_dir` | string | `""` | Directory scanned for custom reference clips; empty = platform default |
+| `vox_cpm_2.ultimate_cloning` | bool | `false` | Enable Ultimate Cloning when paired audio + transcript files are provided |
+| `vox_cpm_2.model_dir` | string | `""` | Directory holding model weights; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
+| `vox_cpm_2.prewarm` | bool | `false` | Pre-warm model on startup for faster first synthesis |
+| `vox_cpm_2.gpu` | bool | `false` | Enable CUDA GPU acceleration |
 | `memory_mode` | string | `"always_loaded"` | `"always_loaded"` or `"on_demand"` — see [Model Memory](#model-memory-on-demand-loading) |
 | `idle_unload_secs` | int | `900` | Idle seconds before the model is unloaded in `"on_demand"` mode (minimum 30) |
 | `snippets` | object | *(VoxCtrl pronunciations)* | Word → spoken expansion map, applied to speech only |

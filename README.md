@@ -2,424 +2,346 @@
 
 ![VoxCtrl Banner](assets/banner.png)
 
-A high-performance, private, on-device voice-to-text dictation application and programmable **voice input broker** built natively in Rust and Tauri with a Svelte frontend. 
+A high-performance, private, on-device voice-to-text dictation application and programmable **voice input broker** built natively with **Rust**, **Tauri 2**, and **Svelte 5**.
 
-**Zero Telemetry. Zero Cloud. 100% On-Device.**
-VoxCtrl acts as an intelligent desktop voice gateway, routing your speech to any destination—whether typing directly into a focused window, invoking terminal agents, appending to journals, triggering shell commands, or feeding local AI assistants.
+**Zero Telemetry • Zero Cloud • 100% On-Device** *(or Bring Your Own Homelab/Server STT)*
 
----
-
-## 🔒 Privacy First & Fully On-Device
-
-In an era of cloud processing, VoxCtrl is built from the ground up to guarantee absolute data sovereignty:
-* **VoxCtrl does not read your keyboard**: Global shortcuts are registered with your desktop through the XDG `GlobalShortcuts` portal. Your desktop owns the key grab and tells VoxCtrl exactly one thing — that its own shortcut fired. VoxCtrl cannot see what you type in your browser, your terminal, or your password manager, because it is never given the data.
-* **No permissions to grant**: No udev rule, no `input` group, no logout, no reboot. There is nothing to undo later, and installing VoxCtrl does not change your machine's security posture. *(Earlier versions installed a udev rule granting read access to every input device. That has been removed — see [why](docs/hotkeys.md#why-this-changed).)*
-* **No Cloud API Keys Required (100% On-Device by Default)**: VoxCtrl runs entirely offline on your local hardware using your choice of `whisper.cpp`, `Moonshine`, or `Parakeet TDT`.
-* **Bring Your Own Voice Engine**: Want to offload transcription to a homelab GPU server or custom backend? VoxCtrl supports connecting to any network speech-to-text service via the OpenAI-compatible `/v1/audio/transcriptions` API (Faster-Whisper, vLLM, Whisper standalone, or cloud APIs) with zero local compute overhead.
-* **No Telemetry**: Your ambient microphone data never leaves your machine. There are no hidden tracking scripts or analytical pings. The one request VoxCtrl makes on its own is the update check — a plain GET to GitHub's public release listing, carrying nothing about you, and off with one tick in Settings → General.
-* **Diagnostics only when you send them**: Settings → **Bug Report** gathers a diagnostic bundle and sends it — but only when you press a button, and it shows you the entire report first. Everything you dictated, every API key, every file path, your username and your custom vocabulary are stripped before you ever see it, let alone before it is sent. See [docs/bug_reports.md](docs/bug_reports.md).
-* **Air-Gapped Ready**: When using local inference backends, once application weights and models are downloaded, VoxCtrl requires zero internet access to function.
-* **Local Neural Voices**: All text-to-speech feedback is generated offline by a local engine — Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, or eSpeak-NG.
-
-**Full detail, including how to verify each claim yourself: [docs/privacy.md](docs/privacy.md).**
-
-> **The app tells you which of these is true, live.** Settings → Hotkeys shows
-> exactly how shortcuts are reaching VoxCtrl and which keys your desktop bound.
-> If your desktop provides no shortcuts portal, VoxCtrl says so at launch and
-> explains the trade-off — it will not grant itself keyboard access to work
-> around it, because that access would apply to every program you run, not just
-> this one.
->
-> On KDE Plasma specifically, an upstream bug leaves portal shortcuts
-> registered but unticked in System Settings until you enable them yourself.
-> VoxCtrl detects this and shows a one-click **Open Shortcut Settings** button
-> — see [KDE registers shortcuts disabled by default](docs/hotkeys.md#kde-registers-shortcuts-disabled-by-default).
+VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any destination—typing directly into focused windows, invoking terminal agents, appending to journals, triggering shell commands, streaming to webhooks, or feeding local AI assistants.
 
 ---
 
 ## 🌟 Key Features
 
-* **High-Performance Offline Speech Recognition**: Local on-device inference using native `whisper.cpp` (via `whisper-rs`), streaming ONNX with `Moonshine`, or ultra-fast non-autoregressive transcription via NVIDIA `Parakeet TDT`. CUDA and Vulkan GPU acceleration available.
-* **Bring Your Own Voice Engine (Remote Speech Engine)**: Connect VoxCtrl to any OpenAI-compatible `/v1/audio/transcriptions` network endpoint (such as [Faster-Whisper-Server](https://github.com/fedirz/faster-whisper-server), vLLM, LocalAI, Whisper standalone, or cloud STT APIs). Offload 100% of speech processing to your home server or external GPU instance with zero local RAM/VRAM load. Set up custom endpoints, Bearer auth, model selection with automatic server model discovery, and live connection testing directly in Settings → Engine or during initial onboarding.
-* **First-Run Setup Wizard**: A new machine is walked through setup in seven steps — choose from 4 transcription engine options (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine`), bind a hotkey and register it with your desktop, choose an overlay, dictate a live test, and optionally add a voice — instead of being dropped into a settings window full of defaults nobody chose. Every choice is written to the config as it is made, so quitting halfway keeps what you picked. Reachable again afterwards with `voxctrl --setup`, or Settings → General → "Open setup wizard".
-* **Self-Updating**: VoxCtrl checks GitHub for a newer release on launch, shows what changed, and — if you say yes — downloads the build matching your installation (Linux AppImage or Windows installer), verifies it against the checksum GitHub published, replaces itself and restarts. Nothing is replaced until a complete, verified file is on disk, so a failed update leaves the working version alone. The check is one unauthenticated request carrying no identifier, and Settings → General turns it off.
-* **Modern GUI & Tray System**: A sleek Svelte-based user interface with dedicated, swappable, fully animated overlays (Ocean Wave, Voice Card, Waveform, and Pulse Ring), and a native desktop System Tray utility.
-* **Low-Latency Audio Loop**: Streamlined recording and VAD (Voice Activity Detection) built using `cpal` to minimize capture latency, with optional RNNoise background-noise suppression on the capture path.
-* **Built-in Model Context Protocol (MCP) Server**: Exposes voice dictation and speech synthesis as high-level JSON-RPC tools to AI clients (like Claude Desktop or Cursor) via local secure sockets—keeping integrations fully local.
-* **Privacy-Preserving Global Hotkeys**: Shortcuts are registered with your desktop through the XDG `GlobalShortcuts` portal (KDE Plasma, GNOME 48+, Hyprland), so VoxCtrl receives its own shortcuts and never reads a keystroke. Bind hold-to-talk, toggle-to-talk, double-tap, or double-tap & hold gestures. Works identically on Wayland and X11, with no permission setup at all.
-* **DBus Dictation Service**: Exposes `ai.voxctrl.Dictation` on the local Linux session bus, letting you script recording states securely without network exposure.
-* **Neural Text-to-Speech (TTS)**: Built-in local voice feedback with a choice of engines — **Breeze-TTS-2** (neural, voice design from natural language prompts; gated HF download under non-commercial license, optional CUDA/Metal GPU offload), **Piper** (neural, high quality), **Pocket-TTS** (neural, clones a voice from a reference clip), **Inflect-Micro-v2** (neural, 38 MB ONNX), and **eSpeak-NG** (lightweight, always available) — with automatic local package installation and an in-app model downloader.
-* **On-Device S1-mini Dictation Cleanup**: Optional local text normalization powered by Superwhisper's [s1-mini](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download). Accelerated by the host GPU (NVIDIA, AMD, Intel) via a dedicated Vulkan LLM sidecar with automatic CPU fallback, S1-mini transforms raw speech-to-text transcripts into polished prose with natural punctuation and spoken self-corrections while strictly preserving voice commands and trigger keywords. Enable it in Settings → Engine, with per-keybind toggles available in Hotkey settings.
-* **Intelligent Post-Processing & LLM Rewriting**: Real-time automatic filler-word cleanup (e.g. stripping "um", "uh", "hmm") to sanitize dictation, combined with optional post-processing through any **OpenAI-compatible API server** (a local [Ollama](https://ollama.ai/) or LM Studio instance, or a hosted provider) for real-time grammar correction, tone rewriting, or custom formatting. Point it at any URL and supply an API key when the server requires one.
+* **High-Performance Offline Speech Recognition**:
+  * **whisper.cpp**: Native local inference via `whisper-rs` (GGUF models) with Vulkan/CUDA GPU compute and CPU fallback.
+  * **Moonshine**: Streaming ONNX speech recognition with WebGPU Direct3D 12 acceleration on Windows and CPU execution on Linux.
+  * **Parakeet TDT**: Ultra-fast non-autoregressive transcription via NVIDIA Parakeet ONNX models.
+  * **Remote Speech Engine**: Offload transcription to any OpenAI-compatible `/v1/audio/transcriptions` network endpoint (Faster-Whisper, vLLM, Whisper standalone, or cloud APIs) with zero local RAM/VRAM overhead.
+* **On-Device S1-mini Dictation Cleanup**:
+  * Intelligent text normalization powered by Superwhisper's [s1-mini](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download).
+  * Runs in an isolated `voxctrl-llm-sidecar` process using `llama.cpp` with Vulkan GPU offload and automatic CPU fallback.
+  * Cleans spoken self-corrections, fixes punctuation and casing, and strips filler words while strictly preserving command keywords.
+* **Programmable Output Command Router (11 Delivery Targets)**:
+  * Route dictation to focused windows (`inject`), system clipboard (`clipboard`), shell commands (`exec`), FIFO pipes (`pipe`), TCP/Unix sockets (`socket`), markdown files (`file`), desktop bus (`dbus`), HTTP APIs (`http`), HMAC-signed webhooks (`webhook`), audio playback (`speak`), or conversational LLMs (`chat`).
+  * **Spoken Voice Commands**: Say *"VoxCtrl notes, meeting recap"* to dynamically dispatch text to the command named **notes**.
+  * **Multi-Target Broadcasting**: Bind a single hotkey gesture to broadcast a single dictation sequentially to multiple output targets.
+* **Neural Text-to-Speech (TTS) Suite**:
+  * 6 offline voice engines: **Breeze-TTS-2** (voice design prompts & audio cloning), **VoxCPM2** (OpenBMB voice cloning & design), **Pocket-TTS** (voice cloning from reference clip), **Piper** (high-quality ONNX), **Inflect-Micro-v2** (ultra-lightweight 38 MB ONNX), and **eSpeak-NG** (instant fallback).
+  * **On-Demand Memory Mode**: Automatically unloads heavy TTS neural models from RAM/VRAM after a configurable idle period (`tts.idle_unload_secs`).
+* **Heads-Up HUD Overlay & Visuals**:
+  * Transparent, click-through, voice-reactive animated HUD overlays with 4 distinct styles: **Ocean Wave** (tide pool with bobbing buoy), **Voice Card** (holographic card with 20×6 VU meter), **Waveform** (oscilloscope CRT trace), and **Pulse Ring** (sonar radar dial).
+  * Floating command trigger HUD pills (`⚡ TARGET ▸ Text`) showing dispatched actions.
+* **Privacy-Preserving Global Hotkeys**:
+  * Registered via the XDG `GlobalShortcuts` portal on Linux (Wayland & X11) and native hooks on Windows.
+  * VoxCtrl never monitors your keyboard keystrokes—the desktop simply notifies VoxCtrl when its registered shortcut is triggered.
+  * Supports `hold`, `toggle`, `double_tap`, and `double_tap_hold` gestures.
+* **Built-in Model Context Protocol (MCP) Server**:
+  * Local JSON-RPC server (`/tmp/voxctrl-mcp.sock` on Linux or named pipe on Windows) exposing `transcribe_voice`, `speak_text`, and `get_status` tools to AI clients like Claude Desktop and Cursor.
+* **First-Run Setup Wizard & In-App Updates**:
+  * 7-step interactive wizard (`voxctrl --setup`) for instant microphone, engine, hotkey, and overlay configuration.
+  * Self-contained updater that downloads, cryptographically verifies (SHA-256), and atomically replaces application binaries on release.
+  * Redacted, allowlist-filtered one-click bug reporting.
 
 ---
 
-## 🎯 Output Commands — The Deep Targeting System
+## 🎯 Output Routing Targets
 
-The core of VoxCtrl is its **Output Command Router**. Rather than simply pasting text where your cursor is, VoxCtrl allows you to declare **named output commands** in `targets.toml` and bind them to different global keyboard gestures. This turns your voice into a programmable router.
+VoxCtrl turns your voice into a programmable router via `targets.toml`:
 
-**Say a command by name.** Start dictation and say *"VoxCtrl"*, then the command's
-name, then what you want to send — *"VoxCtrl notes, remember to call the plumber"*
-routes *remember to call the plumber* to the command named **notes**. Everything
-after the name is the text, natural phrasing works (*"VoxCtrl, add this to my
-notes: …"*), and a dictation with no such phrase in it simply goes wherever your
-hotkey already points. See [docs/routing.md](docs/routing.md#command--voice-command-router)
-for the full matching rules.
-
-**New in v0.1:** You can now bind **multiple commands** to a single hotkey gesture! When activated, your text is broadcast concurrently to all bound commands. Configurations also **hot-reload instantly** in the background, without requiring an app restart.
-
-Below are the 11 delivery types supported by VoxCtrl and what they are used for:
-
-| Delivery Type | Mechanism | Perfect Use Case |
+| Delivery Type | Mechanism | Primary Use Case |
 | :--- | :--- | :--- |
-| **`inject`** | Keystroke simulation via native `wtype` (Wayland), `xdotool` (X11), or PowerShell (Windows). | Standard voice dictation directly into any focused editor, web browser, or chat window. |
-| **`clipboard`** | Fast clipboard population using the native `arboard` library. | Quiet copying of notes, code snippets, or templates for manual pasting without modifying active focuses. |
-| **`exec`** | Spawns a shell command substituting `{TEXT}` cleanly and safely (uses `shell=False` to prevent command injection). | Integrating with CLI tools (e.g., pipe directly into `llm {TEXT}`, open a web search, or post to `git commit -m "{TEXT}"`). |
-| **`pipe`** | Writes raw transcription bytes to a local named FIFO pipe. | Interfacing with custom CLI shell scripts, event listeners, or local terminal agents waiting for command buffers. |
-| **`socket`** | Streams text directly over a TCP connection or local Unix Domain Socket. | Communicating with long-running daemons, remote servers, or external development container environments. |
-| **`file`** | Appends transcriptions to a local file with customizable prefixes and optional UTC timestamps. | Automatic hands-free voice journaling, log keeping, standup note compilation, or task lists. |
-| **`dbus`** | Emits a custom DBus signal containing the text on the session bus. | Triggering complex desktop notification actions, scripting custom desktop widget updates, or chaining custom system automation. |
-| **`http`** | Sends a fast HTTP POST/GET request containing the transcription formatted inside a JSON template. | Streaming transcriptions directly to webhooks, database ingestion services, or remote HTTP endpoints. |
-| **`webhook`** | Sends a signed, secure HTTP POST request with an HMAC-SHA256 signature generated using a shared secret. | Securely connecting dictation triggers to external APIs or home automation platforms (e.g., Home Assistant). |
-| **`speak`** | Plays back the transcribed text aloud via the globally configured Text-to-Speech (TTS) engine. | Hearing the transcribed text spoken back to you directly, even without an active MCP server connection. |
-| **`chat`** | Holds a running conversation with an OpenAI-compatible `/v1/chat/completions` server, sending prior turns as context and reading the reply back. | Talking to a local LLM — Hermes, Ollama, llama.cpp — hands-free, with the answer spoken aloud, typed at your cursor, or copied to the clipboard. |
-
-> [!TIP]
-> `chat` turns VoxCtrl into a voice front end for the same API Open WebUI uses. Enable your
-> server's OpenAI-compatible HTTP API, point `chat_url` at it, and speak. See
-> [`examples/targets-hermes-chat.toml`](examples/targets-hermes-chat.toml) and the
-> [routing reference](docs/routing.md#chat--conversational-llm-openai-compatible).
+| **`inject`** | Keystroke simulation via native `wtype` (Wayland), `xdotool` (X11), or `SendInput` (Windows). | Standard dictation directly into any active editor, browser, or terminal. |
+| **`clipboard`** | System clipboard population via `arboard`. | Quiet copying of notes, code snippets, or templates without modifying cursor focus. |
+| **`exec`** | Spawns shell command with `{TEXT}` substitution (`shell=False` safety). | CLI automation (`git commit -m "{TEXT}"`, piping into local tools, web searches). |
+| **`pipe`** | Writes transcription bytes to a local named FIFO pipe. | Interfacing with shell scripts, terminal agents, and background listeners. |
+| **`socket`** | Streams text over TCP or Unix Domain Sockets. | Daemons, remote servers, containers, or background dev environments. |
+| **`file`** | Appends transcriptions to files with prefixes and UTC timestamps. | Hands-free journaling, meeting logs, daily standup notes, or task lists. |
+| **`dbus`** | Emits custom `ai.voxctrl.Dictation` DBus signals on the session bus. | Desktop notification triggers, system scripts, and desktop widget updates. |
+| **`http`** | Dispatches HTTP POST/GET requests formatted with JSON payloads. | Webhooks, database ingestion pipelines, and REST service integration. |
+| **`webhook`** | Dispatches HMAC-SHA256 signed HTTP POST requests. | Secure smart home automation triggers (e.g., Home Assistant) and secure APIs. |
+| **`speak`** | Synthesizes speech aloud via the configured neural TTS engine. | Hearing spoken confirmation or audio feedback loopback. |
+| **`chat`** | Multi-turn conversation with an OpenAI-compatible `/v1/chat/completions` API. | Conversational voice assistant talking directly to local LLMs (Ollama, llama.cpp). |
 
 ---
 
-## 🛠️ The Architecture
+## 🛠️ Architecture
+
+VoxCtrl is designed with strict modularity, memory isolation, and high concurrency across 15 specialized Rust workspace crates:
 
 ```
-                  ┌──────────────────────────────┐
-                  │  Desktop Shortcuts Portal    │
-                  │  org.freedesktop.portal.*    │
-                  │  GlobalShortcuts             │
-                  └──────────────┬───────────────┘
-                                 │ "your shortcut fired"
-                                 │  (no keystroke data)
-                                 ▼
-                  ┌──────────────────────────────┐
-                  │      Gesture Recognizer      │
-                  │  (Hold / Toggle / Double)    │
-                  └──────────────┬───────────────┘
-                                 │ on_press(target_id)
-                                 ▼
-                  ┌──────────────────────────────┐
-                  │  Recording Module (cpal)     │
-                  └──────────────┬───────────────┘
-                                 │ float32 raw audio chunks
-                                 ▼
-                  ┌──────────────────────────────┐
-                  │    Speech Engine Backend     │
-                  │ (whisper.cpp / Moonshine /   │
-                  │  Parakeet TDT / Remote STT)  │
-                  └──────────────┬───────────────┘
-                                 │ (transcription, target_id)
-                                 ▼
-                  ┌──────────────────────────────┐
-                  │     Output Command Router    │
-                  │      (targets.toml)          │
-                  └───────┬───────┬────────┬─────┘
-                          │       │        │
-                          ▼       ▼        ▼
-                  ┌──────────────────────────────┐
-                  │  Optional AI Post-processing │
-                  │  (Filler Removal / LLM API)  │
-                  └───────┬───────┬────────┬─────┘
-                          │       │        │
-            ┌─────────────┘       │        └─────────────┐
-            ▼                     ▼                      ▼
-     [inject / clipboard]    [exec / pipe / file]   [dbus / http / socket]
-            │                     │                      │
-            ▼                     ▼                      ▼
-     Focused Editor          Terminal / Scripting    Integration Services
+┌──────────────────────────────┐
+│  Desktop Shortcuts Portal    │  (Linux XDG GlobalShortcuts / Windows Native Hooks)
+│  org.freedesktop.portal.*    │  "Shortcut Fired" event only — no keylogger
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│      Gesture Recognizer      │  (Hold / Toggle / Double-Tap / Double-Tap & Hold)
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐
+│  Audio Capture & Processing  │  (cpal low-latency stream + optional RNNoise filter)
+└──────────────┬───────────────┘
+               ▼ float32 audio chunks
+┌─────────────────────────────────────────────────────────────┐
+│                    Speech Recognition                       │
+│  ┌───────────────┬──────────────┬─────────────┬──────────┐  │
+│  │  whisper.cpp  │  Moonshine   │  Parakeet   │  Remote  │  │
+│  │ (Vulkan/CUDA) │(ONNX/WebGPU) │   (ONNX)    │  (HTTP)  │  │
+│  └───────────────┴──────────────┴─────────────┴──────────┘  │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼ raw transcription
+┌─────────────────────────────────────────────────────────────┐
+│                Post-Processing & Cleanup                    │
+│  ┌──────────────────────────────┬────────────────────────┐  │
+│  │  Filler Removal & Regex      │  S1-mini LLM Sidecar   │  │
+│  │  (um, uh, stutter removal)   │ (Vulkan/CPU llama.cpp) │  │
+│  └──────────────────────────────┴────────────────────────┘  │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼ polished text
+┌─────────────────────────────────────────────────────────────┐
+│                    Output Command Router                    │
+│             (Named commands & Spoken Voice Prefix)          │
+└──────┬──────────┬──────────┬──────────┬──────────┬──────────┘
+       │          │          │          │          │
+       ▼          ▼          ▼          ▼          ▼
+   [inject]  [clipboard]   [exec]    [file/pipe] [dbus/mcp]
+   Focused     System     Terminal   Local Disk   Desktop /
+   Window    Clipboard     Script      Storage    AI Agents
 ```
 
----
+### Workspace Crates
 
-## 🖥️ User Interface
-
-VoxCtrl provides a clean, native settings window and overlay environment:
-
-![Settings Panel](assets/settings.png)
-
-### 📌 Interactive Settings UI
-* **General tab**: Configure core system attributes, including the local MCP JSON-RPC server toggles and record timeouts.
-* **Visual tab**: A premium Cyber Obsidian interface that groups all aesthetic and presentation settings. It features an interactive **Overlay Style Selector** (supporting Voice Card, Waveform, Pulse Ring, Ocean Wave, Mono Bars, Neon Spectrum, Retro Terminal, Analog VU, or Disabled styles), toggles for displaying heads-up HUD overlays while speaking, **Command Trigger Overlay toggles and duration sliders**, and controls for sending system notifications on transcription. It also lets you configure if the Settings window should open automatically at launch or start minimized in the system tray.
-
-* **Bug Report tab**: Describe a problem, read the complete report VoxCtrl has assembled from it, and send it — filed for you with no GitHub account needed, opened as a prefilled GitHub issue, saved to a file, or emailed. What is collected and what never is are listed side by side above the form, and redaction works from an allowlist so a setting added later cannot leak by being forgotten. See [docs/bug_reports.md](docs/bug_reports.md).
-
-### 🎨 Heads-Up HUD Overlay Styles
-
-VoxCtrl features a dynamic transparent overlay window — always-on-top and fully click-through — that renders floating real-time audio visualization above your desktop during dictation. Every style has its own identity, audio visualizer, active-target indicator, and animated load/unload transitions. The visual presentation is fully hot-swappable in the **Visual Tab** settings (which synchronizes across windows in real-time) and supports five unique visual options:
-
-1. **Ocean Wave (Default) 🌊**
-   A glass tide pool at night with a glowing moon, rising bubbles, and three overlapping parallax wave layers (Deep Blue, Aqua Cyan, and Ice Teal).
-   * **Voice Reactive Tide:** Both the waterline and the wave amplitude swell dynamically in response to microphone sound levels, receding to a calm low tide when silent.
-   * **Floating Buoy Target Tag:** The active routing target label floats on a buoy that bobs on the wave surface.
-   * **Fill & Drain Transitions:** The water fills the pool when dictation starts and drains away when it ends.
-
-2. **Voice Card 💳**
-   A literal membership card: gold contact chip, embossed VOXCTRL branding, holographic sheen, and a 20×6 VU-meter LED dot matrix (green→amber→red) lit bottom-up.
-   * **Real VU Ballistics:** Instant attack and slow decay, with a sensitivity curve tuned so even quiet speech lights the meter.
-   * **Card Flip Transitions:** The card deals in with a flip when dictation starts and flips back out when it ends, with an embossed `TARGET` field and a blinking `REC`/`INIT`/`PROC` stamp.
-
-3. **Waveform 📈**
-   A green-phosphor oscilloscope ("OSC-01") with a graticule grid and a live scrolling line trace of your microphone signal, rendered with a phosphor glow. Includes a `TGT ▸` target readout chip and switches to a blue sine sweep during AI post-processing. Powers on and off like a CRT, expanding from (and collapsing back into) a single scanline.
-
-4. **Pulse Ring 🟠**
-   A sonar/radar dial: a rotating sweep arm with a trailing wedge, expanding pulse rings that brighten with voice intensity, contact blips that flash as the sweep passes, and an audio-reactive core — paired with a pulsing "TARGET LOCK" plate showing the active routing target.
-
-5. **Disabled (None) ❌**
-   Turns off the transparent heads-up display entirely, relying purely on tray icon changes or system bus triggers for dictation feedback.
-
-### ⚡ Command Trigger UI Overlay
-Whenever a voice command trigger is matched (e.g. *"VoxCtrl notes Help me!"*), VoxCtrl displays a temporary glassmorphism HUD overlay pill (`⚡ NOTES ▸ Help me!`) showing the target name and text payload summary. The display duration (default: 3s) and enable/disable toggles are configurable under **Settings → Visual Tab**.
-
-### ⚙️ Window Management & Focus Raising
-* **Foreground Focus Raising**: If the settings page is already open but hidden behind other windows, clicking the **⚙ Settings** button in the native system tray menu or double-clicking the system tray icon will trigger standard `show()` and `set_focus()` commands to immediately bring the settings dashboard to the absolute foreground of the screen.
+| Crate | Responsibility |
+| :--- | :--- |
+| **`voxctrl-app`** | Tauri 2 application shell, Svelte IPC commands, system tray, and window management. |
+| **`voxctrl-core`** | Shared domain types, audio buffer representations, and engine traits. |
+| **`voxctrl-audio`** | `cpal` audio input stream, ring buffers, device enumeration, VAD, and RNNoise. |
+| **`voxctrl-inference`** | Multi-engine STT runner (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, and remote HTTP). |
+| **`voxctrl-llm-sidecar`** | Independent companion process running `llama.cpp` (`llama_cpp_2`) with Vulkan GPU offload and CPU fallback for S1-mini text cleanup. |
+| **`voxctrl-llm`** | IPC client communicating with `voxctrl-llm-sidecar` and external OpenAI-compatible LLM endpoints. |
+| **`voxctrl-routing`** | 11-way delivery router, voice command prefix matcher, and multi-target dispatch. |
+| **`voxctrl-hotkeys`** | XDG Desktop Portal `GlobalShortcuts` integration and gesture state machine. |
+| **`voxctrl-tts`** | Neural TTS orchestration (Breeze-TTS-2, VoxCPM2, Pocket-TTS, Piper, Inflect, eSpeak) and idle memory unloading. |
+| **`voxctrl-inject`** | Wayland (`wtype`) and X11 (`xdotool`) simulated keyboard typing. |
+| **`voxctrl-winput`** | Windows native typing via `SendInput` (`KEYEVENTF_UNICODE`) with clipboard fallback. |
+| **`voxctrl-mcp`** | Native Model Context Protocol (MCP) JSON-RPC server and client. |
+| **`voxctrl-config`** | Hot-reloadable TOML and JSON configuration management and validation. |
+| **`voxctrl-text`** | Text normalization, filler-word sanitization, and regex replacement filters. |
+| **`voxctrl-update`** | GitHub release checking, SHA-256 verification, and atomic self-updating. |
+| **`voxctrl-bugreport`**| Allowlist-redacted diagnostic bundle generation and GitHub issue submission. |
 
 ---
 
-## 🔌 Built-in Model Context Protocol (MCP) Server
+## 📥 Installation
 
-VoxCtrl features a native Model Context Protocol (MCP) server listening on a local Unix socket at `/tmp/voxctrl-mcp.sock`. This allows advanced LLM agents (such as **Claude Desktop** or **Cursor**) to interface directly with your voice and speak responses back to you.
+Pre-built binaries are available on the [Latest Releases](https://github.com/JRufer/VoxCtrl/releases/latest) page.
 
-### Exposed MCP Tools
-1. **`transcribe_voice(timeout_seconds)`**: Prompts the application to open your default recording device, capture speech, transcribe it using the Whisper engine, and return the raw text to the model. The argument is optional — omit it and VoxCtrl listens for the **Record timeout** configured in Settings → General.
-2. **`speak_text(text)`**: Queues text to be spoken aloud locally on the user's host machine using the configured neural TTS engine.
-3. **`get_status()`**: Returns a JSON object with boolean states indicating whether the microphone is currently recording or the TTS engine is currently speaking.
+### Linux
 
-### 🎯 Generic MCP Routing Target
-VoxCtrl supports routing transcribed text directly to any local or networked MCP server via its **Output Command Router** using the `mcp` delivery type in `targets.toml`. 
+1. Download **`VoxCtrl-linux-x86_64-vulkan.AppImage`** or the **`.deb`** package from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest).
+2. Make it executable and run:
+   ```bash
+   chmod +x VoxCtrl-linux-x86_64-vulkan.AppImage
+   ./VoxCtrl-linux-x86_64-vulkan.AppImage
+   ```
+   *The AppImage automatically utilizes Vulkan GPU acceleration if available, falling back gracefully to CPU compute.*
+3. On first launch, the **First-Run Setup Wizard** guides you through microphone selection, engine configuration, and hotkey binding. You can also re-launch it anytime with:
+   ```bash
+   voxctrl --setup
+   ```
 
-The client is fully standard-compliant (Option B, performing `initialize` -> `notifications/initialized` -> `tools/call` handshakes on socket connect) to guarantee maximum compatibility with strict third-party MCP servers.
+### Windows
 
-#### Configuration Schema
-You can declare generic MCP targets in your `targets.toml` or configure them through the GUI Settings window:
-
-```toml
-[[target]]
-id = "self_speak"
-label = "Synthesize Speech Loopback"
-delivery = "mcp"
-mcp_path = "/tmp/voxctrl-mcp.sock"   # Optional custom socket or pipe path (defaults to standard socket/pipe)
-mcp_tool = "speak_text"            # The name of the MCP tool to call (defaults to 'speak_text')
-
-[target.mcp_args]
-text = "{TEXT}"                    # Custom arguments template (substitutes the transcription at {TEXT})
-```
-
-### 🗣️ Voice Command Router (`command`)
-VoxCtrl includes a **Voice Command Router** target (`delivery = "command"`) that dynamically inspects dictated speech and reroutes text payload based on spoken target names.
-
-- **Trigger Phrase**: Listens for `"VoxCtrl"` (e.g. `"VoxCtrl"`, `"voxctrl"`, `"vox ctrl"`).
-- **Conversational Command Support**: Accepts natural lead-in phrases (e.g. *"VoxCtrl send this to my notes. I love you."*, *"VoxCtrl add this to my personal notes, help"*, or *"VoxCtrl put this in Notes: hello"*).
-- **Target Resolution**: Matches spoken target names against all configured target IDs and Labels, automatically prioritizing specific multi-word targets (e.g. `"Personal Notes"` is matched before `"Notes"`).
-- **Command UI Overlay**: Displays a temporary purple/indigo HUD overlay (`⚡ TARGET ▸ Summary`) showing the executed command target and text summary for a configurable duration (default: 3s).
-- **Fallback**: If no `"VoxCtrl"` keyword is spoken, dictation types directly into your active window as normal.
+1. Download the installer from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest):
+   * **`VoxCtrl-windows-x86_64.exe`**: Standard edition (CPU inference for all engines).
+   * **`VoxCtrl-windows-x86_64-webgpu.exe`**: GPU-accelerated edition (Direct3D 12 WebGPU acceleration for Moonshine).
+2. Run the installer and launch VoxCtrl from the Start Menu or System Tray.
 
 ---
 
-## 📦 Portable AppImage & Installation
+## 🔨 Building from Source
 
-VoxCtrl runs natively on Linux (optimized for CachyOS/Arch, Ubuntu/Debian, Fedora, and openSUSE). We support seamless standalone execution using a portable **AppImage**, which features a built-in installer to handle system integration.
+### Prerequisites
 
-### 1. Just Run It
+* **Rust**: `rustup default stable` (1.80+)
+* **Node.js & npm**: Node.js 18+ and npm
+* **CMake**: Required for building `whisper-rs` and `llama.cpp`
 
+#### Linux Dependencies
+Install required system packages:
+* **Ubuntu / Debian**:
+  ```bash
+  sudo apt install -y build-essential cmake pkg-config libasound2-dev libvulkan-dev shaderc \
+                      libssl-dev libglib2.0-dev libwebkit2gtk-4.1-dev libgtk-3-dev squashfs-tools
+  # Runtime injection helpers (install at least one):
+  sudo apt install -y wtype    # For Wayland
+  sudo apt install -y xdotool  # For X11
+  ```
+* **Arch / CachyOS**:
+  ```bash
+  sudo pacman -S --needed base-devel cmake pkg-config alsa-lib vulkan-headers shaderc \
+                          openssl glib2 webkit2gtk-4.1 gtk3 squashfs-tools wtype xdotool
+  ```
+* **Fedora**:
+  ```bash
+  sudo dnf install -y gcc-c++ cmake pkgconfig alsa-lib-devel vulkan-headers shaderc \
+                      openssl-devel glib2-devel webkit2gtk4.1-devel gtk3-devel squashfs-tools wtype xdotool
+  ```
+
+#### Windows Dependencies
+* [Visual Studio 2022 C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (MSVC `cl.exe`)
+* [CMake](https://cmake.org/download/) added to system `PATH`
+* [Vulkan SDK](https://vulkan.lunarg.com/) (recommended for S1-mini GPU acceleration)
+
+---
+
+### Building on Linux
+
+#### 1. Development Mode (with Live Reload)
 ```bash
-chmod +x VoxCtrl-*-x86_64.AppImage
-./VoxCtrl-*-x86_64.AppImage
+git clone https://github.com/JRufer/VoxCtrl.git
+cd VoxCtrl
+npm install
+cargo tauri dev
 ```
 
-That is the whole installation. Global shortcuts need no permissions, and
-VoxCtrl registers its own `.desktop` entry and icon under `~/.local/share/` on
-every Linux launch — no privileges, no install step.
-
-Nothing has to be installed first — not even `libfuse2`: the AppImage's runtime
-uses your system's FUSE 3, and extracts and runs itself when FUSE is
-unavailable. It needs glibc 2.35 or newer (Ubuntu 22.04+, Linux Mint 21+,
-Debian 12+, Fedora 36+, Arch); older distributions have to build from source.
-
-The only thing that can need a package manager is the helper that types text
-into other windows (`wtype` on Wayland, `xdotool` on X11). If it is missing, the
-setup window says so and offers to install it, or shows you the command. You can
-also do that step up front with `./VoxCtrl-*-x86_64.AppImage --install`, which
-installs those packages and nothing else.
-
-> [!IMPORTANT]
-> **The installer does not touch keyboard permissions, and there is no step that does.**
-> Global shortcuts go through the XDG desktop portal, so nothing needs granting.
-> The administrator prompt is for installing the packages above and nothing else.
->
-> Older VoxCtrl versions wrote `/etc/udev/rules.d/99-voxctrl.rules`, which let
-> every program running as your user read every keystroke on your system. The
-> installer now **removes** that rule if it finds it, and never creates it.
-> [Why](docs/hotkeys.md#why-this-changed).
-
-> [!NOTE]
-> VoxCtrl keeps watching: if shortcuts cannot reach it, it says so in the tray
-> and in a notification rather than silently ignoring your keypress, and it
-> starts working the moment the situation changes — without an app restart.
-
----
-
-### 2. Standalone AppImage Compilation
-
-If you wish to compile the application and bundle a fresh, portable AppImage manually from source, run the dedicated compiler script:
-
+#### 2. Standalone Portable AppImage (Recommended)
+Compile the standalone, hardware-accelerated, self-contained AppImage:
 ```bash
-chmod +x build_appimage.sh
 ./build_appimage.sh
 ```
+*This compiles `voxctrl-llm-sidecar` and `voxctrl`, packages frontend assets, bundles required GTK/WebKit helpers, applies host-fallback library stripping, and outputs `VoxCtrl-linux-x86_64-vulkan.AppImage` in the root folder.*
 
-This compilation script:
-* Restructures the workspace compiler toolchain, wrapping the local `appimagetool` to execute inside headless and FUSE-less build/sandbox environments using `--appimage-extract-and-run`.
-* Runs frontend compilation via Vite/Svelte and compiles the Rust Tauri backend.
-* Automatically injects system GPU/CUDA library paths into the compiler environment for hardware-accelerated transcription (if compatible NVIDIA cards are present).
-* Moves and exposes the final, standalone, portable AppImage directly to the root of the workspace as `VoxCtrl-x86_64.AppImage`.
-
----
-
-### 3. Execution Options
-
-Once set up, you can execute the application in three ways:
-
-* **From Desktop Menu**: Launch **VoxCtrl** directly from your desktop launcher or application drawer.
-* **Standalone Portable AppImage**: Run the standalone AppImage executable in the root directory:
-  ```bash
-  ./VoxCtrl-x86_64.AppImage
-  ```
-* **Helper Script Wrapper**: Run the workspace helper script:
-  ```bash
-  ./voxctrl.sh
-  ```
+#### 3. Standard Production Build (deb & AppImage)
+```bash
+npm run build
+cargo build --bin voxctrl-llm-sidecar --release --features vulkan
+npx tauri build --features vulkan
+```
 
 ---
 
-## ⚙️ Configuration File Schema
+### Building on Windows
 
-All configurations are stored locally inside `~/.config/voxctrl/`.
+Open an **x64 Native Tools Command Prompt for VS 2022**:
 
-### `config.json`
-Main application settings, including audio capture, UI styling, and the speech-to-text inference engine (`whisper-cpp`, `moonshine`, `parakeet`, or `remote-openai`):
+#### 1. Standard CPU Build
+```bash
+git clone https://github.com/JRufer/VoxCtrl.git
+cd VoxCtrl
+npm install
+npm run build
+cargo build --bin voxctrl-llm-sidecar --release
+npx tauri build --bundles nsis
+```
+
+#### 2. GPU-Accelerated Build (WebGPU Direct3D 12)
+Enables Direct3D 12 GPU acceleration for Moonshine via WebGPU and Vulkan for S1-mini:
+```bash
+npm run build
+cargo build --bin voxctrl-llm-sidecar --release --features vulkan
+npx tauri build --bundles nsis --features moonshine-webgpu
+```
+The resulting installer is saved to `src-tauri/target/release/bundle/nsis/`.
+
+---
+
+## ⚙️ Configuration
+
+Configuration files are located in `~/.config/voxctrl/` (Linux) or `%APPDATA%\voxctrl\` (Windows). Changes hot-reload immediately.
+
+### `config.json` (Core Application Settings)
 ```json
 {
   "engine": {
-    "backend": "remote-openai",
+    "backend": "moonshine",
+    "moonshine": { "model_size": "base", "language": "en" },
+    "whisper_cpp": { "model_size": "base", "device": "auto" },
+    "parakeet": { "model_size": "tdt-0.6b-v3", "language": "auto" },
     "remote_openai": {
       "endpoint": "http://192.168.1.50:8000/v1",
-      "api_key": null,
       "model": "whisper-1",
-      "language": "auto",
       "timeout_secs": 30
     },
-    "whisper_cpp": { "model_size": "base", "device": "auto" },
-    "moonshine": { "model_size": "base", "language": "en" },
-    "parakeet": { "model_size": "tdt-0.6b-v3", "language": "auto" },
     "s1_mini": { "enabled": true, "styling": "semi-formal" }
+  },
+  "tts": {
+    "engine": "pocket_tts",
+    "memory_mode": "on_demand",
+    "idle_unload_secs": 60
+  },
+  "ui": {
+    "overlay_style": "ocean_wave",
+    "command_overlay_duration_secs": 3.0
   }
 }
 ```
 
-### `targets.toml`
-Defines your Output Commands. The file and its `[[target]]` blocks keep their
-original names on disk, so an existing config needs no changes:
+### `targets.toml` (Output Routing Commands)
 ```toml
 format_version = "1.1"
 
 [[target]]
 id = "default"
-label = "Focused Window"
+label = "Active Window"
 delivery = "inject"
 
 [[target]]
 id = "notes"
-label = "Meeting Journal"
+label = "Meeting Notes"
 delivery = "file"
 file_path = "~/Documents/meeting_notes.md"
 file_prefix = "- "
 file_timestamp = true
-file_timestamp_format = "%Y-%m-%dT%H:%M:%SZ"
 
 [[target]]
 id = "cmd_router"
 label = "Voice Command Router"
-delivery = "command"                  # Dynamically routes speech based on "VoxCtrl <target> <text>" keyword
+delivery = "command"    # Listens for "VoxCtrl <target> <text>"
 ```
 
-### `bindings.toml`
-Binds hotkey gestures directly to target IDs (supports single or **multiple sequential targets**):
+### `bindings.toml` (Global Shortcut Gestures)
 ```toml
 format_version = "1.1"
 
 [[binding]]
 id = "dictate_hold"
-label = "Dictate into Focused Window (Hold)"
+label = "Dictate (Hold Space)"
 keys = ["KEY_LEFTMETA", "KEY_SPACE"]
 gesture = "hold"
 target_id = "default"
-s1_mini_enabled = true          # Optional per-binding toggle for S1-mini cleanup (null = inherit engine setting)
 
 [[binding]]
-id = "dictate_and_log"
-label = "Type & Save Journal (Hold)"
+id = "type_and_log"
+label = "Type & Append to Journal"
 keys = ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"]
 gesture = "hold"
-target_id = "default"                        # Backward compatibility fallback (first target)
-target_ids = ["default", "notes"]            # Sequential delivery to both targets!
-
-[[binding]]
-id = "double_tap_dictation"
-label = "Double-Tap & Hold to Dictate"
-keys = ["KEY_LEFTMETA", "KEY_SPACE"]
-gesture = "double_tap_hold"
-tap_ms = 300                                 # Gap allowed between the two taps
-hold_threshold_ms = 200                      # Hold on the second tap before recording
-target_ids = ["default"]
+target_ids = ["default", "notes"]    # Broadcasts to both targets sequentially!
 ```
-
-Supported gestures are `hold`, `toggle`, `double_tap` and `double_tap_hold`.
-See [docs/hotkeys.md](docs/hotkeys.md) for how each behaves and how to tune the
-double-tap timings.
-
-### Multi-Command Hotkey Bindings
-VoxCtrl supports routing your speech to **multiple Output Commands simultaneously** using a single hotkey gesture! 
-
-When a multi-target binding is activated:
-1. Your speech is captured and transcribed **once**.
-2. The final text is delivered **sequentially** to each target specified in `target_ids`.
-3. The UI automatically ensures you cannot assign the same target more than once to prevent accidental duplicates.
-
-#### Svelte UI Target Setup
-Inside the Hotkey Binding Editor modal:
-- Dynamic target selector fields let you add additional routing destinations using the `＋ Add Target` button.
-- Already selected targets are automatically disabled in other dropdowns so you cannot select duplicates.
-- Extra dropdown rows feature a clear `✕` button to remove them if added by accident.
 
 ---
 
-## 🧪 Development & Verification
+## 📚 Documentation Index
 
-### Running the Frontend
-To run the Svelte UI in standard hot-reloading development mode:
-```bash
-cargo tauri dev
-```
+For in-depth guides, architectural references, and developer documentation:
 
-### Compiling manually
-```bash
-npm run build
-npx tauri build
-```
+| Guide | Description |
+| :--- | :--- |
+| **[Architecture](docs/architecture.md)** | Workspace crate design, concurrency model, and data flow. |
+| **[Speech Recognition](docs/speech-recognition.md)** | Whisper.cpp, Moonshine, Parakeet, Remote STT, and S1-mini sidecar. |
+| **[Output Routing](docs/routing.md)** | Comprehensive reference for all 11 delivery mechanisms. |
+| **[Text-to-Speech](docs/tts.md)** | Engine setup, voice cloning, prompt design, and on-demand memory. |
+| **[Global Hotkeys](docs/hotkeys.md)** | XDG portal shortcuts, gesture recognizer, and platform details. |
+| **[Integrations](docs/integrations.md)** | Model Context Protocol (MCP), DBus, and OpenAI LLM API integration. |
+| **[User Interface](docs/ui.md)** | HUD overlays, Cyber Obsidian settings dashboard, and system tray. |
+| **[Configuration Reference](docs/configuration.md)** | Full schema definitions for all JSON and TOML configuration files. |
+| **[Privacy & Security](docs/privacy.md)** | Data sovereignty guarantees, verification steps, and zero-telemetry architecture. |
+| **[Windows Testing Guide](docs/windows_testing.md)** | Comprehensive testing matrix and validation steps on Windows 11. |
+| **[Windows Build Guide](docs/windows_build.md)** | Native Windows compilation steps and toolchain setup. |
+| **[Bug Reporting](docs/bug_reports.md)** | Privacy-first diagnostic generation and submission. |
 
 ---
 
 ## 📄 License
 
-This project is open-source and licensed under the [MIT License](LICENSE).
+VoxCtrl is open-source software licensed under the [MIT License](LICENSE).

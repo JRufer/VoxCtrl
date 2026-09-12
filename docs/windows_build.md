@@ -53,6 +53,16 @@ Output artifacts land in `src-tauri\target\release\bundle\`:
 - `nsis\VoxCtrl_<version>_x64-setup.exe` — NSIS installer
 - `msi\VoxCtrl_<version>_x64.msi` — MSI package
 
+### Build with WebGPU acceleration (Direct3D 12 for Moonshine)
+
+To build the Windows GPU release variant that accelerates Moonshine speech recognition via ONNX Runtime's WebGPU execution provider over Direct3D 12:
+
+```powershell
+npx tauri build --bundles nsis --features moonshine-webgpu
+```
+
+This accelerates Moonshine on any modern Direct3D 12 capable GPU (NVIDIA, AMD, Intel) with no vendor SDK needed at build time.
+
 ### Build with CUDA acceleration
 
 If you have an NVIDIA GPU and the CUDA Toolkit installed (11.x or 12.x), you can enable GPU-accelerated inference:
@@ -68,14 +78,11 @@ npm run tauri build -- --features cuda
 Without the `cuda` feature flag, Whisper inference runs on the CPU. The `cuda`
 feature is opt-in and never required.
 
-**There is deliberately no Vulkan build for Windows.** whisper.cpp's Vulkan
-backend fails to register on Windows MSVC static builds — which is exactly what
+**whisper.cpp Vulkan note:** whisper.cpp's Vulkan
+backend fails to register on Windows MSVC static builds — which is what
 `whisper-rs-sys` produces for Rust — and falls back to the CPU while reporting
-that it found a GPU ([whisper.cpp#3750](https://github.com/ggml-org/whisper.cpp/issues/3750),
-open against the `whisper-rs` version this workspace pins). A GPU build that is
-silently a CPU build is worse than no GPU build, so the released Windows
-installer is CPU-only until either that is fixed or the DirectML execution
-provider lands.
+that it found a GPU ([whisper.cpp#3750](https://github.com/ggml-org/whisper.cpp/issues/3750)).
+Because of this, the standard Windows installer focuses on robust CPU execution for Whisper/Parakeet, while the `windows-webgpu` build accelerates Moonshine via Direct3D 12, and the S1-mini sidecar utilizes Vulkan/CPU.
 
 ### Using the build script
 

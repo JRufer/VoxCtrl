@@ -34,19 +34,26 @@ Global shortcuts are registered with your desktop through the XDG `GlobalShortcu
 ## Quick Summary
 
 ```
-Microphone → Audio Capture → Whisper Inference → Post-Processing → Output Router
-                                                                         │
-                                               ┌────────────────────────┤
-                                               │                        │
-                                          Inject text            Clipboard/File/
-                                          to window              HTTP/Webhook/Socket/
-                                                                 DBus/MCP/Exec/Pipe
+Microphone → Audio Capture → Speech Inference (whisper.cpp / Moonshine / Parakeet / Remote)
+                                          │
+                                          ▼
+                               Post-Processing & S1-mini Normalization
+                                          │
+                                          ▼
+                                   Output Router
+                                          │
+                  ┌───────────────────────┴───────────────────────┐
+                  │                                               │
+             Inject text                                 Clipboard / File / HTTP /
+             to window                                   Webhook / Socket / DBus /
+                                                         MCP / Exec / Pipe / Speak / Chat
 ```
 
 **Tech Stack:**
 - **Frontend:** Svelte 5 + Tailwind CSS 4 + Vite 5
-- **Desktop Shell:** Tauri 2 (Rust + WebView)
-- **Backend:** Rust (Tokio async), ~10 specialized crates
-- **Speech:** whisper.cpp (GGUF models, CPU/CUDA/Vulkan)
-- **TTS:** Piper (ONNX neural voices) + Espeak-ng fallback
+- **Desktop Shell:** Tauri 2 (Rust + WebView) + Slint native overlay helper
+- **Backend:** Rust (Tokio async), 15 specialized workspace crates
+- **Speech Recognition:** whisper.cpp (GGUF, CPU/Vulkan/CUDA), Moonshine (ONNX/WebGPU), Parakeet TDT (ONNX), Remote Speech Engine (OpenAI-compatible)
+- **Dictation Cleanup:** S1-mini (Qwen3-0.6B) via Vulkan-accelerated `voxctrl-llm-sidecar` (llama.cpp)
+- **Text-to-Speech:** Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, eSpeak-NG (with on-demand idle unload)
 - **Config:** TOML + JSON, hot-reloadable

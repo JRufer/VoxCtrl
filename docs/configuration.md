@@ -103,8 +103,30 @@ Full schema with defaults:
       "noise_scale": 0.667,
       "prewarm": false
     },
+    "breeze_tts_2": {
+      "voice_mode": "prompt",
+      "speaker_prompt": "A calm and clear female voice speaking at a natural pace",
+      "cloned_voice": "alba",
+      "voice_dir": "",
+      "model_dir": "",
+      "prewarm": false,
+      "gpu": false
+    },
+    "vox_cpm_2": {
+      "voice_mode": "prompt",
+      "speaker_prompt": "A calm young female voice speaking clearly with a gentle tone.",
+      "cloned_voice": "alba",
+      "voice_dir": "",
+      "ultimate_cloning": false,
+      "model_dir": "",
+      "prewarm": false,
+      "gpu": false
+    },
     "memory_mode": "always_loaded",
-    "idle_unload_secs": 900
+    "idle_unload_secs": 900,
+    "snippets": {
+      "VoxCtrl": "Vox Control"
+    }
   },
   "mcp": {
     "server_enabled": false,
@@ -262,7 +284,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS subsystem |
-| `engine` | string | `"piper"` | Synthesis engine: `"breeze_tts_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, or `"espeak"` |
+| `engine` | string | `"espeak"` | Synthesis engine: `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
@@ -270,21 +292,41 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0); not used by Pocket-TTS |
 | `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper |
 | `breeze_tts_2` | object | | Breeze-TTS-2 engine sub-configuration (see below) |
+| `vox_cpm_2` | object | | VoxCPM2 engine sub-configuration (see below) |
 | `pocket_tts` | object | | Pocket-TTS engine sub-configuration (see below) |
 | `inflect_micro` | object | | Inflect-Micro-v2 engine sub-configuration (see below) |
-| `memory_mode` | string | `"always_loaded"` | `"always_loaded"` keeps the model resident for the session; `"on_demand"` loads it when it is needed and unloads it again after `idle_unload_secs` of no use. Affects the model-backed engines (Pocket-TTS, Breeze-TTS-2, Inflect-Micro-v2) — Piper and eSpeak hold no model between utterances. |
+| `memory_mode` | string | `"always_loaded"` | `"always_loaded"` keeps the model resident for the session; `"on_demand"` loads it when it is needed and unloads it again after `idle_unload_secs` of no use. Affects the model-backed engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Inflect-Micro-v2) — Piper and eSpeak hold no model between utterances. |
 | `idle_unload_secs` | int | `900` (15 min) | Idle time before the model is unloaded in `"on_demand"` mode. The countdown restarts on every use. Values below 30s are clamped to 30s. |
+| `snippets` | object | | Word/phrase pronunciation overrides expanded prior to synthesis (e.g. `{"VoxCtrl": "Vox Control"}`) |
 
 **`breeze_tts_2` sub-object:**
 
-[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with natural-language voice design speaker prompts. The model weights are gated on HuggingFace under the **BreezeBlue Research and Non-Commercial License** — supply your access token via `tts.hf_token`, the single token shared by every gated model, or export it as `HF_TOKEN`, which takes precedence and is never written to the config.
+[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with natural-language voice design speaker prompts and reference voice cloning. The model weights are gated on HuggingFace under the **BreezeBlue Research and Non-Commercial License** — supply your access token via `tts.hf_token`, the single token shared by every gated model, or export it as `HF_TOKEN`, which takes precedence and is never written to the config.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
+| `voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` to use a reference audio clip from `voice_dir` |
 | `speaker_prompt` | string | `"A calm and clear female voice speaking at a natural pace"` | Natural-language prompt describing the desired speaker voice for Voice Design |
+| `cloned_voice` | string | `"alba"` | Voice ID from the shared voice folder, used in `"clone"` mode |
+| `voice_dir` | string | `""` | Directory holding reference clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
 | `model_dir` | string | `""` | Directory holding model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
 | `prewarm` | bool | `false` | Pre-warm model weights and tensors on startup so first speech is instantaneous |
-| `gpu` | bool | `false` | Run synthesis on the GPU. Needs a build with the `breeze-cuda` or `breeze-metal` feature; falls back to the CPU otherwise, or when no GPU can be opened. Changing it reloads the model |
+| `gpu` | bool | `false` | Run synthesis on the GPU. Needs a build with the `breeze-cuda` or `breeze-metal` feature; falls back to the CPU otherwise |
+
+**`vox_cpm_2` sub-object:**
+
+[VoxCPM2](https://huggingface.co/openbmb/VoxCPM2) is an Apache-2.0 open-weight model by OpenBMB offering high quality 24 kHz speech synthesis with Voice Design and Voice Cloning.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` for reference voice clip cloning |
+| `speaker_prompt` | string | `"A calm young female voice speaking clearly with a gentle tone."` | Natural-language prompt for Voice Design |
+| `cloned_voice` | string | `"alba"` | Reference voice clip ID from `voice_dir` |
+| `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
+| `ultimate_cloning` | bool | `false` | Enables Ultimate Cloning when paired audio + transcript files are available |
+| `model_dir` | string | `""` | Directory holding model weights; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
+| `prewarm` | bool | `false` | Pre-warm model on startup for instantaneous first synthesis |
+| `gpu` | bool | `false` | Enable CUDA GPU acceleration |
 
 **`pocket_tts` sub-object:**
 
