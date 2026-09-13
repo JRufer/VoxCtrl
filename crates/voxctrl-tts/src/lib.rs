@@ -45,8 +45,8 @@ pub use piper::{
     piper_voices_dir, VoiceInfo, PIPER_VOICES,
 };
 pub use pocket::{
-    download_pocket_tts_assets, is_pocket_tts_ready, pocket_tts_voice, pocket_tts_voice_catalogue,
-    pocket_tts_voices_dir, PocketTtsVoiceInfo, PocketTtsVoiceOption, POCKET_TTS_VOICES,
+    cloned_tts_voices_dir, download_pocket_tts_assets, is_pocket_tts_ready, pocket_tts_voice,
+    pocket_tts_voice_catalogue, PocketTtsVoiceInfo, PocketTtsVoiceOption, POCKET_TTS_VOICES,
 };
 
 // Shared with voxctrl-inference, which applies the same logic to STT output.

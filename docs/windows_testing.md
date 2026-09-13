@@ -69,7 +69,7 @@ Check characters like `% ( ) + [ ] { } ^ ~` character by character. If any of th
 - **`Remote Speech Engine`**: If you run a local or LAN transcription server (e.g. Faster-Whisper-Server, vLLM, Whisper standalone), test connecting with your custom URL and Bearer token.
 
 ### d. Try On-Device S1-mini Dictation Cleanup
-In **Settings → Engine**, enable **S1-mini dictation cleanup** (or toggle it per-keybind in **Settings → Hotkeys**). VoxCtrl runs Superwhisper's Qwen3-0.6B model via a Vulkan-accelerated sidecar (with automatic CPU fallback) to normalize raw speech, correct punctuation, and clean spoken self-corrections while strictly preserving voice command triggers.
+In **Settings → Post-Processing**, enable **S1-mini dictation cleanup** (or toggle it per-keybind in **Settings → Hotkeys**). VoxCtrl runs Superwhisper's Qwen3-0.6B model via a Vulkan-accelerated sidecar (with automatic CPU fallback) to normalize raw speech, correct punctuation, and clean spoken self-corrections while strictly preserving voice command triggers. Enabling it greys out the Basic Text Cleanup options in the same tab, since S1-mini covers the same ground.
 
 ### e. Try Different Applications
 Test dictating into different apps:
@@ -83,7 +83,7 @@ Test dictating into different apps:
 A floating overlay appears while you speak and plays a smooth spring unload animation when done:
 - Does a **black console window** flash or appear? (It shouldn't.)
 - Does the overlay **steal focus** from your active window? (It shouldn't.)
-- Try the 4 built-in animated styles in **Settings → Visual**:
+- Try the 4 built-in animated styles in **Settings → Visual Feedback**:
   - **Ocean Wave (`blue_wave`)**: Rising tide pool with layered waves and target buoy.
   - **Voice Card (`voice_card`)**: Card flip with holographic sheen and LED dot matrix.
   - **Waveform (`waveform`)**: Oscilloscope CRT power-on trace.

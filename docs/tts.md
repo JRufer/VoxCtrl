@@ -20,7 +20,7 @@ Key capabilities include **Voice Design**, which generates voices from natural-l
 
 **Features & Optimization:**
 - **Voice Design Prompts:** Set `speaker_prompt` in Settings to describe the desired voice characteristics.
-- **HuggingFace Access Token:** The gated model weights require a HuggingFace access token, stored once as `tts.hf_token` and shared by Pocket-TTS and Breeze-TTS-2. The setup wizard asks for it on the voice step, and Settings → TTS edits the same value. An `HF_TOKEN` exported into the environment takes precedence: it is shown in both fields read-only and is never written to the config.
+- **HuggingFace Access Token:** The gated model weights require a HuggingFace access token, stored once as `tts.hf_token` and shared by every gated engine (Pocket-TTS, Breeze-TTS-2, VoxCPM2). The setup wizard asks for it on the voice step, and Settings → General edits the same value. An `HF_TOKEN` exported into the environment takes precedence: it is shown read-only and is never written to the config.
 - **Prewarming:** Enables startup prewarming to load weights into VRAM so the first synthesis is instant.
 - **GPU Acceleration:** CUDA (NVIDIA) or Metal (macOS) offload can be enabled for near real-time response speeds, in a build that includes the matching feature. See [GPU Acceleration](#gpu-acceleration).
 
@@ -35,7 +35,7 @@ VoxCtrl invokes the `piper` binary directly (looks first in `~/.local/share/voxc
 Instead of fixed precomputed voice embeddings, Pocket-TTS clones a voice from a short reference audio clip at runtime (`TTSModel::get_voice_state()`). VoxCtrl ships a small built-in catalogue of reference clips so users get a normal voice-picker UX without needing to record anything themselves.
 
 **Prerequisites:**
-- A HuggingFace account that has accepted the license for the gated [`kyutai/pocket-tts`](https://huggingface.co/kyutai/pocket-tts) model repo, and a personal access token with read access. Set it as `tts.hf_token` — in the setup wizard's voice step, or in Settings → TTS — or export it as `HF_TOKEN`, which wins over the saved one.
+- A HuggingFace account that has accepted the license for the gated [`kyutai/pocket-tts`](https://huggingface.co/kyutai/pocket-tts) model repo, and a personal access token with read access. Set it as `tts.hf_token` — in the setup wizard's voice step, or in Settings → General — or export it as `HF_TOKEN`, which wins over the saved one.
 
 Model weights and the per-voice reference clips are downloaded on demand via `pocket_tts::weights::download_if_necessary`, which resolves `hf://owner/repo/filename[@revision]` URIs through the standard HuggingFace cache (`~/.cache/huggingface/hub/`). Subsequent loads are read straight from the local cache — no network access required once downloaded.
 
@@ -98,7 +98,7 @@ Test button cannot distinguish.
 
 **Key Features:**
 - **Voice Design**: Generate speech using a natural-language description of the speaker voice (`speaker_prompt`), e.g. *"A calm young female voice speaking clearly with a gentle tone."*
-- **Voice Cloning**: Clone a voice using reference `.wav` audio clips stored in the shared voices directory (`~/.local/share/voxctrl/pocket-tts-voices/`).
+- **Voice Cloning**: Clone a voice using reference `.wav` audio clips stored in the shared voices directory (`~/.local/share/voxctrl/cloned-tts-voices/`).
 - **Ultimate Cloning**: When paired reference audio and matching transcript files exist in the same directory, VoxCPM2 enables high-fidelity cloned synthesis.
 - **Pure Rust Engine**: Runs natively via Candle without Python or external subprocesses.
 - **Model Storage**: Model assets (`config.json`, `generation_config.json`, weights) are stored in `~/.local/share/voxctrl/models/voxcpm2/` (configurable via `tts.vox_cpm_2.model_dir`).
@@ -188,7 +188,7 @@ None — the model has a single fixed English voice, so Settings shows a seed an
 
 ### Custom Pocket-TTS Voices
 
-Drop a `.wav` reference clip into the configured `pocket_tts.voice_dir` (default `~/.local/share/voxctrl/pocket-tts-voices/`) to add it to the voice list — no re-encoding or extra metadata needed:
+Drop a `.wav` reference clip into the configured `pocket_tts.voice_dir` (default `~/.local/share/voxctrl/cloned-tts-voices/`) to add it to the voice list — no re-encoding or extra metadata needed:
 
 - The filename (without extension) becomes the voice's id, e.g. `narrator.wav` adds a voice listed as "Narrator (Custom)".
 - Naming a clip after a built-in voice (e.g. `alba.wav`) overrides that voice's bundled reference clip instead of adding a new entry.
@@ -370,11 +370,11 @@ Under `tts` in `config.json`:
 | `hf_token` | string or null | `null` | The single HuggingFace access token used to download every gated model (Pocket-TTS and Breeze-TTS-2). An exported `HF_TOKEN` takes precedence and is never saved here. A config written when each engine held its own copy is migrated to this key on load |
 | `pocket_tts.voice` | string | `"alba"` | Default Pocket-TTS voice ID: `"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"` |
 | `pocket_tts.prewarm` | bool | `false` | Pre-warm model on startup for faster first synthesis |
-| `pocket_tts.voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
+| `pocket_tts.voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `breeze_tts_2.voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` to use a reference clip |
 | `breeze_tts_2.speaker_prompt` | string | *(a calm, clear female voice)* | Natural-language description of the speaker, used in `"prompt"` mode |
 | `breeze_tts_2.cloned_voice` | string | `"alba"` | Voice id from the shared clip folder, used in `"clone"` mode |
-| `breeze_tts_2.voice_dir` | string | `""` | Shared with Pocket-TTS; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
+| `breeze_tts_2.voice_dir` | string | `""` | Shared with Pocket-TTS; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `breeze_tts_2.model_dir` | string | `""` | Model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
 | `breeze_tts_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
 | `breeze_tts_2.gpu` | bool | `false` | Run synthesis on the GPU; needs a `breeze-cuda` / `breeze-metal` build, CPU otherwise |

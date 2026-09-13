@@ -39,13 +39,20 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### General Tab
 - "Open setup wizard" button — re-runs the first-run wizard
+- **HuggingFace access token** — the single field for the token used by every gated model VoxCtrl can download (Pocket-TTS, Breeze-TTS-2, VoxCPM2); read-only, showing the value, when `HF_TOKEN` is exported. Writes `tts.hf_token`, the same field the setup wizard's voice step edits, so a token entered in either place shows up in the other.
 - "Check for a new version on launch" toggle, and a "Check for updates" button that reports the result inline
-- Overlay show/hide toggle
-- Overlay style selector
-- Auto-show settings on startup toggle
-- Desktop notification toggle
+- MCP server toggle, visual feedback toggle, and record timeout control
 - Recording status indicator and word count
 - Manual record/stop button
+
+### Audio Input Tab
+- Input device selector (lists all CPAL devices)
+- Gain slider
+- VAD threshold slider
+- Noise suppression toggle (RNNoise; applies to the next recording)
+- Dynamic stream toggle
+- Live audio level meter (VU meter, updates from `audio-level` events during monitoring)
+- Evdev device path input
 
 ### Engine Tab
 - Backend selector (`whisper-cpp`, `moonshine`, `parakeet`, `remote-openai`)
@@ -55,8 +62,17 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 - Moonshine model and language settings
 - Parakeet TDT model selector and download controls
 - Remote Speech Engine settings (endpoint URL, Bearer API token, model identifier, ISO language, and interactive "Test Connection" button with server model discovery tag chips)
-- **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), and reactive download progress for Qwen3-0.6B model files (~480 MB)
 - **Missing Model Warning & Auto-Redirection**: Startup check programmatically determines if the configured voice model file is downloaded. If missing, it immediately switches the active Settings tab to "Engine" and presents a yellow warning alert prompting the user to select and download a model.
+
+### Post-Processing Tab
+- **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), and reactive download progress for Qwen3-0.6B model files (~480 MB)
+- **Basic Text Cleanup**: filler removal, spoken punctuation, and auto-format-lists toggles. Greyed out and disabled whenever S1-mini is enabled, with a note that S1-mini already covers the same normalization — the two are never applied together.
+- Custom vocabulary list editor
+- Snippet key-value editor
+
+### Hotkeys Tab
+- Hotkey binding management (add/edit/delete bindings, key combo recorder, gesture selector). Shows which mechanism is delivering shortcuts and, on the portal path, the keys your desktop actually bound for each binding — which may differ from what was requested, since your desktop gets the final say. The key recorder captures inside VoxCtrl's own focused window using ordinary browser key events; it is not a global listener. It refuses combinations no desktop can bind — modifiers with no regular key, or two regular keys — explains why while you are still recording, and leaves the existing shortcut in place.
+- Per-keybind S1-mini dictation cleanup override, shown as a cyan `S1-mini` badge on active bindings
 
 ### Output Commands Tab
 - Visual editor for `targets.toml` — add/edit/delete output commands (the tab is
@@ -69,9 +85,8 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
   live preview that flags an invalid pattern
 - Per-target processing override controls (filler removal, spoken punctuation, list formatting, code mode)
 - Single-line mode for `inject` and `command` targets
-- Hotkey binding management (add/edit/delete bindings, key combo recorder, gesture selector). Shows which mechanism is delivering shortcuts and, on the portal path, the keys your desktop actually bound for each binding — which may differ from what was requested, since your desktop gets the final say. The key recorder captures inside VoxCtrl's own focused window using ordinary browser key events; it is not a global listener. It refuses combinations no desktop can bind — modifiers with no regular key, or two regular keys — explains why while you are still recording, and leaves the existing shortcut in place.
 
-### Visual Tab
+### Visual Feedback Tab
 - Preview and selection of overlay animation styles
 - **Show overlay on voice command trigger**: Checkbox toggle to enable or disable displaying the temporary UI overlay pill when a voice command trigger is activated (`show_command_overlay`).
 - **Command overlay duration (seconds)**: Number input control to set the display duration (1–10s, default 3s) for the voice command overlay pill (`command_overlay_duration_secs`).
@@ -79,19 +94,9 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 - **Overlay Display Control**: Dropdown choice to select which target monitor display screen (**Primary Monitor** or specific connected panels like `"HDMI-1"`) the visual overlay appears on. Features a graceful disconnection primary display failover and a golden warning badge alert.
 - Overlay appearance controls
 
-### Audio Tab
-- Input device selector (lists all CPAL devices)
-- Gain slider
-- VAD threshold slider
-- Noise suppression toggle (RNNoise; applies to the next recording)
-- Dynamic stream toggle
-- Live audio level meter (VU meter, updates from `audio-level` events during monitoring)
-- Evdev device path input
-
 ### TTS Tab
 - Enable/disable toggle
 - Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2)
-- HuggingFace access token — one field, shared by every gated model; read-only, showing the value, when `HF_TOKEN` is exported
 - Voice design speaker prompt inputs for Breeze-TTS-2 and VoxCPM2
 - Reference voice selector with download status per voice and support for custom `.wav` voice clips
 - Model Memory mode selector (**Always Loaded** vs **On Demand** with idle unload minutes slider)
@@ -99,12 +104,7 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 - Stop key configuration
 - Response overlay toggle
 
-### Features Tab
-- Filler removal toggle
-- Spoken punctuation toggle
-- Auto-format lists toggle
-- Custom vocabulary list editor
-- Snippet key-value editor
+Gated engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2) point to the single HuggingFace access token field in the **General** tab rather than each carrying its own copy.
 
 ### OpenAI API Tab
 Configures post-processing through any OpenAI-compatible API server (a local
