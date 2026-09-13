@@ -670,7 +670,7 @@ await listen<AppConfig>('config-changed', (event) => {
 
 ### `audio-level`
 Emitted with the current RMS energy level (0.0–1.0+) while recording or
-monitoring — the overlay visualisers and the Audio tab's VU meter respectively.
+monitoring — the overlay visualisers and the Audio Input tab's VU meter respectively.
 Nothing is emitted when neither is watching.
 
 The microphone produces a level for every buffer it delivers, which is far more

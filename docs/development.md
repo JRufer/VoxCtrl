@@ -197,7 +197,7 @@ fallback covers a GPU that fails to open at runtime.
 ### Noise suppression
 
 RNNoise sits behind `noisereduce` on `voxctrl-audio`, and `src-tauri` enables it,
-so a normal build can honor the Audio tab's noise-suppression toggle. Building
+so a normal build can honor the Audio Input tab's noise-suppression toggle. Building
 `voxctrl-audio` on its own (or with `--no-default-features` on that crate) leaves
 it out, and the toggle then logs a warning and passes audio through unchanged.
 Its tests need the feature:

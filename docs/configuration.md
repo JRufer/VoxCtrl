@@ -202,7 +202,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `enabled` | bool | `false` | Enable on-device text normalization using Superwhisper's fine-tuned S1-mini (Qwen3-0.6B) model. |
 | `styling` | string | `"semi-formal"` | Text styling passed to S1-mini (`"semi-formal"`, `"formal"`, `"casual"`, etc.). |
 
-> **Model files:** Enabling S1-mini requires downloading `s1-mini-q4_k_m.gguf` (~462 MB) and `tokenizer.json` (~11.4 MB) from Hugging Face (~480 MB download total). When toggled on in Settings → Engine, VoxCtrl automatically checks for these files in `~/.local/share/voxctrl/models/s1-mini/` and downloads them if missing.
+> **Model files:** Enabling S1-mini requires downloading `s1-mini-q4_k_m.gguf` (~462 MB) and `tokenizer.json` (~11.4 MB) from Hugging Face (~480 MB download total). When toggled on in Settings → Post-Processing, VoxCtrl automatically checks for these files in `~/.local/share/voxctrl/models/s1-mini/` and downloads them if missing.
 
 ### `audio` section
 
@@ -308,7 +308,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` to use a reference audio clip from `voice_dir` |
 | `speaker_prompt` | string | `"A calm and clear female voice speaking at a natural pace"` | Natural-language prompt describing the desired speaker voice for Voice Design |
 | `cloned_voice` | string | `"alba"` | Voice ID from the shared voice folder, used in `"clone"` mode |
-| `voice_dir` | string | `""` | Directory holding reference clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
+| `voice_dir` | string | `""` | Directory holding reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `model_dir` | string | `""` | Directory holding model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
 | `prewarm` | bool | `false` | Pre-warm model weights and tensors on startup so first speech is instantaneous |
 | `gpu` | bool | `false` | Run synthesis on the GPU. Needs a build with the `breeze-cuda` or `breeze-metal` feature; falls back to the CPU otherwise |
@@ -322,7 +322,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `voice_mode` | string | `"prompt"` | `"prompt"` for Voice Design, `"clone"` for reference voice clip cloning |
 | `speaker_prompt` | string | `"A calm young female voice speaking clearly with a gentle tone."` | Natural-language prompt for Voice Design |
 | `cloned_voice` | string | `"alba"` | Reference voice clip ID from `voice_dir` |
-| `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/` |
+| `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `ultimate_cloning` | bool | `false` | Enables Ultimate Cloning when paired audio + transcript files are available |
 | `model_dir` | string | `""` | Directory holding model weights; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
 | `prewarm` | bool | `false` | Pre-warm model on startup for instantaneous first synthesis |
@@ -339,7 +339,7 @@ license on HuggingFace and supply a personal access token via `tts.hf_token`.
 |---|---|---|---|
 | `voice` | string | `"alba"` | Bundled reference voice ID (`"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"`), or the filename stem of a custom clip in `voice_dir` |
 | `prewarm` | bool | `false` | Pre-warm model on startup so first speech is instantaneous |
-| `voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/pocket-tts-voices/`. Drop a `<id>.wav` file in to add it to the voice list — naming it after a built-in voice (e.g. `alba.wav`) overrides that voice's clip. Supports `~` expansion. |
+| `voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/`. Drop a `<id>.wav` file in to add it to the voice list — naming it after a built-in voice (e.g. `alba.wav`) overrides that voice's clip. Supports `~` expansion. |
 
 **`inflect_micro` sub-object:**
 

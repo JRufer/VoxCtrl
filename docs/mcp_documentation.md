@@ -463,9 +463,9 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 
 **`transcribe_voice` returns `(no speech detected)`**
 
-* Confirm your microphone is selected in **Settings → Audio**.
+* Confirm your microphone is selected in **Settings → Audio Input**.
 * Raise `timeout_seconds` — the configured default (15 s out of the box) may be too short if recording takes time to initialize.
-* Check the VAD threshold in **Settings → Audio** — a higher sensitivity value (lower raw threshold) may be needed for quiet speech.
+* Check the VAD threshold in **Settings → Audio Input** — a higher sensitivity value (lower raw threshold) may be needed for quiet speech.
 
 **Claude Desktop does not see the tools**
 

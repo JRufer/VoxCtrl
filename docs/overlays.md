@@ -29,7 +29,7 @@ Every built-in style plays a dedicated load animation when it appears and an unl
 
 The visual presentation overlay window can be positioned dynamically on the active monitor where your mouse cursor or focused application is located. 
 
-Users can configure the screen alignment under **Settings** -> **Visual & Feedback** -> **Overlay position** or manually in `config.json` via `ui.overlay_position`.
+Users can configure the screen alignment under **Settings** -> **Visual Feedback** -> **Overlay position** or manually in `config.json` via `ui.overlay_position`.
 
 Available screen positions:
 - **`"center"` (Default)** — Positions the overlay at the exact horizontal and vertical center of the active monitor.
@@ -44,7 +44,7 @@ Tauri dynamically calculates physical pixel values taking into account your disp
 
 In multi-monitor setups, VoxCtrl allows you to specify exactly which display screen the visual overlay should appear on.
 
-You can configure the target display under **Settings** -> **Visual & Feedback** -> **Overlay display** or manually in `config.json` via `ui.overlay_monitor`.
+You can configure the target display under **Settings** -> **Visual Feedback** -> **Overlay display** or manually in `config.json` via `ui.overlay_monitor`.
 
 Options:
 - **`"primary"` (Default)** — Constrains the overlay to the OS-defined primary display screen.
@@ -127,5 +127,5 @@ When a voice command trigger is activated (e.g. saying *"VoxCtrl notes Help me!"
 - **Visuals**: Dark purple/indigo background (`rgba(30, 16, 60, 0.94)`) with a glowing purple border (`#a855f7`) and a flashing lightning bolt icon (`⚡`).
 - **Content**: Displays the executed command target name (e.g. `NOTES` or `MEETING JOURNAL`) and a summary of the text payload (`▸ Help me!`).
 - **Duration**: Auto-dismisses after a configurable duration (default: 3 seconds, configurable via `config.ui.command_overlay_duration_secs`).
-- **Toggle**: Controlled via **Settings → Visual & Feedback → Show overlay on voice command trigger** (`config.ui.show_command_overlay`).
+- **Toggle**: Controlled via **Settings → Visual Feedback → Show overlay on voice command trigger** (`config.ui.show_command_overlay`).
 

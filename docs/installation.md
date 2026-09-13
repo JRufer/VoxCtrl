@@ -408,7 +408,7 @@ end to end. Its steps say which. The two it cannot fix for you:
 - The default "Dictate (Hold)" gesture requires the combo to be **held** ~200ms
   before recording starts — a very quick tap is ignored by design.
 - If a "no microphone audio is arriving" notification appears, pick a working
-  input device in Settings → Audio.
+  input device in Settings → Audio Input.
 
 ### TTS engines refuse to play
 - **Piper**: download a voice in Settings → TTS first — this also installs the

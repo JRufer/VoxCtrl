@@ -40,17 +40,19 @@ pub fn pocket_tts_voice(id: &str) -> Option<&'static PocketTtsVoiceInfo> {
     POCKET_TTS_VOICES.iter().find(|v| v.id == id)
 }
 
-/// Default directory scanned for user-supplied Pocket-TTS voice clips.
-pub fn pocket_tts_voices_dir() -> PathBuf {
+/// Default directory scanned for user-supplied voice clips, shared by every
+/// voice-cloning engine (Pocket-TTS, Breeze-TTS-2, VoxCPM2) — not specific to
+/// Pocket-TTS despite living in this module.
+pub fn cloned_tts_voices_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("voxctrl")
-        .join("pocket-tts-voices")
+        .join("cloned-tts-voices")
 }
 
-fn resolve_pocket_tts_voices_dir(voice_dir: &str) -> PathBuf {
+fn resolve_cloned_tts_voices_dir(voice_dir: &str) -> PathBuf {
     if voice_dir.is_empty() {
-        pocket_tts_voices_dir()
+        cloned_tts_voices_dir()
     } else {
         expand_tilde(voice_dir)
     }
@@ -59,7 +61,7 @@ fn resolve_pocket_tts_voices_dir(voice_dir: &str) -> PathBuf {
 /// Scans `voice_dir` for `<id>.wav` files, returning `(id, path)` pairs. A file named
 /// after a built-in voice (e.g. `alba.wav`) overrides that voice's bundled reference clip.
 fn scan_custom_pocket_tts_voices(voice_dir: &str) -> Vec<(String, PathBuf)> {
-    let dir = resolve_pocket_tts_voices_dir(voice_dir);
+    let dir = resolve_cloned_tts_voices_dir(voice_dir);
     let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
 
     let mut found = Vec::new();
