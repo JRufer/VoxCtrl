@@ -306,3 +306,16 @@ For in-depth guides, architectural references, and developer documentation:
 ## 📄 License
 
 VoxCtrl is open-source software licensed under the [MIT License](LICENSE).
+
+---
+
+## Buy me a coffee
+
+If you find VoxCtrl useful, please consider supporting its development with a small contribution:
+
+<a href="https://www.buymeacoffee.com/jrufer" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217">
+</a>
+
+Thank you for your support! ❤️
+  
