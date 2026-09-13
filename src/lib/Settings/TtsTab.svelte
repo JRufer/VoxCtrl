@@ -561,24 +561,12 @@
   }
 
   /**
-   * The HuggingFace token, shown by both gated-engine panels.
-   *
-   * One token serves every gated model, so the panels edit the same field
-   * rather than keeping a copy each. A token exported as `HF_TOKEN` wins at
-   * download time, so when the session has one it is displayed here read-only
-   * and never written to the config — a value typed over it would be saved and
-   * then ignored.
+   * Whether the session has an `HF_TOKEN` environment variable, shown as a
+   * note by the gated-engine panels. The token itself is entered once in the
+   * General tab, which is the single source of truth for `tts.hf_token`.
    */
   let envHfToken = $state<string | null>(null);
   const hfFromEnv = $derived(!!envHfToken);
-  const hfTokenShown = $derived(envHfToken ?? cfg.tts.hf_token ?? "");
-
-  function onHfTokenChanged(e: Event) {
-    if (hfFromEnv) return;
-    const val = (e.target as HTMLInputElement).value;
-    cfg.tts.hf_token = val.trim() ? val.trim() : null;
-    markDirty();
-  }
 
   async function onEngineChanged() {
     markDirty();
@@ -1010,7 +998,7 @@
           onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.vox_cpm_2.voice_dir); }}
         />
       </div>
-      <p class="hint">Default directory: <code>~/.local/share/voxctrl/pocket-tts-voices/</code></p>
+      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
 
       <div class="field" style="margin-top: 6px;">
         <span>Enable Ultimate Cloning</span>
@@ -1056,25 +1044,11 @@
       {/if}
     </div>
 
-    <div class="field">
-      <span>HuggingFace access token</span>
-      <input
-        type="password"
-        value={hfTokenShown}
-        readonly={hfFromEnv}
-        title={hfFromEnv ? "Set by the HF_TOKEN environment variable" : undefined}
-        oninput={onHfTokenChanged}
-      />
-    </div>
-    {#if hfFromEnv}
-      <p class="hint">
-        Using the <code>HF_TOKEN</code> environment variable. It takes precedence over a saved
-        token and is not written to your config.
-      </p>
-    {/if}
     <p class="hint">
       VoxCPM2 model files are hosted on HuggingFace at <code>huggingface.co/openbmb/VoxCPM2</code>.
-      An optional token can avoid anonymous download rate limits.
+      An optional token can avoid anonymous download rate limits — set it once in the
+      <strong>General</strong> tab.
+      {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
     </p>
 
     <label class="field">
@@ -1176,7 +1150,7 @@
           onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.breeze_tts_2.voice_dir); }}
         />
       </div>
-      <p class="hint">Default directory: <code>~/.local/share/voxctrl/pocket-tts-voices/</code></p>
+      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
 
       <div class="license-warning-card" style="margin-top: 4px; margin-bottom: 8px;">
         <p class="license-title">💡 Voice Cloning Transcript Requirement</p>
@@ -1217,26 +1191,12 @@
       {/if}
     </div>
 
-    <div class="field">
-      <span>HuggingFace access token</span>
-      <input
-        type="password"
-        value={hfTokenShown}
-        readonly={hfFromEnv}
-        title={hfFromEnv ? "Set by the HF_TOKEN environment variable" : undefined}
-        oninput={onHfTokenChanged}
-      />
-    </div>
-    {#if hfFromEnv}
-      <p class="hint">
-        Using the <code>HF_TOKEN</code> environment variable. It takes precedence over a saved
-        token and is not written to your config.
-      </p>
-    {/if}
     <p class="hint">
       Breeze-TTS-2 model weights are hosted on HuggingFace. Create a token at
       <code>huggingface.co/settings/tokens</code> and accept the license at
-      <code>huggingface.co/BreezeBlue/Breeze-TTS-2</code> before downloading. This token is shared with Pocket-TTS.
+      <code>huggingface.co/BreezeBlue/Breeze-TTS-2</code> before downloading, then set the token
+      once in the <strong>General</strong> tab — it is shared with every other gated engine.
+      {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
     </p>
 
     <label class="field">
@@ -1298,27 +1258,12 @@
       {/if}
     </div>
 
-    <div class="field">
-      <span>HuggingFace access token</span>
-      <input
-        type="password"
-        value={hfTokenShown}
-        readonly={hfFromEnv}
-        title={hfFromEnv ? "Set by the HF_TOKEN environment variable" : undefined}
-        oninput={onHfTokenChanged}
-      />
-    </div>
-    {#if hfFromEnv}
-      <p class="hint">
-        Using the <code>HF_TOKEN</code> environment variable. It takes precedence over a saved
-        token and is not written to your config.
-      </p>
-    {/if}
     <p class="hint">
       Pocket-TTS model weights are hosted on a gated HuggingFace repo. Create a token at
       <code>huggingface.co/settings/tokens</code> and accept the license at
-      <code>huggingface.co/kyutai/pocket-tts</code> before downloading. This is the same token
-      Breeze-TTS-2 uses — the app stores one.
+      <code>huggingface.co/kyutai/pocket-tts</code> before downloading, then set the token once in
+      the <strong>General</strong> tab — it is shared with every other gated engine.
+      {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
     </p>
 
     <div class="field">
@@ -1339,7 +1284,7 @@
       Drop a <code>.wav</code> reference clip into this folder to add it to the voice list —
       the filename (without extension) becomes the voice's id, e.g. <code>narrator.wav</code> adds
       "Narrator (Custom)". Naming a clip after a built-in voice (e.g. <code>alba.wav</code>) replaces
-      that voice's reference clip. Default: <code>~/.local/share/voxctrl/pocket-tts-voices/</code>
+      that voice's reference clip. Default: <code>~/.local/share/voxctrl/cloned-tts-voices/</code>
     </p>
   </div>
   {/if}

@@ -443,7 +443,7 @@ pub struct PocketTtsConfig {
     #[serde(default, rename = "hf_token", skip_serializing_if = "Option::is_none")]
     pub legacy_hf_token: Option<String>,
     /// Directory scanned for custom voice clips (`<id>.wav`). Empty = platform default
-    /// (`~/.local/share/voxctrl/pocket-tts-voices/`).
+    /// (`~/.local/share/voxctrl/cloned-tts-voices/`).
     #[serde(default)]
     pub voice_dir: String,
 }
@@ -470,7 +470,7 @@ pub struct BreezeTts2Config {
     /// Selected cloned voice ID from the shared voice folder (e.g. "alba", "my_voice")
     #[serde(default = "default_breeze_tts_2_cloned_voice")]
     pub cloned_voice: String,
-    /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/pocket-tts-voices/`)
+    /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/cloned-tts-voices/`)
     #[serde(default)]
     pub voice_dir: String,
     /// Text prompt describing the voice of the speaker (Voice Design)
@@ -525,7 +525,7 @@ pub struct VoxCpm2Config {
     /// Selected cloned voice ID from the shared voice folder (e.g. "alba", "my_voice")
     #[serde(default = "default_vox_cpm_2_cloned_voice")]
     pub cloned_voice: String,
-    /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/pocket-tts-voices/`)
+    /// Shared voice directory for custom clips (empty = platform default `~/.local/share/voxctrl/cloned-tts-voices/`)
     #[serde(default)]
     pub voice_dir: String,
     /// Text prompt describing speaker characteristics (for Voice Design)
@@ -805,6 +805,32 @@ fn migrate_hf_token(data: &mut AppConfig) -> bool {
     true
 }
 
+/// Rename `<base>/voxctrl/pocket-tts-voices` to `<base>/voxctrl/cloned-tts-voices`,
+/// the shared clip folder's new name now that it is used by every
+/// voice-cloning TTS engine, not just Pocket-TTS. Returns whether a rename
+/// happened; a no-op once it has, or if the user never had the old folder.
+fn migrate_cloned_voices_dir_at(base: &std::path::Path) -> bool {
+    let old_dir = base.join("voxctrl").join("pocket-tts-voices");
+    let new_dir = base.join("voxctrl").join("cloned-tts-voices");
+    if old_dir.exists() && !new_dir.exists() {
+        match std::fs::rename(&old_dir, &new_dir) {
+            Ok(()) => return true,
+            Err(e) => tracing::error!(
+                "Failed to migrate {} to {}: {e}",
+                old_dir.display(),
+                new_dir.display()
+            ),
+        }
+    }
+    false
+}
+
+fn migrate_cloned_voices_dir() {
+    if let Some(base) = dirs::data_local_dir() {
+        migrate_cloned_voices_dir_at(&base);
+    }
+}
+
 /// Read a config file, keeping every section that parses.
 ///
 /// serde is all-or-nothing: one unreadable value anywhere in the file — a
@@ -946,6 +972,10 @@ impl Config {
                 tracing::error!("Failed to save migrated HuggingFace token: {e}");
             }
         }
+
+        // The shared voice-clip folder used to be named after Pocket-TTS even
+        // though every cloning engine uses it; rename it on disk once.
+        migrate_cloned_voices_dir();
 
         Self { data, path }
     }
@@ -1298,6 +1328,44 @@ mod tests {
         assert!(migrate_hf_token(&mut data));
         assert_eq!(data.tts.hf_token.as_deref(), Some("hf_current"));
         assert!(data.tts.pocket_tts.legacy_hf_token.is_none());
+    }
+
+    /// The shared voice-clip folder is renamed from its old Pocket-TTS-only
+    /// name to the new engine-neutral one, preserving its contents.
+    #[test]
+    fn migrates_the_cloned_voices_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let old_dir = base.path().join("voxctrl").join("pocket-tts-voices");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join("narrator.wav"), b"fake wav data").unwrap();
+
+        assert!(migrate_cloned_voices_dir_at(base.path()));
+
+        let new_dir = base.path().join("voxctrl").join("cloned-tts-voices");
+        assert!(!old_dir.exists());
+        assert!(new_dir.join("narrator.wav").exists());
+    }
+
+    /// With no old folder there is nothing to do, and an existing new folder
+    /// is never overwritten.
+    #[test]
+    fn cloned_voices_migration_is_a_noop_without_the_old_folder() {
+        let base = tempfile::tempdir().unwrap();
+        assert!(!migrate_cloned_voices_dir_at(base.path()));
+
+        let old_dir = base.path().join("voxctrl").join("pocket-tts-voices");
+        let new_dir = base.path().join("voxctrl").join("cloned-tts-voices");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join("a.wav"), b"old").unwrap();
+        std::fs::create_dir_all(&new_dir).unwrap();
+        std::fs::write(new_dir.join("b.wav"), b"new").unwrap();
+
+        assert!(
+            !migrate_cloned_voices_dir_at(base.path()),
+            "must not clobber an existing new folder"
+        );
+        assert!(new_dir.join("b.wav").exists());
+        assert!(old_dir.join("a.wav").exists());
     }
 
 

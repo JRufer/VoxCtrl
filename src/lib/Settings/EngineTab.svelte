@@ -7,9 +7,6 @@
   import CustomSelect from "./CustomSelect.svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
-  if (cfg.engine && !cfg.engine.s1_mini) {
-    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal" };
-  }
   function markDirty() {
     config.set(cfg);
     configDirty.set(true);
@@ -38,7 +35,6 @@
   let whisperGpu = $state<string | null>(null);
   let moonshineGpu = $state<string | null>(null);
   let parakeetGpu = $state<string | null>(null);
-  let s1MiniGpu = $state<string | null>(null);
 
   const GPU_LABELS: Record<string, string> = {
     cuda: "CUDA (NVIDIA)",
@@ -146,53 +142,6 @@
     const selected = cfg.engine.parakeet?.model_size ?? "tdt-0.6b-v3";
     if (parakeetAvailable && !parakeetDownloadedMap[selected]) {
       await triggerParakeetDownload(selected);
-    }
-  }
-
-  // ── S1-mini Dictation Cleanup ────────────────────────────────────────────
-  let s1MiniDownloaded = $state(false);
-  let s1MiniChecking = $state(false);
-  let s1MiniDownloading = $state(false);
-
-  function ensureS1MiniConfig() {
-    if (!cfg.engine.s1_mini) {
-      cfg.engine.s1_mini = {
-        enabled: false,
-        styling: "semi-formal",
-      };
-    }
-  }
-
-  async function checkS1MiniDownloaded() {
-    s1MiniChecking = true;
-    try {
-      s1MiniDownloaded = await invoke<boolean>("check_s1_mini_downloaded");
-    } catch (e) {
-      console.error("Failed to check S1-mini download status", e);
-      s1MiniDownloaded = false;
-    } finally {
-      s1MiniChecking = false;
-    }
-  }
-
-  async function triggerS1MiniDownload() {
-    if (s1MiniDownloading) return;
-    s1MiniDownloading = true;
-    try {
-      await invoke("download_s1_mini_model");
-      s1MiniDownloaded = true;
-    } catch (e) {
-      alert(`Failed to download S1-mini model: ${e}`);
-    } finally {
-      s1MiniDownloading = false;
-    }
-  }
-
-  async function onS1MiniToggle() {
-    ensureS1MiniConfig();
-    markDirty();
-    if (cfg.engine.s1_mini.enabled && !s1MiniDownloaded) {
-      await triggerS1MiniDownload();
     }
   }
 
@@ -352,8 +301,6 @@
   }
 
   onMount(async () => {
-    ensureS1MiniConfig();
-    checkS1MiniDownloaded();
     checkAllModelsDownloaded();
     try {
       moonshineAvailable = await invoke<boolean>("moonshine_available");
@@ -377,7 +324,6 @@
       whisperGpu = support.whisper_gpu ?? null;
       moonshineGpu = support.moonshine_gpu ?? null;
       parakeetGpu = support.parakeet_gpu ?? null;
-      s1MiniGpu = support.s1_mini_gpu ?? null;
     } catch (e) {
       console.error("Failed to query GPU support", e);
     }
@@ -424,77 +370,6 @@
       <span>Backend</span>
       <CustomSelect bind:value={cfg.engine.backend} options={backendOptions} onchange={markDirty} />
     </label>
-  </div>
-
-  <div class="field-group">
-    <div class="field-label-row">
-      <h3>S1-mini Dictation Cleanup</h3>
-      {#if s1MiniDownloaded}
-        <span class="status-pill success">✔ Ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)})` : "(CPU)"}</span>
-      {:else if s1MiniDownloading}
-        <span class="status-pill downloading">⏳ Downloading</span>
-      {:else if cfg.engine.s1_mini?.enabled}
-        <span class="status-pill error">Missing</span>
-      {/if}
-    </div>
-
-    <label class="field">
-      <div class="field-title-col">
-        <span>Enable S1-mini dictation cleanup</span>
-        <p class="hint">
-          Uses Superwhisper's local Qwen-based text normalizer to clean speech-to-text transcripts into natural punctuation, casing, and spoken corrections while strictly preserving voice commands.
-        </p>
-      </div>
-      <input
-        type="checkbox"
-        bind:checked={cfg.engine.s1_mini.enabled}
-        onchange={onS1MiniToggle}
-      />
-    </label>
-
-    <div class="s1-mini-note">
-      Note: S1-Mini is a ~480 MB download.
-    </div>
-
-    {#if cfg.engine.s1_mini?.enabled}
-      <div class="model-status-container mt-1">
-        {#if s1MiniChecking}
-          <span class="status-checking">⏳ Checking S1-mini model files...</span>
-        {:else if s1MiniDownloading}
-          <span class="status-downloading"
-            >⏳ Downloading S1-mini model (s1-mini-q4_k_m.gguf & tokenizer.json)...</span
-          >
-        {:else if s1MiniDownloaded}
-          <span class="status-downloaded">✔ Model downloaded and ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)} GPU accelerated)` : "on CPU"}</span>
-        {:else}
-          <div class="status-missing-wrapper">
-            <span class="status-missing">❌ Model files missing</span>
-            <button
-              class="btn-download"
-              type="button"
-              onclick={triggerS1MiniDownload}
-            >
-              📥 Download S1-mini
-            </button>
-          </div>
-        {/if}
-      </div>
-
-      <label class="field">
-        <span>Cleanup styling</span>
-        <CustomSelect
-          bind:value={cfg.engine.s1_mini.styling}
-          options={[
-            { value: "semi-formal", label: "Semi-formal (Default)" },
-            { value: "casual", label: "Casual" },
-            { value: "formal", label: "Formal" },
-            { value: "verbatim", label: "Verbatim" },
-            { value: "concise", label: "Concise" }
-          ]}
-          onchange={markDirty}
-        />
-      </label>
-    {/if}
   </div>
 
   {#if cfg.engine.backend === "whisper-cpp"}
@@ -892,19 +767,4 @@
     @apply border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10;
   }
 
-  .field-title-col {
-    @apply flex flex-col flex-1 mr-4;
-  }
-  .field-title-col span {
-    @apply text-[13px] font-medium text-[var(--color-obsidian-100)];
-  }
-  .field-title-col .hint {
-    @apply text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed;
-  }
-  .s1-mini-note {
-    @apply text-[11.5px] font-medium text-[var(--color-accent-blue)] opacity-90 -mt-1;
-  }
-  .status-pill.downloading {
-    @apply bg-cyan-500/15 text-cyan-300 border border-cyan-500/30;
-  }
 </style>

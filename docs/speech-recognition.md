@@ -215,7 +215,7 @@ S1-mini runs **after voice command resolution** to ensure that trigger keywords 
 2. **Non-Command Sentences Starting with Trigger Word:** If the user dictates a sentence starting with the trigger keyword that is not followed by any valid command (e.g., *"VoxCtrl is an exceptional piece of software."*), the entire string is preserved intact—the trigger word is **not** stripped—and the complete sentence is cleaned by S1-mini.
 
 ### Configuration & Controls
-- **Global Toggle:** In **Settings → Engine** under **Backend**, check **Enable S1-mini dictation cleanup**. If model files are not yet present, VoxCtrl will automatically download `s1-mini-q4_k_m.gguf` and `tokenizer.json` into `~/.local/share/voxctrl/models/s1-mini/` (~480 MB total download) and display reactive progress.
+- **Global Toggle:** In **Settings → Post-Processing**, check **Enable S1-mini dictation cleanup**. If model files are not yet present, VoxCtrl will automatically download `s1-mini-q4_k_m.gguf` and `tokenizer.json` into `~/.local/share/voxctrl/models/s1-mini/` (~480 MB total download) and display reactive progress. Enabling it greys out the Basic Text Cleanup section in the same tab, since S1-mini's normalization covers the same ground.
 - **Per-Keybind Override:** In **Settings → Hotkeys**, open any keybind to enable or disable S1-mini dictation cleanup specifically for that shortcut. If unset, keybinds inherit the global engine setting. Active keybinds show a distinctive cyan `S1-mini` badge in the UI.
 - **Styling:** Configured via `engine.s1_mini.styling` in `config.json` (defaults to `"semi-formal"`).
 

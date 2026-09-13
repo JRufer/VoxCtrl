@@ -19,18 +19,18 @@
   import BugReportTab from "./BugReportTab.svelte";
   import AboutTab from "./AboutTab.svelte";
 
-  type Tab = "general" | "engine" | "hotkeys" | "commands" | "visual" | "audio" | "tts" | "features" | "openai" | "bugreport" | "about";
+  type Tab = "general" | "audio" | "engine" | "features" | "hotkeys" | "commands" | "visual" | "tts" | "openai" | "bugreport" | "about";
   let activeTab = $state<Tab>("general");
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: "general",  label: "General",  icon: "⚙️" },
+    { id: "audio",    label: "Audio Input", icon: "🔊" },
     { id: "engine",   label: "Engine",   icon: "🧠" },
+    { id: "features", label: "Post-Processing", icon: "✨" },
     { id: "hotkeys",  label: "Hotkeys",  icon: "⌨️" },
     { id: "commands", label: "Output Commands", icon: "🎯" },
-    { id: "visual",   label: "Visual",   icon: "🎨" },
-    { id: "audio",    label: "Audio",    icon: "🔊" },
+    { id: "visual",   label: "Visual Feedback", icon: "🎨" },
     { id: "tts",      label: "TTS",      icon: "🗣️" },
-    { id: "features", label: "Features", icon: "✨" },
     { id: "openai",   label: "OpenAI API", icon: "🤖" },
     { id: "bugreport", label: "Bug Report", icon: "🐞" },
     { id: "about",    label: "About",    icon: "ℹ️" },
@@ -182,20 +182,20 @@
     <div class="tab-content" bind:this={tabContentEl}>
       {#if activeTab === "general"}
         <GeneralTab bind:cfg={$config} />
+      {:else if activeTab === "audio"}
+        <AudioTab bind:cfg={$config} />
       {:else if activeTab === "engine"}
         <EngineTab bind:cfg={$config} />
+      {:else if activeTab === "features"}
+        <FeaturesTab bind:cfg={$config} />
       {:else if activeTab === "hotkeys"}
         <HotkeysTab />
       {:else if activeTab === "commands"}
         <CommandsTab />
       {:else if activeTab === "visual"}
         <VisualTab bind:cfg={$config} />
-      {:else if activeTab === "audio"}
-        <AudioTab bind:cfg={$config} />
       {:else if activeTab === "tts"}
         <TtsTab bind:cfg={$config} />
-      {:else if activeTab === "features"}
-        <FeaturesTab bind:cfg={$config} />
       {:else if activeTab === "openai"}
         <OpenAiTab bind:cfg={$config} />
       {:else if activeTab === "bugreport"}

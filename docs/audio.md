@@ -23,7 +23,7 @@ On startup, `test_and_detect_active_device()` probes devices in priority order:
 
 A test stream is opened on each candidate to confirm it is functional before committing. If none succeed, CPAL's default device is used as a last resort.
 
-Devices are enumerated with `list_input_devices()`, which returns `(index: u32, name: String)` pairs for the Settings → Audio tab.
+Devices are enumerated with `list_input_devices()`, which returns `(index: u32, name: String)` pairs for the Settings → Audio Input tab.
 
 The device can be **hot-reloaded** at runtime: if `audio.input_device_index` changes (via the UI), the capture loop detects the change and re-opens the stream on the new device without restarting.
 
@@ -48,7 +48,7 @@ The stream stays open permanently. Chunks are forwarded to the recording buffer 
 
 - Zero startup latency
 - Higher idle CPU usage
-- The stream also runs during VU meter monitoring (Settings → Audio tab)
+- The stream also runs during VU meter monitoring (Settings → Audio Input tab)
 - **Nothing is clipped from the start of an utterance.** The last
   `PREROLL_MS` (300 ms) of audio is kept in a ring buffer while idle and
   prepended to the recording, so speech that began before the shortcut landed
@@ -56,11 +56,11 @@ The stream stays open permanently. Chunks are forwarded to the recording buffer 
   word in a voice command, which is the first thing said and the first thing
   lost.
 
-Both modes also serve the live audio monitoring flag used by the VU meter in the Settings → Audio tab.
+Both modes also serve the live audio monitoring flag used by the VU meter in the Settings → Audio Input tab.
 
 The pre-roll can only hold what the microphone was already hearing, so it
 applies whenever the stream is open ahead of the recording: always-on mode, or
-a dynamic stream still up because the Audio tab is monitoring.
+a dynamic stream still up because the Audio Input tab is monitoring.
 
 ---
 
