@@ -308,17 +308,25 @@ fn compute_overlay_window_position(
             .or_else(|| monitors.first().cloned())
     }?;
 
-    let wsize = window.outer_size().ok()?;
-    if wsize.width == 0 || wsize.height == 0 {
-        return None; // window not realized yet
-    }
-
     let msize = monitor.size();
     let mpos = monitor.position();
-    let margin = (60.0 * monitor.scale_factor()) as i32;
+    let scale = monitor.scale_factor();
+    let margin = (60.0 * scale) as i32;
 
-    let x = mpos.x + (msize.width as i32 - wsize.width as i32) / 2;
-    let y = overlay_anchor_y(mpos.y, msize.height as i32, wsize.height as i32, margin, anchor);
+    // Physical-pixel size of the overlay, computed from the target monitor's
+    // scale factor rather than queried via `window.outer_size()`: called this
+    // soon after `show()`, outer_size() can still report 0x0 because the
+    // resize hasn't round-tripped through the X11/GTK event loop yet. That
+    // silently produced `None` here every time, leaving the window wherever
+    // the window manager defaults new windows to (its own primary-monitor
+    // center) — which is why position/monitor settings appeared to be
+    // ignored entirely. OVERLAY_WIDTH/OVERLAY_HEIGHT are fixed (the window is
+    // non-resizable), so there's no need to ask the window for its size at all.
+    let wwidth = (OVERLAY_WIDTH * scale) as i32;
+    let wheight = (OVERLAY_HEIGHT * scale) as i32;
+
+    let x = mpos.x + (msize.width as i32 - wwidth) / 2;
+    let y = overlay_anchor_y(mpos.y, msize.height as i32, wheight, margin, anchor);
     Some((x, y))
 }
 
