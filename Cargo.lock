@@ -6930,6 +6930,7 @@ dependencies = [
  "crossbeam-channel",
  "dirs 5.0.1",
  "flate2",
+ "libc",
  "ort",
  "reqwest 0.12.28",
  "rodio",

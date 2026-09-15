@@ -327,6 +327,31 @@ fn free_local_port() -> Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
+/// Makes the spawned child ask the kernel to SIGTERM it the instant *this*
+/// process dies, for any reason.
+///
+/// `AudioCppServer::drop` already kills its child on a graceful shutdown, but
+/// that only runs if the TTS worker thread gets to process a
+/// `TtsCommand::Shutdown` before the whole app exits — which several exit
+/// paths (the tray's Quit item, the updater's relaunch, a crash, `kill -9`)
+/// don't guarantee. Without this, a quit like that leaves `audiocpp_server`
+/// (and, if the model had loaded, its GPU/RAM footprint) running forever.
+/// `PR_SET_PDEATHSIG` is Linux-only, matching `download_audiocpp_binary`.
+#[cfg(target_os = "linux")]
+fn die_with_this_process(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: `prctl` is async-signal-safe and touches only this syscall's
+    // own arguments — safe to call between fork and exec in the child.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
 impl AudioCppServer {
     /// Spawns `audiocpp_server` configured with exactly one model — the one
     /// this session exists for — and waits for it to answer `/health`.
@@ -367,15 +392,17 @@ impl AudioCppServer {
             config_file.flush()?;
         }
 
-        let mut child = std::process::Command::new(&binary)
-            .arg("--config")
+        let mut cmd = std::process::Command::new(&binary);
+        cmd.arg("--config")
             .arg(config_file.path())
             .arg("--no-ui")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("spawn {}", binary.display()))?;
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "linux")]
+        die_with_this_process(&mut cmd);
+
+        let mut child = cmd.spawn().with_context(|| format!("spawn {}", binary.display()))?;
 
         let base_url = format!("http://127.0.0.1:{port}");
         let http = reqwest::blocking::Client::builder()

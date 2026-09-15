@@ -31,6 +31,11 @@ rodio = { workspace = true }
 # "api-24"]` and ship a libonnxruntime alongside the app.
 ort = { version = "2.0.0-rc.12", optional = true }
 
+# Linux only: PR_SET_PDEATHSIG so a spawned `audiocpp_server` never outlives
+# this process, even on an ungraceful exit. See `audiocpp::AudioCppServer::spawn`.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [features]
 default = []
 # Inflect-Micro-v2 neural TTS via ONNX Runtime. Opt-in like `moonshine` on

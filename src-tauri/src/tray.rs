@@ -139,7 +139,19 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
                     toggle_tts_memory_mode(app);
                 }
                 "quit" => {
-                    app.exit(0);
+                    // Best-effort: lets the TTS worker stop playback and shut
+                    // down its resident audio.cpp session promptly rather
+                    // than leaving that to `PR_SET_PDEATHSIG` alone (which
+                    // still catches it if this doesn't finish in time).
+                    use tauri::Manager;
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app.state::<Arc<AppState>>().inner().clone();
+                        if let Some(tts) = state.tts_handle.lock().await.as_ref() {
+                            tts.shutdown();
+                        }
+                        app.exit(0);
+                    });
                 }
                 _ => {}
             }
