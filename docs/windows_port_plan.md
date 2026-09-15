@@ -469,8 +469,7 @@ carrying the DirectML provider.
 | Engine | Windows status | Action |
 |---|---|---|
 | **Piper** (default) | ⚠️ no auto-install | Add a Windows branch to `download_piper_binary()`: fetch the Windows release **zip** (not `.tar.gz`), extract with a zip reader. Requires adding a zip dependency and generalising `extract_piper_archive()` |
-| **Pocket-TTS** | ✅ pure Rust + ONNX | Should work as-is once the crate compiles |
-| **Breeze-TTS-2** | ✅ candle-based | CPU works; `breeze-cuda` needs nvcc. No Vulkan path exists in candle |
+| **Pocket-TTS / Breeze-TTS-2 / VoxCPM2** | ⚠️ no auto-install | These now shell out to the prebuilt `audiocpp_cli` binary (see `audiocpp.rs`); `download_audiocpp_binary()` only knows the Linux release asset today. Add a Windows branch once a verified `audio.cpp` Windows Vulkan release asset name is confirmed |
 | **Inflect-Micro** | ❌ needs `espeak-ng` for phonemization | Either bundle an `espeak-ng.exe` + `espeak-ng-data` alongside the app (it is GPLv3 — check licence compatibility before bundling), or disable the engine on Windows with a clear message |
 | **eSpeak-NG** | ❌ not on `PATH` | Same decision as above |
 | **SAPI 5 / WinRT `SpeechSynthesizer`** | — | **Recommended addition**: a `TtsEngine::WindowsSapi` variant. Zero install, every Windows box has voices, gives Windows a guaranteed-working default the way `espeak` does on Linux |

@@ -58,7 +58,10 @@ regex = "1"
 arboard = "3"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+# "blocking" lets the (synchronous) TTS worker thread lazily fetch a reference
+# voice clip the first time it is needed, mirroring the old pocket-tts crate's
+# own blocking download-on-first-use behavior.
+reqwest = { version = "0.12", features = ["json", "stream", "multipart", "blocking"] }
 bytes = "1"
 
 # DBus (Linux only)
@@ -111,10 +114,6 @@ crossbeam-channel = "0.5"
 # ONNX inference (optional Moonshine STT backend)
 ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
 ndarray = "0.16"
-
-# Pocket-TTS neural TTS engine
-pocket-tts = "0.6"
-hf-hub = "0.4"
 
 # Internal crates
 voxctrl-config   = { path = "crates/voxctrl-config" }

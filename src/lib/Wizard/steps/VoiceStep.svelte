@@ -241,6 +241,26 @@
     }
   }
 
+  const GPU_CAPABLE: TtsEngineId[] = ["pocket_tts", "breeze_tts_2", "vox_cpm_2"];
+  const gpuCapable = $derived(GPU_CAPABLE.includes(selected));
+  const gpuOn = $derived(
+    selected === "pocket_tts"
+      ? $config.tts.pocket_tts.gpu
+      : selected === "breeze_tts_2"
+        ? $config.tts.breeze_tts_2.gpu
+        : selected === "vox_cpm_2"
+          ? $config.tts.vox_cpm_2.gpu
+          : false,
+  );
+
+  function setGpu(on: boolean) {
+    patchConfig((cfg) => {
+      if (selected === "pocket_tts") cfg.tts.pocket_tts.gpu = on;
+      else if (selected === "breeze_tts_2") cfg.tts.breeze_tts_2.gpu = on;
+      else if (selected === "vox_cpm_2") cfg.tts.vox_cpm_2.gpu = on;
+    });
+  }
+
   function pick(id: TtsEngineId) {
     if (locked(id)) return;
     patchConfig((cfg) => {
@@ -453,7 +473,7 @@
     >
       <div class="hf-header">
         <span class="hf-title">HuggingFace access token</span>
-        <span class="hf-sub">needed for Breeze-TTS-2 &amp; Pocket TTS</span>
+        <span class="hf-sub">optional — speeds up downloads if you have one</span>
       </div>
       <div class="hf-control">
         <input
@@ -483,6 +503,22 @@
       </div>
     </div>
   </div>
+
+  {#if enabled && selectedEngine.nonCommercial && !ready[selected]}
+    <div class="non-commercial-notice">
+      <strong>⚠ Non-commercial license:</strong>
+      {selectedEngine.name} weights are released under a research/non-commercial license. Commercial
+      use requires a separate license from the model's publisher.
+    </div>
+  {/if}
+
+  {#if enabled && gpuCapable}
+    <label class="gpu-toggle-row">
+      <input type="checkbox" checked={gpuOn} onchange={(e) => setGpu((e.currentTarget as HTMLInputElement).checked)} />
+      <span>Vulkan GPU acceleration for {selectedEngine.name}</span>
+      <span class="gpu-toggle-hint">Falls back to CPU automatically if no Vulkan device is available.</span>
+    </label>
+  {/if}
 
   <!-- 3-Column × 2-Row Responsive Grid -->
   <div class="grid" class:muted={!enabled}>
@@ -856,6 +892,30 @@
 
   .hf-state.bad {
     color: var(--vx-bad);
+  }
+
+  .non-commercial-notice {
+    flex: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--vx-gold-1) 45%, transparent);
+    background: color-mix(in srgb, var(--vx-gold-1) 6%, transparent);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .gpu-toggle-row {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 2px 2px;
+  }
+
+  .gpu-toggle-hint {
+    color: var(--vx-txt-3);
+    font-size: 11px;
   }
 
   /* 3-Column × 2-Row Grid for 6 Engines */

@@ -1,16 +1,21 @@
 //! VoxCtrl text-to-speech engine.
 //!
 //! Split by concern:
-//! - [`piper`]   — Piper voice catalogue, path resolution, binary/voice download
-//! - [`pocket`]  — Pocket-TTS (Candle-based neural voice cloning) catalogue + synthesis
-//! - [`inflect`] — Inflect-Micro-v2 (ONNX VITS) phoneme frontend + synthesis
-//! - [`engine`]  — utterance queue, worker thread, Piper/eSpeak synthesis
-//! - [`fifo`]    — named-pipe responder for external speak triggers
+//! - [`piper`]    — Piper voice catalogue, path resolution, binary/voice download
+//! - [`audiocpp`] — shared audio.cpp runtime: binary management, GGUF asset
+//!   download, subprocess synthesis (Pocket-TTS, Breeze-TTS-2, VoxCPM2)
+//! - [`pocket`]   — Pocket-TTS voice catalogue + audio.cpp synthesis
+//! - [`breeze`]   — Breeze-TTS-2 asset management + audio.cpp synthesis
+//! - [`voxcpm`]   — VoxCPM2 asset management + audio.cpp synthesis
+//! - [`inflect`]  — Inflect-Micro-v2 (ONNX VITS) phoneme frontend + synthesis
+//! - [`engine`]   — utterance queue, worker thread, Piper/eSpeak synthesis
+//! - [`fifo`]     — named-pipe responder for external speak triggers
 //!
 //! Snippet expansion and custom-vocabulary correction are shared with
 //! `voxctrl-inference` (which applies the same logic to STT output) via the
 //! `voxctrl-text` crate.
 
+mod audiocpp;
 pub mod breeze;
 mod engine;
 pub mod hf;

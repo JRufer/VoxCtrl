@@ -821,8 +821,9 @@ interface OpenAiConfig {
 
 interface PocketTtsConfig {
   voice: string;
-  prewarm: boolean;
+  prewarm: boolean;        // unused — kept for config compatibility
   voice_dir: string;       // custom .wav voice clips; empty = default directory
+  gpu: boolean;            // Vulkan, via the audio.cpp subprocess
 }
 
 interface InflectMicroConfig {
@@ -838,8 +839,8 @@ interface BreezeTts2Config {
   voice_dir: string;        // shared with pocket_tts; empty = default directory
   speaker_prompt: string;   // Voice Design description
   model_dir: string;        // empty = default directory
-  prewarm: boolean;
-  gpu: boolean;             // needs a breeze-cuda / breeze-metal build
+  prewarm: boolean;         // unused — kept for config compatibility
+  gpu: boolean;             // Vulkan, via the audio.cpp subprocess
 }
 
 interface VoxCpm2Config {

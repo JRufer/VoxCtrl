@@ -2,7 +2,6 @@
 //! synthesis lives in `pocket.rs` (called from [`TtsEngineWorker::run`]) since
 //! it needs no access to this module's private fields.
 
-use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -14,11 +13,11 @@ use tracing::{debug, info, warn};
 use voxctrl_config::{TtsConfig, TtsEngine};
 use voxctrl_text::{correct_custom_vocabulary, expand_snippets};
 
-use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2, BreezeModelSlot};
+use crate::breeze::speak_breeze_tts_2;
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
 use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice};
-use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
-use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2, VoxCpmModelSlot};
+use crate::pocket::speak_pocket_tts;
+use crate::voxcpm::speak_vox_cpm_2;
 
 /// How long the worker parks in `recv_timeout` when there is nothing to expire.
 /// Only a wake-up interval — the channel still wakes it immediately on a command.
@@ -205,18 +204,11 @@ impl TtsEngineWorker {
         );
         let mut current_config = self.config.clone();
 
-
-        // pocket-tts model + per-voice cloned voice state, cached for the lifetime of this worker thread.
-        let mut pocket_tts_model: Option<pocket_tts::TTSModel> = None;
-        let mut pocket_tts_voice_states: HashMap<String, pocket_tts::ModelState> = HashMap::new();
-        // Inflect-Micro-v2 ONNX sessions, cached for the same lifetime.
+        // Inflect-Micro-v2 ONNX sessions, cached for the worker's lifetime.
+        // Pocket-TTS, Breeze-TTS-2, and VoxCPM2 hold no in-process model
+        // state any more: each spawns the audio.cpp CLI as a subprocess per
+        // utterance (like Piper/eSpeak), so there is nothing here to cache.
         let mut inflect_model: InflectModelSlot = None;
-        // Breeze-TTS-2 session + per-voice cloned state, cached for the same lifetime.
-        let mut breeze_tts_2_model: BreezeModelSlot = None;
-        let mut breeze_tts_2_voice_states: HashMap<String, pocket_tts::ModelState> = HashMap::new();
-        // VoxCPM2 session + per-voice cloned state, cached for the same lifetime.
-        let mut vox_cpm_2_model: VoxCpmModelSlot = None;
-        let mut vox_cpm_2_voice_states: HashMap<String, pocket_tts::ModelState> = HashMap::new();
 
         // Persistent Rodio Output Stream - kept alive for the lifetime of this thread!
         let mut audio_context: Option<(rodio::OutputStream, rodio::OutputStreamHandle, Arc<rodio::Sink>)> = None;
@@ -245,12 +237,11 @@ impl TtsEngineWorker {
         loop {
             let unload_when_idle = current_config.unloads_when_idle();
             let idle = current_config.idle_unload_duration();
-            // Piper and eSpeak shell out per utterance and hold nothing; only
-            // these three keep weights resident, so only these can be unloaded.
-            let model_resident = pocket_tts_model.is_some()
-                || inflect_model.is_some()
-                || breeze_tts_2_model.is_some()
-                || vox_cpm_2_model.is_some();
+            // Piper, eSpeak, and the audio.cpp-backed engines (Pocket-TTS,
+            // Breeze-TTS-2, VoxCPM2) all shell out per utterance and hold
+            // nothing; only Inflect-Micro-v2 keeps weights resident, so only
+            // it can be unloaded.
+            let model_resident = inflect_model.is_some();
 
             // Park until the next command, or until the idle window expires.
             let wait = if unload_when_idle && model_resident {
@@ -261,16 +252,10 @@ impl TtsEngineWorker {
                             "Unloading TTS model after {}s idle (memory mode: on-demand)",
                             idle.as_secs()
                         );
-                        // Dropping the model and its cached voice states is the
-                        // whole of the resident footprint; the worker thread,
-                        // its audio device and the queue all stay up.
-                        pocket_tts_model = None;
-                        pocket_tts_voice_states.clear();
+                        // Dropping the model is the whole of the resident
+                        // footprint; the worker thread, its audio device and
+                        // the queue all stay up.
                         inflect_model = None;
-                        breeze_tts_2_model = None;
-                        breeze_tts_2_voice_states.clear();
-                        vox_cpm_2_model = None;
-                        vox_cpm_2_voice_states.clear();
                         self.model_loaded.store(false, Ordering::SeqCst);
                         continue;
                     }
@@ -313,8 +298,8 @@ impl TtsEngineWorker {
 
                     if !is_prewarm {
                         let mut snips = current_config.snippets.clone();
-                        // Guarantee explicit subword phonetic boundaries so Kyutai models (Pocket-TTS & Breeze-TTS-2)
-                        // never omit the 'Con' syllable or slur into 'crol'.
+                        // Guarantee explicit subword phonetic boundaries so Pocket-TTS
+                        // never omits the 'Con' syllable or slurs into 'crol'.
                         snips.entry("VoxCtrl".to_string()).or_insert_with(|| "Voks Con-trol".to_string());
                         snips.entry("voxctrl".to_string()).or_insert_with(|| "Voks Con-trol".to_string());
                         snips.entry("Vox Control".to_string()).or_insert_with(|| "Voks Con-trol".to_string());
@@ -359,8 +344,6 @@ impl TtsEngineWorker {
                         TtsEngine::PocketTts => speak_pocket_tts(
                             &current_config,
                             &utterance,
-                            &mut pocket_tts_model,
-                            &mut pocket_tts_voice_states,
                             &self.on_playback_start,
                             &sink,
                             &self.generation,
@@ -378,8 +361,6 @@ impl TtsEngineWorker {
                         TtsEngine::BreezeTts2 => speak_breeze_tts_2(
                             &current_config,
                             &utterance,
-                            &mut breeze_tts_2_model,
-                            &mut breeze_tts_2_voice_states,
                             &self.on_playback_start,
                             &sink,
                             &self.generation,
@@ -388,8 +369,6 @@ impl TtsEngineWorker {
                         TtsEngine::VoxCpm2 => speak_vox_cpm_2(
                             &current_config,
                             &utterance,
-                            &mut vox_cpm_2_model,
-                            &mut vox_cpm_2_voice_states,
                             &self.on_playback_start,
                             &sink,
                             &self.generation,
@@ -429,55 +408,24 @@ impl TtsEngineWorker {
                         }
                     }
 
-                    self.model_loaded.store(
-                        pocket_tts_model.is_some()
-                            || inflect_model.is_some()
-                            || breeze_tts_2_model.is_some()
-                            || vox_cpm_2_model.is_some(),
-                        Ordering::SeqCst,
-                    );
+                    self.model_loaded.store(inflect_model.is_some(), Ordering::SeqCst);
                     // A long utterance must not count against the idle window.
                     last_used = Instant::now();
                 }
                 TtsCommand::Preload => {
                     // Speculative: failures are logged, not surfaced. The same
                     // error is reported properly (with a toast) if an utterance
-                    // actually arrives.
-                    let outcome = match current_config.engine {
-                        TtsEngine::PocketTts if pocket_tts_model.is_none() => Some(
-                            ensure_pocket_tts_loaded(
-                                &current_config,
-                                &current_config.pocket_tts.voice.clone(),
-                                &mut pocket_tts_model,
-                                &mut pocket_tts_voice_states,
-                            ),
-                        ),
-                        TtsEngine::InflectMicro if inflect_model.is_none() => {
-                            Some(ensure_inflect_micro_loaded(&current_config, &mut inflect_model))
+                    // actually arrives. Only Inflect-Micro-v2 holds an
+                    // in-process model to preload — Pocket-TTS, Breeze-TTS-2,
+                    // and VoxCPM2 shell out per utterance like Piper/eSpeak,
+                    // so there is nothing to warm here.
+                    if current_config.engine == TtsEngine::InflectMicro && inflect_model.is_none() {
+                        match ensure_inflect_micro_loaded(&current_config, &mut inflect_model) {
+                            Err(e) => debug!("TTS preload skipped: {e:#}"),
+                            Ok(()) => debug!("TTS model pre-loaded and primed"),
                         }
-                        TtsEngine::BreezeTts2 if breeze_tts_2_model.is_none() => {
-                            Some(ensure_breeze_tts_2_loaded(&current_config, &mut breeze_tts_2_model))
-                        }
-                        TtsEngine::VoxCpm2 if vox_cpm_2_model.is_none() => {
-                            Some(ensure_vox_cpm_2_loaded(&current_config, &mut vox_cpm_2_model))
-                        }
-                        // Already resident, or an engine that holds no model.
-                        _ => None,
-                    };
-                    match outcome {
-                        Some(Err(e)) => debug!("TTS preload skipped: {e:#}"),
-                        Some(Ok(())) => debug!("TTS model pre-loaded and primed"),
-                        None => {}
                     }
-                    // A partial load (weights in, voice state failed) still holds
-                    // memory, so track what is actually resident.
-                    self.model_loaded.store(
-                        pocket_tts_model.is_some()
-                            || inflect_model.is_some()
-                            || breeze_tts_2_model.is_some()
-                            || vox_cpm_2_model.is_some(),
-                        Ordering::SeqCst,
-                    );
+                    self.model_loaded.store(inflect_model.is_some(), Ordering::SeqCst);
                     last_used = Instant::now();
                 }
                 TtsCommand::Shutdown => {
@@ -638,9 +586,13 @@ mod tests {
 
     #[test]
     fn test_streaming_loop_cancellation_check_breaks_on_stale_generation() {
-        // Mirrors the per-frame check inside speak_pocket_tts: once stop() bumps
-        // the live counter past the snapshotted generation, the loop must stop
-        // appending further frames instead of running to completion.
+        // Documents the generation-counter cancellation pattern itself: once
+        // stop() bumps the live counter past a snapshotted generation, a loop
+        // checking it between steps must stop rather than run to completion.
+        // (Pocket-TTS/Breeze-TTS-2/VoxCPM2 now synthesize a whole utterance in
+        // one audio.cpp subprocess call rather than a frame-by-frame Rust
+        // loop, so this pattern no longer applies to them specifically — Piper
+        // has the same one-shot limitation today.)
         let generation_counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let snapshotted_generation = 0u32;
 

@@ -97,6 +97,7 @@ export interface PocketTtsConfig {
   voice: string;
   prewarm: boolean;
   voice_dir: string;
+  gpu: boolean;
 }
 
 export type TtsMemoryMode = "always_loaded" | "on_demand";
@@ -236,6 +237,7 @@ const defaultConfig: AppConfig = {
       voice: "alba",
       prewarm: false,
       voice_dir: "",
+      gpu: false,
     },
     inflect_micro: {
       model_dir: "",

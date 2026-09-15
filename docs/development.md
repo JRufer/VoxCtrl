@@ -179,20 +179,14 @@ In such a build, selecting Moonshine falls back to whisper-cpp, and the Inflect
 TTS engine still downloads its model but leaves Test TTS disabled — only
 synthesis is gated.
 
-### Breeze-TTS-2 on the GPU (opt-in)
+### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 on the GPU
 
-Breeze-TTS-2 runs on candle, whose GPU backends are CUDA and Metal — there is no
-Vulkan backend to select. Neither is on by default, because each needs its
-toolchain at build time:
-
-```bash
-npm run tauri build -- --features breeze-cuda    # NVIDIA
-npm run tauri build -- --features breeze-metal   # macOS
-```
-
-Without one of these, `tts.breeze_tts_2.gpu` has nothing to switch to: the
-setting is saved, a warning is logged, and synthesis stays on the CPU. The same
-fallback covers a GPU that fails to open at runtime.
+These three engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s
+prebuilt `audiocpp_cli` binary, which already ships a Vulkan backend — no
+VoxCtrl build feature is needed. Toggling `gpu` in Settings for any of them
+just switches the `--backend` flag passed to that subprocess between `vulkan`
+and `cpu`. If no usable Vulkan device is found, `audiocpp_cli` reports the
+failure as a normal TTS error rather than silently downgrading.
 
 ### Noise suppression
 

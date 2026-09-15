@@ -228,10 +228,10 @@ stay clean on a newer host. The rules, each learned from a startup crash:
    honour no environment override for this (`WEBKIT_EXEC_PATH` only exists in
    developer-mode builds), so the helpers must sit at exactly that relative
    path, **and nothing in the app may change the process's working
-   directory.** The pocket-tts model config is bundled at `usr/config/` for
-   that reason — `pocket_tts::TTSModel::load` looks for it relative to the
-   cwd, and the old workaround of temporarily switching cwd from the TTS
-   worker raced WebKit's helper spawn and aborted the app.
+   directory.** An earlier Pocket-TTS implementation used to require a
+   bundled `usr/config/` for the same reason; the current audio.cpp-backed
+   engines take a `--model <dir>` argument directly and no longer touch the
+   process's working directory at all.
 6. **The AppImage runtime must not need FUSE 2.** appimagetool's built-in
    type-2 runtime statically links libfuse 2 and looks for a `fusermount`
    binary; Ubuntu 22.04 / Linux Mint 21 and newer ship fuse3 (`fusermount3`)

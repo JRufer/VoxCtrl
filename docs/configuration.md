@@ -301,7 +301,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 
 **`breeze_tts_2` sub-object:**
 
-[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with natural-language voice design speaker prompts and reference voice cloning. The model weights are gated on HuggingFace under the **BreezeBlue Research and Non-Commercial License** — supply your access token via `tts.hf_token`, the single token shared by every gated model, or export it as `HF_TOKEN`, which takes precedence and is never written to the config.
+[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with natural-language voice design speaker prompts and reference voice cloning, released under the **BreezeBlue Research and Non-Commercial License**. VoxCtrl runs it through [audio.cpp](https://github.com/0xShug0/audio.cpp); the GGUF model mirror is ungated, so no HuggingFace token is needed to download it — Settings and the setup wizard still show the non-commercial license warning before you do.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -309,9 +309,9 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `speaker_prompt` | string | `"A calm and clear female voice speaking at a natural pace"` | Natural-language prompt describing the desired speaker voice for Voice Design |
 | `cloned_voice` | string | `"alba"` | Voice ID from the shared voice folder, used in `"clone"` mode |
 | `voice_dir` | string | `""` | Directory holding reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
-| `model_dir` | string | `""` | Directory holding model weights & tokenizer; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
-| `prewarm` | bool | `false` | Pre-warm model weights and tensors on startup so first speech is instantaneous |
-| `gpu` | bool | `false` | Run synthesis on the GPU. Needs a build with the `breeze-cuda` or `breeze-metal` feature; falls back to the CPU otherwise |
+| `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
+| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `gpu` | bool | `false` | Run synthesis on the GPU via Vulkan; falls back to the CPU whenever no usable Vulkan device is found |
 
 **`vox_cpm_2` sub-object:**
 
@@ -324,22 +324,22 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `cloned_voice` | string | `"alba"` | Reference voice clip ID from `voice_dir` |
 | `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `ultimate_cloning` | bool | `false` | Enables Ultimate Cloning when paired audio + transcript files are available |
-| `model_dir` | string | `""` | Directory holding model weights; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
-| `prewarm` | bool | `false` | Pre-warm model on startup for instantaneous first synthesis |
-| `gpu` | bool | `false` | Enable CUDA GPU acceleration |
+| `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
+| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
 
 **`pocket_tts` sub-object:**
 
-Pocket-TTS is a voice-cloning neural TTS engine: each voice is a short reference audio clip
-that conditions synthesis, rather than a fixed precomputed voice embedding. The model weights
-are hosted in a **gated** HuggingFace repository (`kyutai/pocket-tts`) — you must accept the
-license on HuggingFace and supply a personal access token via `tts.hf_token`.
+Pocket-TTS's built-in voices each resolve to a precomputed embedding shipped
+alongside the model; a custom `.wav` clip dropped into `voice_dir` is instead
+cloned live. VoxCtrl runs it through [audio.cpp](https://github.com/0xShug0/audio.cpp) — the GGUF model mirror is ungated, so no HuggingFace token is needed.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `voice` | string | `"alba"` | Bundled reference voice ID (`"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"`), or the filename stem of a custom clip in `voice_dir` |
-| `prewarm` | bool | `false` | Pre-warm model on startup so first speech is instantaneous |
-| `voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/`. Drop a `<id>.wav` file in to add it to the voice list — naming it after a built-in voice (e.g. `alba.wav`) overrides that voice's clip. Supports `~` expansion. |
+| `voice` | string | `"alba"` | Bundled voice ID (`"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"`), or the filename stem of a custom clip in `voice_dir` |
+| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/`. Drop a `<id>.wav` file in to add it to the voice list — naming it after a built-in voice (e.g. `alba.wav`) overrides that voice's embedding and clones from the clip instead. Supports `~` expansion. |
+| `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
 
 **`inflect_micro` sub-object:**
 
