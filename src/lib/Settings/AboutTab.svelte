@@ -6,6 +6,7 @@
 
   let version = $state("0.1.0");
   let customOverlaysDir = $state("");
+  let clonedTtsVoicesDir = $state("");
 
   onMount(async () => {
     try {
@@ -17,6 +18,11 @@
       customOverlaysDir = await invoke<string>("get_custom_overlays_dir");
     } catch (e) {
       console.error("Failed to fetch custom overlays directory:", e);
+    }
+    try {
+      clonedTtsVoicesDir = await invoke<string>("get_cloned_tts_voices_dir");
+    } catch (e) {
+      console.error("Failed to fetch cloned TTS voices directory:", e);
     }
   });
 </script>
@@ -48,6 +54,9 @@
     <div class="kv"><span>Models</span><span><code>~/.local/share/voxctrl/models/</code></span></div>
     {#if customOverlaysDir}
       <div class="kv"><span>Custom overlays</span><span><code>{customOverlaysDir}</code></span></div>
+    {/if}
+    {#if clonedTtsVoicesDir}
+      <div class="kv"><span>Cloned TTS voices</span><span><code>{clonedTtsVoicesDir}</code></span></div>
     {/if}
     <div class="kv"><span>MCP socket</span><span><code>/tmp/voxctrl-mcp.sock</code></span></div>
   </div>

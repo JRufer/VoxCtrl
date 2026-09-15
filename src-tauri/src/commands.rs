@@ -707,6 +707,13 @@ pub fn get_custom_overlays_dir() -> String {
     crate::custom_overlays::overlays_dir().display().to_string()
 }
 
+/// The resolved, absolute path to the shared voice-cloning reference-clip
+/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2), for display in Settings.
+#[tauri::command]
+pub fn get_cloned_tts_voices_dir() -> String {
+    voxctrl_tts::cloned_tts_voices_dir().display().to_string()
+}
+
 #[derive(serde::Serialize)]
 pub struct CustomOverlayInfo {
     pub name: String,

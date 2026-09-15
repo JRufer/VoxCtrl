@@ -552,6 +552,7 @@ pub fn run() {
             hide_overlay,
             get_custom_overlays,
             get_custom_overlays_dir,
+            get_cloned_tts_voices_dir,
             list_audio_devices,
             start_monitoring_audio,
             stop_monitoring_audio,

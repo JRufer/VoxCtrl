@@ -126,6 +126,13 @@
     {/if}
 
     {#if customOverlaysDir}
+      <p class="hint">
+        Design your own overlay style by adding a folder with an
+        <code>index.html</code> and <code>style.css</code> to the folder below — it
+        shows up here as a selectable style automatically. A working example
+        (a copy of Voice Card, ready to duplicate) and a README covering the
+        format live there already.
+      </p>
       <p class="hint">Custom overlay styles: <code>{customOverlaysDir}</code></p>
     {/if}
   </div>
