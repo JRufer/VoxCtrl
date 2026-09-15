@@ -209,10 +209,8 @@
   .credit-license {
     @apply text-[10px] bg-[var(--color-accent-blue)]/8 text-[var(--color-accent-blue)] p-0.5 px-1.5 rounded border border-[var(--color-accent-blue)]/15 font-normal;
   }
-  /* Amber flag for anything that isn't a plain permissive OSS license:
-     non-commercial terms, a gated model card, or a proprietary EULA. */
-  .credit-license.non-commercial,
-  .credit-license.flagged {
+  /* Amber flag for a non-commercial or otherwise restricted license. */
+  .credit-license.non-commercial {
     @apply bg-amber-500/10 text-amber-400 border-amber-500/30;
   }
 </style>
