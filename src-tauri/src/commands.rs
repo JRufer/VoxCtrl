@@ -645,61 +645,6 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
 
 // ── Overlay window ────────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub async fn show_overlay(
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let (position, monitor_pref) = {
-        let cfg = state.config.lock().await;
-        (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
-    };
-
-    // The overlay computes pixel coordinates from the anchor itself.
-    let pos_msg = serde_json::json!({
-        "type": "position",
-        "position": position,
-        "monitor": monitor_pref,
-    });
-    let status_msg = serde_json::json!({
-        "type": "status",
-        "recording": true,
-        "processing": false,
-        "speaking": false,
-        "audio_ready": true,
-        "audio_level": 0.0,
-        "active_target_label": "Overlay Test",
-    });
-
-    if let Ok(s) = serde_json::to_string(&pos_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    if let Ok(s) = serde_json::to_string(&status_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn hide_overlay(
-    _app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let status_msg = serde_json::json!({
-        "type": "status",
-        "recording": false,
-        "processing": false,
-        "speaking": false,
-        "audio_ready": true,
-        "audio_level": 0.0,
-        "active_target_label": "Focused Window",
-    });
-    
-    if let Ok(s) = serde_json::to_string(&status_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    Ok(())
-}
-
 /// The resolved, absolute path to the custom-overlays folder, for display
 /// in Settings (see `custom_overlays::overlays_dir`).
 #[tauri::command]

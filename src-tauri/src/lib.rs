@@ -548,8 +548,6 @@ pub fn run() {
             get_bindings,
             save_bindings,
             speak_text,
-            show_overlay,
-            hide_overlay,
             get_custom_overlays,
             get_custom_overlay,
             get_custom_overlays_dir,
