@@ -58,6 +58,11 @@
       animateTimeoutId = setTimeout(() => {
         animateActive = true;
       }, 25);
+      // See loadActiveCustomOverlay's doc comment below: this is the
+      // trigger that actually matters for "I edited the file, does the
+      // next activation show it" — re-read on every activation, not just
+      // when the style value itself happens to change.
+      loadActiveCustomOverlay($config.ui.overlay_style);
     } else {
       animateActive = false;
       timeoutId = setTimeout(() => {
@@ -133,6 +138,42 @@
     if (renderOverlay) startAnimation();
   });
 
+  // A custom overlay's files are read fresh from disk right here — not
+  // once at app startup, and not cached in between — so editing
+  // index.html/style.css always shows the current file on the very next
+  // activation, with no app restart needed. This window is created once
+  // and stays alive for the app's whole session (see
+  // window::open_overlay_window), so without re-reading on demand like
+  // this, whatever was on disk at startup is all it would ever show.
+  //
+  // Reading it again is triggered two different ways, and both matter:
+  // when the *style itself* changes (below, so switching to a custom style
+  // while already active shows it immediately), and separately, every time
+  // the overlay activates (in the isRecordingOrSpeaking effect above) —
+  // which is the one that actually matters for "I edited the file, will
+  // the next dictation show my edit". Relying on the style-change signal
+  // alone is not reliable enough on its own: this window's own copy of
+  // config.ui.overlay_style only updates when it *receives* a config-changed
+  // event with a different value than it already had, and Settings
+  // auto-saves on a debounce — switching the dropdown away and back inside
+  // that debounce window can collapse into a single save this window never
+  // sees as a change at all, so an effect keyed only on that value can
+  // silently never re-fire.
+  function loadActiveCustomOverlay(style: string) {
+    if (BUILTIN_STYLES.has(style)) {
+      activeCustomOverlay = undefined;
+      return;
+    }
+    invoke<CustomOverlay | null>("get_custom_overlay", { name: style })
+      .then((res) => {
+        activeCustomOverlay = res ?? undefined;
+      })
+      .catch((e) => {
+        console.error(`Failed to load custom overlay "${style}":`, e);
+        activeCustomOverlay = undefined;
+      });
+  }
+
   $effect(() => {
     // Whenever the overlay style changes, temporarily unmount the visualizer for 1 tick
     // to force the WebKitGTK transparent compositor to completely wipe and flush the old frame buffer
@@ -142,26 +183,7 @@
       visible = true;
     }, 25); // 25ms ensures a full repaint frame ticks in WebKitGTK
 
-    // A custom overlay's files are read fresh from disk right here, at the
-    // moment it's selected — not once at app startup, and not cached across
-    // selections — so editing index.html/style.css and re-selecting the
-    // style (it doesn't even need to be a *different* style first) always
-    // shows the current file, with no app restart needed. This window is
-    // created once and stays alive for the app's whole session (see
-    // window::open_overlay_window), so without re-reading here, whatever
-    // was on disk at startup is all it would ever show.
-    if (BUILTIN_STYLES.has(style)) {
-      activeCustomOverlay = undefined;
-    } else {
-      invoke<CustomOverlay | null>("get_custom_overlay", { name: style })
-        .then((res) => {
-          activeCustomOverlay = res ?? undefined;
-        })
-        .catch((e) => {
-          console.error(`Failed to load custom overlay "${style}":`, e);
-          activeCustomOverlay = undefined;
-        });
-    }
+    loadActiveCustomOverlay(style);
 
     return () => clearTimeout(timer);
   });

@@ -146,14 +146,26 @@ different purposes, both in `src-tauri/src/commands.rs`:
   populate `VisualTab.svelte`'s `overlayStyleOptions` — the dropdown.
 - `get_custom_overlay(name)` reads one folder's `index.html` + `style.css`
   fresh off disk, by the display name it's selected under.
-  `Overlay.svelte` calls this — not the list command — every time
-  `config.ui.overlay_style` changes to a name outside its built-in style
-  set, inside the same `$effect` that already runs on every style switch.
-  Since the overlay window is created once and stays alive for the app's
-  whole session (`window::open_overlay_window`), this is what makes
-  editing a custom overlay's files show up the moment the style is
-  reselected (switching away and back works), with no app restart and no
-  stale content cached from whenever the window first loaded.
+  `Overlay.svelte`'s shared `loadActiveCustomOverlay(style)` calls this —
+  not the list command — and is itself called from two different
+  `$effect`s, deliberately, not just one: the existing style-switch effect
+  (so switching the dropdown to a custom style, or away and back, updates
+  immediately), and the `isRecordingOrSpeaking` effect, every time it
+  transitions to active (so every dictation start re-reads the currently
+  selected style's files, regardless of whether the style value itself
+  changed). The second trigger is the one that actually matters for "I
+  edited the file, does the next dictation show it": this window's own
+  copy of `config.ui.overlay_style` only updates when it *receives* a
+  `config-changed` event carrying a different value than it already had,
+  and Settings auto-saves on a debounce, so switching the dropdown away
+  and back quickly can collapse into a single save this window never
+  observes as a change — an effect keyed on the style value alone can
+  silently never re-fire in that case. Reading on activation instead has
+  no such gap: it doesn't matter whether the *value* changed, only
+  whether the overlay is about to be shown. Because the overlay window is
+  created once and stays alive for the app's whole session
+  (`window::open_overlay_window`), neither trigger existing would mean
+  whatever was on disk at startup is all it would ever show.
 
 `custom_overlays::refresh_bundled_example` (called once, before `run()`
 builds the Tauri app) makes sure a documented `Custom/` example exists —

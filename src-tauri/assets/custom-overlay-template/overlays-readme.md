@@ -3,9 +3,14 @@
 Every subfolder in this directory that contains an `index.html` and a
 `style.css` becomes a selectable **Overlay style** in VoxCtrl's
 **Settings → Visual & Feedback** tab, named after the folder. New or
-renamed folders show up the next time that dropdown is opened; edits to
-an already-selected style's files show up as soon as you switch the
-dropdown away and back — no app restart needed either way.
+renamed folders show up the next time that dropdown is opened. Edits to
+an already-selected style's files are read fresh every time the overlay
+next activates (a dictation starts) — no app restart needed. Switching
+the dropdown away and back also re-reads immediately, for a quick
+preview without dictating, but treat activation as the one that's
+guaranteed: Settings auto-saves changes on a short delay, and two quick
+dropdown switches can occasionally collapse into a single save the
+overlay window never sees as a change.
 
 ## Getting started
 
