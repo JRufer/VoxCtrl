@@ -37,6 +37,7 @@
   let commandOverlayText = $state("");
   let commandTimerId: any = null;
   let unlistenCommandExecuted: (() => void) | null = null;
+  let unlistenOverlayStyleSelected: (() => void) | null = null;
 
   // Delay unmounting the visualizer when recording/speaking/command stops to allow CSS outro animation to finish
   let isRecordingOrSpeaking = $derived(
@@ -138,27 +139,33 @@
     if (renderOverlay) startAnimation();
   });
 
-  // A custom overlay's files are read fresh from disk right here — not
-  // once at app startup, and not cached in between — so editing
-  // index.html/style.css always shows the current file on the very next
-  // activation, with no app restart needed. This window is created once
-  // and stays alive for the app's whole session (see
-  // window::open_overlay_window), so without re-reading on demand like
-  // this, whatever was on disk at startup is all it would ever show.
+  // A custom overlay's files are read fresh from disk right here — both
+  // index.html and style.css together, in one call — not once at app
+  // startup, and not cached in between, so editing either file always
+  // shows up on the very next read with no app restart needed. This
+  // window is created once and stays alive for the app's whole session
+  // (see window::open_overlay_window), so without re-reading on demand
+  // like this, whatever was on disk at startup is all it would ever show.
   //
-  // Reading it again is triggered two different ways, and both matter:
-  // when the *style itself* changes (below, so switching to a custom style
-  // while already active shows it immediately), and separately, every time
-  // the overlay activates (in the isRecordingOrSpeaking effect above) —
-  // which is the one that actually matters for "I edited the file, will
-  // the next dictation show my edit". Relying on the style-change signal
-  // alone is not reliable enough on its own: this window's own copy of
-  // config.ui.overlay_style only updates when it *receives* a config-changed
-  // event with a different value than it already had, and Settings
-  // auto-saves on a debounce — switching the dropdown away and back inside
-  // that debounce window can collapse into a single save this window never
-  // sees as a change at all, so an effect keyed only on that value can
-  // silently never re-fire.
+  // Reading it again is triggered three different ways:
+  //   1. The "overlay-style-selected" listener below, fired directly by
+  //      Settings on every selection in the Overlay style dropdown —
+  //      including re-selecting the style that's already active. This is
+  //      the reliable one for "I edited the file, does picking this style
+  //      show it right now": it bypasses the config store entirely, so it
+  //      isn't subject to point 3 below.
+  //   2. The isRecordingOrSpeaking effect above, on every activation (a
+  //      dictation starts) — the guarantee for "will the next dictation
+  //      show my edit", independent of anything Settings did.
+  //   3. The style-change effect further down, which reacts to
+  //      config.ui.overlay_style itself changing. Kept as a fallback for
+  //      config changes that don't originate from that dropdown (e.g. a
+  //      config file edited by hand), but not relied on alone: this
+  //      window's copy of that value only updates when it *receives* a
+  //      config-changed event with a different value than it already had,
+  //      and Settings auto-saves on a debounce — two quick changes can
+  //      collapse into one save equal to the original value, which this
+  //      window never sees as a change at all.
   function loadActiveCustomOverlay(style: string) {
     if (BUILTIN_STYLES.has(style)) {
       activeCustomOverlay = undefined;
@@ -216,6 +223,15 @@
     // on mount (and again on every style switch, so on-disk edits show up
     // without an app restart).
 
+    // Fired directly by Settings (VisualTab.svelte) on every Overlay style
+    // dropdown selection — see loadActiveCustomOverlay's doc comment above
+    // for why this exists alongside the config-driven effect.
+    listen<string>("overlay-style-selected", (event) => {
+      loadActiveCustomOverlay(event.payload);
+    }).then((unlisten) => {
+      unlistenOverlayStyleSelected = unlisten;
+    });
+
     // Listen to real-time audio levels from Rust backend
     listen<number>("audio-level", (event) => {
       targetVolume = Math.min(1.0, event.payload * 100.0);
@@ -244,6 +260,7 @@
       document.body.classList.remove("overlay-window");
       if (unlistenAudioLevel) unlistenAudioLevel();
       if (unlistenCommandExecuted) unlistenCommandExecuted();
+      if (unlistenOverlayStyleSelected) unlistenOverlayStyleSelected();
       if (commandTimerId) clearTimeout(commandTimerId);
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
     };

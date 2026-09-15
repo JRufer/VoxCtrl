@@ -15,16 +15,14 @@
   style.css pair. Each subfolder becomes a selectable "Overlay style" in
   that tab, named after the folder (this one is named "Custom").
 
-  A custom overlay's files are read fresh from disk — not cached from app
-  startup — every time the overlay actually activates (a dictation
-  starts), so simplest is: edit a file, then just dictate again; the next
-  activation always reads the current files. Switching the Overlay style
-  dropdown away and back also re-reads immediately, which is handy for
-  spot-checking a change without dictating, but activation is the
-  guarantee that matters — Settings auto-saves on a short delay, and two
-  quick dropdown changes can occasionally collapse into one save this
-  window never sees as a change, so don't rely on the dropdown switch
-  alone. No app restart needed either way.
+  A custom overlay's files — both index.html and style.css, together —
+  are read fresh from disk, not cached from app startup, every time you
+  select this style in the Overlay style dropdown (including
+  re-selecting it while it's already selected) and again every time the
+  overlay actually activates (a dictation starts). So simplest is: edit a
+  file, then either re-pick the style in Settings or just dictate again —
+  either one always reads the current files, for both files at once. No
+  app restart needed.
 
   This particular folder is also special in one more way: VoxCtrl makes
   sure Custom/ exists, seeding it with this exact template if it's

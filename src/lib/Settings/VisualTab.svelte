@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { emit } from "@tauri-apps/api/event";
   import type { AppConfig } from "../../stores/config";
   import { config, configDirty } from "../../stores/config";
 
@@ -73,6 +74,22 @@
     config.set(cfg);
     configDirty.set(true);
   }
+
+  // The overlay window's own config store only reacts when the value it
+  // receives actually differs from what it already has — Settings
+  // auto-saves on a debounce, so picking a style, then a different one,
+  // then back to the first within that window can collapse into a single
+  // save equal to the original value, which the overlay window never sees
+  // as a change. That's fine for most fields, but for a custom overlay it
+  // means re-selecting a style you just edited can silently fail to
+  // re-read its (possibly changed) index.html/style.css. This event
+  // sidesteps the config store entirely: every selection, including
+  // re-selecting the same value, tells the overlay window directly to
+  // re-read that style's files fresh from disk right now.
+  function onOverlayStyleChange(val: string) {
+    markDirty();
+    emit("overlay-style-selected", val);
+  }
 </script>
 
 <section>
@@ -106,7 +123,7 @@
     
     <label class="field">
       <span>Overlay style</span>
-      <CustomSelect bind:value={cfg.ui.overlay_style} options={overlayStyleOptions} onchange={markDirty} />
+      <CustomSelect bind:value={cfg.ui.overlay_style} options={overlayStyleOptions} onchange={onOverlayStyleChange} />
     </label>
 
     <label class="field">

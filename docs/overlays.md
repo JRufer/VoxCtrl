@@ -147,25 +147,35 @@ different purposes, both in `src-tauri/src/commands.rs`:
 - `get_custom_overlay(name)` reads one folder's `index.html` + `style.css`
   fresh off disk, by the display name it's selected under.
   `Overlay.svelte`'s shared `loadActiveCustomOverlay(style)` calls this —
-  not the list command — and is itself called from two different
-  `$effect`s, deliberately, not just one: the existing style-switch effect
-  (so switching the dropdown to a custom style, or away and back, updates
-  immediately), and the `isRecordingOrSpeaking` effect, every time it
-  transitions to active (so every dictation start re-reads the currently
-  selected style's files, regardless of whether the style value itself
-  changed). The second trigger is the one that actually matters for "I
-  edited the file, does the next dictation show it": this window's own
-  copy of `config.ui.overlay_style` only updates when it *receives* a
-  `config-changed` event carrying a different value than it already had,
-  and Settings auto-saves on a debounce, so switching the dropdown away
-  and back quickly can collapse into a single save this window never
-  observes as a change — an effect keyed on the style value alone can
-  silently never re-fire in that case. Reading on activation instead has
-  no such gap: it doesn't matter whether the *value* changed, only
-  whether the overlay is about to be shown. Because the overlay window is
-  created once and stays alive for the app's whole session
-  (`window::open_overlay_window`), neither trigger existing would mean
-  whatever was on disk at startup is all it would ever show.
+  not the list command — and is itself called three different ways,
+  deliberately, not just one:
+  1. `VisualTab.svelte` emits an `overlay-style-selected` event, with the
+     new value, on every selection in the Overlay style dropdown —
+     including re-selecting the style that's already active — and
+     `Overlay.svelte` listens for it directly. This bypasses the config
+     store entirely, so it's the reliable trigger for "I edited the file,
+     does picking this style in Settings show it right now," for *both*
+     `index.html` and `style.css` together (`read_custom_overlay_folder`
+     always reads both in one call — there's no independent per-file
+     caching to go stale).
+  2. The `isRecordingOrSpeaking` effect, every time it transitions to
+     active — so every dictation start re-reads the currently selected
+     style's files too, independent of anything Settings did.
+  3. A style-change `$effect` that reacts to `config.ui.overlay_style`
+     itself changing, kept as a fallback for config changes that don't
+     originate from that dropdown (e.g. `config.json` edited by hand).
+     This one alone isn't reliable: this window's own copy of that value
+     only updates when it *receives* a `config-changed` event carrying a
+     different value than it already had, and Settings auto-saves on a
+     debounce, so switching the dropdown away and back quickly can
+     collapse into a single save this window never observes as a change —
+     an effect keyed on the style value alone can silently never re-fire
+     in that case. Triggers 1 and 2 don't have this gap: neither cares
+     whether the *value* changed, only that a selection or an activation
+     happened. Because the overlay window is created once and stays alive
+     for the app's whole session (`window::open_overlay_window`), without
+     at least one of these three, whatever was on disk at startup is all
+     it would ever show.
 
 `custom_overlays::refresh_bundled_example` (called once, before `run()`
 builds the Tauri app) makes sure a documented `Custom/` example exists —
