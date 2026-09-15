@@ -16,8 +16,8 @@ use tracing::info;
 use voxctrl_config::TtsConfig;
 
 use crate::audiocpp::{
-    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, synthesize,
-    SpeakerRef, SynthesizeRequest,
+    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
+    SpeakRequest, SpeakerRef,
 };
 use crate::engine::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
@@ -83,11 +83,89 @@ pub fn read_voice_transcript_file(wav_path_str: &str) -> Option<String> {
     }
 }
 
+/// Resolves the clone-mode reference clip + optional transcript, or `None`
+/// when the config calls for Voice Design instead (which the UI no longer
+/// offers for VoxCPM2 — see the module docs above — but a config predating
+/// that change could still have it set).
+fn resolve_clone_reference(
+    cfg: &voxctrl_config::VoxCpm2Config,
+    hf_token: Option<&str>,
+) -> Result<Option<(std::path::PathBuf, Option<String>)>> {
+    let is_clone_mode =
+        cfg.voice_mode == "clone" || (!cfg.cloned_voice.trim().is_empty() && cfg.voice_mode != "prompt");
+    if !is_clone_mode {
+        return Ok(None);
+    }
+
+    let voice_id = if cfg.cloned_voice.trim().is_empty() { "alba" } else { cfg.cloned_voice.trim() };
+    let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
+        .unwrap_or_else(|| "hf://kyutai/tts-voices/alba-mackenna/casual.wav".to_string());
+    let path =
+        resolve_hf_reference_blocking(&reference, hf_token).context("resolve VoxCPM2 reference voice clip")?;
+    let transcript = read_voice_transcript_file(&path.to_string_lossy());
+    if cfg.ultimate_cloning {
+        match &transcript {
+            Some(t) => info!("VoxCPM2 Ultimate Cloning active with transcript: '{t}'"),
+            None => info!("VoxCPM2 Ultimate Cloning enabled; no companion .txt found alongside the reference clip"),
+        }
+    }
+    Ok(Some((path, transcript)))
+}
+
+fn speaker_ref<'a>(
+    cfg: &'a voxctrl_config::VoxCpm2Config,
+    clone_ref: &'a Option<(std::path::PathBuf, Option<String>)>,
+) -> SpeakerRef<'a> {
+    match clone_ref {
+        Some((path, _)) => SpeakerRef::Clone(path),
+        None => {
+            // Confirmed against audio.cpp v0.8.0: `instruct` is accepted for
+            // voxcpm2's `tts` task but produces byte-identical output
+            // regardless of prompt content — Voice Design isn't actually
+            // wired up for this family yet, despite being advertised in its
+            // model spec. Not something VoxCtrl can work around; flagging it
+            // loudly here so it isn't mistaken for our own bug.
+            tracing::warn!(
+                "VoxCPM2 Voice Design prompt is currently ignored by audio.cpp \
+                 (a known upstream limitation) — synthesis will use its default voice"
+            );
+            SpeakerRef::Design(cfg.speaker_prompt.trim())
+        }
+    }
+}
+
+/// Ensures a resident audio.cpp session is loaded and warm for VoxCPM2.
+/// Called from `TtsCommand::Preload` — see [`crate::pocket::ensure_pocket_tts_loaded`]
+/// for why this needs its own dummy request rather than reusing `speak_vox_cpm_2`.
+pub(crate) fn ensure_vox_cpm_2_loaded(
+    config: &TtsConfig,
+    session: &mut Option<AudioCppSession>,
+) -> Result<()> {
+    let cfg = &config.vox_cpm_2;
+    let model_dir = resolve_vox_cpm_2_dir(&cfg.model_dir);
+    if !model_dir.join(VOX_CPM_2_MODEL_FILENAME).exists() {
+        anyhow::bail!("VoxCPM2 model not found. Download it from TTS settings.");
+    }
+    AudioCppSession::ensure(session, audiocpp::FAMILY_VOXCPM2, &model_dir, cfg.gpu)?;
+
+    let clone_ref = resolve_clone_reference(cfg, config.hf_token.as_deref())?;
+    let reference_text = if cfg.ultimate_cloning { clone_ref.as_ref().and_then(|(_, t)| t.as_deref()) } else { None };
+    session.as_ref().unwrap().speak(&SpeakRequest {
+        text: " ",
+        speaker: Some(speaker_ref(cfg, &clone_ref)),
+        reference_text,
+    })?;
+    Ok(())
+}
+
 /// Called from `TtsEngineWorker::run` when `config.engine ==
-/// TtsEngine::VoxCpm2`.
+/// TtsEngine::VoxCpm2`. Takes the worker's audio.cpp session by mutable
+/// reference so it persists (and the underlying model stays loaded) across
+/// calls for the worker's lifetime, or until idle-unload drops it.
 pub(crate) fn speak_vox_cpm_2(
     config: &TtsConfig,
     u: &Utterance,
+    session: &mut Option<AudioCppSession>,
     on_playback_start: &Option<PlaybackCallback>,
     sink: &rodio::Sink,
     _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
@@ -99,83 +177,30 @@ pub(crate) fn speak_vox_cpm_2(
     if !model_dir.join(VOX_CPM_2_MODEL_FILENAME).exists() {
         anyhow::bail!("VoxCPM2 model not found. Download it from TTS settings.");
     }
+    AudioCppSession::ensure(session, audiocpp::FAMILY_VOXCPM2, &model_dir, cfg.gpu)?;
 
-    let is_clone_mode =
-        cfg.voice_mode == "clone" || (!cfg.cloned_voice.trim().is_empty() && cfg.voice_mode != "prompt");
+    let clone_ref = resolve_clone_reference(cfg, config.hf_token.as_deref())?;
+    let reference_text = if cfg.ultimate_cloning { clone_ref.as_ref().and_then(|(_, t)| t.as_deref()) } else { None };
 
-    let (clip_path, transcript) = if is_clone_mode {
-        let voice_id = if cfg.cloned_voice.trim().is_empty() { "alba" } else { cfg.cloned_voice.trim() };
-        let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
-            .unwrap_or_else(|| "hf://kyutai/tts-voices/alba-mackenna/casual.wav".to_string());
-        let path = resolve_hf_reference_blocking(&reference, config.hf_token.as_deref())
-            .context("resolve VoxCPM2 reference voice clip")?;
-        let transcript = read_voice_transcript_file(&path.to_string_lossy());
-        if cfg.ultimate_cloning {
-            match &transcript {
-                Some(t) => info!("VoxCPM2 Ultimate Cloning active with transcript: '{t}'"),
-                None => info!("VoxCPM2 Ultimate Cloning enabled; no companion .txt found alongside the reference clip"),
-            }
-        }
-        (Some(path), transcript)
-    } else {
-        (None, None)
-    };
+    info!(
+        "Synthesizing text with VoxCPM2 (mode={}, gpu={})...",
+        if clone_ref.is_some() { "clone" } else { "design" },
+        cfg.gpu
+    );
+
+    let audio = session.as_ref().unwrap().speak(&SpeakRequest {
+        text: &u.text,
+        speaker: Some(speaker_ref(cfg, &clone_ref)),
+        reference_text,
+    })?;
 
     if is_prewarm {
         return Ok(());
     }
-
-    let out_wav = tempfile::Builder::new()
-        .prefix("voxctrl-voxcpm2-")
-        .suffix(".wav")
-        .tempfile()
-        .context("create temp wav for voxcpm2")?;
-
-    let speaker = match &clip_path {
-        Some(path) => SpeakerRef::Clone(path),
-        None => {
-            // Confirmed against audio.cpp v0.8.0: `--instruct` is accepted
-            // for voxcpm2's `tts` task but produces byte-identical output
-            // regardless of prompt content — Voice Design isn't actually
-            // wired up for this family yet, despite being advertised in its
-            // model spec. Not something VoxCtrl can work around; flagging it
-            // loudly here so it isn't mistaken for our own bug.
-            tracing::warn!(
-                "VoxCPM2 Voice Design prompt is currently ignored by audio.cpp \
-                 (a known upstream limitation) — synthesis will use its default voice"
-            );
-            SpeakerRef::Design(cfg.speaker_prompt.trim())
-        }
-    };
-    // Ultimate Cloning pairs the reference clip with its transcript
-    // (`--reference-text`) so the model can align phonetics more precisely.
-    // Unlike Breeze-TTS-2, VoxCPM2 clones fine without one.
-    let reference_text =
-        if cfg.ultimate_cloning { transcript.as_deref() } else { None };
-
-    info!(
-        "Synthesizing text with VoxCPM2 (mode={}, gpu={})...",
-        if clip_path.is_some() { "clone" } else { "design" },
-        cfg.gpu
-    );
-
-    synthesize(
-        &SynthesizeRequest {
-            family: audiocpp::FAMILY_VOXCPM2,
-            model_dir: &model_dir,
-            gpu: cfg.gpu,
-            text: &u.text,
-            speaker: Some(speaker),
-            reference_text,
-            load_options: &[],
-        },
-        out_wav.path(),
-    )?;
-
     if let Some(ref cb) = on_playback_start {
         cb();
     }
-    audiocpp::play_wav_file(sink, out_wav.path())
+    audiocpp::play_wav_bytes(sink, audio)
 }
 
 #[cfg(test)]

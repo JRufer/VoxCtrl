@@ -95,7 +95,8 @@ Full schema with defaults:
     "pocket_tts": {
       "voice": "alba",
       "prewarm": false,
-      "voice_dir": ""
+      "voice_dir": "",
+      "gpu": false
     },
     "inflect_micro": {
       "model_dir": "",
@@ -301,7 +302,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 
 **`breeze_tts_2` sub-object:**
 
-[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with natural-language voice design speaker prompts and reference voice cloning, released under the **BreezeBlue Research and Non-Commercial License**. VoxCtrl runs it through [audio.cpp](https://github.com/0xShug0/audio.cpp); the GGUF model mirror is ungated, so no HuggingFace token is needed to download it — Settings and the setup wizard still show the non-commercial license warning before you do.
+[Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is a bilingual speech generation model with reference voice cloning, released under the **BreezeBlue Research and Non-Commercial License**. VoxCtrl runs it through [audio.cpp](https://github.com/0xShug0/audio.cpp); the GGUF model mirror is ungated, so no HuggingFace token is needed to download it — Settings and the setup wizard still show the non-commercial license warning before you do. The model also advertises natural-language Voice Design prompts, but audio.cpp doesn't reliably apply them, so the UI only offers Voice Cloning (`speaker_prompt`/`voice_mode: "prompt"` remain in the config for compatibility).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -310,7 +311,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `cloned_voice` | string | `"alba"` | Voice ID from the shared voice folder, used in `"clone"` mode |
 | `voice_dir` | string | `""` | Directory holding reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/breeze-tts-2/` |
-| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
 | `gpu` | bool | `false` | Run synthesis on the GPU via Vulkan; falls back to the CPU whenever no usable Vulkan device is found |
 
 **`vox_cpm_2` sub-object:**
@@ -325,7 +326,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
 | `ultimate_cloning` | bool | `false` | Enables Ultimate Cloning when paired audio + transcript files are available |
 | `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
-| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
 | `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
 
 **`pocket_tts` sub-object:**
@@ -337,7 +338,7 @@ cloned live. VoxCtrl runs it through [audio.cpp](https://github.com/0xShug0/audi
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `voice` | string | `"alba"` | Bundled voice ID (`"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"`), or the filename stem of a custom clip in `voice_dir` |
-| `prewarm` | bool | `false` | Unused — kept for config compatibility (see [tts.md](tts.md#pre-warming)) |
+| `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
 | `voice_dir` | string | `""` | Directory scanned for custom `.wav` voice clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/`. Drop a `<id>.wav` file in to add it to the voice list — naming it after a built-in voice (e.g. `alba.wav`) overrides that voice's embedding and clones from the clip instead. Supports `~` expansion. |
 | `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
 

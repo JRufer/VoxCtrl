@@ -14,8 +14,8 @@ use tracing::info;
 use voxctrl_config::TtsConfig;
 
 use crate::audiocpp::{
-    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, synthesize,
-    SpeakerRef, SynthesizeRequest,
+    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
+    SpeakRequest, SpeakerRef,
 };
 use crate::engine::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
@@ -88,11 +88,88 @@ fn read_voice_transcript_file(wav_path: &std::path::Path) -> Option<String> {
     }
 }
 
+/// Resolves the clone-mode reference clip + its (mandatory) transcript, or
+/// `None` when the config calls for Voice Design instead.
+fn resolve_clone_reference(
+    cfg: &voxctrl_config::BreezeTts2Config,
+    hf_token: Option<&str>,
+) -> Result<Option<(std::path::PathBuf, String)>> {
+    let is_clone_mode =
+        cfg.voice_mode == "clone" || (!cfg.cloned_voice.trim().is_empty() && cfg.voice_mode != "prompt");
+    if !is_clone_mode {
+        return Ok(None);
+    }
+
+    let voice_id = if cfg.cloned_voice.trim().is_empty() { "alba" } else { cfg.cloned_voice.trim() };
+    let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
+        .unwrap_or_else(|| "hf://kyutai/tts-voices/alba-mackenna/casual.wav".to_string());
+    let path =
+        resolve_hf_reference_blocking(&reference, hf_token).context("resolve Breeze-TTS-2 reference voice clip")?;
+    // Breeze-TTS-2 cloning requires a matching transcript, unlike
+    // Pocket-TTS/VoxCPM2 — audio.cpp rejects a clone request with no
+    // `reference_text` for this family.
+    let transcript = read_voice_transcript_file(&path).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Breeze-TTS-2 voice cloning needs a transcript: add a {}.txt file \
+             next to the reference clip containing exactly what is spoken in it.",
+            path.file_stem().and_then(|s| s.to_str()).unwrap_or("<voice>")
+        )
+    })?;
+    Ok(Some((path, transcript)))
+}
+
+/// Resolves the [`SpeakerRef`] for a config, warning when it falls back to
+/// Voice Design — the UI no longer offers that mode for Breeze-TTS-2 (it
+/// doesn't reliably apply the described voice and quality suffers versus
+/// cloning), but a config predating that change could still have it set.
+fn speaker_ref<'a>(
+    cfg: &'a voxctrl_config::BreezeTts2Config,
+    clone_ref: &'a Option<(std::path::PathBuf, String)>,
+) -> SpeakerRef<'a> {
+    match clone_ref {
+        Some((path, _)) => SpeakerRef::Clone(path),
+        None => {
+            tracing::warn!(
+                "Breeze-TTS-2 Voice Design prompt does not reliably apply the described \
+                 voice — use Voice Cloning instead"
+            );
+            SpeakerRef::Design(cfg.speaker_prompt.trim())
+        }
+    }
+}
+
+/// Ensures a resident audio.cpp session is loaded and warm for Breeze-TTS-2.
+/// Called from `TtsCommand::Preload` — see [`crate::pocket::ensure_pocket_tts_loaded`]
+/// for why this needs its own dummy request rather than reusing `speak_breeze_tts_2`.
+pub(crate) fn ensure_breeze_tts_2_loaded(
+    config: &TtsConfig,
+    session: &mut Option<AudioCppSession>,
+) -> Result<()> {
+    let cfg = &config.breeze_tts_2;
+    let model_dir = resolve_breeze_tts_2_dir(&cfg.model_dir);
+    if !model_dir.join(BREEZE_TTS_2_MODEL_FILENAME).exists() {
+        anyhow::bail!("Breeze-TTS-2 model not found. Download it from TTS settings.");
+    }
+    AudioCppSession::ensure(session, audiocpp::FAMILY_BREEZE_TTS, &model_dir, cfg.gpu)?;
+
+    let clone_ref = resolve_clone_reference(cfg, config.hf_token.as_deref())?;
+    let speaker = speaker_ref(cfg, &clone_ref);
+    session.as_ref().unwrap().speak(&SpeakRequest {
+        text: " ",
+        speaker: Some(speaker),
+        reference_text: clone_ref.as_ref().map(|(_, t)| t.as_str()),
+    })?;
+    Ok(())
+}
+
 /// Called from `TtsEngineWorker::run` when `config.engine ==
-/// TtsEngine::BreezeTts2`.
+/// TtsEngine::BreezeTts2`. Takes the worker's audio.cpp session by mutable
+/// reference so it persists (and the underlying model stays loaded) across
+/// calls for the worker's lifetime, or until idle-unload drops it.
 pub(crate) fn speak_breeze_tts_2(
     config: &TtsConfig,
     u: &Utterance,
+    session: &mut Option<AudioCppSession>,
     on_playback_start: &Option<PlaybackCallback>,
     sink: &rodio::Sink,
     _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
@@ -104,69 +181,30 @@ pub(crate) fn speak_breeze_tts_2(
     if !model_dir.join(BREEZE_TTS_2_MODEL_FILENAME).exists() {
         anyhow::bail!("Breeze-TTS-2 model not found. Download it from TTS settings.");
     }
+    AudioCppSession::ensure(session, audiocpp::FAMILY_BREEZE_TTS, &model_dir, cfg.gpu)?;
 
-    let is_clone_mode =
-        cfg.voice_mode == "clone" || (!cfg.cloned_voice.trim().is_empty() && cfg.voice_mode != "prompt");
+    let clone_ref = resolve_clone_reference(cfg, config.hf_token.as_deref())?;
+    let speaker = speaker_ref(cfg, &clone_ref);
 
-    let (clip_path, transcript) = if is_clone_mode {
-        let voice_id = if cfg.cloned_voice.trim().is_empty() { "alba" } else { cfg.cloned_voice.trim() };
-        let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
-            .unwrap_or_else(|| "hf://kyutai/tts-voices/alba-mackenna/casual.wav".to_string());
-        let path = resolve_hf_reference_blocking(&reference, config.hf_token.as_deref())
-            .context("resolve Breeze-TTS-2 reference voice clip")?;
-        // Breeze-TTS-2 cloning requires a matching transcript, unlike
-        // Pocket-TTS/VoxCPM2 — audio.cpp rejects a clone request with no
-        // `--reference-text` for this family.
-        let transcript = read_voice_transcript_file(&path).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Breeze-TTS-2 voice cloning needs a transcript: add a {}.txt file \
-                 next to the reference clip containing exactly what is spoken in it.",
-                path.file_stem().and_then(|s| s.to_str()).unwrap_or("<voice>")
-            )
-        })?;
-        (Some(path), Some(transcript))
-    } else {
-        (None, None)
-    };
+    info!(
+        "Synthesizing text with Breeze-TTS-2 (mode={}, gpu={})...",
+        if clone_ref.is_some() { "clone" } else { "design" },
+        cfg.gpu
+    );
+
+    let audio = session.as_ref().unwrap().speak(&SpeakRequest {
+        text: &u.text,
+        speaker: Some(speaker),
+        reference_text: clone_ref.as_ref().map(|(_, t)| t.as_str()),
+    })?;
 
     if is_prewarm {
         return Ok(());
     }
-
-    let out_wav = tempfile::Builder::new()
-        .prefix("voxctrl-breeze-tts-2-")
-        .suffix(".wav")
-        .tempfile()
-        .context("create temp wav for breeze-tts-2")?;
-
-    let speaker = match &clip_path {
-        Some(path) => SpeakerRef::Clone(path),
-        None => SpeakerRef::Design(cfg.speaker_prompt.trim()),
-    };
-
-    info!(
-        "Synthesizing text with Breeze-TTS-2 (mode={}, gpu={})...",
-        if clip_path.is_some() { "clone" } else { "design" },
-        cfg.gpu
-    );
-
-    synthesize(
-        &SynthesizeRequest {
-            family: audiocpp::FAMILY_BREEZE_TTS,
-            model_dir: &model_dir,
-            gpu: cfg.gpu,
-            text: &u.text,
-            speaker: Some(speaker),
-            reference_text: transcript.as_deref(),
-            load_options: &[],
-        },
-        out_wav.path(),
-    )?;
-
     if let Some(ref cb) = on_playback_start {
         cb();
     }
-    audiocpp::play_wav_file(sink, out_wav.path())
+    audiocpp::play_wav_bytes(sink, audio)
 }
 
 #[cfg(test)]

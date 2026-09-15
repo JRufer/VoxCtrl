@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing::info;
 
-use crate::audiocpp::{self, resolve_hf_reference, synthesize, SpeakerRef, SynthesizeRequest};
+use crate::audiocpp::{self, resolve_hf_reference, AudioCppSession, SpeakRequest, SpeakerRef};
 use crate::engine::PlaybackCallback;
 use crate::piper::expand_tilde;
 
@@ -246,13 +246,52 @@ pub async fn download_pocket_tts_assets(voice: &str, voice_dir: &str, hf_token: 
     Ok(())
 }
 
-// ── Pocket-TTS synthesis (audio.cpp subprocess) ───────────────────────────────
+// ── Pocket-TTS synthesis (persistent audio.cpp server session) ────────────────
+
+/// Resolves `voice` to the [`SpeakerRef`] audio.cpp expects: a built-in
+/// voice is selected by id (its embedding ships with the model and needs no
+/// `--voice-ref`/`voice_ref` file), a custom clip is cloned from its `.wav`.
+fn speaker_ref_for_voice<'a>(resolved: &'a ResolvedVoice) -> SpeakerRef<'a> {
+    match resolved {
+        ResolvedVoice::BuiltIn(id) => SpeakerRef::VoiceId(id),
+        ResolvedVoice::Custom(path) => SpeakerRef::Clone(path),
+    }
+}
+
+/// Ensures a resident audio.cpp session is loaded and warm for Pocket-TTS.
+/// Called from `TtsCommand::Preload` — unlike [`speak_pocket_tts`], this
+/// path has no utterance/sink yet, so it sends a tiny dummy request itself
+/// to force the (lazily-loaded) model to actually load rather than just
+/// starting an empty server.
+pub(crate) fn ensure_pocket_tts_loaded(
+    config: &voxctrl_config::TtsConfig,
+    session: &mut Option<AudioCppSession>,
+) -> Result<()> {
+    let cfg = &config.pocket_tts;
+    if !is_pocket_tts_ready(&cfg.voice, &cfg.voice_dir) {
+        anyhow::bail!("pocket-tts assets for voice '{}' not found. Download them from TTS settings.", cfg.voice);
+    }
+    let model_dir = pocket_tts_model_dir();
+    AudioCppSession::ensure(session, audiocpp::FAMILY_POCKET_TTS, &model_dir, cfg.gpu)?;
+
+    let resolved = resolve_pocket_tts_voice(&cfg.voice, &cfg.voice_dir)
+        .ok_or_else(|| anyhow::anyhow!("unknown pocket-tts voice: {}", cfg.voice))?;
+    session.as_ref().unwrap().speak(&SpeakRequest {
+        text: " ",
+        speaker: Some(speaker_ref_for_voice(&resolved)),
+        reference_text: None,
+    })?;
+    Ok(())
+}
 
 /// Called from `TtsEngineWorker::run` (in `engine.rs`) when `config.engine ==
-/// TtsEngine::PocketTts`.
+/// TtsEngine::PocketTts`. Takes the worker's audio.cpp session by mutable
+/// reference so it persists (and the underlying model stays loaded) across
+/// calls for the worker's lifetime, or until idle-unload drops it.
 pub(crate) fn speak_pocket_tts(
     config: &voxctrl_config::TtsConfig,
     u: &crate::engine::Utterance,
+    session: &mut Option<AudioCppSession>,
     on_playback_start: &Option<PlaybackCallback>,
     sink: &rodio::Sink,
     _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
@@ -265,41 +304,26 @@ pub(crate) fn speak_pocket_tts(
     if !is_pocket_tts_ready(voice, &cfg.voice_dir) {
         anyhow::bail!("pocket-tts assets for voice '{voice}' not found. Download them from TTS settings.");
     }
+
+    let model_dir = pocket_tts_model_dir();
+    AudioCppSession::ensure(session, audiocpp::FAMILY_POCKET_TTS, &model_dir, cfg.gpu)?;
+
+    let resolved = resolve_pocket_tts_voice(voice, &cfg.voice_dir)
+        .ok_or_else(|| anyhow::anyhow!("unknown pocket-tts voice: {voice}"))?;
+
+    let audio = session.as_ref().unwrap().speak(&SpeakRequest {
+        text: &u.text,
+        speaker: Some(speaker_ref_for_voice(&resolved)),
+        reference_text: None,
+    })?;
+
     if is_prewarm {
         return Ok(());
     }
-
-    let model_dir = pocket_tts_model_dir();
-    let resolved = resolve_pocket_tts_voice(voice, &cfg.voice_dir)
-        .ok_or_else(|| anyhow::anyhow!("unknown pocket-tts voice: {voice}"))?;
-    let speaker = match &resolved {
-        ResolvedVoice::BuiltIn(id) => SpeakerRef::Clone(&embedding_path(&model_dir, id)),
-        ResolvedVoice::Custom(path) => SpeakerRef::Clone(path),
-    };
-
-    let out_wav = tempfile::Builder::new()
-        .prefix("voxctrl-pocket-tts-")
-        .suffix(".wav")
-        .tempfile()
-        .context("create temp wav for pocket-tts")?;
-
-    synthesize(
-        &SynthesizeRequest {
-            family: audiocpp::FAMILY_POCKET_TTS,
-            model_dir: &model_dir,
-            gpu: cfg.gpu,
-            text: &u.text,
-            speaker: Some(speaker),
-            reference_text: None,
-            load_options: &[],
-        },
-        out_wav.path(),
-    )?;
-
     if let Some(ref cb) = on_playback_start {
         cb();
     }
-    audiocpp::play_wav_file(sink, out_wav.path())
+    audiocpp::play_wav_bytes(sink, audio)
 }
 
 #[cfg(test)]
@@ -349,11 +373,11 @@ mod tests {
         assert!(!is_pocket_tts_ready("not-a-real-voice", ""));
     }
 
-    #[test]
-    fn test_is_pocket_tts_ready_false_without_model() {
-        // Even a built-in voice isn't "ready" until the shared model file exists.
-        assert!(!is_pocket_tts_ready("alba", ""));
-    }
+    // `is_pocket_tts_ready` for a real built-in voice also depends on the
+    // shared model file at the fixed platform default directory, which is
+    // real machine state (not a tempdir) — not exercised here to keep this
+    // suite hermetic; see `test_is_pocket_tts_ready_false_for_unknown_voice`
+    // for the part of that check this crate can test in isolation.
 
     // ── custom voice directory ───────────────────────────────────────────────
 
