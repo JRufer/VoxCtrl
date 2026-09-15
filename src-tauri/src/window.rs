@@ -171,8 +171,19 @@ pub fn open_wizard_window(app: &tauri::AppHandle) -> Result<(), String> {
 
 /// Label of the webview-backed dictation overlay (prototype Slint replacement).
 pub const OVERLAY_WINDOW: &str = "overlay";
-const OVERLAY_WIDTH: f64 = 560.0;
-const OVERLAY_HEIGHT: f64 = 190.0;
+// The overlay's actual content (the 340x152 card, or the widest built-in
+// style) is centered via flex inside this window with real margin to spare —
+// intentionally larger than the Slint helper's 560x190 (rather than matching
+// it exactly), so that content stays comfortably clear of the window edges.
+// Forcing GDK_BACKEND=x11 (see lib.rs) makes GDK approximate the display's
+// real scale factor — often fractional under Wayland — by rounding to an
+// integer X11 scale, and the window's actually-rendered pixel size can come
+// out a few px smaller than requested as a result. Against the Slint
+// geometry's ~19px top/bottom margin that was enough to clip into the card's
+// rounded corners; this leaves more slack to absorb that without needing to
+// know the exact shortfall.
+const OVERLAY_WIDTH: f64 = 592.0;
+const OVERLAY_HEIGHT: f64 = 222.0;
 
 /// Build (or fetch) the webview overlay: a transparent, frameless,
 /// always-on-top, click-through `WebviewWindow` rendering the existing
