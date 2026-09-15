@@ -5,63 +5,59 @@
   intentional visual difference from Voice Card is the brand line below,
   which reads "CUSTOM OVERLAY" instead of "VOXCTRL" — everything else (the
   gold chip, the VU-meter LED matrix, the status stamp, the target field)
-  behaves exactly the same, so you can see precisely what changed and use
-  this file as a starting point for your own design.
+  behaves the same, so you can see precisely what changed and use this
+  file as a starting point for your own design.
 
   HOW THIS GETS LOADED
   ─────────────────────
-  VoxCtrl scans ~/.local/share/voxctrl/overlays/ (Linux/Windows path shown;
-  see the overlays folder's own README.md for the exact path on your OS)
-  for subfolders containing an index.html + style.css pair. Each subfolder
-  becomes a selectable "Overlay style" in Settings → Visual & Feedback,
-  named after the folder (this one is named "Custom"). Edit these files
-  directly, or duplicate this folder under a new name to start a new style
-  — VoxCtrl picks up new/changed folders automatically the next time you
-  open the Overlay style dropdown.
+  VoxCtrl scans the custom-overlays folder shown at the bottom of
+  Settings → Visual & Feedback for subfolders containing an index.html +
+  style.css pair. Each subfolder becomes a selectable "Overlay style" in
+  that tab, named after the folder (this one is named "Custom"). Edit
+  these files directly, or duplicate this folder under a new name to
+  start a new style — VoxCtrl picks up new/changed folders automatically
+  the next time you open the Overlay style dropdown.
 
   TEMPLATE PLACEHOLDERS
   ──────────────────────
-  Two placeholders are substituted into this HTML before it's shown:
-    {{target}}   the active routing target's label (e.g. "Focused Window")
-    {{trigger}}  the same value, kept for symmetry — most templates only
-                 need {{target}}
-  These only cover the very first paint. Everything that changes *while*
-  the overlay is on screen (recording/processing/speaking state, the live
-  audio level, a target label that changes mid-session) comes through the
-  events described below instead — a placeholder can't update itself once
-  the HTML has been inserted into the page.
+  One placeholder is substituted into this HTML before it's shown:
+    {{target}}   the active routing target's label (e.g. "Focused Window"),
+                 substituted once, at the moment this HTML is rendered.
+  ({{trigger}} is also available and carries the same value, kept for
+  symmetry with the placeholder VoxCtrl substitutes elsewhere.)
 
-  LIVE EVENTS
-  ───────────
-  While this overlay is visible, VoxCtrl dispatches a `voxctrl-status`
-  CustomEvent on `window` roughly once per animation frame (~60fps):
+  WHY THIS TEMPLATE HAS NO <script> TAG
+  ───────────────────────────────────────
+  VoxCtrl's window content-security-policy is `script-src 'self'` — no
+  `unsafe-inline` — the same restriction that stops a compromised or
+  malicious page from running arbitrary injected script anywhere else in
+  the app. That blocks inline <script> tags everywhere, including ones
+  written into a custom overlay's index.html, whether they're present in
+  the file or inserted at runtime: the browser silently refuses to run
+  them, with no visible error in this window (there's no on-screen
+  console). If your overlay depends on a <script> block to reveal itself,
+  it will render completely invisible with no other symptom — this is
+  almost certainly why, if you're debugging one.
 
-    window.addEventListener('voxctrl-status', (e) => {
-      e.detail.recording           // boolean
-      e.detail.processing          // boolean — Whisper is transcribing
-      e.detail.speaking            // boolean — TTS is talking back
-      e.detail.audio_ready         // boolean — false while the mic is
-                                    // still connecting
-      e.detail.active_target_label // string — same value {{target}} had
-      e.detail.audio_level         // number 0..1, already smoothed —
-                                    // this is what drives the LED matrix
-    });
+  Everything below reacts to live state a different way instead: VoxCtrl
+  continuously writes the app's status onto CSS custom properties on the
+  page's root element:
 
-  A raw, unsmoothed `voxctrl-audio-level` CustomEvent (detail: number 0..1)
-  also fires on every microphone buffer, if you want your own smoothing
-  instead of the app's.
+    --voxctrl-recording       0 or 1
+    --voxctrl-processing      0 or 1 — Whisper is transcribing
+    --voxctrl-speaking        0 or 1 — TTS is talking back
+    --voxctrl-mcp-recording   0 or 1 — an MCP client triggered recording
+    --voxctrl-audio-ready     0 or 1 — 0 while the mic is still connecting
+    --voxctrl-audio-level     0..1, the smoothed microphone level
 
-  When this overlay is switched away from (a different style is picked,
-  or the overlay is dismissed), VoxCtrl dispatches `voxctrl-cleanup` once.
-  Listen for it to remove your own listeners — the script below does this
-  so switching styles back and forth doesn't pile up duplicate listeners.
-
-  <script> tags in this file execute normally (VoxCtrl re-inserts them so
-  the browser actually runs them, since raw innerHTML injection normally
-  wouldn't).
+  ordinary CSS — var(), calc(), clamp(), transition — reads these
+  directly with no script needed at all, and works under the CSP as
+  shipped. See style.css for how this template uses them: the card's
+  on/off flip, the status-stamp text swap, and the audio-reactive LED
+  matrix are all driven this way.
 -->
-<div class="vc-custom-scene" id="vc-custom-scene">
-  <div class="vc-custom-card" id="vc-custom-card">
+<div class="vc-custom-scene">
+  <div class="vc-custom-card">
     <div class="vc-custom-sheen"></div>
 
     <div class="vc-custom-chip">
@@ -74,109 +70,187 @@
     <span class="vc-custom-brand">CUSTOM OVERLAY</span>
     <span class="vc-custom-brand-sub">VOICE CARD</span>
 
-    <span class="vc-custom-stamp" id="vc-custom-stamp">
-      <span class="vc-custom-stamp-dot"></span><span id="vc-custom-stamp-text">REC</span>
+    <!-- Three pre-rendered labels stacked on top of each other; style.css
+         shows/hides each with the state formulas defined on .vc-custom-card,
+         since CSS can't swap text content based on a variable's value. -->
+    <span class="vc-custom-stamp">
+      <span class="vc-custom-stamp-dot"></span>
+      <span class="vc-custom-stamp-text s-rec">REC</span>
+      <span class="vc-custom-stamp-text s-init">INIT</span>
+      <span class="vc-custom-stamp-text s-proc">PROC</span>
     </span>
 
-    <div class="vc-custom-matrix" id="vc-custom-matrix"></div>
+    <!-- 20 columns x 6 rows. Each column's --w is its fixed position in a
+         center-weighted envelope (set in style.css by nth-child, so this
+         markup itself stays plain); each dot's opacity is computed from
+         --voxctrl-audio-level * that column's --w against its own row,
+         giving a real center-weighted VU meter with no script. -->
+    <div class="vc-custom-matrix">
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+      <div class="vc-custom-col">
+        <span class="vc-custom-dot red"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot amber"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+        <span class="vc-custom-dot green"></span>
+      </div>
+    </div>
 
     <span class="vc-custom-field-label">TARGET</span>
-    <span class="vc-custom-field-value" id="vc-custom-field-value">{{target}}</span>
+    <span class="vc-custom-field-value vc-custom-target">{{target}}</span>
+    <span class="vc-custom-field-value vc-custom-reading">Reading the card&hellip;</span>
     <span class="vc-custom-card-number">&bull;&bull;&bull;&bull; VOX</span>
   </div>
 </div>
-
-<script>
-(function () {
-  "use strict";
-
-  // Namespaced so two copies (e.g. this style and a duplicate you're
-  // iterating on) never fight over the same globals.
-  var COLS = 20, ROWS = 6;
-
-  var scene = document.getElementById("vc-custom-scene");
-  var card = document.getElementById("vc-custom-card");
-  var stampText = document.getElementById("vc-custom-stamp-text");
-  var fieldValue = document.getElementById("vc-custom-field-value");
-  var matrixEl = document.getElementById("vc-custom-matrix");
-
-  // Re-query and (re)build the matrix on demand rather than caching it once
-  // at the top: VoxCtrl's overlay host re-renders this HTML whenever the
-  // target label changes (it's a template placeholder, substituted fresh
-  // each render — see the comment above), which replaces this whole
-  // subtree. Rebuilding lazily like this means the matrix keeps working
-  // correctly across those re-renders instead of only working once.
-  var colLevels = null;
-  function ensureMatrix() {
-    if (matrixEl.childElementCount === COLS) return;
-    matrixEl.innerHTML = "";
-    colLevels = new Float32Array(COLS);
-    for (var i = 0; i < COLS; i++) {
-      var col = document.createElement("div");
-      col.className = "vc-custom-col";
-      for (var r = 0; r < ROWS; r++) {
-        var dot = document.createElement("span");
-        dot.className = "vc-custom-dot " + (r === 0 ? "red" : r <= 2 ? "amber" : "green");
-        col.appendChild(dot);
-      }
-      matrixEl.appendChild(col);
-    }
-  }
-  ensureMatrix();
-
-  function onStatus(e) {
-    var d = e.detail;
-    var processing = !!d.processing;
-    var recording = !!d.recording;
-    var ready = d.audio_ready !== false;
-    var level = typeof d.audio_level === "number" ? d.audio_level : 0;
-
-    scene.classList.toggle("on", recording || processing || d.speaking);
-    card.classList.toggle("processing", processing);
-    card.classList.toggle("initializing", recording && !ready);
-
-    if (processing) {
-      stampText.textContent = "PROC";
-      fieldValue.textContent = "Reading the card…";
-    } else if (recording && !ready) {
-      stampText.textContent = "INIT";
-      fieldValue.textContent = d.active_target_label || "Focused Window";
-    } else {
-      stampText.textContent = "REC";
-      fieldValue.textContent = d.active_target_label || "Focused Window";
-    }
-
-    // Same VU-meter ballistics as the built-in Voice Card: fast attack
-    // (jump straight to the target), slow decay (*0.86 per frame) —
-    // and a Gaussian envelope across the columns so the middle of the
-    // meter reacts most strongly, like a real center-weighted VU meter.
-    ensureMatrix();
-    var mid = (COLS - 1) / 2;
-    for (var i = 0; i < COLS; i++) {
-      var target;
-      if (processing) {
-        target = 0.25 + 0.75 * Math.max(0, Math.sin(Date.now() / 250 - i * 0.45));
-      } else if (recording && !ready) {
-        target = 0.08 + 0.06 * Math.random();
-      } else {
-        var env = Math.exp(-((i - mid) * (i - mid)) / 60);
-        target = Math.min(1, Math.sqrt(level) * (0.6 + 0.6 * Math.random()) * env * 1.6);
-      }
-      colLevels[i] = target > colLevels[i] ? target : colLevels[i] * 0.86;
-
-      var col = matrixEl.children[i];
-      for (var r = 0; r < ROWS; r++) {
-        col.children[r].classList.toggle("lit", (ROWS - r) <= colLevels[i] * ROWS);
-      }
-    }
-  }
-
-  function cleanup() {
-    window.removeEventListener("voxctrl-status", onStatus);
-    window.removeEventListener("voxctrl-cleanup", cleanup);
-  }
-
-  window.addEventListener("voxctrl-status", onStatus);
-  window.addEventListener("voxctrl-cleanup", cleanup, { once: true });
-})();
-</script>

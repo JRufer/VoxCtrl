@@ -700,6 +700,13 @@ pub async fn hide_overlay(
     Ok(())
 }
 
+/// The resolved, absolute path to the custom-overlays folder, for display
+/// in Settings (see `custom_overlays::overlays_dir`).
+#[tauri::command]
+pub fn get_custom_overlays_dir() -> String {
+    crate::custom_overlays::overlays_dir().display().to_string()
+}
+
 #[derive(serde::Serialize)]
 pub struct CustomOverlayInfo {
     pub name: String,

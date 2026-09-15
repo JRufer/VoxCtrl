@@ -158,11 +158,24 @@ any overlay of their own in the folder, this leaves it alone — deleting
 `Custom/` specifically while keeping other overlays is respected.
 
 A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
-placeholder substitution on its first render, and afterward listens for
-`voxctrl-status` (recording/processing/speaking/audio_ready/
-active_target_label/audio_level, dispatched on `window` roughly once per
-animation frame), `voxctrl-audio-level` (raw per-buffer mic level), and
-`voxctrl-cleanup` (fired once when the style is switched away from, for
-removing your own listeners) — see the shipped `Custom/index.html` for a
-fully commented, working example of all three.
+placeholder substitution on its first render (the active routing target's
+label). Everything that changes afterward — recording/processing/speaking
+state, the live audio level — has to be read from CSS: VoxCtrl continuously
+writes it onto custom properties on the page root (`--voxctrl-recording`,
+`--voxctrl-processing`, `--voxctrl-speaking`, `--voxctrl-mcp-recording`,
+`--voxctrl-audio-ready`, all 0/1, plus `--voxctrl-audio-level` 0..1), for
+`var()`/`calc()` to consume directly — see the shipped `Custom/index.html`
+and `style.css` for a fully commented, working example (the on/off flip,
+the status-stamp text swap, and the audio-reactive LED matrix are all
+driven this way, with no script).
+
+This is CSS-only because it has to be: the window's `script-src 'self'`
+content-security-policy (`src-tauri/tauri.conf.json`) blocks inline
+`<script>` execution everywhere in the app, custom overlays included, with
+no visible error in the (console-less) overlay window — a `<script>`-based
+overlay just silently never appears. `Overlay.svelte` does still dispatch
+`voxctrl-status` / `voxctrl-audio-level` / `voxctrl-cleanup` `CustomEvent`s
+on `window` for an overlay's own script to listen for, but nothing in this
+app can currently execute that script, so treat those events as unusable
+under the shipped CSP rather than as the documented way to build one.
 

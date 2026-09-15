@@ -12,8 +12,8 @@ The `Custom/` folder next to this file is a complete, working example — a
 copy of the built-in Voice Card style with one line changed (`VOXCTRL` →
 `CUSTOM OVERLAY`), so you can compare the two and see exactly what a real
 overlay folder looks like. Open `Custom/index.html` for a full walkthrough
-of the templating placeholders and the live events VoxCtrl dispatches
-while your overlay is on screen.
+of the templating placeholder and the live CSS custom properties VoxCtrl
+writes while your overlay is on screen.
 
 The fastest way to start your own style:
 
@@ -34,8 +34,10 @@ overlays/
     └── style.css
 ```
 
-- Both files are read as plain text and injected into the overlay window;
-  `index.html`'s `<style>`/`<script>` tags work normally.
+- Both files are read as plain text and injected into the overlay window.
+  **`<script>` tags do not run** — the app's content-security-policy
+  (`script-src 'self'`) blocks inline script everywhere, including here,
+  with no visible error; drive your overlay from CSS instead (see below).
 - The folder name is shown as-is in the Overlay style dropdown. If it
   matches a built-in style's internal name (`voice_card`, `waveform`,
   `pulse`, `blue_wave`, `mono_bars`, `spectrum`, `terminal`, `vinyl`, or
@@ -46,20 +48,23 @@ overlays/
   example the next time it starts — once you have any overlay of your own
   in here, it leaves the folder alone.
 
-## Quick reference: placeholders and events
+## Quick reference: placeholder and live state
 
-See `Custom/index.html` for the full explanation — this is the short
-version:
+See `Custom/index.html` and `style.css` for the full explanation and a
+working example of all of this — this is the short version:
 
-**Placeholders** (substituted once, into the initial HTML):
+**Placeholder** (substituted once, into the initial HTML):
 - `{{target}}` / `{{trigger}}` — the active routing target's label.
 
-**Live events** (dispatched on `window` while the overlay is visible):
-- `voxctrl-status` — fires ~60 times/second with
-  `{ recording, processing, speaking, audio_ready, active_target_label,
-  audio_level }` in `event.detail`. `audio_level` is 0..1 and already
-  smoothed.
-- `voxctrl-audio-level` — raw, unsmoothed microphone level (0..1) on every
-  buffer, if you want to do your own smoothing.
-- `voxctrl-cleanup` — fires once when your overlay is switched away from;
-  remove your own event listeners here.
+**Live state** (CSS custom properties VoxCtrl continuously writes onto the
+page root while the overlay is visible — read them with `var()`/`calc()`,
+no script needed):
+- `--voxctrl-recording`, `--voxctrl-processing`, `--voxctrl-speaking`,
+  `--voxctrl-mcp-recording`, `--voxctrl-audio-ready` — each `0` or `1`.
+- `--voxctrl-audio-level` — `0`..`1`, already smoothed.
+
+CSS can't swap text content based on a variable, so for anything that
+needs to (a status label that changes text, not just color) the trick
+`Custom/` uses is to pre-render every possible label stacked on top of
+each other and toggle each one's `opacity` with the formula that should
+show it — see `.vc-custom-stamp-text` in `Custom/style.css`.

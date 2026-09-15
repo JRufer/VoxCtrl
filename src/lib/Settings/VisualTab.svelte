@@ -23,6 +23,7 @@
 
   let customOverlays = $state<CustomOverlay[]>([]);
   let monitors = $state<MonitorInfo[]>([]);
+  let customOverlaysDir = $state("");
 
   let overlayStyleOptions = $derived([
     { value: "voice_card", label: "Voice Card" },
@@ -60,6 +61,11 @@
       monitors = await invoke<MonitorInfo[]>("get_available_monitors");
     } catch (e) {
       console.error("Failed to fetch available monitors:", e);
+    }
+    try {
+      customOverlaysDir = await invoke<string>("get_custom_overlays_dir");
+    } catch (e) {
+      console.error("Failed to fetch custom overlays directory:", e);
     }
   });
 
@@ -117,6 +123,10 @@
       <div class="warning-alert">
         <span>⚠️ Configured monitor "{cfg.ui.overlay_monitor}" is disconnected. Using Primary Monitor.</span>
       </div>
+    {/if}
+
+    {#if customOverlaysDir}
+      <p class="hint">Custom overlay styles: <code>{customOverlaysDir}</code></p>
     {/if}
   </div>
 

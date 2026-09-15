@@ -550,6 +550,7 @@ pub fn run() {
             show_overlay,
             hide_overlay,
             get_custom_overlays,
+            get_custom_overlays_dir,
             list_audio_devices,
             start_monitoring_audio,
             stop_monitoring_audio,
