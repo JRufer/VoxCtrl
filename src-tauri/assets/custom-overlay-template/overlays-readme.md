@@ -2,9 +2,10 @@
 
 Every subfolder in this directory that contains an `index.html` and a
 `style.css` becomes a selectable **Overlay style** in VoxCtrl's
-**Settings → Visual & Feedback** tab, named after the folder. VoxCtrl
-rescans this directory each time the Overlay style dropdown is opened, so
-new or edited folders show up without restarting the app.
+**Settings → Visual & Feedback** tab, named after the folder. New or
+renamed folders show up the next time that dropdown is opened; edits to
+an already-selected style's files show up as soon as you switch the
+dropdown away and back — no app restart needed either way.
 
 ## Getting started
 
@@ -15,9 +16,12 @@ overlay folder looks like. Open `Custom/index.html` for a full walkthrough
 of the templating placeholder and the live CSS custom properties VoxCtrl
 writes while your overlay is on screen.
 
-**`Custom/` is reset to match the installed version of VoxCtrl every time
-it starts** — it's a maintained reference, not a place for your own
-permanent edits. To start your own style:
+**`Custom/` stays in sync with the installed version of VoxCtrl until you
+edit it** — on startup, VoxCtrl refreshes it to match the current build,
+but only while it still matches what VoxCtrl itself last wrote; the
+moment you change either file, it's noticed on the next launch and left
+alone for good. Meant for trying things out or comparing against a fresh
+copy, not as your permanent style. To start your own style properly:
 
 1. Duplicate `Custom/` and rename the copy — the new folder's name becomes
    the style's name in Settings.
@@ -46,9 +50,9 @@ overlays/
   `none`), VoxCtrl appends `_custom` to keep it selectable without
   clashing with the built-in.
 - Deleting a folder you made removes it from the dropdown, permanently.
-  `Custom/` and this README are the one exception: VoxCtrl rewrites both
-  of them, and only them, on every launch, so edits made directly inside
-  `Custom/` do not persist — duplicate it under a new name instead.
+  This README is rewritten on every launch unconditionally; `Custom/` is
+  refreshed the same way only until you edit it (see above) — after that
+  it's yours, VoxCtrl won't touch it again.
 
 ## Quick reference: placeholder and live state
 

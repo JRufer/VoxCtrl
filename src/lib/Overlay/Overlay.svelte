@@ -137,6 +137,21 @@
     const timer = setTimeout(() => {
       visible = true;
     }, 25); // 25ms ensures a full repaint frame ticks in WebKitGTK
+
+    // Custom overlays are only fetched once, at mount — this window stays
+    // alive for the app's whole session (see window::open_overlay_window),
+    // so without this, editing a custom overlay's index.html/style.css on
+    // disk would never show up without a full app restart. Re-reading here,
+    // on every style switch, is what lets a style/style toggle act as the
+    // "reload" step for someone iterating on their own overlay.
+    invoke<CustomOverlay[]>("get_custom_overlays")
+      .then((res) => {
+        customOverlays = res;
+      })
+      .catch((e) => {
+        console.error("Failed to load custom overlays:", e);
+      });
+
     return () => clearTimeout(timer);
   });
 
@@ -164,14 +179,9 @@
       appEl.style.setProperty("background", "transparent", "important");
     }
 
-    // Fetch custom overlays from local sharing folder
-    invoke<CustomOverlay[]>("get_custom_overlays")
-      .then((res) => {
-        customOverlays = res;
-      })
-      .catch((e) => {
-        console.error("Failed to load custom overlays:", e);
-      });
+    // Custom overlays are fetched in the $effect above, which also runs once
+    // on mount (and again on every style switch, so on-disk edits show up
+    // without an app restart).
 
     // Listen to real-time audio levels from Rust backend
     listen<number>("audio-level", (event) => {

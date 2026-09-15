@@ -142,22 +142,31 @@ Every subfolder containing an `index.html` + `style.css` becomes a
 selectable style in **Settings → Visual & Feedback → Overlay style**,
 named after the folder (`commands::get_custom_overlays`, consumed by
 `VisualTab.svelte`'s `overlayStyleOptions` and rendered by
-`Overlay.svelte`'s `activeCustomOverlay` branch).
+`Overlay.svelte`'s `activeCustomOverlay` branch). `Overlay.svelte`
+re-invokes `get_custom_overlays` on every style switch (not just once at
+mount — the overlay window is created once and stays alive for the app's
+whole session, per `window::open_overlay_window`), so editing a custom
+overlay's files on disk shows up the moment the style is toggled away and
+back, without restarting the app.
 
 Every launch, `custom_overlays::refresh_bundled_example` (called before
-`run()` builds the Tauri app) overwrites `README.md` and the `Custom/`
-example — a copy of the built-in Voice Card style with one line changed
-(`VOXCTRL` → `CUSTOM OVERLAY`) — from the template files under
-`src-tauri/assets/custom-overlay-template/`. This is intentionally
-unconditional, not a first-run-only seed: an earlier version only wrote
-those files once, which meant a `Custom/` folder from a previous run
-never picked up template fixes or improvements shipped in a later build —
-exactly the kind of silent staleness this is meant to rule out. Nothing
-else in the overlays folder is touched, so any *other* style the user has
-created is left alone; `Custom/` itself is documented (in the README this
-writes and in `Custom/index.html`'s own comments) as an app-maintained
-reference reset on every launch — duplicate it under a new name to keep
-your own edits rather than editing it in place.
+`run()` builds the Tauri app) writes `README.md` unconditionally, and
+`Custom/`'s `index.html` + `style.css` — a copy of the built-in Voice
+Card style with one line changed (`VOXCTRL` → `CUSTOM OVERLAY`), from the
+template files under `src-tauri/assets/custom-overlay-template/` — but
+only when both files still match what this function itself wrote last
+time (tracked via `.voxctrl-custom-example.json` at the overlays root,
+storing full previous contents rather than a hash so the check is a
+direct string comparison, sidestepping the stability guarantees a hash
+function would need across Rust/std versions). The moment either file is
+edited, that mismatch is detected on the next launch and `Custom/` is
+left alone for good. This exists to fix two failure modes an earlier,
+simpler version of this function had, in order: writing once ever (so a
+`Custom/` seeded by an older build silently never picked up later
+template fixes), then writing unconditionally every launch (so an
+in-progress edit to `Custom/` itself was silently discarded on the next
+restart). Nothing outside `README.md` and `Custom/` is ever touched, so
+any *other* style the user has created is always left alone.
 
 A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
 placeholder substitution on its first render (the active routing target's
