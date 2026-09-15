@@ -216,6 +216,22 @@ pub fn open_webview_overlay(
         .map_err(|e| format!("Could not create the webview overlay window: {e}"))?,
     };
 
+    // Mapped once, like the Slint helper: the `/overlay` route renders
+    // nothing visible while idle, so staying mapped avoids the Wayland
+    // remap-steals-focus issue noted beside the Slint spawn code.
+    //
+    // This has to happen *before* the calls below: on Linux, tao's
+    // `set_ignore_cursor_events` reaches into the GTK window's underlying
+    // GdkWindow and unwraps it unconditionally
+    // (tao/src/platform_impl/linux/event_loop.rs, WindowRequest::CursorIgnoreEvents).
+    // That GdkWindow doesn't exist until the widget is realized, which GTK
+    // does synchronously inside `show()` — calling it any earlier panics
+    // (and, being inside a GTK callback, aborts the whole process instead of
+    // unwinding).
+    if let Err(e) = window.show() {
+        tracing::error!("Failed to show webview overlay window: {:?}", e);
+    }
+
     // Click-through: mouse events pass to whatever is beneath the overlay,
     // matching the Slint helper's `set_cursor_hittest(false)`.
     if let Err(e) = window.set_ignore_cursor_events(true) {
@@ -237,13 +253,6 @@ pub fn open_webview_overlay(
 
     if let Some((x, y)) = compute_overlay_window_position(&window, anchor, monitor_pref) {
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-    }
-
-    // Mapped once, like the Slint helper: the `/overlay` route renders
-    // nothing visible while idle, so staying mapped avoids the Wayland
-    // remap-steals-focus issue noted beside the Slint spawn code.
-    if let Err(e) = window.show() {
-        tracing::error!("Failed to show webview overlay window: {:?}", e);
     }
 
     Ok(window)
