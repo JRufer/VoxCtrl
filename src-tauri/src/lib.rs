@@ -151,10 +151,10 @@ pub fn run() {
         let _ = registry.try_init();
     }
 
-    // Keep the documented custom-overlay example in sync with this build,
-    // every launch — see refresh_bundled_example's doc comment for why this
-    // has to overwrite Custom/ unconditionally rather than only seeding it
-    // once. Nothing else in the overlays folder is touched.
+    // Make sure the documented Custom/ overlay example exists — see
+    // refresh_bundled_example's doc comment: it never touches Custom/ once
+    // it exists, edited or not, only recreating it if the folder is deleted.
+    // Nothing else in the overlays folder is touched.
     custom_overlays::refresh_bundled_example();
 
     let config = Config::load();
@@ -551,6 +551,7 @@ pub fn run() {
             show_overlay,
             hide_overlay,
             get_custom_overlays,
+            get_custom_overlay,
             get_custom_overlays_dir,
             get_cloned_tts_voices_dir,
             list_audio_devices,

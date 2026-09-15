@@ -140,33 +140,40 @@ an overlays folder — `dirs::data_local_dir()/voxctrl/overlays` (Rust's
 `custom_overlays::overlays_dir()` in `src-tauri/src/custom_overlays.rs`.
 Every subfolder containing an `index.html` + `style.css` becomes a
 selectable style in **Settings → Visual & Feedback → Overlay style**,
-named after the folder (`commands::get_custom_overlays`, consumed by
-`VisualTab.svelte`'s `overlayStyleOptions` and rendered by
-`Overlay.svelte`'s `activeCustomOverlay` branch). `Overlay.svelte`
-re-invokes `get_custom_overlays` on every style switch (not just once at
-mount — the overlay window is created once and stays alive for the app's
-whole session, per `window::open_overlay_window`), so editing a custom
-overlay's files on disk shows up the moment the style is toggled away and
-back, without restarting the app.
+named after the folder. Two different commands read this folder for two
+different purposes, both in `src-tauri/src/commands.rs`:
+- `get_custom_overlays` lists every folder's name (not its content) to
+  populate `VisualTab.svelte`'s `overlayStyleOptions` — the dropdown.
+- `get_custom_overlay(name)` reads one folder's `index.html` + `style.css`
+  fresh off disk, by the display name it's selected under.
+  `Overlay.svelte` calls this — not the list command — every time
+  `config.ui.overlay_style` changes to a name outside its built-in style
+  set, inside the same `$effect` that already runs on every style switch.
+  Since the overlay window is created once and stays alive for the app's
+  whole session (`window::open_overlay_window`), this is what makes
+  editing a custom overlay's files show up the moment the style is
+  reselected (switching away and back works), with no app restart and no
+  stale content cached from whenever the window first loaded.
 
-Every launch, `custom_overlays::refresh_bundled_example` (called before
-`run()` builds the Tauri app) writes `README.md` unconditionally, and
-`Custom/`'s `index.html` + `style.css` — a copy of the built-in Voice
-Card style with one line changed (`VOXCTRL` → `CUSTOM OVERLAY`), from the
-template files under `src-tauri/assets/custom-overlay-template/` — but
-only when both files still match what this function itself wrote last
-time (tracked via `.voxctrl-custom-example.json` at the overlays root,
-storing full previous contents rather than a hash so the check is a
-direct string comparison, sidestepping the stability guarantees a hash
-function would need across Rust/std versions). The moment either file is
-edited, that mismatch is detected on the next launch and `Custom/` is
-left alone for good. This exists to fix two failure modes an earlier,
-simpler version of this function had, in order: writing once ever (so a
-`Custom/` seeded by an older build silently never picked up later
-template fixes), then writing unconditionally every launch (so an
-in-progress edit to `Custom/` itself was silently discarded on the next
-restart). Nothing outside `README.md` and `Custom/` is ever touched, so
-any *other* style the user has created is always left alone.
+`custom_overlays::refresh_bundled_example` (called once, before `run()`
+builds the Tauri app) makes sure a documented `Custom/` example exists —
+a copy of the built-in Voice Card style with one line changed (`VOXCTRL`
+→ `CUSTOM OVERLAY`), from the template files under
+`src-tauri/assets/custom-overlay-template/` — without ever overwriting it
+once it's there. It writes `README.md` unconditionally on every launch
+(it's reference documentation, not user content), but only creates
+`Custom/index.html` + `style.css` when the `Custom/` folder doesn't exist
+at all; the instant it exists, seeded or hand-edited, this is a no-op on
+every future launch, and stays that way until the user deletes the whole
+folder themselves — that deletion is the only way to ask for the default
+example back. This is deliberately a plain existence check, not an
+attempt to detect edits by content or hash: an earlier version tried
+diffing against a marker of its own last-written content to tell "still
+untouched, safe to upgrade" apart from "the user has edited this," which
+worked but added real complexity for a distinction that turned out not to
+matter — once `Custom/` exists, leave it alone, full stop. Nothing
+outside `README.md` and `Custom/` is ever touched, so any *other* style
+the user has created is always left alone.
 
 A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
 placeholder substitution on its first render (the active routing target's

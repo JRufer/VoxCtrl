@@ -13,20 +13,20 @@
   VoxCtrl scans the custom-overlays folder shown at the bottom of
   Settings → Visual & Feedback for subfolders containing an index.html +
   style.css pair. Each subfolder becomes a selectable "Overlay style" in
-  that tab, named after the folder (this one is named "Custom"). Edit a
-  file, then switch the Overlay style dropdown away and back — that's
-  enough to see the change; VoxCtrl re-reads every custom overlay's files
-  from disk each time the style changes, so no restart is needed.
+  that tab, named after the folder (this one is named "Custom").
 
-  This particular folder is also special in one more way: on startup,
-  VoxCtrl refreshes Custom/index.html and Custom/style.css (and the
-  overlays folder's own README.md) to whatever the installed build
-  ships — but only while they still match what it last wrote. The moment
-  you edit either file, VoxCtrl notices on the next launch and leaves
-  Custom/ alone from then on, so in-progress edits are never silently
-  lost. If you'd rather not think about any of this, duplicate this
-  folder under a new name instead — a differently-named folder is never
-  touched, edited or not.
+  A custom overlay's files are read fresh from disk at the moment it's
+  *selected* — not cached from app startup — so edit a file, then select
+  the style again (switching away and back works, since it re-reads on
+  every selection) to see the change. No app restart needed either way.
+
+  This particular folder is also special in one more way: VoxCtrl makes
+  sure Custom/ exists, seeding it with this exact template if it's
+  missing, but never touches it again once it exists — edited or not.
+  Delete the whole Custom/ folder to get the default example back; short
+  of that, whatever is in these two files is yours to keep. If you'd
+  rather not think about any of this at all, duplicate this folder under
+  a new name instead — a differently-named folder is never touched.
 
   TEMPLATE PLACEHOLDERS
   ──────────────────────

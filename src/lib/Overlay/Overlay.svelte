@@ -19,11 +19,15 @@
     css: string;
   }
 
+  // Names of the built-in styles Overlay.svelte itself renders (see the
+  // {#if overlay-style === ...} chain in the markup below), plus "none" —
+  // anything outside this set is looked up as a custom overlay folder.
+  const BUILTIN_STYLES = new Set([
+    "waveform", "pulse", "blue_wave", "mono_bars", "spectrum", "terminal", "vinyl", "voice_card", "none",
+  ]);
+
   let visible = $state(true);
-  let customOverlays = $state<CustomOverlay[]>([]);
-  let activeCustomOverlay = $derived(
-    customOverlays.find(o => o.name === $config.ui.overlay_style)
-  );
+  let activeCustomOverlay = $state<CustomOverlay | undefined>(undefined);
 
   const triggerLabel = $derived($status.active_target_label || "Focused Window");
   const targetLabel = $derived($status.active_target_label || "Focused Window");
@@ -132,25 +136,32 @@
   $effect(() => {
     // Whenever the overlay style changes, temporarily unmount the visualizer for 1 tick
     // to force the WebKitGTK transparent compositor to completely wipe and flush the old frame buffer
-    const _style = $config.ui.overlay_style;
+    const style = $config.ui.overlay_style;
     visible = false;
     const timer = setTimeout(() => {
       visible = true;
     }, 25); // 25ms ensures a full repaint frame ticks in WebKitGTK
 
-    // Custom overlays are only fetched once, at mount — this window stays
-    // alive for the app's whole session (see window::open_overlay_window),
-    // so without this, editing a custom overlay's index.html/style.css on
-    // disk would never show up without a full app restart. Re-reading here,
-    // on every style switch, is what lets a style/style toggle act as the
-    // "reload" step for someone iterating on their own overlay.
-    invoke<CustomOverlay[]>("get_custom_overlays")
-      .then((res) => {
-        customOverlays = res;
-      })
-      .catch((e) => {
-        console.error("Failed to load custom overlays:", e);
-      });
+    // A custom overlay's files are read fresh from disk right here, at the
+    // moment it's selected — not once at app startup, and not cached across
+    // selections — so editing index.html/style.css and re-selecting the
+    // style (it doesn't even need to be a *different* style first) always
+    // shows the current file, with no app restart needed. This window is
+    // created once and stays alive for the app's whole session (see
+    // window::open_overlay_window), so without re-reading here, whatever
+    // was on disk at startup is all it would ever show.
+    if (BUILTIN_STYLES.has(style)) {
+      activeCustomOverlay = undefined;
+    } else {
+      invoke<CustomOverlay | null>("get_custom_overlay", { name: style })
+        .then((res) => {
+          activeCustomOverlay = res ?? undefined;
+        })
+        .catch((e) => {
+          console.error(`Failed to load custom overlay "${style}":`, e);
+          activeCustomOverlay = undefined;
+        });
+    }
 
     return () => clearTimeout(timer);
   });

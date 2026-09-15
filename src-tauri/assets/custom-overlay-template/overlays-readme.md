@@ -16,12 +16,11 @@ overlay folder looks like. Open `Custom/index.html` for a full walkthrough
 of the templating placeholder and the live CSS custom properties VoxCtrl
 writes while your overlay is on screen.
 
-**`Custom/` stays in sync with the installed version of VoxCtrl until you
-edit it** — on startup, VoxCtrl refreshes it to match the current build,
-but only while it still matches what VoxCtrl itself last wrote; the
-moment you change either file, it's noticed on the next launch and left
-alone for good. Meant for trying things out or comparing against a fresh
-copy, not as your permanent style. To start your own style properly:
+**VoxCtrl makes sure `Custom/` exists, and never touches it again once it
+does** — edited or not. Feel free to experiment directly in `Custom/`
+first; nothing you change there will be reset. Delete the whole `Custom/`
+folder if you ever want the default example back. To keep your own style
+alongside it instead of replacing it:
 
 1. Duplicate `Custom/` and rename the copy — the new folder's name becomes
    the style's name in Settings.
@@ -51,8 +50,8 @@ overlays/
   clashing with the built-in.
 - Deleting a folder you made removes it from the dropdown, permanently.
   This README is rewritten on every launch unconditionally; `Custom/` is
-  refreshed the same way only until you edit it (see above) — after that
-  it's yours, VoxCtrl won't touch it again.
+  the exception — VoxCtrl only ever creates it when it's missing, so
+  deleting it is also how you ask for the default example back.
 
 ## Quick reference: placeholder and live state
 
