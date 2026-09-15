@@ -473,18 +473,37 @@ pub fn run() {
             // Default (Slint) behavior is unchanged; see that function's doc
             // comment and docs/overlays.md for the license rationale.
             if std::env::var("VOXCTRL_OVERLAY_BACKEND").as_deref() == Ok("webview") {
+                let overlay_handle = app.handle().clone();
                 if let Err(e) = crate::window::open_webview_overlay(
-                    &app.handle().clone(),
+                    &overlay_handle,
                     &cfg_data.ui.overlay_position,
                     &cfg_data.ui.overlay_monitor,
                 ) {
                     tracing::error!("Failed to start webview overlay: {e}");
                 }
-                // The Slint helper isn't running to drain overlay_rx; drain it
-                // here instead so the unbounded channel (still fed by the
-                // audio-level forwarder / status ticker regardless of backend)
-                // doesn't grow for the life of the session.
-                std::thread::spawn(move || while overlay_rx.recv().is_ok() {});
+                // The Slint helper isn't running to consume overlay_tx from its
+                // stdin, so apply what it would have here instead: position
+                // updates (sent whenever config.ui.overlay_position /
+                // overlay_monitor change — see commands.rs's save_config and
+                // tray.rs's config-change ticker) get applied live to the
+                // webview window; everything else is just drained so the
+                // unbounded channel doesn't grow for the life of the session
+                // (status/audio-level messages are consumed by the frontend
+                // directly via the status-tick / audio-level Tauri events
+                // instead, regardless of backend).
+                std::thread::spawn(move || {
+                    while let Ok(msg) = overlay_rx.recv() {
+                        let Ok(value) = serde_json::from_str::<serde_json::Value>(&msg) else {
+                            continue;
+                        };
+                        if value.get("type").and_then(|t| t.as_str()) != Some("position") {
+                            continue;
+                        }
+                        let position = value.get("position").and_then(|v| v.as_str()).unwrap_or("");
+                        let monitor = value.get("monitor").and_then(|v| v.as_str()).unwrap_or("primary");
+                        crate::window::reposition_webview_overlay(&overlay_handle, position, monitor);
+                    }
+                });
             } else {
                 // Spawn the Slint overlay helper process
                 overlay_sidecar::spawn_overlay_process(overlay_rx);

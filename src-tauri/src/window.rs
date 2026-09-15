@@ -251,11 +251,31 @@ pub fn open_webview_overlay(
         }
     }
 
-    if let Some((x, y)) = compute_overlay_window_position(&window, anchor, monitor_pref) {
-        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-    }
+    reposition_webview_overlay_inner(&window, anchor, monitor_pref);
 
     Ok(window)
+}
+
+/// Re-apply the anchor/monitor position to the webview overlay, if it
+/// currently exists.
+///
+/// Called whenever `config.ui.overlay_position` / `overlay_monitor` change,
+/// via the same `{"type":"position","position":..,"monitor":..}` messages the
+/// Slint backend consumes from its stdin (see `commands.rs`'s `save_config`
+/// and `tray.rs`'s config-change ticker) — the webview backend's `overlay_rx`
+/// consumer thread in `lib.rs` forwards them here instead of writing them to
+/// a child process's stdin, so position/monitor changes take effect live
+/// instead of only at startup.
+pub fn reposition_webview_overlay(app: &tauri::AppHandle, anchor: &str, monitor_pref: &str) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        reposition_webview_overlay_inner(&window, anchor, monitor_pref);
+    }
+}
+
+fn reposition_webview_overlay_inner(window: &tauri::WebviewWindow, anchor: &str, monitor_pref: &str) {
+    if let Some((x, y)) = compute_overlay_window_position(window, anchor, monitor_pref) {
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
 }
 
 /// Re-assert the webview overlay's always-on-top state, if it exists.
