@@ -51,7 +51,7 @@ Microphone → Audio Capture → Speech Inference (whisper.cpp / Moonshine / Par
 
 **Tech Stack:**
 - **Frontend:** Svelte 5 + Tailwind CSS 4 + Vite 5
-- **Desktop Shell:** Tauri 2 (Rust + WebView) + Slint native overlay helper
+- **Desktop Shell:** Tauri 2 (Rust + WebView); the dictation overlay is a second `WebviewWindow`, not a separate process
 - **Backend:** Rust (Tokio async), 15 specialized workspace crates
 - **Speech Recognition:** whisper.cpp (GGUF, CPU/Vulkan/CUDA), Moonshine (ONNX/WebGPU), Parakeet TDT (ONNX), Remote Speech Engine (OpenAI-compatible)
 - **Dictation Cleanup:** S1-mini (Qwen3-0.6B) via Vulkan-accelerated `voxctrl-llm-sidecar` (llama.cpp)

@@ -645,59 +645,18 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
 
 // ── Overlay window ────────────────────────────────────────────────────────────
 
+/// The resolved, absolute path to the custom-overlays folder, for display
+/// in Settings (see `custom_overlays::overlays_dir`).
 #[tauri::command]
-pub async fn show_overlay(
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let (position, monitor_pref) = {
-        let cfg = state.config.lock().await;
-        (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
-    };
-
-    // The overlay computes pixel coordinates from the anchor itself.
-    let pos_msg = serde_json::json!({
-        "type": "position",
-        "position": position,
-        "monitor": monitor_pref,
-    });
-    let status_msg = serde_json::json!({
-        "type": "status",
-        "recording": true,
-        "processing": false,
-        "speaking": false,
-        "audio_ready": true,
-        "audio_level": 0.0,
-        "active_target_label": "Overlay Test",
-    });
-
-    if let Ok(s) = serde_json::to_string(&pos_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    if let Ok(s) = serde_json::to_string(&status_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    Ok(())
+pub fn get_custom_overlays_dir() -> String {
+    crate::custom_overlays::overlays_dir().display().to_string()
 }
 
+/// The resolved, absolute path to the shared voice-cloning reference-clip
+/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2), for display in Settings.
 #[tauri::command]
-pub async fn hide_overlay(
-    _app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let status_msg = serde_json::json!({
-        "type": "status",
-        "recording": false,
-        "processing": false,
-        "speaking": false,
-        "audio_ready": true,
-        "audio_level": 0.0,
-        "active_target_label": "Focused Window",
-    });
-    
-    if let Ok(s) = serde_json::to_string(&status_msg) {
-        let _ = state.overlay_tx.send(s);
-    }
-    Ok(())
+pub fn get_cloned_tts_voices_dir() -> String {
+    voxctrl_tts::cloned_tts_voices_dir().display().to_string()
 }
 
 #[derive(serde::Serialize)]
@@ -707,12 +666,36 @@ pub struct CustomOverlayInfo {
     pub css: String,
 }
 
+/// The display name a custom-overlay folder is exposed under: unchanged,
+/// unless it collides with a built-in style's internal name, in which case
+/// `_custom` is appended so it stays selectable without clashing.
+fn custom_overlay_display_name(folder_name: &str) -> String {
+    const RESERVED: &[&str] = &[
+        "waveform", "pulse", "blue_wave", "voice_card", "none",
+        "mono_bars", "spectrum", "terminal", "vinyl",
+    ];
+    if RESERVED.contains(&folder_name.to_lowercase().as_str()) {
+        format!("{folder_name}_custom")
+    } else {
+        folder_name.to_string()
+    }
+}
+
+fn read_custom_overlay_folder(dir: &std::path::Path, display_name: String) -> CustomOverlayInfo {
+    let html = std::fs::read_to_string(dir.join("index.html")).unwrap_or_default();
+    let css = std::fs::read_to_string(dir.join("style.css")).unwrap_or_default();
+    CustomOverlayInfo { name: display_name, html, css }
+}
+
+/// Every custom overlay's name, HTML and CSS — used to populate the
+/// selectable style list in Settings → Visual & Feedback (`VisualTab.svelte`).
+/// Rendering the *active* style, live, goes through `get_custom_overlay`
+/// instead: reading every overlay's files here just to display one would
+/// mean an edit to an overlay that isn't even selected still costs a disk
+/// read on every style switch, for no reason.
 #[tauri::command]
 pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
-    let overlays_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("voxctrl")
-        .join("overlays");
+    let overlays_dir = crate::custom_overlays::overlays_dir();
 
     if !overlays_dir.exists() {
         let _ = std::fs::create_dir_all(&overlays_dir);
@@ -723,48 +706,48 @@ pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
         for entry in entries.flatten() {
             if let Ok(file_type) = entry.file_type() {
                 if file_type.is_dir() {
-                    let mut folder_name = entry.file_name().to_string_lossy().to_string();
+                    let folder_name = entry.file_name().to_string_lossy().to_string();
 
                     // Filter out legacy gradient-wave
                     if folder_name.to_lowercase() == "gradient-wave" || folder_name.to_lowercase() == "gradient_wave" {
                         continue;
                     }
 
-                    // Automatically resolve naming conflicts with built-in styles
-                    let reserved = [
-                        "waveform", "pulse", "blue_wave", "voice_card", "none",
-                        "mono_bars", "spectrum", "terminal", "vinyl",
-                    ];
-                    if reserved.contains(&folder_name.to_lowercase().as_str()) {
-                        folder_name = format!("{}_custom", folder_name);
-                    }
-
-                    let html_path = entry.path().join("index.html");
-                    let css_path = entry.path().join("style.css");
-
-                    let html = if html_path.exists() {
-                        std::fs::read_to_string(&html_path).unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-
-                    let css = if css_path.exists() {
-                        std::fs::read_to_string(&css_path).unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-
-                    list.push(CustomOverlayInfo {
-                        name: folder_name,
-                        html,
-                        css,
-                    });
+                    let display_name = custom_overlay_display_name(&folder_name);
+                    list.push(read_custom_overlay_folder(&entry.path(), display_name));
                 }
             }
         }
     }
 
     Ok(list)
+}
+
+/// One custom overlay's HTML and CSS, read fresh from disk, by the display
+/// name it's selected under (`config.ui.overlay_style`). Used by
+/// `Overlay.svelte` to (re-)read the active style's files at the moment it's
+/// selected — including re-selecting it after editing its files — rather
+/// than caching content from app startup, so on-disk edits are picked up
+/// without an app restart. Returns `None` when no folder resolves to this
+/// name (a built-in style, or a deleted/renamed custom one).
+#[tauri::command]
+pub async fn get_custom_overlay(name: String) -> Result<Option<CustomOverlayInfo>, String> {
+    let overlays_dir = crate::custom_overlays::overlays_dir();
+
+    if let Ok(entries) = std::fs::read_dir(&overlays_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let folder_name = entry.file_name().to_string_lossy().to_string();
+                    if custom_overlay_display_name(&folder_name) == name {
+                        return Ok(Some(read_custom_overlay_folder(&entry.path(), name)));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 // ── Audio devices ────────────────────────────────────────────────────────────

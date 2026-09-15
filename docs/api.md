@@ -592,18 +592,42 @@ returns the new identifier.
 
 ### Overlay
 
-#### `show_overlay() → void`
-Makes the overlay window visible and sets always-on-top.
+The overlay window has no explicit show/hide command — it is built once at
+startup (`window::open_overlay_window`) and stays mapped for the app's
+lifetime; its content visibility is driven entirely by the `status-tick` /
+`audio-level` events and `ui.show_overlay` / `tts.response_overlay` /
+`mcp.visual_feedback` config, the same way every consumer of those already
+reacts to them. See the [Overlay UI Guide](./overlays.md).
+
+#### `get_custom_overlays() → CustomOverlayInfo[]`
+Lists every user-authored custom overlay folder under the local overlays
+directory (see `get_custom_overlays_dir`), alongside the built-in styles in
+the `ui.overlay_style` picker.
 
 ```typescript
-await invoke('show_overlay');
+interface CustomOverlayInfo {
+  name: string;
+  html: string;
+  css: string;
+}
+
+const overlays = await invoke<CustomOverlayInfo[]>('get_custom_overlays');
 ```
 
-#### `hide_overlay() → void`
-Hides the overlay window.
+#### `get_custom_overlay(name: string) → CustomOverlayInfo | null`
+Re-reads a single custom overlay folder by its display name — used to reload
+just the active style rather than the whole list.
 
 ```typescript
-await invoke('hide_overlay');
+const overlay = await invoke<CustomOverlayInfo | null>('get_custom_overlay', { name: 'Custom' });
+```
+
+#### `get_custom_overlays_dir() → string`
+The resolved, absolute path to the custom-overlays folder, for display in
+Settings.
+
+```typescript
+const dir = await invoke<string>('get_custom_overlays_dir');
 ```
 
 ---

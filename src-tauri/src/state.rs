@@ -103,7 +103,9 @@ pub struct AppState {
     /// permission is indistinguishable from a hotkey the user never pressed.
     pub hotkey_health: Arc<voxctrl_hotkeys::ListenerHealth>,
 
-    /// Channel sender to forward stdin messages to the native Slint overlay process
+    /// Channel sender for `{"type":"position",...}` messages that reposition
+    /// the dictation overlay window when `config.ui.overlay_position` /
+    /// `overlay_monitor` change — see its consumer in `lib.rs`.
     pub overlay_tx: crossbeam_channel::Sender<String>,
 
     /// The update found by the last check, if there was one. Held so the update

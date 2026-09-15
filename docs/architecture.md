@@ -19,7 +19,7 @@ VoxCtrl is a **Tauri 2** application: a compiled Rust backend that spawns a WebV
                                  Network (OpenAI API/HTTP)
 ```
 
-In addition, the backend spawns a **native overlay helper process** (`voxctrl-overlay`, built with Slint from `src-tauri/src/overlay.rs`) that renders the always-on-top, click-through recording HUD. The backend streams newline-delimited JSON (`status` / `position` / `shutdown`) to the helper's stdin; the helper runs its own 16 ms animation loop, drives spring-based load/unload animations, and builds the per-style visualizer geometry (oscilloscope trace, radar sweep, ocean waves, VU LED matrix) each tick.
+In addition, the backend opens a second **`WebviewWindow`** (`window::open_overlay_window` in `src-tauri/src/window.rs`) that renders the always-on-top, click-through recording HUD by loading the `/overlay` Svelte route — the same `Overlay.svelte` component tree used for the style preview in Settings. It gets its state through the same app-wide `status-tick` / `audio-level` Tauri events every other window uses, rather than a separate protocol; see `docs/overlays.md` for the window-management details (click-through, always-on-top reassertion, Wayland/XWayland).
 
 ---
 
@@ -172,8 +172,8 @@ App.svelte  (route switcher)
   │     ├── VoiceStep      (optional TTS engine, per-card download)
   │     └── DoneStep       (summary + anything that failed)
   │
-  ├── /overlay   → Overlay component (web overlay layer; the on-screen HUD
-  │     │          for built-in styles is the native voxctrl-overlay helper)
+  ├── /overlay   → Overlay component (the on-screen recording HUD, loaded into
+  │     │          its own WebviewWindow — see "High-Level Design" above)
   │     ├── BlueWave       (default — "Ocean Wave" tide pool)
   │     ├── VoiceCard      ("Voice Card" VU LED matrix card)
   │     ├── Waveform       (green-phosphor oscilloscope)

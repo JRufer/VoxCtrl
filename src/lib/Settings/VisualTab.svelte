@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { emit } from "@tauri-apps/api/event";
   import type { AppConfig } from "../../stores/config";
   import { config, configDirty } from "../../stores/config";
 
@@ -23,6 +24,7 @@
 
   let customOverlays = $state<CustomOverlay[]>([]);
   let monitors = $state<MonitorInfo[]>([]);
+  let customOverlaysDir = $state("");
 
   let overlayStyleOptions = $derived([
     { value: "voice_card", label: "Voice Card" },
@@ -61,11 +63,32 @@
     } catch (e) {
       console.error("Failed to fetch available monitors:", e);
     }
+    try {
+      customOverlaysDir = await invoke<string>("get_custom_overlays_dir");
+    } catch (e) {
+      console.error("Failed to fetch custom overlays directory:", e);
+    }
   });
 
   function markDirty() {
     config.set(cfg);
     configDirty.set(true);
+  }
+
+  // The overlay window's own config store only reacts when the value it
+  // receives actually differs from what it already has — Settings
+  // auto-saves on a debounce, so picking a style, then a different one,
+  // then back to the first within that window can collapse into a single
+  // save equal to the original value, which the overlay window never sees
+  // as a change. That's fine for most fields, but for a custom overlay it
+  // means re-selecting a style you just edited can silently fail to
+  // re-read its (possibly changed) index.html/style.css. This event
+  // sidesteps the config store entirely: every selection, including
+  // re-selecting the same value, tells the overlay window directly to
+  // re-read that style's files fresh from disk right now.
+  function onOverlayStyleChange(val: string) {
+    markDirty();
+    emit("overlay-style-selected", val);
   }
 </script>
 
@@ -100,7 +123,7 @@
     
     <label class="field">
       <span>Overlay style</span>
-      <CustomSelect bind:value={cfg.ui.overlay_style} options={overlayStyleOptions} onchange={markDirty} />
+      <CustomSelect bind:value={cfg.ui.overlay_style} options={overlayStyleOptions} onchange={onOverlayStyleChange} />
     </label>
 
     <label class="field">
@@ -117,6 +140,17 @@
       <div class="warning-alert">
         <span>⚠️ Configured monitor "{cfg.ui.overlay_monitor}" is disconnected. Using Primary Monitor.</span>
       </div>
+    {/if}
+
+    {#if customOverlaysDir}
+      <p class="hint">
+        Design your own overlay style by adding a folder with an
+        <code>index.html</code> and <code>style.css</code> to the folder below — it
+        shows up here as a selectable style automatically. A working example
+        (a copy of Voice Card, ready to duplicate) and a README covering the
+        format live there already.
+      </p>
+      <p class="hint">Custom overlay styles: <code>{customOverlaysDir}</code></p>
     {/if}
   </div>
 

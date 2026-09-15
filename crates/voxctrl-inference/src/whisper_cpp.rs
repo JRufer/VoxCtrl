@@ -398,6 +398,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 4,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         assert_eq!(backend.name(), "whisper-cpp");
@@ -412,6 +413,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 5,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         assert_eq!(backend.threads(), 5);
@@ -422,6 +424,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend_auto = WhisperCppBackend::new(cfg_auto);
         assert!(backend_auto.threads() >= 1);
@@ -434,6 +437,7 @@ mod tests {
             model_size: "/tmp/nonexistent.bin".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         // Should bail because path does not exist
@@ -447,6 +451,7 @@ mod tests {
             model_size: "invalid_size".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         assert!(backend.resolve_model_path().is_err());
@@ -459,6 +464,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         let req = crate::backend::TranscribeRequest {
@@ -536,6 +542,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         let resolved = backend.resolve_model_path().expect("should resolve");
@@ -553,6 +560,7 @@ mod tests {
             model_size: "tiny".to_string(),
             device: "cpu".to_string(),
             threads: 0,
+            language: "auto".to_string(),
         };
         let backend = WhisperCppBackend::new(cfg);
         let default_dir = WhisperCppBackend::default_model_dir();

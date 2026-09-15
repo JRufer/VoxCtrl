@@ -4,17 +4,17 @@
 
 ## Window Layout
 
-VoxCtrl opens separate native windows managed by Tauri, plus a native overlay helper window:
+VoxCtrl opens several `WebviewWindow`s managed by Tauri:
 
-| Window | Route / Process | Default Size | Properties |
+| Window | Route | Default Size | Properties |
 |---|---|---|---|
 | Settings | `/settings` | 720 × 640 (min 600 × 450) | Resizable, standard chrome |
 | Setup Wizard | `/wizard` | Fitted to the display, 16:9 (min 1280 × 720) | Resizable, first run only |
 | Setup / Diagnostics | `/udev-warning` | 580 × 600 (min 480 × 420) | Always-on-top |
 | Update | `/update` | 560 × 620 (min 460 × 420) | Resizable, built on demand |
-| Overlay | `voxctrl-overlay` helper (Slint) | 560 × 190 | Transparent, always-on-top, no decorations, click-through |
+| Overlay | `/overlay` | 592 × 222 | Transparent, always-on-top, no decorations, click-through |
 
-The Tauri windows are declared in `src-tauri/tauri.conf.json`, start hidden (`visible: false`), and are shown programmatically. The overlay is a separate native process (`src-tauri/src/overlay.rs`) spawned at startup and driven over stdin; the Svelte `/overlay` route hosts the web counterparts of the same visualizers (used for custom HTML overlays).
+Settings, the Wizard, and Setup/Diagnostics are declared in `src-tauri/tauri.conf.json`, start hidden (`visible: false`), and are shown programmatically. The Overlay and Update windows are built entirely in code (`window::open_overlay_window` / `window::open_update_window` in `src-tauri/src/window.rs`) rather than declared statically.
 
 ### Window Lifecycle
 
@@ -141,7 +141,7 @@ Backed by `src-tauri/src/bug_report.rs` and the `voxctrl-bugreport` crate.
 
 ## Overlay Window
 
-A transparent, always-on-top, click-through floating HUD that visualizes audio activity, rendered by the native `voxctrl-overlay` helper process (Slint). It has no title bar or decorations, ignores mouse input (the cursor hit-test is disabled at the windowing-system level), and auto-shows/hides based on recording state (controlled by `ui.show_overlay`). Every style plays a spring-driven load animation on appear and an unload animation on dismiss — the window stays alive until the unload animation completes.
+A transparent, always-on-top, click-through floating HUD that visualizes audio activity, rendered by a dedicated `WebviewWindow` loading the `/overlay` Svelte route (`src/lib/Overlay/Overlay.svelte`) — the same component tree used for the style preview in Settings. It has no title bar or decorations, ignores mouse input (the cursor hit-test is disabled at the windowing-system level), and auto-shows/hides based on recording state (controlled by `ui.show_overlay`). Every style plays a spring-driven load animation on appear and an unload animation on dismiss — the window stays mapped throughout, and just renders nothing visible while idle, rather than being recreated each time. See `docs/overlays.md` for the full mechanism.
 
 The window coordinates are calculated dynamically relative to the active display monitor's size and scale factor, placing the visualizer cleanly in the **Center**, **Top** (60 logical pixels from the top), or **Bottom** (60 logical pixels from the bottom) of the screen depending on the `ui.overlay_position` setting. The HUD target display can be locked to a specific monitor screen (`ui.overlay_monitor`), failing over gracefully to the primary monitor with a golden warning badge if the target screen is unplugged. Position changes are hot-reloaded and applied instantly in real-time.
 

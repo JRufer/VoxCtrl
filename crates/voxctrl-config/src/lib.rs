@@ -25,6 +25,13 @@ pub struct WhisperCppConfig {
     pub device: String,
     /// 0 = auto-detect (half of logical cores)
     pub threads: u32,
+    /// BCP-47 language code, e.g. "en", or "auto" to let whisper.cpp detect it.
+    #[serde(default = "default_whisper_cpp_language")]
+    pub language: String,
+}
+
+fn default_whisper_cpp_language() -> String {
+    "auto".into()
 }
 
 impl Default for WhisperCppConfig {
@@ -38,6 +45,7 @@ impl Default for WhisperCppConfig {
             model_size: "tiny".into(),
             device: "auto".into(),
             threads: 0,
+            language: "auto".into(),
         }
     }
 }

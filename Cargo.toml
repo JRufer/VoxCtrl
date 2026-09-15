@@ -20,7 +20,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -115,12 +115,6 @@ ndarray = "0.16"
 # Pocket-TTS neural TTS engine
 pocket-tts = "0.6"
 hf-hub = "0.4"
-
-# UI framework for native overlay
-slint = { version = "1.8.0" }
-# Winit accessor used to make the overlay window click-through
-i-slint-backend-winit = { version = "1.8.0" }
-
 
 # Internal crates
 voxctrl-config   = { path = "crates/voxctrl-config" }

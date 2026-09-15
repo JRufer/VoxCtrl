@@ -31,7 +31,7 @@ describe('prepare-sidecar selectBinary helper', () => {
     const statSync = (p: string) => ({ mtimeMs: 1000 } as any);
 
     expect(() => selectBinary(candidates, existsSync, statSync)).toThrowError(
-      'Overlay binary not found'
+      'Sidecar binary not found'
     );
   });
 });

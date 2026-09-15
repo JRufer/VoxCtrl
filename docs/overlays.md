@@ -1,27 +1,28 @@
 # Overlay UI Guide
 
-VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The built-in overlay styles are rendered by a dedicated **native helper process** (`voxctrl-overlay`, built with [Slint](https://slint.dev)) in a borderless, transparent, always-on-top, click-through window (560×190 logical px) drawn over whatever application is in focus.
+VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The built-in overlay styles are rendered by an ordinary Tauri **`WebviewWindow`** — the `/overlay` Svelte route (`src/lib/Overlay/Overlay.svelte`) drawn in a borderless, transparent, always-on-top, click-through window (592×222 logical px) over whatever application is in focus. It's the same component tree used for the style preview in Settings, so what you see there is exactly what appears during a real dictation.
 
 ---
 
 ## How the Overlay Works
 
-The main VoxCtrl process spawns the `voxctrl-overlay` helper binary immediately at application startup. The parent process streams newline-delimited JSON messages (`status`, `position`, `shutdown`) to its stdin, which communicate recording/processing/speaking state, the smoothed microphone level, the active routing target label, the configured style, and screen coordinates.
+`window::open_overlay_window` (`src-tauri/src/window.rs`) builds and configures the overlay window once, at application startup, and it stays mapped for the life of the app — the `/overlay` route just renders nothing visible while idle rather than the window being hidden and remade each time. State reaches it the same way it reaches every other window: the `status-tick` and `audio-level` Tauri events the backend already emits app-wide (see `src/stores/status.ts`), so no separate IPC protocol exists for the overlay.
 
-To avoid focus-stealing and window manager focus grabs during dictation, the helper window is configured with the following properties:
+To avoid focus-stealing and window manager focus grabs during dictation, the window is configured with the following properties:
 
-- **Mapped on Startup** — The window is created and mapped immediately on launch. It commits a 1% opacity background buffer (`rgba(0, 0, 0, 0.01)`) and renders an invisible 1x1 pixel helper element. This forces the Wayland/X11 compositor to register, anchor, and place the window instantly on startup before dictation occurs.
-- **Non-Focusable & Taskbar Bypassing** — On Linux, the winit window is registered with the `WindowType::Notification` X11/XWayland attribute. On Windows, it is registered with `with_skip_taskbar(true)`. Consequently, the window is excluded from taskbar/app bar listings and is structurally incapable of taking keyboard focus or stealing focus from the user's cursor.
-- **Transparent** — The window background is visually transparent (1% opacity black, which is imperceptible to the human eye); only the active visualizer elements are rendered.
-- **Always-on-Top** — Floats persistently above all other active desktop windows. The window level is set to `AlwaysOnTop` on launch and is kept stable (rather than being toggled) to avoid triggering window manager focus-stealing events.
-- **Click-Through** — The window's cursor hit-test is disabled at the windowing-system level (winit `set_cursor_hittest(false)`), so mouse events pass cleanly through to the window beneath it, preventing any focus interruption.
+- **Mapped on Startup** — The window is created and shown immediately on launch, before any dictation happens, so the compositor has already registered, anchored, and placed it by the time it's needed.
+- **Non-Focusable & Taskbar Bypassing** — On Linux, the underlying GTK window is given the `WindowTypeHint::Notification` hint. On Windows and macOS the Tauri window builder's own `skip_taskbar` + `focused(false)` options apply. Consequently, the window is excluded from taskbar/app bar listings and does not take keyboard focus or steal focus from the user's cursor.
+- **Transparent** — The window background is fully transparent (`transparent(true)`, `shadow(false)`); only the active visualizer elements, rendered as ordinary HTML/CSS/SVG, are visible.
+- **Always-on-Top** — Floats persistently above all other active desktop windows. Because a window manager can restack the overlay behind another window mid-session and it never recovers on its own, `window::reassert_overlay_topmost` re-sends the always-on-top state on a ~1s heartbeat while a dictation is active (see `pipeline::spawn_audio_level_forwarder`), not just once at creation.
+- **Click-Through** — `set_ignore_cursor_events(true)` disables the window's cursor hit-test at the windowing-system level, so mouse events pass cleanly through to the window beneath it.
 - **Borderless / Frameless** — No title bar or decorations.
+- **Wayland** — Wayland gives clients no way to position themselves or force always-on-top (that's compositor policy, not a client request), so on a Wayland session with a reachable X server, VoxCtrl forces the whole app onto XWayland at startup (`GDK_BACKEND=x11`, set in `lib.rs` before GTK initializes) to get real positioning and stacking back.
 
-The overlay visualizer animates and reveals itself automatically when recording starts and fades out when transcription completes (provided `ui.show_overlay` is enabled). The active style is determined by `config.ui.overlay_style` and is hot-switched without restarting the helper.
+The overlay reveals itself automatically when recording starts and fades out when transcription completes (provided `ui.show_overlay` is enabled). The active style is determined by `config.ui.overlay_style` and is hot-switched without recreating the window. Position updates (`config.ui.overlay_position` / `overlay_monitor`) also apply live — see `window::reposition_overlay` and its caller in `lib.rs`.
 
 ### Load & Unload Animations
 
-Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears. Animations are driven by a slightly-underdamped spring (so overlays land with a subtle bounce), and the helper window intentionally **stays alive until the unload animation finishes** instead of vanishing on the same frame recording stops. Each style interprets the spring's progress in its own way — see the per-style descriptions below.
+Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears, using CSS transitions/keyframes tuned to read as a slightly-underdamped spring (so overlays land with a subtle bounce). The animation is driven client-side in the Svelte component; the window itself **stays mapped throughout** rather than being hidden mid-animation. Each style interprets its own load/unload transition — see the per-style descriptions below.
 
 ---
 
@@ -128,4 +129,93 @@ When a voice command trigger is activated (e.g. saying *"VoxCtrl notes Help me!"
 - **Content**: Displays the executed command target name (e.g. `NOTES` or `MEETING JOURNAL`) and a summary of the text payload (`▸ Help me!`).
 - **Duration**: Auto-dismisses after a configurable duration (default: 3 seconds, configurable via `config.ui.command_overlay_duration_secs`).
 - **Toggle**: Controlled via **Settings → Visual Feedback → Show overlay on voice command trigger** (`config.ui.show_command_overlay`).
+
+---
+
+## Custom Overlay Styles
+
+Beyond the eight built-in styles, VoxCtrl loads user-authored styles from
+an overlays folder — `dirs::data_local_dir()/voxctrl/overlays` (Rust's
+`dirs` crate; e.g. `~/.local/share/voxctrl/overlays` on Linux) — via
+`custom_overlays::overlays_dir()` in `src-tauri/src/custom_overlays.rs`.
+Every subfolder containing an `index.html` + `style.css` becomes a
+selectable style in **Settings → Visual & Feedback → Overlay style**,
+named after the folder. Two different commands read this folder for two
+different purposes, both in `src-tauri/src/commands.rs`:
+- `get_custom_overlays` lists every folder's name (not its content) to
+  populate `VisualTab.svelte`'s `overlayStyleOptions` — the dropdown.
+- `get_custom_overlay(name)` reads one folder's `index.html` + `style.css`
+  fresh off disk, by the display name it's selected under.
+  `Overlay.svelte`'s shared `loadActiveCustomOverlay(style)` calls this —
+  not the list command — and is itself called three different ways,
+  deliberately, not just one:
+  1. `VisualTab.svelte` emits an `overlay-style-selected` event, with the
+     new value, on every selection in the Overlay style dropdown —
+     including re-selecting the style that's already active — and
+     `Overlay.svelte` listens for it directly. This bypasses the config
+     store entirely, so it's the reliable trigger for "I edited the file,
+     does picking this style in Settings show it right now," for *both*
+     `index.html` and `style.css` together (`read_custom_overlay_folder`
+     always reads both in one call — there's no independent per-file
+     caching to go stale).
+  2. The `isRecordingOrSpeaking` effect, every time it transitions to
+     active — so every dictation start re-reads the currently selected
+     style's files too, independent of anything Settings did.
+  3. A style-change `$effect` that reacts to `config.ui.overlay_style`
+     itself changing, kept as a fallback for config changes that don't
+     originate from that dropdown (e.g. `config.json` edited by hand).
+     This one alone isn't reliable: this window's own copy of that value
+     only updates when it *receives* a `config-changed` event carrying a
+     different value than it already had, and Settings auto-saves on a
+     debounce, so switching the dropdown away and back quickly can
+     collapse into a single save this window never observes as a change —
+     an effect keyed on the style value alone can silently never re-fire
+     in that case. Triggers 1 and 2 don't have this gap: neither cares
+     whether the *value* changed, only that a selection or an activation
+     happened. Because the overlay window is created once and stays alive
+     for the app's whole session (`window::open_overlay_window`), without
+     at least one of these three, whatever was on disk at startup is all
+     it would ever show.
+
+`custom_overlays::refresh_bundled_example` (called once, before `run()`
+builds the Tauri app) makes sure a documented `Custom/` example exists —
+a copy of the built-in Voice Card style with one line changed (`VOXCTRL`
+→ `CUSTOM OVERLAY`), from the template files under
+`src-tauri/assets/custom-overlay-template/` — without ever overwriting it
+once it's there. It writes `README.md` unconditionally on every launch
+(it's reference documentation, not user content), but only creates
+`Custom/index.html` + `style.css` when the `Custom/` folder doesn't exist
+at all; the instant it exists, seeded or hand-edited, this is a no-op on
+every future launch, and stays that way until the user deletes the whole
+folder themselves — that deletion is the only way to ask for the default
+example back. This is deliberately a plain existence check, not an
+attempt to detect edits by content or hash: an earlier version tried
+diffing against a marker of its own last-written content to tell "still
+untouched, safe to upgrade" apart from "the user has edited this," which
+worked but added real complexity for a distinction that turned out not to
+matter — once `Custom/` exists, leave it alone, full stop. Nothing
+outside `README.md` and `Custom/` is ever touched, so any *other* style
+the user has created is always left alone.
+
+A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
+placeholder substitution on its first render (the active routing target's
+label). Everything that changes afterward — recording/processing/speaking
+state, the live audio level — has to be read from CSS: VoxCtrl continuously
+writes it onto custom properties on the page root (`--voxctrl-recording`,
+`--voxctrl-processing`, `--voxctrl-speaking`, `--voxctrl-mcp-recording`,
+`--voxctrl-audio-ready`, all 0/1, plus `--voxctrl-audio-level` 0..1), for
+`var()`/`calc()` to consume directly — see the shipped `Custom/index.html`
+and `style.css` for a fully commented, working example (the on/off flip,
+the status-stamp text swap, and the audio-reactive LED matrix are all
+driven this way, with no script).
+
+This is CSS-only because it has to be: the window's `script-src 'self'`
+content-security-policy (`src-tauri/tauri.conf.json`) blocks inline
+`<script>` execution everywhere in the app, custom overlays included, with
+no visible error in the (console-less) overlay window — a `<script>`-based
+overlay just silently never appears. `Overlay.svelte` does still dispatch
+`voxctrl-status` / `voxctrl-audio-level` / `voxctrl-cleanup` `CustomEvent`s
+on `window` for an overlay's own script to listen for, but nothing in this
+app can currently execute that script, so treat those events as unusable
+under the shipped CSP rather than as the documented way to build one.
 

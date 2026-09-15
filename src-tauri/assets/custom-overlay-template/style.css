@@ -1,0 +1,268 @@
+/*
+  Styling for the "Custom" example overlay (see index.html for the full
+  explanation, including why this is CSS-only rather than script-driven).
+  This is a copy of the built-in Voice Card style's CSS, renamed to
+  vc-custom-* classes so it never collides with the real Voice Card
+  component, redone to react to the --voxctrl-* custom properties VoxCtrl
+  writes onto the page root instead of a <script> tag's event listeners.
+*/
+
+.vc-custom-scene {
+  perspective: 900px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.vc-custom-card {
+  /* Combined state flags, computed once here and inherited by every
+     child below — CSS custom properties cascade down the DOM just like
+     any other inherited property. Each --voxctrl-* input is 0 or 1, so
+     these read like boolean algebra: multiplication is AND, max() is OR. */
+  --active: max(
+    var(--voxctrl-recording, 0),
+    var(--voxctrl-processing, 0),
+    var(--voxctrl-speaking, 0),
+    var(--voxctrl-mcp-recording, 0)
+  );
+  --is-proc: var(--voxctrl-processing, 0);
+  --is-init: calc(var(--voxctrl-recording, 0) * (1 - var(--voxctrl-audio-ready, 1)));
+  --is-rec: calc(
+    var(--voxctrl-recording, 0) * var(--voxctrl-audio-ready, 1) * (1 - var(--voxctrl-processing, 0))
+  );
+
+  position: relative;
+  width: 340px;
+  height: 152px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #181b24 0%, #0b0d12 55%, #141925 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  /* A second, independent ring layered on top of the base border via
+     box-shadow: rgba()'s alpha channel takes --is-proc directly, so it's
+     invisible (alpha 0) normally and a solid blue ring when processing —
+     the same "swap by opacity, not by branching" trick used everywhere
+     else in this file, just applied to a color instead of an element. */
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(56, 189, 248, var(--is-proc, 0));
+  font-family: 'Outfit', 'Inter', sans-serif;
+  transform: rotateY(calc(88deg * (1 - var(--active, 0))));
+  opacity: var(--active, 0);
+  transition:
+    transform 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.2),
+    opacity 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Holographic sheen drifting across the face — plain CSS animation, no
+   state dependency, so it needs nothing from the section above. */
+.vc-custom-sheen {
+  position: absolute;
+  top: -20px;
+  bottom: -20px;
+  width: 64px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+  animation: vc-custom-sheen-drift 6.5s linear infinite;
+}
+
+@keyframes vc-custom-sheen-drift {
+  from { left: -70px; }
+  to { left: 410px; }
+}
+
+.vc-custom-chip {
+  position: absolute;
+  left: 20px;
+  top: 18px;
+  width: 38px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #f6d27a 0%, #d9a946 55%, #b9842b 100%);
+}
+
+.vc-custom-chip-line {
+  position: absolute;
+  background: rgba(70, 45, 0, 0.45);
+}
+.vc-custom-chip-line.h1 { left: 0; right: 0; top: 9px; height: 1.5px; }
+.vc-custom-chip-line.h2 { left: 0; right: 0; top: 18px; height: 1.5px; }
+.vc-custom-chip-line.v { top: 0; bottom: 0; left: 18px; width: 1.5px; }
+
+.vc-custom-brand {
+  position: absolute;
+  left: 68px;
+  top: 16px;
+  /* Left room for the status stamp (right: 20px, ~68px wide) so a longer
+     brand string than the built-in "VOXCTRL" — like "CUSTOM OVERLAY" —
+     truncates cleanly instead of overlapping it. */
+  max-width: 176px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #f3f4f6;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.vc-custom-brand-sub {
+  position: absolute;
+  left: 68px;
+  top: 34px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.4em;
+}
+
+.vc-custom-stamp {
+  position: absolute;
+  right: 20px;
+  top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.vc-custom-stamp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  animation: vc-custom-stamp-blink 1.15s ease-in-out infinite;
+}
+
+@keyframes vc-custom-stamp-blink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* The three status labels sit in the same box (position: relative on the
+   stamp above, position: absolute here) so only the one whose formula
+   evaluates to 1 is visible; the other two are just opacity: 0 in place. */
+.vc-custom-stamp-text {
+  position: absolute;
+  right: 9px;
+  font-size: 8.5px;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+  transition: opacity 0.15s ease;
+}
+.vc-custom-stamp-text.s-rec { color: #f43f5e; opacity: var(--is-rec, 0); }
+.vc-custom-stamp-text.s-init { color: #f59e0b; opacity: var(--is-init, 0); }
+.vc-custom-stamp-text.s-proc { color: #38bdf8; opacity: var(--is-proc, 0); }
+
+.vc-custom-matrix {
+  position: absolute;
+  left: 22px;
+  top: 56px;
+  width: 296px;
+  height: 51px;
+  display: flex;
+  gap: 4px;
+}
+
+.vc-custom-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vc-custom-dot {
+  width: 11px;
+  height: 6px;
+  border-radius: 2px;
+  /* Lit when this column's level (the shared audio level scaled by the
+     column's own --w envelope weight, giving the center-weighted shape a
+     real VU meter has) clears this dot's row threshold, out of 6 rows.
+     clamp()'s low bound is the built-in style's "dim" opacity, its high
+     bound the "lit" opacity; the *8 sharpens the ramp between them so it
+     reads as an on/off step rather than a slow fade per row. */
+  opacity: clamp(
+    0.1,
+    calc((var(--voxctrl-audio-level, 0) * var(--w, 1) * 6 - var(--row, 0)) * 8 + 0.1),
+    0.95
+  );
+  transition: opacity 0.12s linear;
+}
+
+.vc-custom-dot.red { background: #f43f5e; }
+.vc-custom-dot.amber { background: #fbbf24; }
+.vc-custom-dot.green { background: #34d399; }
+
+/* Row position, top to bottom — same semantics as the built-in style:
+   row 0 (top) is the red dot, rows 1-2 amber, rows 3-5 green. */
+.vc-custom-col > span:nth-child(1) { --row: 0; }
+.vc-custom-col > span:nth-child(2) { --row: 1; }
+.vc-custom-col > span:nth-child(3) { --row: 2; }
+.vc-custom-col > span:nth-child(4) { --row: 3; }
+.vc-custom-col > span:nth-child(5) { --row: 4; }
+.vc-custom-col > span:nth-child(6) { --row: 5; }
+
+/* Each column's fixed position in a center-weighted envelope (peak in the
+   middle two columns, tapering toward both edges) — the shape that makes
+   the middle of the meter react most strongly, computed once here instead
+   of 20 different inline attributes cluttering index.html. */
+.vc-custom-matrix > div:nth-child(1) { --w: 0.2222; }
+.vc-custom-matrix > div:nth-child(2) { --w: 0.2999; }
+.vc-custom-matrix > div:nth-child(3) { --w: 0.3916; }
+.vc-custom-matrix > div:nth-child(4) { --w: 0.4945; }
+.vc-custom-matrix > div:nth-child(5) { --w: 0.604; }
+.vc-custom-matrix > div:nth-child(6) { --w: 0.7136; }
+.vc-custom-matrix > div:nth-child(7) { --w: 0.8153; }
+.vc-custom-matrix > div:nth-child(8) { --w: 0.9011; }
+.vc-custom-matrix > div:nth-child(9) { --w: 0.9632; }
+.vc-custom-matrix > div:nth-child(10) { --w: 0.9958; }
+.vc-custom-matrix > div:nth-child(11) { --w: 0.9958; }
+.vc-custom-matrix > div:nth-child(12) { --w: 0.9632; }
+.vc-custom-matrix > div:nth-child(13) { --w: 0.9011; }
+.vc-custom-matrix > div:nth-child(14) { --w: 0.8153; }
+.vc-custom-matrix > div:nth-child(15) { --w: 0.7136; }
+.vc-custom-matrix > div:nth-child(16) { --w: 0.604; }
+.vc-custom-matrix > div:nth-child(17) { --w: 0.4945; }
+.vc-custom-matrix > div:nth-child(18) { --w: 0.3916; }
+.vc-custom-matrix > div:nth-child(19) { --w: 0.2999; }
+.vc-custom-matrix > div:nth-child(20) { --w: 0.2222; }
+
+.vc-custom-field-label {
+  position: absolute;
+  left: 22px;
+  top: 118px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.36em;
+}
+
+/* Same stacking trick as the status labels: both sit in the same spot,
+   and only the one whose formula is 1 is visible. */
+.vc-custom-field-value {
+  position: absolute;
+  left: 22px;
+  top: 128px;
+  max-width: 200px;
+  color: #e5e7eb;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.15s ease;
+}
+.vc-custom-field-value.vc-custom-target { opacity: calc(1 - var(--is-proc, 0)); }
+.vc-custom-field-value.vc-custom-reading { opacity: var(--is-proc, 0); }
+
+.vc-custom-card-number {
+  position: absolute;
+  right: 22px;
+  top: 128px;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}

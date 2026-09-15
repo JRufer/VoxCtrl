@@ -48,6 +48,7 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.whisper_cpp.model_dir", Path),
     ("engine.whisper_cpp.model_size", Safe),
     ("engine.whisper_cpp.device", Safe),
+    ("engine.whisper_cpp.language", Safe),
     ("engine.moonshine.model_size", Safe),
     ("engine.moonshine.language", Safe),
     ("engine.parakeet.model_size", Safe),

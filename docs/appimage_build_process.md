@@ -193,7 +193,7 @@ stay clean on a newer host. The rules, each learned from a startup crash:
 
 1. **Graphics, Wayland and input libraries come from the host** (Mesa, EGL,
    libdrm, libwayland, libxkbcommon). Bundled copies from the Ubuntu 22.04
-   build host break the Slint overlay's Wayland frame callbacks and xkbcommon.
+   build host break Wayland frame callbacks and xkbcommon.
 2. **Once a library comes from the host, everything it links against must
    come from the host too.** The host's copy resolves its symbols against
    whatever is first on `LD_LIBRARY_PATH`; a stale bundled dependency makes it
