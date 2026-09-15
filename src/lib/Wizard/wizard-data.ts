@@ -205,6 +205,12 @@ export interface TtsEngineInfo {
   needsHfToken?: boolean;
   /** Where the user accepts this model's licence, shown alongside the token field. */
   licenceUrl?: string;
+  /**
+   * Weights carry a non-commercial license — surfaced as a warning before the
+   * user downloads them, distinct from `needsHfToken` (a gate on *access*,
+   * not on *use*).
+   */
+  nonCommercial?: boolean;
 }
 
 export const TTS_ENGINES: TtsEngineInfo[] = [
@@ -214,8 +220,8 @@ export const TTS_ENGINES: TtsEngineInfo[] = [
     kind: "neural · 2B autoregressive",
     quality: 0.98,
     speed: 0.25,
-    mb: 4500,
-    note: "2B autoregressive diffusion. SOTA voice realism & cloning. Requires modern GPU.",
+    mb: 2950,
+    note: "2B autoregressive diffusion. SOTA voice realism & cloning. Runs via audio.cpp, best on a Vulkan GPU.",
   },
   {
     id: "breeze_tts_2",
@@ -223,9 +229,9 @@ export const TTS_ENGINES: TtsEngineInfo[] = [
     kind: "neural · expressive",
     quality: 0.96,
     speed: 0.32,
-    mb: 1200,
-    note: "Most natural prosody. Best on a GPU or fast CPU.",
-    needsHfToken: true,
+    mb: 5080,
+    note: "Most natural prosody. Runs via audio.cpp, best on a Vulkan GPU or fast CPU.",
+    nonCommercial: true,
     licenceUrl: "huggingface.co/BreezeBlue/Breeze-TTS-2",
   },
   {
@@ -234,10 +240,8 @@ export const TTS_ENGINES: TtsEngineInfo[] = [
     kind: "neural · voice cloning",
     quality: 0.86,
     speed: 0.55,
-    mb: 500,
-    note: "Rust-native. Cloned voices, downloaded in-app.",
-    needsHfToken: true,
-    licenceUrl: "huggingface.co/kyutai/pocket-tts",
+    mb: 130,
+    note: "Cloned voices, downloaded in-app. Runs via audio.cpp with optional Vulkan acceleration.",
   },
   {
     id: "piper",

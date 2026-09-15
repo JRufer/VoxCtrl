@@ -394,7 +394,9 @@ impl Default for TtsEngine {
 }
 
 /// How the TTS engine manages the memory of model-backed engines (currently
-/// Pocket-TTS; Piper and eSpeak shell out to a process and hold nothing).
+/// Inflect-Micro-v2; Piper, eSpeak, and the audio.cpp-backed engines
+/// (Pocket-TTS, Breeze-TTS-2, VoxCPM2) all shell out to a subprocess per
+/// utterance and hold nothing in-process).
 ///
 /// * `AlwaysLoaded` — once loaded, the model stays resident for the lifetime of
 ///   the TTS worker. Fastest, but the weights sit in RAM even when unused.
@@ -454,6 +456,10 @@ pub struct PocketTtsConfig {
     /// (`~/.local/share/voxctrl/cloned-tts-voices/`).
     #[serde(default)]
     pub voice_dir: String,
+    /// Enable Vulkan GPU acceleration (via audio.cpp's `--backend vulkan`).
+    /// Falls back to CPU whenever no usable Vulkan device can be opened.
+    #[serde(default)]
+    pub gpu: bool,
 }
 
 impl Default for PocketTtsConfig {
@@ -461,6 +467,7 @@ impl Default for PocketTtsConfig {
         Self {
             voice: default_pocket_tts_voice(),
             prewarm: false,
+            gpu: false,
             legacy_hf_token: None,
             voice_dir: String::new(),
         }
@@ -495,7 +502,8 @@ pub struct BreezeTts2Config {
     /// Pre-warm model on startup so the first synthesis is instant
     #[serde(default)]
     pub prewarm: bool,
-    /// Enable GPU acceleration (CUDA)
+    /// Enable Vulkan GPU acceleration (via audio.cpp's `--backend vulkan`). Falls
+    /// back to CPU whenever no usable Vulkan device can be opened.
     #[serde(default)]
     pub gpu: bool,
 }
@@ -549,7 +557,8 @@ pub struct VoxCpm2Config {
     /// Pre-warm model on startup so first synthesis is instant
     #[serde(default)]
     pub prewarm: bool,
-    /// Enable GPU acceleration (CUDA)
+    /// Enable Vulkan GPU acceleration (via audio.cpp's `--backend vulkan`). Falls
+    /// back to CPU whenever no usable Vulkan device can be opened.
     #[serde(default)]
     pub gpu: bool,
 }

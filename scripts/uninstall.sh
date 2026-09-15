@@ -192,7 +192,7 @@ command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$
 act "Removing configuration and data"
 USER_DIRS=(
     "$HOME/.config/voxctrl"            # config.json, targets.toml, bindings.toml (+ backups)
-    "$HOME/.local/share/voxctrl"       # whisper models, piper engine + voices, pocket-tts voices, logs
+    "$HOME/.local/share/voxctrl"       # whisper models, piper/audio.cpp engines + voices, logs
     "$HOME/.local/share/ai.voxctrl.app" # Tauri/WebKit profile data
     "$HOME/.cache/ai.voxctrl.app"      # Tauri/WebKit cache
 )
@@ -200,10 +200,12 @@ for d in "${USER_DIRS[@]}"; do
     if [ -d "$d" ]; then rm -rf "$d" && ok "Removed $d"; else skip "Not present: $d"; fi
 done
 
-# Pocket-TTS models live in the shared HuggingFace cache; remove only the
-# repos VoxCtrl downloads, never the whole cache.
+# Inflect-Micro-v2 is the only remaining engine that uses the shared
+# HuggingFace cache directly; the audio.cpp-backed engines (Pocket-TTS,
+# Breeze-TTS-2, VoxCPM2) cache everything under the already-removed
+# ~/.local/share/voxctrl instead.
 HF_HUB="$HOME/.cache/huggingface/hub"
-for repo in models--kyutai--pocket-tts models--kyutai--pocket-tts-without-voice-cloning models--kyutai--tts-voices; do
+for repo in models--owensong--Inflect-Micro-v2-ONNX; do
     if [ -d "$HF_HUB/$repo" ]; then
         rm -rf "$HF_HUB/$repo" && ok "Removed HuggingFace cache entry: $repo"
     fi

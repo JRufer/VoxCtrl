@@ -277,6 +277,17 @@
 
   $effect(() => {
     ensureDefaultClonedVoices();
+    // Voice Design is not offered for VoxCPM2 or Breeze-TTS-2 (see
+    // onEngineChanged) — force clone mode even for a config saved before
+    // that change.
+    if (cfg.tts.vox_cpm_2.voice_mode !== "clone") {
+      cfg.tts.vox_cpm_2.voice_mode = "clone";
+      markDirty();
+    }
+    if (cfg.tts.breeze_tts_2.voice_mode !== "clone") {
+      cfg.tts.breeze_tts_2.voice_mode = "clone";
+      markDirty();
+    }
   });
 
   async function loadPocketTtsVoices() {
@@ -573,10 +584,20 @@
     engineSwitching = true;
     try {
       if (cfg.tts.engine === "vox_cpm_2") {
+        // Voice Design doesn't work for VoxCPM2 in the current audio.cpp
+        // build (the prompt is silently ignored) — Voice Cloning is the
+        // only mode exposed in the UI, so force it here too in case an
+        // older config still has voice_mode "prompt" from before that.
+        cfg.tts.vox_cpm_2.voice_mode = "clone";
         voxCpmReady = false;
         await checkVoxCpmReady();
         await loadPocketTtsVoices();
       } else if (cfg.tts.engine === "breeze_tts_2") {
+        // Voice Design doesn't reliably apply the described voice for
+        // Breeze-TTS-2 either — Voice Cloning is the only mode exposed in
+        // the UI, so force it here too in case an older config still has
+        // voice_mode "prompt" from before that.
+        cfg.tts.breeze_tts_2.voice_mode = "clone";
         breezeReady = false;
         await checkBreezeReady();
         await loadPocketTtsVoices();
@@ -810,6 +831,24 @@
       <input type="checkbox" bind:checked={cfg.tts.gpu} onchange={markDirty} />
     </label>
     <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Use CUDA GPU acceleration (ONNX Runtime). Falls back to CPU if unavailable.</p>
+    {:else if cfg.tts.engine === "pocket_tts"}
+    <label class="field">
+      <span>Vulkan GPU Acceleration</span>
+      <input type="checkbox" bind:checked={cfg.tts.pocket_tts.gpu} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
+    {:else if cfg.tts.engine === "breeze_tts_2"}
+    <label class="field">
+      <span>Vulkan GPU Acceleration</span>
+      <input type="checkbox" bind:checked={cfg.tts.breeze_tts_2.gpu} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
+    {:else if cfg.tts.engine === "vox_cpm_2"}
+    <label class="field">
+      <span>Vulkan GPU Acceleration</span>
+      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.gpu} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
     {/if}
     <label class="field">
       <span>Speed ({cfg.tts.speed.toFixed(2)}×)</span>
@@ -839,47 +878,6 @@
     {#if !ttsError && isTestTtsDisabled() && testTtsDisabledReason()}
       <p class="hint">Test TTS unavailable: {testTtsDisabledReason()}</p>
     {/if}
-  </div>
-
-  <!-- ── Model memory section ───────────────────────────────────────────── -->
-  <div class="field-group">
-    <h3>Model Memory</h3>
-    <label class="field col">
-      <span class="field-title">When TTS is enabled</span>
-      <CustomSelect bind:value={cfg.tts.memory_mode} options={memoryModeOptions} onchange={onMemoryModeChanged} />
-    </label>
-
-    {#if cfg.tts.memory_mode === "on_demand"}
-      <label class="field">
-        <span>Unload after (minutes idle)</span>
-        <input
-          type="number"
-          min="1"
-          max="480"
-          step="1"
-          value={idleMinutes}
-          onchange={onIdleMinutesChange}
-          class="idle-minutes-input"
-        />
-      </label>
-      <p class="hint">
-        The model is loaded the moment VoxCtrl knows it will be needed — as soon as you start
-        dictating to a target that speaks — and stays primed while you keep using it. The
-        countdown restarts on every use, so it only unloads after {idleMinutes}
-        {idleMinutes === 1 ? "minute" : "minutes"} of no speech. The first reply after an
-        unload takes a few seconds longer while the model loads again.
-      </p>
-    {:else}
-      <p class="hint">
-        The model stays in memory for the whole session — the fastest possible response, at
-        the cost of holding its memory even while TTS sits unused.
-      </p>
-    {/if}
-    <p class="hint">
-      Applies to the neural engines that hold a model in memory — Pocket-TTS, Breeze-TTS-2 and
-      Inflect-Micro-v2. Piper and eSpeak-NG run a process per utterance and are unaffected. This
-      setting can also be toggled from the VoxCtrl tray icon.
-    </p>
   </div>
 
   <!-- ── Piper section ──────────────────────────────────────────────────── -->
@@ -937,95 +935,46 @@
         <span>OpenBMB VoxCPM2 — 2B Autoregressive Diffusion TTS</span>
       </div>
       <p style="font-size: 0.85rem; line-height: 1.4; color: #d0d7de; margin: 0;">
-        Pure Rust neural speech synthesis with real-time streaming playback. Supports natural language <strong>Voice Design</strong>, reference <strong>Voice Cloning</strong>, and <strong>Ultimate Cloning</strong> (reference audio + transcript matching). Licensed under <strong>Apache 2.0</strong>.
+        Runs through audio.cpp with optional Vulkan acceleration. Supports reference <strong>Voice Cloning</strong> and <strong>Ultimate Cloning</strong> (reference audio + transcript matching). Licensed under <strong>Apache 2.0</strong>.
       </p>
     </div>
 
-    <div class="field col">
-      <span class="field-title">Voice Selection Method</span>
-      <div class="engine-radio-group">
-        <label class="engine-radio-option {cfg.tts.vox_cpm_2.voice_mode !== 'clone' ? 'selected' : ''}">
-          <div class="engine-radio-header">
-            <input
-              type="radio"
-              name="voxcpm_voice_mode"
-              value="prompt"
-              checked={cfg.tts.vox_cpm_2.voice_mode !== 'clone'}
-              onchange={() => { cfg.tts.vox_cpm_2.voice_mode = 'prompt'; markDirty(); }}
-            />
-            <span class="engine-radio-name">🗣️ Voice Design (Prompt)</span>
-          </div>
-          <span class="engine-radio-desc">Describe vocal characteristics in natural language</span>
-        </label>
+    <p class="hint" style="margin-top: 0;">
+      Voice Design (prompt-based) isn't offered here: audio.cpp's current VoxCPM2 build doesn't
+      act on the prompt yet, an upstream limitation. Voice Cloning below works correctly.
+    </p>
 
-        <label class="engine-radio-option {cfg.tts.vox_cpm_2.voice_mode === 'clone' ? 'selected' : ''}">
-          <div class="engine-radio-header">
-            <input
-              type="radio"
-              name="voxcpm_voice_mode"
-              value="clone"
-              checked={cfg.tts.vox_cpm_2.voice_mode === 'clone'}
-              onchange={() => {
-                cfg.tts.vox_cpm_2.voice_mode = 'clone';
-                ensureDefaultClonedVoices();
-                markDirty();
-                loadPocketTtsVoices();
-              }}
-            />
-            <span class="engine-radio-name">🎙️ Voice Cloning (Shared Folder)</span>
-          </div>
-          <span class="engine-radio-desc">Clone voice from reference .wav audio clip</span>
-        </label>
-      </div>
+    <label class="field col">
+      <span class="field-title">Cloned Voice Reference Clip</span>
+      <CustomSelect
+        bind:value={cfg.tts.vox_cpm_2.cloned_voice}
+        options={pocketTtsVoiceOptions}
+        defaultToFirst={true}
+        onchange={markDirty}
+      />
+    </label>
+
+    <div class="field">
+      <span>Shared Voice Folder (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.vox_cpm_2.voice_dir}
+        onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.vox_cpm_2.voice_dir); }}
+      />
     </div>
+    <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
 
-    {#if cfg.tts.vox_cpm_2.voice_mode === 'clone'}
-      <label class="field col">
-        <span class="field-title">Cloned Voice Reference Clip</span>
-        <CustomSelect
-          bind:value={cfg.tts.vox_cpm_2.cloned_voice}
-          options={pocketTtsVoiceOptions}
-          defaultToFirst={true}
-          onchange={markDirty}
-        />
-      </label>
-
-      <div class="field">
-        <span>Shared Voice Folder (leave blank for default)</span>
-        <input
-          type="text"
-          bind:value={cfg.tts.vox_cpm_2.voice_dir}
-          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.vox_cpm_2.voice_dir); }}
-        />
-      </div>
-      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
-
-      <div class="field" style="margin-top: 6px;">
-        <span>Enable Ultimate Cloning</span>
-        <input
-          type="checkbox"
-          bind:checked={cfg.tts.vox_cpm_2.ultimate_cloning}
-          onchange={markDirty}
-        />
-      </div>
-      <p class="hint" style="margin-top: -6px;">
-        When enabled, VoxCPM2 reads a companion <code>.txt</code> transcript file next to the <code>.wav</code> reference audio (e.g. <code>voice_name.txt</code> alongside <code>voice_name.wav</code>) for maximum phoneme alignment, nuanced breathing, and exact prosodic preservation.
-      </p>
-    {:else}
-      <label class="field col">
-        <span class="field-title">Speaker Voice Prompt (Voice Design)</span>
-        <textarea
-          bind:value={cfg.tts.vox_cpm_2.speaker_prompt}
-          onchange={markDirty}
-          placeholder="Describe the voice of the speaker in natural language..."
-          rows="2"
-          class="field-input-textarea"
-        ></textarea>
-      </label>
-      <p class="hint" style="margin-top: -4px;">
-        Natural language description used by VoxCPM2 to design the speaker's vocal timbre (e.g. <em>"A calm young female voice speaking clearly with a gentle tone"</em> or <em>"A deep, confident male narrator"</em>).
-      </p>
-    {/if}
+    <div class="field" style="margin-top: 6px;">
+      <span>Enable Ultimate Cloning</span>
+      <input
+        type="checkbox"
+        bind:checked={cfg.tts.vox_cpm_2.ultimate_cloning}
+        onchange={markDirty}
+      />
+    </div>
+    <p class="hint" style="margin-top: -6px;">
+      When enabled, VoxCPM2 reads a companion <code>.txt</code> transcript file next to the <code>.wav</code> reference audio (e.g. <code>voice_name.txt</code> alongside <code>voice_name.wav</code>) for maximum phoneme alignment, nuanced breathing, and exact prosodic preservation.
+    </p>
 
     <div class="voice-status-container">
       {#if voxCpmChecking}
@@ -1051,20 +1000,6 @@
       {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
     </p>
 
-    <label class="field">
-      <span>GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px;">
-      Runs synthesis on the GPU for fastest inference speed. When disabled, or whenever no GPU can be opened, synthesis stays on the CPU. The model reloads when you change this.
-    </p>
-
-    <label class="field">
-      <span>Pre-warm Model on Startup</span>
-      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.prewarm} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px;">Pre-loads model tensors into memory on startup so the first speech generation is instant.</p>
-
     <div class="field">
       <span>Model directory (leave blank for default)</span>
       <input
@@ -1074,6 +1009,12 @@
       />
     </div>
     <p class="hint">Default directory: <code>~/.local/share/voxctrl/models/voxcpm2/</code></p>
+
+    <label class="field">
+      <span>Pre-warm on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
   </div>
   {/if}
 
@@ -1093,86 +1034,40 @@
       </p>
     </div>
 
-    <div class="field col">
-      <span class="field-title">Voice Selection Method</span>
-      <div class="engine-radio-group">
-        <label class="engine-radio-option {cfg.tts.breeze_tts_2.voice_mode !== 'clone' ? 'selected' : ''}">
-          <div class="engine-radio-header">
-            <input
-              type="radio"
-              name="breeze_voice_mode"
-              value="prompt"
-              checked={cfg.tts.breeze_tts_2.voice_mode !== 'clone'}
-              onchange={() => { cfg.tts.breeze_tts_2.voice_mode = 'prompt'; markDirty(); }}
-            />
-            <span class="engine-radio-name">🗣️ Voice Design (Prompt)</span>
-          </div>
-          <span class="engine-radio-desc">Describe vocal characteristics in natural language</span>
-        </label>
+    <p class="hint" style="margin-top: 0;">
+      Voice Design (prompt-based) isn't offered here: it doesn't reliably apply the described
+      voice and quality suffers compared to Voice Cloning below, which works correctly.
+    </p>
 
-        <label class="engine-radio-option {cfg.tts.breeze_tts_2.voice_mode === 'clone' ? 'selected' : ''}">
-          <div class="engine-radio-header">
-            <input
-              type="radio"
-              name="breeze_voice_mode"
-              value="clone"
-              checked={cfg.tts.breeze_tts_2.voice_mode === 'clone'}
-              onchange={() => {
-                cfg.tts.breeze_tts_2.voice_mode = 'clone';
-                ensureDefaultClonedVoices();
-                markDirty();
-                loadPocketTtsVoices();
-              }}
-            />
-            <span class="engine-radio-name">🎙️ Voice Cloning (Shared Folder)</span>
-          </div>
-          <span class="engine-radio-desc">Clone voice from reference .wav audio clip</span>
-        </label>
-      </div>
+    <label class="field col">
+      <span class="field-title">Cloned Voice Reference Clip</span>
+      <CustomSelect
+        bind:value={cfg.tts.breeze_tts_2.cloned_voice}
+        options={pocketTtsVoiceOptions}
+        defaultToFirst={true}
+        onchange={markDirty}
+      />
+    </label>
+
+    <div class="field">
+      <span>Shared Voice Folder (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.breeze_tts_2.voice_dir}
+        onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.breeze_tts_2.voice_dir); }}
+      />
     </div>
+    <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
 
-    {#if cfg.tts.breeze_tts_2.voice_mode === 'clone'}
-      <label class="field col">
-        <span class="field-title">Cloned Voice Reference Clip</span>
-        <CustomSelect
-          bind:value={cfg.tts.breeze_tts_2.cloned_voice}
-          options={pocketTtsVoiceOptions}
-          defaultToFirst={true}
-          onchange={markDirty}
-        />
-      </label>
-
-      <div class="field">
-        <span>Shared Voice Folder (leave blank for default)</span>
-        <input
-          type="text"
-          bind:value={cfg.tts.breeze_tts_2.voice_dir}
-          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.breeze_tts_2.voice_dir); }}
-        />
-      </div>
-      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
-
-      <div class="license-warning-card" style="margin-top: 4px; margin-bottom: 8px;">
-        <p class="license-title">💡 Voice Cloning Transcript Requirement</p>
-        <p class="license-text">
-          Drop reference <code>.wav</code> audio files into your shared voice folder. For best cloning accuracy, place a matching text file (e.g. <code>voice_name.txt</code>) containing the spoken transcript of the audio file in the exact same folder alongside your <code>.wav</code> file.
-        </p>
-      </div>
-    {:else}
-      <label class="field col">
-        <span class="field-title">Speaker Voice Prompt (Voice Design)</span>
-        <textarea
-          bind:value={cfg.tts.breeze_tts_2.speaker_prompt}
-          onchange={markDirty}
-          placeholder="Describe the voice of the speaker in natural language..."
-          rows="2"
-          class="field-input-textarea"
-        ></textarea>
-      </label>
-      <p class="hint" style="margin-top: -4px;">
-        Natural language description used by Breeze-TTS-2 to generate the speaker's voice (e.g. <em>"A calm female voice speaking clearly with a gentle tone"</em> or <em>"A deep, confident male narrator"</em>).
+    <div class="license-warning-card" style="margin-top: 4px; margin-bottom: 8px;">
+      <p class="license-title">⚠️ Voice Cloning Transcript Required</p>
+      <p class="license-text">
+        Unlike Pocket-TTS and VoxCPM2, Breeze-TTS-2 cannot clone a voice without a transcript.
+        Drop reference <code>.wav</code> audio files into your shared voice folder along with a
+        matching text file (e.g. <code>voice_name.txt</code>) containing exactly what is spoken
+        in the audio — cloning fails without one.
       </p>
-    {/if}
+    </div>
 
     <div class="voice-status-container">
       {#if breezeChecking}
@@ -1192,28 +1087,9 @@
     </div>
 
     <p class="hint">
-      Breeze-TTS-2 model weights are hosted on HuggingFace. Create a token at
-      <code>huggingface.co/settings/tokens</code> and accept the license at
-      <code>huggingface.co/BreezeBlue/Breeze-TTS-2</code> before downloading, then set the token
-      once in the <strong>General</strong> tab — it is shared with every other gated engine.
-      {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
+      Breeze-TTS-2 runs through the audio.cpp engine, which downloads the model on its first use
+      here — no HuggingFace token required.
     </p>
-
-    <label class="field">
-      <span>GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.breeze_tts_2.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px;">
-      Runs synthesis on the GPU for fastest inference speed. Needs a build with the
-      <code>breeze-cuda</code> (NVIDIA) or <code>breeze-metal</code> (macOS) feature; otherwise, and
-      whenever no GPU can be opened, synthesis stays on the CPU. The model reloads when you change this.
-    </p>
-
-    <label class="field">
-      <span>Pre-warm Model on Startup</span>
-      <input type="checkbox" bind:checked={cfg.tts.breeze_tts_2.prewarm} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px;">Pre-loads model tensors into GPU VRAM on startup so the first speech generation is instant.</p>
 
     <div class="field">
       <span>Model directory (leave blank for default)</span>
@@ -1224,6 +1100,12 @@
       />
     </div>
     <p class="hint">Default directory: <code>~/.local/share/voxctrl/models/breeze-tts-2/</code></p>
+
+    <label class="field">
+      <span>Pre-warm on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.breeze_tts_2.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
   </div>
   {/if}
 
@@ -1259,11 +1141,8 @@
     </div>
 
     <p class="hint">
-      Pocket-TTS model weights are hosted on a gated HuggingFace repo. Create a token at
-      <code>huggingface.co/settings/tokens</code> and accept the license at
-      <code>huggingface.co/kyutai/pocket-tts</code> before downloading, then set the token once in
-      the <strong>General</strong> tab — it is shared with every other gated engine.
-      {#if hfFromEnv}Currently using the <code>HF_TOKEN</code> environment variable.{/if}
+      Pocket-TTS runs through the audio.cpp engine, which downloads the model and voice clip on
+      their first use here — no HuggingFace token required.
     </p>
 
     <div class="field">
@@ -1286,6 +1165,12 @@
       "Narrator (Custom)". Naming a clip after a built-in voice (e.g. <code>alba.wav</code>) replaces
       that voice's reference clip. Default: <code>~/.local/share/voxctrl/cloned-tts-voices/</code>
     </p>
+
+    <label class="field">
+      <span>Pre-warm on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.pocket_tts.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
   </div>
   {/if}
 
@@ -1400,6 +1285,42 @@
     {/if}
   </div>
   {/if}
+
+  <!-- ── Model memory section ───────────────────────────────────────────── -->
+  <div class="field-group">
+    <h3>Model Memory</h3>
+    <label class="field col">
+      <span class="field-title">When TTS is enabled</span>
+      <CustomSelect bind:value={cfg.tts.memory_mode} options={memoryModeOptions} onchange={onMemoryModeChanged} />
+    </label>
+
+    {#if cfg.tts.memory_mode === "on_demand"}
+      <label class="field">
+        <span>Unload after (minutes idle)</span>
+        <input
+          type="number"
+          min="1"
+          max="480"
+          step="1"
+          value={idleMinutes}
+          onchange={onIdleMinutesChange}
+          class="idle-minutes-input"
+        />
+      </label>
+      <p class="hint">
+        The model is loaded the moment VoxCtrl knows it will be needed — as soon as you start
+        dictating to a target that speaks — and stays primed while you keep using it. The
+        countdown restarts on every use, so it only unloads after {idleMinutes}
+        {idleMinutes === 1 ? "minute" : "minutes"} of no speech. The first reply after an
+        unload takes a few seconds longer while the model loads again.
+      </p>
+    {:else}
+      <p class="hint">
+        The model stays in memory for the whole session — the fastest possible response, at
+        the cost of holding its memory even while TTS sits unused.
+      </p>
+    {/if}
+  </div>
 
   <div class="field-group">
     <h3>Playback</h3>

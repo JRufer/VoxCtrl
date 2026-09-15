@@ -797,7 +797,9 @@ describe("VoiceStep", () => {
     expect(current.tts.engine).toBe("piper");
   });
 
-  test("gated voices are locked, and say why, until a token is entered", async () => {
+  test("Breeze-TTS-2 and Pocket-TTS need no token to pick or download", async () => {
+    // Both download from audio.cpp's ungated GGUF mirror now, unlike the
+    // gated HuggingFace repos the old Candle-based engines pulled from.
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "inflect_micro_available") return true;
       return false;
@@ -806,18 +808,17 @@ describe("VoiceStep", () => {
 
     for (const name of ["Breeze-TTS-2", "Pocket TTS"]) {
       const card = (await screen.findByText(name)).closest(".card") as HTMLElement;
-      expect(card.classList.contains("locked")).toBe(true);
-      expect(card.textContent).toContain("Needs a HuggingFace access token");
+      expect(card.classList.contains("locked")).toBe(false);
+      expect(card.textContent).not.toContain("Needs a HuggingFace access token");
       const dl = within(card).getByText(/Download/).closest("button") as HTMLButtonElement;
-      expect(dl.disabled).toBe(true);
+      expect(dl.disabled).toBe(false);
     }
 
-    // A locked card must not become the chosen engine.
     const breeze = (await screen.findByText("Breeze-TTS-2")).closest(".card") as HTMLElement;
     await fireEvent.click(breeze);
     let current: any;
     config.subscribe((c) => (current = c))();
-    expect(current.tts.engine).toBe("piper");
+    expect(current.tts.engine).toBe("breeze_tts_2");
   });
 
   test("entering a token unlocks the gated voices and saves it once", async () => {
@@ -925,9 +926,7 @@ describe("VoiceStep", () => {
     });
   });
 
-  test("a gated voice already on disk needs no token to pick or continue", async () => {
-    // The weights are there — from an earlier run, from Settings, or from a
-    // shell that had HF_TOKEN exported. The token only fetches them.
+  test("a voice already on disk can be picked and does not block Continue", async () => {
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "inflect_micro_available") return true;
       if (cmd === "check_breeze_tts_2_ready") return true;
@@ -943,28 +942,14 @@ describe("VoiceStep", () => {
       return card;
     });
     expect(breeze.textContent).not.toContain("Needs a HuggingFace access token");
-    expect(breeze.textContent).toContain("Already downloaded");
+    expect(breeze.textContent).toContain("Downloaded");
 
     await fireEvent.click(breeze);
     let current: any;
     config.subscribe((c) => (current = c))();
     expect(current.tts.engine).toBe("breeze_tts_2");
 
-    // And Continue is not held back for a token that would fetch nothing.
     await waitFor(() => expect(blocked.at(-1)).toBeNull());
-  });
-
-  test("a gated voice that is not on disk still needs a token", async () => {
-    // The mirror of the case above: readiness is what unlocks it, not the mere
-    // fact that it is gated.
-    invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "inflect_micro_available") return true;
-      return false;
-    });
-    render(VoiceStep, { setBlocker: noopBlocker });
-
-    const breeze = (await screen.findByText("Breeze-TTS-2")).closest(".card") as HTMLElement;
-    await waitFor(() => expect(breeze.classList.contains("locked")).toBe(true));
   });
 
   test("a token HuggingFace refuses is reported as refused, not as a raw error", async () => {
@@ -1243,7 +1228,7 @@ describe("VoiceStep", () => {
     expect(voxCard).toBeTruthy();
     expect(voxCard.textContent).toContain("neural · 2B autoregressive");
 
-    const dlBtn = within(voxCard).getByText(/Download 4.5 GB/);
+    const dlBtn = within(voxCard).getByText(/Download 3.0 GB/);
     await fireEvent.click(dlBtn);
 
     await waitFor(() => {

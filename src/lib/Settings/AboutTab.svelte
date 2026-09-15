@@ -91,12 +91,16 @@
         <span class="credit-license">MIT License</span>
       </div>
       <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/kyutai-labs/pocket-tts" target="_blank">Pocket-TTS (Kyutai Labs, code)</a>
-        <span class="credit-license">MIT / Apache 2.0</span>
+        <a class="credit-name-link" href="https://github.com/0xShug0/audio.cpp" target="_blank">audio.cpp</a>
+        <span class="credit-license">Apache 2.0</span>
       </div>
       <div class="credit-item">
-        <a class="credit-name-link" href="https://huggingface.co/kyutai/pocket-tts" target="_blank">Pocket-TTS model weights</a>
-        <span class="credit-license flagged">Gated — see model card</span>
+        <a class="credit-name-link" href="https://github.com/ggerganov/ggml" target="_blank">ggml</a>
+        <span class="credit-license">MIT License</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/kyutai/pocket-tts" target="_blank">Pocket-TTS (Kyutai Labs, model)</a>
+        <span class="credit-license">MIT / Apache 2.0</span>
       </div>
       <div class="credit-item">
         <a class="credit-name-link" href="https://huggingface.co/openbmb/VoxCPM2" target="_blank">VoxCPM2 (openbmb)</a>
@@ -137,14 +141,6 @@
       <div class="credit-item">
         <a class="credit-name-link" href="https://svelte.dev" target="_blank">Svelte & Vite</a>
         <span class="credit-license">MIT License</span>
-      </div>
-      <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/huggingface/candle" target="_blank">Candle</a>
-        <span class="credit-license">MIT / Apache 2.0</span>
-      </div>
-      <div class="credit-item">
-        <a class="credit-name-link" href="https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html" target="_blank">Intel MKL (via Candle, Pocket-TTS builds)</a>
-        <span class="credit-license flagged">Proprietary — Intel license</span>
       </div>
       <div class="credit-item">
         <a class="credit-name-link" href="https://codeberg.org/tazz4843/whisper-rs" target="_blank">whisper-rs</a>
@@ -213,10 +209,8 @@
   .credit-license {
     @apply text-[10px] bg-[var(--color-accent-blue)]/8 text-[var(--color-accent-blue)] p-0.5 px-1.5 rounded border border-[var(--color-accent-blue)]/15 font-normal;
   }
-  /* Amber flag for anything that isn't a plain permissive OSS license:
-     non-commercial terms, a gated model card, or a proprietary EULA. */
-  .credit-license.non-commercial,
-  .credit-license.flagged {
+  /* Amber flag for a non-commercial or otherwise restricted license. */
+  .credit-license.non-commercial {
     @apply bg-amber-500/10 text-amber-400 border-amber-500/30;
   }
 </style>

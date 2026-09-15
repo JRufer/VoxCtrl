@@ -823,6 +823,7 @@ interface PocketTtsConfig {
   voice: string;
   prewarm: boolean;
   voice_dir: string;       // custom .wav voice clips; empty = default directory
+  gpu: boolean;            // Vulkan, via the audio.cpp subprocess
 }
 
 interface InflectMicroConfig {
@@ -839,7 +840,7 @@ interface BreezeTts2Config {
   speaker_prompt: string;   // Voice Design description
   model_dir: string;        // empty = default directory
   prewarm: boolean;
-  gpu: boolean;             // needs a breeze-cuda / breeze-metal build
+  gpu: boolean;             // Vulkan, via the audio.cpp subprocess
 }
 
 interface VoxCpm2Config {

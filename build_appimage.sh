@@ -336,13 +336,6 @@ for script in "$root/AppRun" "$root/apprun-hooks/linuxdeploy-plugin-gtk.sh"; do
     sed -i '3i export WEBKIT_INJECTED_BUNDLE_PATH="${APPDIR}/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/injected-bundle"' "$script"
 done
 
-# pocket_tts (the Pocket-TTS and Breeze-TTS-2 engines) finds its model config at
-# config/<variant>.yaml relative to the working directory. Bundle it at
-# usr/config so those engines load without changing the process's cwd — which,
-# per the note above, WebKitGTK depends on.
-mkdir -p "$root/usr/config"
-cp "$ROOT_DIR"/crates/voxctrl-tts/config/*.yaml "$root/usr/config/"
-
 # Some libraries can be neither stripped nor left on the library path, so they
 # are parked in usr/lib/fallback instead: the AppRun hook exposes each one only
 # when the host has no library of that soname, so a host with its own copy

@@ -103,9 +103,9 @@ Say a paragraph or two without stopping. Above roughly 2,000 characters, VoxCtrl
 
 ### i. Text-to-Speech (TTS) & Memory Modes
 In **Settings → TTS**, test voice playback:
-- **Pocket-TTS**: Neural voice cloning from reference clips (requires entering a HuggingFace token for gated weights).
-- **Breeze-TTS-2**: Voice design from natural-language prompts.
-- **VoxCPM2**: Voice design prompts and voice cloning clips.
+- **Pocket-TTS**: Neural voice cloning from reference clips (no HuggingFace token needed).
+- **Breeze-TTS-2**: Voice cloning from reference clips (requires a matching transcript).
+- **VoxCPM2**: Voice cloning from reference clips.
 - **Inflect-Micro-v2**: Compact 38 MB ONNX model.
 - **Model Memory Mode**: Test switching between **Always Loaded** and **On Demand** (which drops model weights from memory after 15 minutes of inactivity to conserve RAM). You can also toggle this via the tray menu ("Unload TTS model when idle").
 
