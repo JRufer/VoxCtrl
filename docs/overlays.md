@@ -130,3 +130,35 @@ When a voice command trigger is activated (e.g. saying *"VoxCtrl notes Help me!"
 - **Duration**: Auto-dismisses after a configurable duration (default: 3 seconds, configurable via `config.ui.command_overlay_duration_secs`).
 - **Toggle**: Controlled via **Settings → Visual Feedback → Show overlay on voice command trigger** (`config.ui.show_command_overlay`).
 
+---
+
+## Custom Overlay Styles
+
+Beyond the eight built-in styles, VoxCtrl loads user-authored styles from
+an overlays folder — `dirs::data_local_dir()/voxctrl/overlays` (Rust's
+`dirs` crate; e.g. `~/.local/share/voxctrl/overlays` on Linux) — via
+`custom_overlays::overlays_dir()` in `src-tauri/src/custom_overlays.rs`.
+Every subfolder containing an `index.html` + `style.css` becomes a
+selectable style in **Settings → Visual & Feedback → Overlay style**,
+named after the folder (`commands::get_custom_overlays`, consumed by
+`VisualTab.svelte`'s `overlayStyleOptions` and rendered by
+`Overlay.svelte`'s `activeCustomOverlay` branch).
+
+The first time that folder doesn't exist, `custom_overlays::seed_example_if_missing`
+(called once at startup, before `run()` builds the Tauri app) writes a
+`README.md` and a working `Custom/` example — a copy of the built-in
+Voice Card style with one line changed (`VOXCTRL` → `USER CUSTOM`) — from
+the template files under `src-tauri/assets/custom-overlay-template/`. It
+only acts when the folder is entirely missing, so deleting `Custom/`
+(or the whole folder) is respected rather than recreated on the next
+launch.
+
+A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
+placeholder substitution on its first render, and afterward listens for
+`voxctrl-status` (recording/processing/speaking/audio_ready/
+active_target_label/audio_level, dispatched on `window` roughly once per
+animation frame), `voxctrl-audio-level` (raw per-buffer mic level), and
+`voxctrl-cleanup` (fired once when the style is switched away from, for
+removing your own listeners) — see the shipped `Custom/index.html` for a
+fully commented, working example of all three.
+

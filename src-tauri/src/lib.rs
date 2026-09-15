@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 mod bug_report;
 mod commands;
+mod custom_overlays;
 mod installer;
 mod host_env;
 mod mint_shortcuts;
@@ -149,6 +150,11 @@ pub fn run() {
     } else {
         let _ = registry.try_init();
     }
+
+    // Seed the custom-overlays folder with a documented example on first
+    // run, so users have a working template to copy instead of an empty
+    // directory. No-ops once the folder exists.
+    custom_overlays::seed_example_if_missing();
 
     let config = Config::load();
 

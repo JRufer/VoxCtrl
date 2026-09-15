@@ -709,10 +709,7 @@ pub struct CustomOverlayInfo {
 
 #[tauri::command]
 pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
-    let overlays_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("voxctrl")
-        .join("overlays");
+    let overlays_dir = crate::custom_overlays::overlays_dir();
 
     if !overlays_dir.exists() {
         let _ = std::fs::create_dir_all(&overlays_dir);

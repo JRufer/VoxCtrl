@@ -1,0 +1,201 @@
+/*
+  Styling for the "Custom" example overlay (see index.html for the
+  templating/events documentation). This is a straight copy of the
+  built-in Voice Card style's CSS, renamed to vc-custom-* classes so it
+  never collides with the real Voice Card component.
+*/
+
+.vc-custom-scene {
+  /* Card deals in with a 3D flip, flips back out on unload. */
+  perspective: 900px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.vc-custom-card {
+  position: relative;
+  width: 340px;
+  height: 152px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #181b24 0%, #0b0d12 55%, #141925 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  font-family: 'Outfit', 'Inter', sans-serif;
+  transform: rotateY(88deg);
+  opacity: 0;
+  transition:
+    transform 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.2),
+    opacity 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.vc-custom-scene.on .vc-custom-card {
+  transform: rotateY(0deg);
+  opacity: 1;
+}
+
+.vc-custom-card.processing {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+/* Holographic sheen drifting across the face. */
+.vc-custom-sheen {
+  position: absolute;
+  top: -20px;
+  bottom: -20px;
+  width: 64px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
+  animation: vc-custom-sheen-drift 6.5s linear infinite;
+}
+
+@keyframes vc-custom-sheen-drift {
+  from { left: -70px; }
+  to { left: 410px; }
+}
+
+.vc-custom-chip {
+  position: absolute;
+  left: 20px;
+  top: 18px;
+  width: 38px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #f6d27a 0%, #d9a946 55%, #b9842b 100%);
+}
+
+.vc-custom-chip-line {
+  position: absolute;
+  background: rgba(70, 45, 0, 0.45);
+}
+.vc-custom-chip-line.h1 { left: 0; right: 0; top: 9px; height: 1.5px; }
+.vc-custom-chip-line.h2 { left: 0; right: 0; top: 18px; height: 1.5px; }
+.vc-custom-chip-line.v { top: 0; bottom: 0; left: 18px; width: 1.5px; }
+
+.vc-custom-brand {
+  position: absolute;
+  left: 68px;
+  top: 16px;
+  color: #f3f4f6;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.vc-custom-brand-sub {
+  position: absolute;
+  left: 68px;
+  top: 34px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.4em;
+}
+
+.vc-custom-stamp {
+  position: absolute;
+  right: 20px;
+  top: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  background: rgba(244, 63, 94, 0.08);
+  color: #f43f5e;
+  font-size: 8.5px;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+}
+
+.vc-custom-card.initializing .vc-custom-stamp {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
+  color: #f59e0b;
+}
+
+.vc-custom-card.processing .vc-custom-stamp {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.08);
+  color: #38bdf8;
+}
+
+.vc-custom-stamp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: vc-custom-stamp-blink 1.15s ease-in-out infinite;
+}
+
+@keyframes vc-custom-stamp-blink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.vc-custom-matrix {
+  position: absolute;
+  left: 22px;
+  top: 56px;
+  width: 296px;
+  height: 51px;
+  display: flex;
+  gap: 4px;
+}
+
+.vc-custom-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vc-custom-dot {
+  width: 11px;
+  height: 6px;
+  border-radius: 2px;
+  opacity: 0.1;
+  transition: opacity 0.05s linear;
+}
+
+.vc-custom-dot.lit { opacity: 0.95; }
+.vc-custom-dot.red { background: #f43f5e; }
+.vc-custom-dot.amber { background: #fbbf24; }
+.vc-custom-dot.green { background: #34d399; }
+
+.vc-custom-card.processing .vc-custom-dot { background: #22d3ee; }
+
+.vc-custom-field-label {
+  position: absolute;
+  left: 22px;
+  top: 118px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.36em;
+}
+
+.vc-custom-field-value {
+  position: absolute;
+  left: 22px;
+  top: 128px;
+  max-width: 200px;
+  color: #e5e7eb;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-custom-card-number {
+  position: absolute;
+  right: 22px;
+  top: 128px;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
