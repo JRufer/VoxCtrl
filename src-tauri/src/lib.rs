@@ -73,6 +73,28 @@ pub fn run() {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
+        // The webview overlay backend (VOXCTRL_OVERLAY_BACKEND=webview) needs a
+        // window that can set its own absolute position and reliably stay above
+        // other windows. A native Wayland toplevel can do neither — position and
+        // stacking are compositor policy, not something a client gets to ask
+        // for. The Slint helper (the default backend) works around this by
+        // re-execing *itself* through XWayland; a WebviewWindow living inside
+        // this same process can't do that per-window, because GTK's backend
+        // (Wayland vs X11) is chosen once, process-wide, at GTK init — before
+        // any of the code below runs. So this forces the whole app onto
+        // XWayland instead, and only when the webview overlay is selected and
+        // an X server (XWayland) is actually reachable.
+        if std::env::var("VOXCTRL_OVERLAY_BACKEND").as_deref() == Ok("webview")
+            && std::env::var_os("WAYLAND_DISPLAY").is_some()
+            && std::env::var_os("DISPLAY").is_some()
+        {
+            eprintln!(
+                "VOXCTRL_OVERLAY_BACKEND=webview on Wayland: forcing GDK_BACKEND=x11 (via XWayland) \
+                 so the overlay window can position itself and stay always-on-top"
+            );
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+
         // Suppress libayatana-appindicator deprecation warnings by registering a dummy log handler
         unsafe {
             extern "C" {

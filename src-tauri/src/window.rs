@@ -258,6 +258,26 @@ pub fn open_webview_overlay(
     Ok(window)
 }
 
+/// Re-assert the webview overlay's always-on-top state, if it exists.
+///
+/// The window level is not "sticky": another window taking `_NET_WM_STATE_ABOVE`,
+/// a fullscreen app, or the compositor re-stacking between dictations can push
+/// the overlay behind other windows, and — same as the Slint helper's
+/// `apply_topmost` in `src/overlay.rs`, which this mirrors — it never recovers
+/// on its own. Toggling the level off then back on (rather than setting `true`
+/// when it may already be `true`) forces the change to actually reach the
+/// window manager rather than being suppressed as a no-op.
+///
+/// A no-op when the webview overlay isn't running (e.g. the Slint backend is
+/// selected), so callers on the hot audio-level path can call this
+/// unconditionally.
+pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        let _ = window.set_always_on_top(false);
+        let _ = window.set_always_on_top(true);
+    }
+}
+
 /// Top-left Y for the webview overlay given the anchor, in the same pixel
 /// space as the monitor geometry. Ports `anchor_y` from `src/overlay.rs`.
 fn overlay_anchor_y(monitor_y: i32, monitor_height: i32, window_height: i32, margin: i32, anchor: &str) -> i32 {

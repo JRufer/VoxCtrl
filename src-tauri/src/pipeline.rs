@@ -640,8 +640,17 @@ pub fn spawn_audio_level_forwarder(
     // a JSON encode and a message to the overlay process.
     const MIN_INTERVAL: Duration = Duration::from_millis(16);
 
+    // How often the webview overlay's always-on-top state is re-sent to the
+    // window manager while a dictation is active. Mirrors the Slint helper's
+    // own re-raise heartbeat (see `apply_topmost` in `src/overlay.rs`) — a
+    // window manager restacking behind another window never recovers on its
+    // own, so this has to be reasserted periodically, not just once at
+    // startup. A no-op when the webview overlay isn't the active backend.
+    const TOPMOST_REASSERT_INTERVAL: Duration = Duration::from_secs(1);
+
     std::thread::spawn(move || {
         let mut last_sent = std::time::Instant::now() - MIN_INTERVAL;
+        let mut last_topmost_reassert = std::time::Instant::now() - TOPMOST_REASSERT_INTERVAL;
         while let Ok(mut level) = audio_level_rx.recv() {
             // Drain whatever queued up behind this one and keep the latest.
             while let Ok(newer) = audio_level_rx.try_recv() {
@@ -681,6 +690,13 @@ pub fn spawn_audio_level_forwarder(
 
             if let Ok(json_str) = serde_json::to_string(&msg) {
                 let _ = state_for_audio_level.overlay_tx.send(json_str);
+            }
+
+            if (is_recording || is_processing || is_speaking)
+                && now.duration_since(last_topmost_reassert) >= TOPMOST_REASSERT_INTERVAL
+            {
+                last_topmost_reassert = now;
+                crate::window::reassert_overlay_topmost(&handle);
             }
         }
     });
