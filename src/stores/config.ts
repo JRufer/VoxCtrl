@@ -40,6 +40,7 @@ export interface WhisperCppConfig {
   model_size: string;
   device: string;
   threads: number;
+  language: string;
 }
 
 export interface MoonshineConfig {
@@ -169,6 +170,7 @@ const defaultConfig: AppConfig = {
       model_size: "tiny",
       device: "auto",
       threads: 0,
+      language: "auto",
     },
     moonshine: { model_size: "base", language: "en" },
     parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },

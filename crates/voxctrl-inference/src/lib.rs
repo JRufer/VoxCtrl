@@ -305,15 +305,19 @@ impl InferenceEngine {
             });
         }
 
-        // whisper-cpp auto-detects language when None; passing Moonshine's language
-        // field (a different engine) here was wrong.
-        let language: Option<String> = None;
-
         // Use the in-memory config that was passed to this engine — no disk I/O on
         // the hot path, no TOCTOU race with concurrent save_config writes, and
         // no copy of the whole config (snippets, vocabulary, prompts) per
         // utterance: nothing below mutates it.
         let app_config = &*self.config;
+
+        // Moonshine, Parakeet and Remote-OpenAI backends read their language
+        // setting straight from their own config, ignoring this field; only
+        // whisper.cpp consults it, treating "auto"/empty as auto-detect.
+        let language: Option<String> = (app_config.engine.backend == BackendChoice::WhisperCpp)
+            .then(|| app_config.engine.whisper_cpp.language.trim())
+            .filter(|lang| !lang.is_empty() && *lang != "auto")
+            .map(str::to_string);
 
         // ── Noise Gate (VAD) ──────────────────────────────────────────────────
         // Compute RMS energy of the entire audio request to implement a robust noise gate.

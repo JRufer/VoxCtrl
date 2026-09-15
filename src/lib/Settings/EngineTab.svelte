@@ -430,6 +430,20 @@
           onchange={markDirty}
         />
       </label>
+      <label class="field">
+        <span>Language</span>
+        <input
+          type="text"
+          bind:value={cfg.engine.whisper_cpp.language}
+          placeholder="auto"
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        Language code (e.g. <code>en</code>, <code>da</code>, <code>fr</code>) to force transcription in that
+        language, or <code>auto</code> to let whisper.cpp detect it. Forcing a language helps short phrases
+        that auto-detect sometimes misidentifies.
+      </p>
       <p class="hint">
         Default model directory: <code>~/.local/share/voxctrl/models/</code>
       </p>
