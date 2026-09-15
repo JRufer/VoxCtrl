@@ -1,15 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
+  import { invoke } from "@tauri-apps/api/core";
   import appIcon from "../../assets/voxctrl.gif";
 
   let version = $state("0.1.0");
+  let customOverlaysDir = $state("");
 
   onMount(async () => {
     try {
       version = await getVersion();
     } catch (e) {
       console.error("Failed to fetch app version:", e);
+    }
+    try {
+      customOverlaysDir = await invoke<string>("get_custom_overlays_dir");
+    } catch (e) {
+      console.error("Failed to fetch custom overlays directory:", e);
     }
   });
 </script>
@@ -39,12 +46,16 @@
     <div class="kv"><span>Inference</span><span>whisper.cpp, Moonshine & Parakeet TDT</span></div>
     <div class="kv"><span>Config</span><span><code>~/.config/voxctrl/</code></span></div>
     <div class="kv"><span>Models</span><span><code>~/.local/share/voxctrl/models/</code></span></div>
+    {#if customOverlaysDir}
+      <div class="kv"><span>Custom overlays</span><span><code>{customOverlaysDir}</code></span></div>
+    {/if}
     <div class="kv"><span>MCP socket</span><span><code>/tmp/voxctrl-mcp.sock</code></span></div>
   </div>
 
   <div class="field-group">
     <h3>Open Source Attributions</h3>
     <p class="credits-hint">This application is built possible by these outstanding open-source projects:</p>
+    <p class="credits-hint">Speech recognition</p>
     <div class="credits-list">
       <div class="credit-item">
         <a class="credit-name-link" href="https://github.com/ggerganov/whisper.cpp" target="_blank">whisper.cpp</a>
@@ -55,9 +66,61 @@
         <span class="credit-license">Apache 2.0</span>
       </div>
       <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/NVIDIA/NeMo" target="_blank">NVIDIA NeMo Parakeet TDT</a>
+        <a class="credit-name-link" href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3" target="_blank">NVIDIA Parakeet TDT (model)</a>
         <span class="credit-license">CC-BY-4.0</span>
       </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/microsoft/onnxruntime" target="_blank">ONNX Runtime</a>
+        <span class="credit-license">MIT / Apache 2.0</span>
+      </div>
+    </div>
+
+    <p class="credits-hint">Text-to-speech</p>
+    <div class="credits-list">
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/rhasspy/piper" target="_blank">Piper TTS</a>
+        <span class="credit-license">MIT License</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/kyutai-labs/pocket-tts" target="_blank">Pocket-TTS (Kyutai Labs, code)</a>
+        <span class="credit-license">MIT / Apache 2.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/kyutai/pocket-tts" target="_blank">Pocket-TTS model weights</a>
+        <span class="credit-license flagged">Gated — see model card</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/openbmb/VoxCPM2" target="_blank">VoxCPM2 (openbmb)</a>
+        <span class="credit-license">Apache 2.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/owensong/Inflect-Micro-v2" target="_blank">Inflect-Micro-v2</a>
+        <span class="credit-license">Apache 2.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/espeak-ng/espeak-ng" target="_blank">eSpeak NG (external, not bundled)</a>
+        <span class="credit-license">GPL-3.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/BreezeBlue/Breeze-TTS-2" target="_blank">Breeze-TTS-2 (BreezeBlue)</a>
+        <span class="credit-license non-commercial">Non-Commercial License</span>
+      </div>
+    </div>
+
+    <p class="credits-hint">Dictation cleanup</p>
+    <div class="credits-list">
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/superwhisper/s1-mini" target="_blank">S1-mini (Superwhisper, Qwen3-0.6B base)</a>
+        <span class="credit-license">Apache 2.0</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/ggerganov/llama.cpp" target="_blank">llama.cpp</a>
+        <span class="credit-license">MIT License</span>
+      </div>
+    </div>
+
+    <p class="credits-hint">Core framework &amp; runtime</p>
+    <div class="credits-list">
       <div class="credit-item">
         <a class="credit-name-link" href="https://tauri.app" target="_blank">Tauri Framework</a>
         <span class="credit-license">MIT / Apache 2.0</span>
@@ -67,24 +130,16 @@
         <span class="credit-license">MIT License</span>
       </div>
       <div class="credit-item">
-        <a class="credit-name-link" href="https://huggingface.co/BreezeBlue/Breeze-TTS-2" target="_blank">Breeze-TTS-2 (BreezeBlue)</a>
-        <span class="credit-license non-commercial">Non-Commercial License</span>
-      </div>
-      <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/rhasspy/piper" target="_blank">Piper TTS</a>
-        <span class="credit-license">MIT License</span>
-      </div>
-      <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/kyutai-labs/pocket-tts" target="_blank">Pocket-TTS (Kyutai Labs)</a>
-        <span class="credit-license">MIT / Apache 2.0</span>
-      </div>
-      <div class="credit-item">
         <a class="credit-name-link" href="https://github.com/huggingface/candle" target="_blank">Candle</a>
         <span class="credit-license">MIT / Apache 2.0</span>
       </div>
       <div class="credit-item">
-        <a class="credit-name-link" href="https://github.com/trossora/whisper-rs" target="_blank">whisper-rs</a>
-        <span class="credit-license">MIT License</span>
+        <a class="credit-name-link" href="https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html" target="_blank">Intel MKL (via Candle, Pocket-TTS builds)</a>
+        <span class="credit-license flagged">Proprietary — Intel license</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://codeberg.org/tazz4843/whisper-rs" target="_blank">whisper-rs</a>
+        <span class="credit-license">Unlicense</span>
       </div>
       <div class="credit-item">
         <a class="credit-name-link" href="https://rust-lang.org" target="_blank">Rust, Tokio & CPAL</a>
@@ -149,7 +204,10 @@
   .credit-license {
     @apply text-[10px] bg-[var(--color-accent-blue)]/8 text-[var(--color-accent-blue)] p-0.5 px-1.5 rounded border border-[var(--color-accent-blue)]/15 font-normal;
   }
-  .credit-license.non-commercial {
+  /* Amber flag for anything that isn't a plain permissive OSS license:
+     non-commercial terms, a gated model card, or a proprietary EULA. */
+  .credit-license.non-commercial,
+  .credit-license.flagged {
     @apply bg-amber-500/10 text-amber-400 border-amber-500/30;
   }
 </style>
