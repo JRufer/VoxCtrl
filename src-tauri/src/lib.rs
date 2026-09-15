@@ -445,8 +445,28 @@ pub fn run() {
                     .expect("Failed to load processing_6 icon"),
             ];
 
-            // Spawn the Slint overlay helper process
-            overlay_sidecar::spawn_overlay_process(overlay_rx);
+            // ── Overlay backend selection ───────────────────────────────────────
+            // Prototype: VOXCTRL_OVERLAY_BACKEND=webview swaps the Slint helper
+            // process for the "overlay" WebviewWindow (window::open_webview_overlay).
+            // Default (Slint) behavior is unchanged; see that function's doc
+            // comment and docs/overlays.md for the license rationale.
+            if std::env::var("VOXCTRL_OVERLAY_BACKEND").as_deref() == Ok("webview") {
+                if let Err(e) = crate::window::open_webview_overlay(
+                    &app.handle().clone(),
+                    &cfg_data.ui.overlay_position,
+                    &cfg_data.ui.overlay_monitor,
+                ) {
+                    tracing::error!("Failed to start webview overlay: {e}");
+                }
+                // The Slint helper isn't running to drain overlay_rx; drain it
+                // here instead so the unbounded channel (still fed by the
+                // audio-level forwarder / status ticker regardless of backend)
+                // doesn't grow for the life of the session.
+                std::thread::spawn(move || while overlay_rx.recv().is_ok() {});
+            } else {
+                // Spawn the Slint overlay helper process
+                overlay_sidecar::spawn_overlay_process(overlay_rx);
+            }
 
             // Auto download speech model if needed. Skipped entirely when the
             // wizard was asked for: it is about to ask which model the user

@@ -169,6 +169,130 @@ pub fn open_wizard_window(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Label of the webview-backed dictation overlay (prototype Slint replacement).
+pub const OVERLAY_WINDOW: &str = "overlay";
+const OVERLAY_WIDTH: f64 = 560.0;
+const OVERLAY_HEIGHT: f64 = 190.0;
+
+/// Build (or fetch) the webview overlay: a transparent, frameless,
+/// always-on-top, click-through `WebviewWindow` rendering the existing
+/// `/overlay` Svelte route (`src/lib/Overlay/Overlay.svelte`) — the same
+/// component tree the settings preview already uses, already wired to the
+/// app-wide `status-tick` / `audio-level` events. This is a prototype
+/// alternative to the Slint-based `voxctrl-overlay` helper process
+/// (`overlay_sidecar::spawn_overlay_process`), selected via
+/// `VOXCTRL_OVERLAY_BACKEND=webview`: Slint's non-GPL license options are not
+/// OSI open source, and this path carries no equivalent dependency.
+///
+/// `anchor` / `monitor_pref` are `config.ui.overlay_position` /
+/// `overlay_monitor`; positioning math is ported from `compute_overlay_position`
+/// in `src/overlay.rs` so both backends land in the same spot.
+pub fn open_webview_overlay(
+    app: &tauri::AppHandle,
+    anchor: &str,
+    monitor_pref: &str,
+) -> Result<tauri::WebviewWindow, String> {
+    let window = match app.get_webview_window(OVERLAY_WINDOW) {
+        Some(existing) => existing,
+        None => tauri::WebviewWindowBuilder::new(
+            app,
+            OVERLAY_WINDOW,
+            tauri::WebviewUrl::App("/overlay".into()),
+        )
+        .title("VoxCtrl Overlay")
+        .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .closable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .visible(false)
+        .build()
+        .map_err(|e| format!("Could not create the webview overlay window: {e}"))?,
+    };
+
+    // Click-through: mouse events pass to whatever is beneath the overlay,
+    // matching the Slint helper's `set_cursor_hittest(false)`.
+    if let Err(e) = window.set_ignore_cursor_events(true) {
+        tracing::warn!("Failed to make webview overlay click-through: {:?}", e);
+    }
+
+    // Mirrors the Slint helper's X11 `WindowType::Notification` hint: keeps
+    // the window out of focus grabs / alt-tab at the window-manager level, on
+    // top of `skip_taskbar` + `focused(false)` above.
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            if let Some(gdk_window) = gtk_window.window() {
+                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Notification);
+            }
+        }
+    }
+
+    if let Some((x, y)) = compute_overlay_window_position(&window, anchor, monitor_pref) {
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+
+    // Mapped once, like the Slint helper: the `/overlay` route renders
+    // nothing visible while idle, so staying mapped avoids the Wayland
+    // remap-steals-focus issue noted beside the Slint spawn code.
+    if let Err(e) = window.show() {
+        tracing::error!("Failed to show webview overlay window: {:?}", e);
+    }
+
+    Ok(window)
+}
+
+/// Top-left Y for the webview overlay given the anchor, in the same pixel
+/// space as the monitor geometry. Ports `anchor_y` from `src/overlay.rs`.
+fn overlay_anchor_y(monitor_y: i32, monitor_height: i32, window_height: i32, margin: i32, anchor: &str) -> i32 {
+    match anchor {
+        "top" => monitor_y + margin,
+        "bottom" => monitor_y + monitor_height - window_height - margin,
+        _ => monitor_y + (monitor_height - window_height) / 2, // "center" default
+    }
+}
+
+/// Compute the webview overlay's top-left pixel position for an anchor, using
+/// the window's own monitor + size — ports `compute_overlay_position` from
+/// `src/overlay.rs` so both backends land in the same spot.
+fn compute_overlay_window_position(
+    window: &tauri::WebviewWindow,
+    anchor: &str,
+    monitor_pref: &str,
+) -> Option<(i32, i32)> {
+    let monitors = window.available_monitors().ok()?;
+    let monitor = if monitor_pref.is_empty() || monitor_pref == "primary" {
+        window.primary_monitor().ok().flatten().or_else(|| monitors.first().cloned())
+    } else {
+        monitors
+            .iter()
+            .find(|m| m.name().map(|n| n.as_str()) == Some(monitor_pref))
+            .cloned()
+            .or_else(|| window.primary_monitor().ok().flatten())
+            .or_else(|| monitors.first().cloned())
+    }?;
+
+    let wsize = window.outer_size().ok()?;
+    if wsize.width == 0 || wsize.height == 0 {
+        return None; // window not realized yet
+    }
+
+    let msize = monitor.size();
+    let mpos = monitor.position();
+    let margin = (60.0 * monitor.scale_factor()) as i32;
+
+    let x = mpos.x + (msize.width as i32 - wsize.width as i32) / 2;
+    let y = overlay_anchor_y(mpos.y, msize.height as i32, wsize.height as i32, margin, anchor);
+    Some((x, y))
+}
+
 /// Show the update offer, building its window if it is not already there.
 ///
 /// This is the one window that appears without the user having asked for
