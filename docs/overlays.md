@@ -144,18 +144,20 @@ named after the folder (`commands::get_custom_overlays`, consumed by
 `VisualTab.svelte`'s `overlayStyleOptions` and rendered by
 `Overlay.svelte`'s `activeCustomOverlay` branch).
 
-Whenever that folder is empty, `custom_overlays::seed_example_if_empty`
-(called once at startup, before `run()` builds the Tauri app) writes a
-`README.md` and a working `Custom/` example — a copy of the built-in
-Voice Card style with one line changed (`VOXCTRL` → `CUSTOM OVERLAY`) —
-from the template files under `src-tauri/assets/custom-overlay-template/`.
-It checks the folder's *contents*, not just whether it exists:
-`commands::get_custom_overlays` already creates this directory as a side
-effect of being called (from the Settings window or the overlay itself)
-regardless of whether anything has been seeded into it yet, so "exists"
-alone can't tell first-run apart from "already seeded." Once the user has
-any overlay of their own in the folder, this leaves it alone — deleting
-`Custom/` specifically while keeping other overlays is respected.
+Every launch, `custom_overlays::refresh_bundled_example` (called before
+`run()` builds the Tauri app) overwrites `README.md` and the `Custom/`
+example — a copy of the built-in Voice Card style with one line changed
+(`VOXCTRL` → `CUSTOM OVERLAY`) — from the template files under
+`src-tauri/assets/custom-overlay-template/`. This is intentionally
+unconditional, not a first-run-only seed: an earlier version only wrote
+those files once, which meant a `Custom/` folder from a previous run
+never picked up template fixes or improvements shipped in a later build —
+exactly the kind of silent staleness this is meant to rule out. Nothing
+else in the overlays folder is touched, so any *other* style the user has
+created is left alone; `Custom/` itself is documented (in the README this
+writes and in `Custom/index.html`'s own comments) as an app-maintained
+reference reset on every launch — duplicate it under a new name to keep
+your own edits rather than editing it in place.
 
 A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
 placeholder substitution on its first render (the active routing target's

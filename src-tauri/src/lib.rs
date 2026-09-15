@@ -151,10 +151,11 @@ pub fn run() {
         let _ = registry.try_init();
     }
 
-    // Seed the custom-overlays folder with a documented example whenever
-    // it's empty, so users have a working template to copy instead of an
-    // empty directory. No-ops once the user has any overlay of their own.
-    custom_overlays::seed_example_if_empty();
+    // Keep the documented custom-overlay example in sync with this build,
+    // every launch — see refresh_bundled_example's doc comment for why this
+    // has to overwrite Custom/ unconditionally rather than only seeding it
+    // once. Nothing else in the overlays folder is touched.
+    custom_overlays::refresh_bundled_example();
 
     let config = Config::load();
 

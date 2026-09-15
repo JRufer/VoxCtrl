@@ -13,10 +13,16 @@
   VoxCtrl scans the custom-overlays folder shown at the bottom of
   Settings → Visual & Feedback for subfolders containing an index.html +
   style.css pair. Each subfolder becomes a selectable "Overlay style" in
-  that tab, named after the folder (this one is named "Custom"). Edit
-  these files directly, or duplicate this folder under a new name to
-  start a new style — VoxCtrl picks up new/changed folders automatically
-  the next time you open the Overlay style dropdown.
+  that tab, named after the folder (this one is named "Custom"). VoxCtrl
+  picks up new/changed folders automatically the next time you open the
+  Overlay style dropdown.
+
+  This particular folder is special: VoxCtrl rewrites Custom/index.html
+  and Custom/style.css (and the overlays folder's own README.md) every
+  time it starts, to whatever this build ships — so edits made directly
+  in this file will not persist. Duplicate this folder under a new name
+  to start your own style instead; VoxCtrl never touches any folder but
+  this one.
 
   TEMPLATE PLACEHOLDERS
   ──────────────────────

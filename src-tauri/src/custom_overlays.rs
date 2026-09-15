@@ -10,26 +10,23 @@ pub fn overlays_dir() -> PathBuf {
         .join("overlays")
 }
 
-/// Seed the overlays directory with a documented example whenever it's
-/// empty: a `Custom/` style (a copy of the built-in Voice Card style with
-/// one line changed, so the diff is obvious) plus a README explaining the
-/// folder format, template placeholders, and the events a custom overlay
-/// can listen for.
+/// Keep the documented example in sync with what this build ships: writes
+/// `README.md` and the `Custom/` style (a copy of the built-in Voice Card
+/// style with one line changed, so the diff is obvious) from the template
+/// files under `src-tauri/assets/custom-overlay-template/`, every launch.
 ///
-/// Checked by directory *contents*, not just existence: `commands::get_custom_overlays`
-/// (called every time the Settings window or the overlay itself mounts, long
-/// before this had a chance to run on an existing install) already
-/// auto-creates this directory the moment it's asked to list what's in it,
-/// so "the directory exists" doesn't mean "someone put something in it" —
-/// it can just as easily mean nothing has ever been seeded. Once the user
-/// has *any* overlay of their own in here, this leaves it alone.
-pub fn seed_example_if_empty() {
+/// This unconditionally overwrites those two specific paths — nothing else
+/// in the overlays directory, and any *other* folder the user has created,
+/// is ever touched. `Custom/` is documented (in the README this writes, and
+/// in `Custom/index.html`'s own comments) as an app-maintained reference
+/// that gets reset on every launch, precisely so that fixes and template
+/// improvements in a new build actually reach it: earlier versions of this
+/// function only wrote once, "if the folder looked unseeded," which meant
+/// an already-seeded `Custom/` from a previous run silently never picked up
+/// a newer template. Anyone who wants to keep their own edits is told to
+/// duplicate `Custom/` under a new name rather than edit it in place.
+pub fn refresh_bundled_example() {
     let dir = overlays_dir();
-    let is_empty = std::fs::read_dir(&dir).is_ok_and(|mut entries| entries.next().is_none());
-    if dir.exists() && !is_empty {
-        return;
-    }
-
     if let Err(e) = std::fs::create_dir_all(&dir) {
         tracing::warn!("Could not create custom overlays directory {}: {e}", dir.display());
         return;
@@ -54,7 +51,7 @@ pub fn seed_example_if_empty() {
         tracing::warn!("Could not write {}: {e}", css_path.display());
     }
 
-    tracing::info!("Seeded example custom overlay at {}", example_dir.display());
+    tracing::info!("Refreshed the example custom overlay at {}", example_dir.display());
 }
 
 #[cfg(test)]
@@ -62,14 +59,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seeds_readme_and_custom_example_into_an_empty_directory() {
+    fn writes_readme_and_custom_example_into_an_empty_directory() {
         let _guard = crate::test_utils::get_env_lock().lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         // dirs::data_local_dir() resolves via XDG_DATA_HOME on Linux; this
         // keeps the test from touching the real user's home directory.
         std::env::set_var("XDG_DATA_HOME", tmp.path());
 
-        seed_example_if_empty();
+        refresh_bundled_example();
 
         let dir = overlays_dir();
         assert!(dir.join("README.md").exists());
@@ -82,38 +79,40 @@ mod tests {
     }
 
     #[test]
-    fn seeds_into_a_directory_that_already_exists_but_is_empty() {
+    fn overwrites_a_stale_custom_example_left_by_an_older_build() {
         let _guard = crate::test_utils::get_env_lock().lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("XDG_DATA_HOME", tmp.path());
 
         let dir = overlays_dir();
-        // Mirrors what actually happens on a real install: get_custom_overlays
-        // creates the (empty) directory as a side effect of being called,
-        // well before this function ever runs.
-        std::fs::create_dir_all(&dir).unwrap();
+        let example_dir = dir.join("Custom");
+        std::fs::create_dir_all(&example_dir).unwrap();
+        std::fs::write(example_dir.join("index.html"), "<div>a stale, older example</div>").unwrap();
+        std::fs::write(example_dir.join("style.css"), "/* stale */").unwrap();
 
-        seed_example_if_empty();
+        refresh_bundled_example();
 
-        assert!(dir.join("Custom").join("index.html").exists());
-        assert!(dir.join("README.md").exists());
+        let html = std::fs::read_to_string(example_dir.join("index.html")).unwrap();
+        assert!(html.contains("CUSTOM OVERLAY"));
+        assert!(!html.contains("a stale, older example"));
 
         std::env::remove_var("XDG_DATA_HOME");
     }
 
     #[test]
-    fn does_not_touch_a_directory_that_already_has_something_in_it() {
+    fn leaves_the_users_own_overlay_folders_alone() {
         let _guard = crate::test_utils::get_env_lock().lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("XDG_DATA_HOME", tmp.path());
 
         let dir = overlays_dir();
-        std::fs::create_dir_all(dir.join("MyOwnStyle")).unwrap();
+        let mine = dir.join("MyOwnStyle");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::write(mine.join("index.html"), "<div>mine</div>").unwrap();
 
-        seed_example_if_empty();
+        refresh_bundled_example();
 
-        assert!(!dir.join("Custom").exists());
-        assert!(!dir.join("README.md").exists());
+        assert_eq!(std::fs::read_to_string(mine.join("index.html")).unwrap(), "<div>mine</div>");
 
         std::env::remove_var("XDG_DATA_HOME");
     }
