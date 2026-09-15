@@ -76,6 +76,13 @@
   position: absolute;
   left: 68px;
   top: 16px;
+  /* Left room for the status stamp (right: 20px, ~68px wide) so a longer
+     brand string than the built-in "VOXCTRL" — like "CUSTOM OVERLAY" —
+     truncates cleanly instead of overlapping it. */
+  max-width: 176px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #f3f4f6;
   font-size: 14px;
   font-weight: 850;

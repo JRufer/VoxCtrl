@@ -151,10 +151,10 @@ pub fn run() {
         let _ = registry.try_init();
     }
 
-    // Seed the custom-overlays folder with a documented example on first
-    // run, so users have a working template to copy instead of an empty
-    // directory. No-ops once the folder exists.
-    custom_overlays::seed_example_if_missing();
+    // Seed the custom-overlays folder with a documented example whenever
+    // it's empty, so users have a working template to copy instead of an
+    // empty directory. No-ops once the user has any overlay of their own.
+    custom_overlays::seed_example_if_empty();
 
     let config = Config::load();
 

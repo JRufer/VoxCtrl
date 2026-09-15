@@ -144,14 +144,18 @@ named after the folder (`commands::get_custom_overlays`, consumed by
 `VisualTab.svelte`'s `overlayStyleOptions` and rendered by
 `Overlay.svelte`'s `activeCustomOverlay` branch).
 
-The first time that folder doesn't exist, `custom_overlays::seed_example_if_missing`
+Whenever that folder is empty, `custom_overlays::seed_example_if_empty`
 (called once at startup, before `run()` builds the Tauri app) writes a
 `README.md` and a working `Custom/` example — a copy of the built-in
-Voice Card style with one line changed (`VOXCTRL` → `USER CUSTOM`) — from
-the template files under `src-tauri/assets/custom-overlay-template/`. It
-only acts when the folder is entirely missing, so deleting `Custom/`
-(or the whole folder) is respected rather than recreated on the next
-launch.
+Voice Card style with one line changed (`VOXCTRL` → `CUSTOM OVERLAY`) —
+from the template files under `src-tauri/assets/custom-overlay-template/`.
+It checks the folder's *contents*, not just whether it exists:
+`commands::get_custom_overlays` already creates this directory as a side
+effect of being called (from the Settings window or the overlay itself)
+regardless of whether anything has been seeded into it yet, so "exists"
+alone can't tell first-run apart from "already seeded." Once the user has
+any overlay of their own in the folder, this leaves it alone — deleting
+`Custom/` specifically while keeping other overlays is respected.
 
 A custom overlay's `index.html` gets `{{target}}` / `{{trigger}}`
 placeholder substitution on its first render, and afterward listens for

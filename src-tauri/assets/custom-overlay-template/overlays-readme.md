@@ -10,7 +10,7 @@ new or edited folders show up without restarting the app.
 
 The `Custom/` folder next to this file is a complete, working example — a
 copy of the built-in Voice Card style with one line changed (`VOXCTRL` →
-`USER CUSTOM`), so you can compare the two and see exactly what a real
+`CUSTOM OVERLAY`), so you can compare the two and see exactly what a real
 overlay folder looks like. Open `Custom/index.html` for a full walkthrough
 of the templating placeholders and the live events VoxCtrl dispatches
 while your overlay is on screen.
@@ -41,8 +41,10 @@ overlays/
   `pulse`, `blue_wave`, `mono_bars`, `spectrum`, `terminal`, `vinyl`, or
   `none`), VoxCtrl appends `_custom` to keep it selectable without
   clashing with the built-in.
-- Deleting a folder removes it from the dropdown; VoxCtrl does not
-  recreate folders you've deleted, including `Custom/`.
+- Deleting a folder removes it from the dropdown. If you empty this
+  directory out entirely, VoxCtrl re-seeds this README and the `Custom/`
+  example the next time it starts — once you have any overlay of your own
+  in here, it leaves the folder alone.
 
 ## Quick reference: placeholders and events
 
