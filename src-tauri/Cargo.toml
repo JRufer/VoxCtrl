@@ -12,18 +12,10 @@ crate-type = ["rlib"]
 name = "voxctrl"
 path = "src/main.rs"
 
-[[bin]]
-name = "voxctrl-overlay"
-path = "src/overlay.rs"
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# UI framework for native overlay
-slint = { workspace = true }
-i-slint-backend-winit = { workspace = true }
-
 # Tauri 2 core
 tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
 tauri-plugin-shell     = "2"
@@ -60,18 +52,10 @@ crossbeam-channel = { workspace = true }
 chrono = { workspace = true }
 tauri-plugin-single-instance = "2.4.2"
 
-[target.'cfg(target_os = "windows")'.dependencies]
-# Only for the overlay sidecar's WS_EX_NOACTIVATE, which winit does not expose.
-windows-sys = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-] }
-
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 zbus = { workspace = true }
 gtk = { version = "0.18", features = ["v3_24"] }
-x11rb = { version = "0.13", features = ["shape"] }
 
 [features]
 # Both ONNX-backed engines ship by default: selecting them in Settings should

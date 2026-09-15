@@ -216,9 +216,9 @@ jobs:
 
       # linuxdeploy bundles whatever graphics/Wayland/input libraries exist on
       # the build host. On ubuntu-22.04 those are older than modern desktops, and
-      # loading them instead of the host's copies breaks the Slint overlay's
-      # Wayland frame callbacks (it renders once, then the compositor never sends
-      # another frame) and trips "unrecognized keysym" xkbcommon errors. Strip
+      # loading them instead of the host's copies breaks Wayland frame callbacks
+      # (a window renders once, then the compositor never sends another frame)
+      # and trips "unrecognized keysym" xkbcommon errors. Strip
       # them so the AppImage falls through to the host's libraries at runtime —
       # this is what the AppImage excludelist exists for, and why a local
       # build_appimage.sh (which bundles the user's own newer libs) works while
@@ -357,8 +357,9 @@ jobs:
       # always on Debian/Ubuntu and can install the .deb directly.
       # ── Tauri build (Windows) ───────────────────────────────────────────────
       # NSIS (setup.exe) only — the advertised Windows installer. The WiX/MSI
-      # bundler's `light.exe` fails to harvest the voxctrl-overlay sidecar, and
-      # the MSI is a secondary, unadvertised artifact. Call tauri directly so
+      # bundler's `light.exe` fails to harvest sidecar binaries (see
+      # `externalBin` in tauri.conf.json), and the MSI is a secondary,
+      # unadvertised artifact. Call tauri directly so
       # `--bundles nsis` reaches tauri instead of cargo.
       - name: Build installer (Windows, CPU)
         if: runner.os == 'Windows' && matrix.features == ''

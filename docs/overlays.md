@@ -1,27 +1,28 @@
 # Overlay UI Guide
 
-VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The built-in overlay styles are rendered by a dedicated **native helper process** (`voxctrl-overlay`, built with [Slint](https://slint.dev)) in a borderless, transparent, always-on-top, click-through window (560×190 logical px) drawn over whatever application is in focus.
+VoxCtrl displays a visual overlay while the microphone is active, while TTS is speaking, or while the MCP server is actively recording (provided Visual Feedback is enabled). The built-in overlay styles are rendered by an ordinary Tauri **`WebviewWindow`** — the `/overlay` Svelte route (`src/lib/Overlay/Overlay.svelte`) drawn in a borderless, transparent, always-on-top, click-through window (592×222 logical px) over whatever application is in focus. It's the same component tree used for the style preview in Settings, so what you see there is exactly what appears during a real dictation.
 
 ---
 
 ## How the Overlay Works
 
-The main VoxCtrl process spawns the `voxctrl-overlay` helper binary immediately at application startup. The parent process streams newline-delimited JSON messages (`status`, `position`, `shutdown`) to its stdin, which communicate recording/processing/speaking state, the smoothed microphone level, the active routing target label, the configured style, and screen coordinates.
+`window::open_overlay_window` (`src-tauri/src/window.rs`) builds and configures the overlay window once, at application startup, and it stays mapped for the life of the app — the `/overlay` route just renders nothing visible while idle rather than the window being hidden and remade each time. State reaches it the same way it reaches every other window: the `status-tick` and `audio-level` Tauri events the backend already emits app-wide (see `src/stores/status.ts`), so no separate IPC protocol exists for the overlay.
 
-To avoid focus-stealing and window manager focus grabs during dictation, the helper window is configured with the following properties:
+To avoid focus-stealing and window manager focus grabs during dictation, the window is configured with the following properties:
 
-- **Mapped on Startup** — The window is created and mapped immediately on launch. It commits a 1% opacity background buffer (`rgba(0, 0, 0, 0.01)`) and renders an invisible 1x1 pixel helper element. This forces the Wayland/X11 compositor to register, anchor, and place the window instantly on startup before dictation occurs.
-- **Non-Focusable & Taskbar Bypassing** — On Linux, the winit window is registered with the `WindowType::Notification` X11/XWayland attribute. On Windows, it is registered with `with_skip_taskbar(true)`. Consequently, the window is excluded from taskbar/app bar listings and is structurally incapable of taking keyboard focus or stealing focus from the user's cursor.
-- **Transparent** — The window background is visually transparent (1% opacity black, which is imperceptible to the human eye); only the active visualizer elements are rendered.
-- **Always-on-Top** — Floats persistently above all other active desktop windows. The window level is set to `AlwaysOnTop` on launch and is kept stable (rather than being toggled) to avoid triggering window manager focus-stealing events.
-- **Click-Through** — The window's cursor hit-test is disabled at the windowing-system level (winit `set_cursor_hittest(false)`), so mouse events pass cleanly through to the window beneath it, preventing any focus interruption.
+- **Mapped on Startup** — The window is created and shown immediately on launch, before any dictation happens, so the compositor has already registered, anchored, and placed it by the time it's needed.
+- **Non-Focusable & Taskbar Bypassing** — On Linux, the underlying GTK window is given the `WindowTypeHint::Notification` hint. On Windows and macOS the Tauri window builder's own `skip_taskbar` + `focused(false)` options apply. Consequently, the window is excluded from taskbar/app bar listings and does not take keyboard focus or steal focus from the user's cursor.
+- **Transparent** — The window background is fully transparent (`transparent(true)`, `shadow(false)`); only the active visualizer elements, rendered as ordinary HTML/CSS/SVG, are visible.
+- **Always-on-Top** — Floats persistently above all other active desktop windows. Because a window manager can restack the overlay behind another window mid-session and it never recovers on its own, `window::reassert_overlay_topmost` re-sends the always-on-top state on a ~1s heartbeat while a dictation is active (see `pipeline::spawn_audio_level_forwarder`), not just once at creation.
+- **Click-Through** — `set_ignore_cursor_events(true)` disables the window's cursor hit-test at the windowing-system level, so mouse events pass cleanly through to the window beneath it.
 - **Borderless / Frameless** — No title bar or decorations.
+- **Wayland** — Wayland gives clients no way to position themselves or force always-on-top (that's compositor policy, not a client request), so on a Wayland session with a reachable X server, VoxCtrl forces the whole app onto XWayland at startup (`GDK_BACKEND=x11`, set in `lib.rs` before GTK initializes) to get real positioning and stacking back.
 
-The overlay visualizer animates and reveals itself automatically when recording starts and fades out when transcription completes (provided `ui.show_overlay` is enabled). The active style is determined by `config.ui.overlay_style` and is hot-switched without restarting the helper.
+The overlay reveals itself automatically when recording starts and fades out when transcription completes (provided `ui.show_overlay` is enabled). The active style is determined by `config.ui.overlay_style` and is hot-switched without recreating the window. Position updates (`config.ui.overlay_position` / `overlay_monitor`) also apply live — see `window::reposition_overlay` and its caller in `lib.rs`.
 
 ### Load & Unload Animations
 
-Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears. Animations are driven by a slightly-underdamped spring (so overlays land with a subtle bounce), and the helper window intentionally **stays alive until the unload animation finishes** instead of vanishing on the same frame recording stops. Each style interprets the spring's progress in its own way — see the per-style descriptions below.
+Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears, using CSS transitions/keyframes tuned to read as a slightly-underdamped spring (so overlays land with a subtle bounce). The animation is driven client-side in the Svelte component; the window itself **stays mapped throughout** rather than being hidden mid-animation. Each style interprets its own load/unload transition — see the per-style descriptions below.
 
 ---
 

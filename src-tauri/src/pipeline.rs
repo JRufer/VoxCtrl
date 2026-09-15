@@ -640,12 +640,11 @@ pub fn spawn_audio_level_forwarder(
     // a JSON encode and a message to the overlay process.
     const MIN_INTERVAL: Duration = Duration::from_millis(16);
 
-    // How often the webview overlay's always-on-top state is re-sent to the
-    // window manager while a dictation is active. Mirrors the Slint helper's
-    // own re-raise heartbeat (see `apply_topmost` in `src/overlay.rs`) — a
-    // window manager restacking behind another window never recovers on its
+    // How often the overlay window's always-on-top state is re-sent to the
+    // window manager while a dictation is active — a window manager
+    // restacking the overlay behind another window never recovers on its
     // own, so this has to be reasserted periodically, not just once at
-    // startup. A no-op when the webview overlay isn't the active backend.
+    // window creation. A no-op before the overlay window exists.
     const TOPMOST_REASSERT_INTERVAL: Duration = Duration::from_secs(1);
 
     std::thread::spawn(move || {
@@ -664,33 +663,14 @@ pub fn spawn_audio_level_forwarder(
 
             let _ = handle.emit("audio-level", level);
 
-            // Forward to Slint overlay channel. When the overlay is
-            // disabled, report idle state so the native window never maps
-            // (a mapped overlay steals keyboard focus on Wayland and breaks
-            // text injection).
+            // The overlay window gets recording/processing/speaking state and
+            // the target label from the status-tick / audio-level Tauri
+            // events directly (see src/lib/Overlay/Overlay.svelte) — only the
+            // always-on-top reassertion below still needs it here.
             let overlay_on = state_for_audio_level.is_overlay_enabled();
             let is_recording = overlay_on && state_for_audio_level.is_recording();
             let is_processing = overlay_on && state_for_audio_level.is_processing();
             let is_speaking = overlay_on && state_for_audio_level.is_speaking();
-            let audio_ready = state_for_audio_level.is_audio_ready();
-            let active_target_label = match state_for_audio_level.active_binding_label.try_lock() {
-                Ok(label) if !label.is_empty() => label.clone(),
-                _ => "Focused Window".to_string(),
-            };
-
-            let msg = serde_json::json!({
-                "type": "status",
-                "recording": is_recording,
-                "processing": is_processing,
-                "speaking": is_speaking,
-                "audio_ready": audio_ready,
-                "audio_level": level,
-                "active_target_label": active_target_label,
-            });
-
-            if let Ok(json_str) = serde_json::to_string(&msg) {
-                let _ = state_for_audio_level.overlay_tx.send(json_str);
-            }
 
             if (is_recording || is_processing || is_speaking)
                 && now.duration_since(last_topmost_reassert) >= TOPMOST_REASSERT_INTERVAL

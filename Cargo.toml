@@ -116,12 +116,6 @@ ndarray = "0.16"
 pocket-tts = "0.6"
 hf-hub = "0.4"
 
-# UI framework for native overlay
-slint = { version = "1.8.0" }
-# Winit accessor used to make the overlay window click-through
-i-slint-backend-winit = { version = "1.8.0" }
-
-
 # Internal crates
 voxctrl-config   = { path = "crates/voxctrl-config" }
 voxctrl-routing  = { path = "crates/voxctrl-routing" }

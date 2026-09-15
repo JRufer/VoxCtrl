@@ -17,7 +17,6 @@ mod commands;
 mod installer;
 mod host_env;
 mod mint_shortcuts;
-mod overlay_sidecar;
 mod pipeline;
 mod services;
 mod startup_log;
@@ -30,7 +29,6 @@ mod window;
 #[cfg(test)]
 mod tests;
 
-pub use overlay_sidecar::get_overlay_path;
 pub use window::{
     get_app_handle, set_app_handle, setup_blocker, show_and_focus_window, show_setup_window,
     SETUP_WINDOW,
@@ -73,24 +71,21 @@ pub fn run() {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
-        // The webview overlay backend (VOXCTRL_OVERLAY_BACKEND=webview) needs a
-        // window that can set its own absolute position and reliably stay above
-        // other windows. A native Wayland toplevel can do neither — position and
-        // stacking are compositor policy, not something a client gets to ask
-        // for. The Slint helper (the default backend) works around this by
-        // re-execing *itself* through XWayland; a WebviewWindow living inside
-        // this same process can't do that per-window, because GTK's backend
-        // (Wayland vs X11) is chosen once, process-wide, at GTK init — before
-        // any of the code below runs. So this forces the whole app onto
-        // XWayland instead, and only when the webview overlay is selected and
-        // an X server (XWayland) is actually reachable.
-        if std::env::var("VOXCTRL_OVERLAY_BACKEND").as_deref() == Ok("webview")
-            && std::env::var_os("WAYLAND_DISPLAY").is_some()
-            && std::env::var_os("DISPLAY").is_some()
-        {
+        // The dictation overlay needs a window that can set its own absolute
+        // position and reliably stay above other windows. A native Wayland
+        // toplevel can do neither — position and stacking are compositor
+        // policy, not something a client gets to ask for. Forcing the app
+        // through XWayland gets back the X11 behavior this depends on
+        // (absolute positioning, `_NET_WM_STATE_ABOVE`), at the cost of
+        // native Wayland features (e.g. fractional scaling) for the whole
+        // app, not just the overlay — GTK's backend is chosen once,
+        // process-wide, at init, so there's no way to select it per-window.
+        // Only forced when a Wayland session with a reachable X server
+        // (XWayland) is actually detected.
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() && std::env::var_os("DISPLAY").is_some() {
             eprintln!(
-                "VOXCTRL_OVERLAY_BACKEND=webview on Wayland: forcing GDK_BACKEND=x11 (via XWayland) \
-                 so the overlay window can position itself and stay always-on-top"
+                "Wayland session detected: forcing GDK_BACKEND=x11 (via XWayland) so the \
+                 dictation overlay can position itself and stay always-on-top"
             );
             std::env::set_var("GDK_BACKEND", "x11");
         }
@@ -435,7 +430,7 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             pipeline::spawn_setup_watcher(app.handle().clone(), app_state.hotkey_health.clone());
 
-            // Forward audio levels to settings window and Slint overlay
+            // Forward audio levels to the settings window and the overlay
             pipeline::spawn_audio_level_forwarder(
                 app.handle().clone(),
                 app_state.clone(),
@@ -467,47 +462,38 @@ pub fn run() {
                     .expect("Failed to load processing_6 icon"),
             ];
 
-            // ── Overlay backend selection ───────────────────────────────────────
-            // Prototype: VOXCTRL_OVERLAY_BACKEND=webview swaps the Slint helper
-            // process for the "overlay" WebviewWindow (window::open_webview_overlay).
-            // Default (Slint) behavior is unchanged; see that function's doc
-            // comment and docs/overlays.md for the license rationale.
-            if std::env::var("VOXCTRL_OVERLAY_BACKEND").as_deref() == Ok("webview") {
-                let overlay_handle = app.handle().clone();
-                if let Err(e) = crate::window::open_webview_overlay(
-                    &overlay_handle,
-                    &cfg_data.ui.overlay_position,
-                    &cfg_data.ui.overlay_monitor,
-                ) {
-                    tracing::error!("Failed to start webview overlay: {e}");
-                }
-                // The Slint helper isn't running to consume overlay_tx from its
-                // stdin, so apply what it would have here instead: position
-                // updates (sent whenever config.ui.overlay_position /
-                // overlay_monitor change — see commands.rs's save_config and
-                // tray.rs's config-change ticker) get applied live to the
-                // webview window; everything else is just drained so the
-                // unbounded channel doesn't grow for the life of the session
-                // (status/audio-level messages are consumed by the frontend
-                // directly via the status-tick / audio-level Tauri events
-                // instead, regardless of backend).
-                std::thread::spawn(move || {
-                    while let Ok(msg) = overlay_rx.recv() {
-                        let Ok(value) = serde_json::from_str::<serde_json::Value>(&msg) else {
-                            continue;
-                        };
-                        if value.get("type").and_then(|t| t.as_str()) != Some("position") {
-                            continue;
-                        }
-                        let position = value.get("position").and_then(|v| v.as_str()).unwrap_or("");
-                        let monitor = value.get("monitor").and_then(|v| v.as_str()).unwrap_or("primary");
-                        crate::window::reposition_webview_overlay(&overlay_handle, position, monitor);
-                    }
-                });
-            } else {
-                // Spawn the Slint overlay helper process
-                overlay_sidecar::spawn_overlay_process(overlay_rx);
+            // ── Dictation overlay ────────────────────────────────────────────────
+            // window::open_overlay_window builds the transparent, click-through,
+            // always-on-top WebviewWindow that renders the `/overlay` route
+            // (src/lib/Overlay/Overlay.svelte) — see that function's doc comment
+            // and docs/overlays.md for how it's put together.
+            let overlay_handle = app.handle().clone();
+            if let Err(e) = crate::window::open_overlay_window(
+                &overlay_handle,
+                &cfg_data.ui.overlay_position,
+                &cfg_data.ui.overlay_monitor,
+            ) {
+                tracing::error!("Failed to open the dictation overlay: {e}");
             }
+            // overlay_tx carries position updates (sent whenever
+            // config.ui.overlay_position / overlay_monitor change — see
+            // commands.rs's save_config and tray.rs's config-change ticker) and
+            // status/audio-level messages the audio-level forwarder also emits
+            // as Tauri events (status-tick / audio-level) that the frontend
+            // consumes directly; only the position updates need applying here.
+            std::thread::spawn(move || {
+                while let Ok(msg) = overlay_rx.recv() {
+                    let Ok(value) = serde_json::from_str::<serde_json::Value>(&msg) else {
+                        continue;
+                    };
+                    if value.get("type").and_then(|t| t.as_str()) != Some("position") {
+                        continue;
+                    }
+                    let position = value.get("position").and_then(|v| v.as_str()).unwrap_or("");
+                    let monitor = value.get("monitor").and_then(|v| v.as_str()).unwrap_or("primary");
+                    crate::window::reposition_overlay(&overlay_handle, position, monitor);
+                }
+            });
 
             // Auto download speech model if needed. Skipped entirely when the
             // wizard was asked for: it is about to ask which model the user

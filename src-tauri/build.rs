@@ -1,15 +1,14 @@
 use std::path::PathBuf;
 
 fn main() {
-    // The `voxctrl-overlay` helper is shipped as a Tauri sidecar (see
-    // `externalBin` in tauri.conf.json) so it lands next to the main binary in
-    // packaged builds. Tauri validates that the sidecar file exists on *every*
-    // compile of this crate, including a bare `cargo build`/`cargo check` or
-    // rust-analyzer — none of which run `beforeBuildCommand`. Guarantee a
-    // placeholder exists here, before tauri_build::build() runs its validation,
-    // so ordinary development builds never fail. Packaging overwrites this with
-    // the real binary via scripts/prepare-sidecar.mjs before Tauri bundles.
-    ensure_sidecar_placeholder("voxctrl-overlay");
+    // `voxctrl-llm-sidecar` is shipped as a Tauri sidecar (see `externalBin` in
+    // tauri.conf.json) so it lands next to the main binary in packaged builds.
+    // Tauri validates that the sidecar file exists on *every* compile of this
+    // crate, including a bare `cargo build`/`cargo check` or rust-analyzer —
+    // none of which run `beforeBuildCommand`. Guarantee a placeholder exists
+    // here, before tauri_build::build() runs its validation, so ordinary
+    // development builds never fail. Packaging overwrites this with the real
+    // binary via scripts/prepare-sidecar.mjs before Tauri bundles.
     ensure_sidecar_placeholder("voxctrl-llm-sidecar");
 
     tauri_build::build()

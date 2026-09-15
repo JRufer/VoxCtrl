@@ -50,7 +50,7 @@ Eleven output delivery types:
 A single hotkey binding can route to **multiple targets simultaneously**.
 
 ### Visualization & HUD
-- Transparent floating overlay window with real-time audio visualization rendered natively via Slint helper (`voxctrl-overlay`)
+- Transparent floating overlay window with real-time audio visualization, rendered by its own `WebviewWindow` loading the `/overlay` Svelte route
 - Four primary animated styles: Ocean Wave (default), Voice Card, Waveform, and Pulse Ring (plus Mono Bars, Neon Spectrum, Retro Terminal, Analog VU)
 - Spring-driven load and unload animations with audio-reactive geometry
 - Voice Command Trigger overlay pill with lightning badge and payload preview

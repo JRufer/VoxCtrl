@@ -69,10 +69,9 @@ fi
 
 # ── 1. Stop running instances ─────────────────────────────────────────────────
 act "Stopping VoxCtrl"
-if pkill -x voxctrl 2>/dev/null || pkill -x voxctrl-overlay 2>/dev/null; then
+if pkill -x voxctrl 2>/dev/null; then
     sleep 1
     pkill -9 -x voxctrl 2>/dev/null || true
-    pkill -9 -x voxctrl-overlay 2>/dev/null || true
     ok "Stopped running VoxCtrl processes"
 else
     skip "No running VoxCtrl processes"

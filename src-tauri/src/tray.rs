@@ -338,27 +338,6 @@ pub fn spawn_status_ticker(
             });
 
             let _ = handle.emit("status-tick", &payload);
-
-            // Forward status to Slint overlay channel. When the overlay is
-            // disabled, force the visibility flags off so the native window
-            // never maps — a mapped overlay grabs keyboard focus on Wayland
-            // and prevents transcribed text from reaching the cursor.
-            let overlay_on = state_for_ticker.is_overlay_enabled();
-            let mut payload_value = payload.clone();
-            if let Some(obj) = payload_value.as_object_mut() {
-                obj.insert("type".to_string(), serde_json::json!("status"));
-                obj.insert("audio_level".to_string(), serde_json::json!(0.0));
-                let overlay_style = last_pos.as_ref().map(|(_, _, style)| style.as_str());
-                obj.insert("overlay_style".to_string(), serde_json::json!(overlay_style));
-                if !overlay_on {
-                    obj.insert("recording".to_string(), serde_json::json!(false));
-                    obj.insert("processing".to_string(), serde_json::json!(false));
-                    obj.insert("speaking".to_string(), serde_json::json!(false));
-                }
-            }
-            if let Ok(json_str) = serde_json::to_string(&payload_value) {
-                let _ = state_for_ticker.overlay_tx.send(json_str);
-            }
         }
     });
 }

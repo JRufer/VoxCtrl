@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-// Stage the freshly-built `voxctrl-overlay` binary as a Tauri sidecar so it
-// gets bundled *inside* the AppImage / deb / installer next to the main app.
+// Stage the freshly-built `voxctrl-llm-sidecar` binary as a Tauri sidecar so
+// it gets bundled *inside* the AppImage / deb / installer next to the main app.
 //
 // Tauri's `externalBin` mechanism expects each sidecar to be named with the
-// host target triple suffix (e.g. `voxctrl-overlay-x86_64-unknown-linux-gnu`).
-// At bundle time Tauri strips the triple and drops `voxctrl-overlay` alongside
-// the main `voxctrl` binary, which is exactly where `get_overlay_path()` looks
-// first. Without this the overlay binary is missing from packaged builds and
-// the app silently falls back to a stale dev binary (or none at all).
+// host target triple suffix (e.g. `voxctrl-llm-sidecar-x86_64-unknown-linux-gnu`).
+// At bundle time Tauri strips the triple and drops the sidecar alongside the
+// main `voxctrl` binary. Without this the sidecar is missing from packaged
+// builds and the app silently falls back to a stale dev binary (or none at all).
 //
-// Run from beforeBuildCommand/beforeDevCommand *after* the overlay binary has
+// Run from beforeBuildCommand/beforeDevCommand *after* the sidecar binary has
 // been compiled. The crate's build.rs writes a placeholder so plain cargo
 // builds still compile; this script replaces that placeholder with the real
 // binary before Tauri bundles.
@@ -40,10 +39,7 @@ import { statSync } from 'node:fs';
 export function selectBinary(candidates, existsSyncFn, statSyncFn) {
   const existingCandidates = candidates.filter((p) => existsSyncFn(p));
   if (existingCandidates.length === 0) {
-    throw new Error(
-      `Overlay binary not found in ${candidates.join(' or ')}.\n` +
-        'Run `cargo build --bin voxctrl-overlay` before staging the sidecar.'
-    );
+    throw new Error(`Sidecar binary not found in ${candidates.join(' or ')}.`);
   }
   let srcBinary = existingCandidates[0];
   if (existingCandidates.length > 1) {
@@ -64,21 +60,7 @@ if (isDirectRun) {
   const destDir = join(repoRoot, 'src-tauri', 'binaries');
   mkdirSync(destDir, { recursive: true });
 
-  // 1. Stage voxctrl-overlay
-  const overlayCandidates = [
-    join(repoRoot, 'target', 'release', `voxctrl-overlay${exeSuffix}`),
-    join(repoRoot, 'target', 'debug', `voxctrl-overlay${exeSuffix}`),
-  ];
-
-  const srcOverlay = selectBinary(overlayCandidates, existsSync, statSync);
-  const destOverlay = join(destDir, `voxctrl-overlay-${triple}${exeSuffix}`);
-  copyFileSync(srcOverlay, destOverlay);
-  if (!isWindows) {
-    chmodSync(destOverlay, 0o755);
-  }
-  console.log(`[prepare-sidecar] staged ${srcOverlay} -> ${destOverlay}`);
-
-  // 2. Stage voxctrl-llm-sidecar
+  // Stage voxctrl-llm-sidecar
   const llmCandidates = [
     join(repoRoot, 'target', 'release', `voxctrl-llm-sidecar${exeSuffix}`),
     join(repoRoot, 'target', 'debug', `voxctrl-llm-sidecar${exeSuffix}`),
