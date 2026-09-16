@@ -26,11 +26,11 @@ fn main() {
         init_x11_threads();
         // Disable DMA-BUF renderer to fix black transparent background on Nvidia/proprietary drivers.
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        // Disable WebKitGTK's accelerated compositor: layer-promoted elements
-        // (anything animating opacity/transform) otherwise blend into the
-        // transparent window with the wrong alpha, showing up as a blurry,
-        // semi-opaque smear for the duration of the overlay's load/unload
-        // animation. See lib.rs::run() for the full explanation.
+        // Kept as a harmless (possibly no-op on newer WebKitGTK) belt-and-
+        // suspenders alongside the real fix for the overlay's closing-
+        // animation smear, which turned out to be the window manager's own
+        // close effect, not WebKit's compositor. See lib.rs::run() and
+        // window::open_overlay_window's set_override_redirect comment.
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
 
