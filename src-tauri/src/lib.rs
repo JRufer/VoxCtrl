@@ -72,6 +72,19 @@ pub fn run() {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
+        // WebKitGTK's accelerated compositor treats a layer-promoted element
+        // (anything animating `opacity`/`transform`, which is every overlay
+        // load/unload animation) as opaque while it owns its own GPU texture,
+        // then blends that texture back into the transparent X11 window with
+        // the wrong alpha — the overlay reads as a blurry, semi-opaque smear
+        // for the duration of the transition instead of fading through real
+        // transparency. It only shows up mid-animation because a static frame
+        // never gets layer-promoted in the first place. Forcing WebKit off
+        // the accelerated-compositing path entirely (software/Cairo
+        // rendering throughout) makes every frame, animating or not, respect
+        // the window's actual per-pixel alpha.
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
         // The dictation overlay needs a window that can set its own absolute
         // position and reliably stay above other windows. A native Wayland
         // toplevel can do neither — position and stacking are compositor
