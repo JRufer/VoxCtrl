@@ -70,12 +70,19 @@
         renderOverlay = false;
         // Same WebKitGTK compositor-flush workaround as the style-switch
         // effect below: unmounting the DOM node alone doesn't repaint the
-        // transparent overlay window, so a custom overlay's last frame can
-        // stay stuck on screen after the recording/speaking stops.
+        // transparent overlay window, so an overlay's last frame can stay
+        // stuck on screen after the recording/speaking stops.
         visible = false;
         setTimeout(() => {
           visible = true;
         }, 25);
+        // Backstop for WebKitGTK builds where even that isn't enough to
+        // trigger a repaint (seen with the WebKitGTK bundled from an older
+        // host, e.g. CI's Ubuntu 22.04, vs. a newer one on the user's own
+        // system): ask the Rust side to nudge the window itself, which
+        // forces the compositor to recommit its surface regardless of
+        // WebKit's own paint-invalidation behavior.
+        invoke("repaint_overlay_window").catch(() => {});
       }, 450);
     }
     return () => {

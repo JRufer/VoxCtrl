@@ -296,6 +296,28 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
+/// Force the compositor to recommit the overlay window's surface.
+///
+/// The window stays mapped for the app's whole session (see
+/// `open_overlay_window`'s doc comment on why it is never hidden/re-shown),
+/// so clearing it to blank relies entirely on WebKitGTK repainting the
+/// transparent surface once its DOM content is removed. Some WebKitGTK
+/// builds don't: nothing ever draws to an empty page, so no repaint is
+/// requested, and the last painted frame — a mid-animation overlay — stays
+/// on screen indefinitely since nothing else ever asks this window to
+/// recommit its buffer. A 1px move-and-back forces a real geometry commit
+/// through the window manager/compositor, the same "toggle off then back
+/// on" trick `reassert_overlay_topmost` uses above, and is unconditional:
+/// it doesn't depend on which GTK/WebKit version bundled the fix.
+pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        if let Ok(pos) = window.outer_position() {
+            let _ = window.set_position(tauri::PhysicalPosition::new(pos.x + 1, pos.y));
+            let _ = window.set_position(pos);
+        }
+    }
+}
+
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
 /// the monitor geometry.
 fn overlay_anchor_y(monitor_y: i32, monitor_height: i32, window_height: i32, margin: i32, anchor: &str) -> i32 {

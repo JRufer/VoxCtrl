@@ -652,6 +652,15 @@ pub fn get_custom_overlays_dir() -> String {
     crate::custom_overlays::overlays_dir().display().to_string()
 }
 
+/// Force a stale frame on the overlay window to actually clear. See
+/// `window::nudge_overlay_repaint` — called by the frontend right after it
+/// unmounts the overlay's content, as a backstop for WebKitGTK builds that
+/// don't repaint a transparent window to empty on their own.
+#[tauri::command]
+pub fn repaint_overlay_window(app: tauri::AppHandle) {
+    crate::window::nudge_overlay_repaint(&app);
+}
+
 /// The resolved, absolute path to the shared voice-cloning reference-clip
 /// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2), for display in Settings.
 #[tauri::command]

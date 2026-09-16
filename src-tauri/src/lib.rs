@@ -551,6 +551,7 @@ pub fn run() {
             get_custom_overlays,
             get_custom_overlay,
             get_custom_overlays_dir,
+            repaint_overlay_window,
             get_cloned_tts_voices_dir,
             list_audio_devices,
             start_monitoring_audio,
