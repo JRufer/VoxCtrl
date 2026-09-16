@@ -470,49 +470,28 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.5.1
+            ## What's new in 0.5.9
 
-            **A Bug Report page, so testing the new Windows builds does not
-            require a GitHub account.**
+            **Fixed: the dictation overlay freezing solid on screen and
+            never closing, on some Linux desktops.**
 
-            0.5.0 shipped VoxCtrl's first Windows build, and this release adds
-            the Windows GPU build beside it. Both were built by one person on
-            one machine — so the thing they needed most was a way for anyone
-            else to say what broke.
+            Reported on KDE/Wayland (via XWayland): every overlay style
+            could get stuck fully visible after releasing the keybind —
+            sometimes with older styles still faintly visible underneath the
+            current one — with no way to clear it short of quitting the app.
+            Root cause: on affected systems, WebKitGTK never repaints the
+            overlay window's buffer back to blank on its own once its
+            content is removed, so the window kept showing whatever was
+            last on screen no matter when or how a repaint was requested.
 
-            ### Settings → Bug Report
-
-            Describe the problem and press a button. VoxCtrl gathers the log,
-            your OS and hardware, which build you are running and what it can
-            offload to the GPU, and your settings — then sends it, files it on
-            GitHub, saves it to a file, or drafts an email, whichever you pick.
-            **The one-click route needs no GitHub account.**
-
-            It is opt-in in the strongest sense: nothing runs at startup, on a
-            timer, or in the background, and **the page shows you the entire
-            report before anything leaves your machine**. What is in the preview
-            is what gets filed; there is no fuller version behind it.
-
-            What never travels: anything you dictated, any audio, any API key or
-            access token, your username, hostname or IP address, any file path,
-            your custom vocabulary, snippets or prompts, and the labels,
-            commands and URLs of your output targets. Redaction works from an
-            allowlist rather than a blocklist, and a test walks the real config
-            and fails the build naming any setting nobody has classified — so a
-            setting added later cannot leak into a public issue by being
-            forgotten.
-
-            Full detail, including how to check all of it yourself:
-            [docs/bug_reports.md](https://github.com/JRufer/VoxCtrl/blob/master/docs/bug_reports.md).
-
-            ### Notes
-
-            Reports are rate-limited — five a day, twenty a month, duplicates
-            refused — and saving a report to a file is never limited, so a real
-            bug always has a way out.
-
-            The installers are not code-signed yet, so SmartScreen will warn
-            that the publisher is unknown.
+            The overlay window is now created fresh the moment there's
+            something to show and destroyed again shortly after going idle,
+            instead of being built once at startup and left open for the
+            app's whole session — a freshly created window has never had
+            anything painted into it, so there's no stale frame left behind
+            to get stuck. This is now owned entirely by the backend, so it
+            works the same regardless of which overlay style (built-in or
+            custom) is selected.
 
             ## Downloads
 

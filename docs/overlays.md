@@ -6,7 +6,7 @@ VoxCtrl displays a visual overlay while the microphone is active, while TTS is s
 
 ## How the Overlay Works
 
-`window::open_overlay_window` (`src-tauri/src/window.rs`) builds and configures the overlay window once, at application startup, and it stays mapped for the life of the app — the `/overlay` route just renders nothing visible while idle rather than the window being hidden and remade each time. State reaches it the same way it reaches every other window: the `status-tick` and `audio-level` Tauri events the backend already emits app-wide (see `src/stores/status.ts`), so no separate IPC protocol exists for the overlay.
+`window::open_overlay_window` (`src-tauri/src/window.rs`) builds and configures the overlay window, and `tray::spawn_status_ticker` (`src-tauri/src/tray.rs`) owns when that happens: it's created fresh the moment there's something to show and destroyed again once idle for half a second, rather than being built once at startup and left mapped for the app's whole lifetime. That's a deliberate departure from the simpler always-mapped design: on some systems WebKitGTK never repaints this window's buffer back to blank on its own, so a hidden-then-reshown window kept displaying whatever was last visibly composited. Destroying and recreating it sidesteps that — a freshly created window has never had anything painted into it. State reaches it the same way it reaches every other window: the `status-tick` and `audio-level` Tauri events the backend already emits app-wide (see `src/stores/status.ts`), so no separate IPC protocol exists for the overlay.
 
 To avoid focus-stealing and window manager focus grabs during dictation, the window is configured with the following properties:
 
@@ -22,7 +22,7 @@ The overlay reveals itself automatically when recording starts and fades out whe
 
 ### Load & Unload Animations
 
-Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears, using CSS transitions/keyframes tuned to read as a slightly-underdamped spring (so overlays land with a subtle bounce). The animation is driven client-side in the Svelte component; the window itself **stays mapped throughout** rather than being hidden mid-animation. Each style interprets its own load/unload transition — see the per-style descriptions below.
+Every built-in style plays a dedicated load animation when it appears and an unload animation when it disappears, using CSS transitions/keyframes tuned to read as a slightly-underdamped spring (so overlays land with a subtle bounce). The animation is driven client-side in the Svelte component; the window stays alive for the whole animation — the backend only destroys it after the animation's own unmount delay, plus a debounce (see [How the Overlay Works](#how-the-overlay-works)), so the unload animation is never cut off mid-play. Each style interprets its own load/unload transition — see the per-style descriptions below.
 
 ---
 

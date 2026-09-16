@@ -233,6 +233,7 @@ pub fn run() {
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),
+        command_overlay_until: Arc::new(std::sync::Mutex::new(None)),
         hotkeys_inhibited: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
@@ -470,18 +471,17 @@ pub fn run() {
             ];
 
             // ── Dictation overlay ────────────────────────────────────────────────
-            // window::open_overlay_window builds the transparent, click-through,
-            // always-on-top WebviewWindow that renders the `/overlay` route
-            // (src/lib/Overlay/Overlay.svelte) — see that function's doc comment
-            // and docs/overlays.md for how it's put together.
+            // Unlike every other window here, the overlay is not created at
+            // startup: window::open_overlay_window builds the transparent,
+            // click-through, always-on-top WebviewWindow that renders the
+            // `/overlay` route (src/lib/Overlay/Overlay.svelte) — see that
+            // function's doc comment and docs/overlays.md for how it's put
+            // together — but it's tray::spawn_status_ticker (below) that
+            // decides when to actually call it, building the window fresh on
+            // the first activation and destroying it again once idle. See
+            // that function's doc comment for why the window's lifecycle is
+            // owned there rather than created once and left mapped.
             let overlay_handle = app.handle().clone();
-            if let Err(e) = crate::window::open_overlay_window(
-                &overlay_handle,
-                &cfg_data.ui.overlay_position,
-                &cfg_data.ui.overlay_monitor,
-            ) {
-                tracing::error!("Failed to open the dictation overlay: {e}");
-            }
             // overlay_tx carries position updates (sent whenever
             // config.ui.overlay_position / overlay_monitor change — see
             // commands.rs's save_config and tray.rs's config-change ticker) and
