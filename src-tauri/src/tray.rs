@@ -174,42 +174,38 @@ pub fn sync_tts_memory_item(app: tauri::AppHandle, state: Arc<AppState>) {
     });
 }
 
-/// How long the overlay window stays alive after nothing is left to show,
-/// before it's actually destroyed. Long enough for the frontend's own
-/// outro fade (`Overlay.svelte`'s 450ms unmount timeout) to finish playing
-/// inside a still-live window; a fast reactivation within this window finds
-/// the overlay already there and never triggers a destroy/recreate cycle
-/// at all.
-const OVERLAY_HIDE_DEBOUNCE: Duration = Duration::from_millis(500);
-
-/// Emits `status-tick`, animates the tray icon, and owns the dictation
-/// overlay window's entire lifecycle.
+/// Emits `status-tick`, animates the tray icon, and builds the dictation
+/// overlay window.
 ///
-/// The overlay is created fresh (`window::open_overlay_window`) the moment
-/// there's something to show, and destroyed (`window::hide_overlay`) again
-/// once idle for `OVERLAY_HIDE_DEBOUNCE`, rather than being created once at
-/// startup and left mapped for the app's whole session the way it used to
-/// be. That's a direct consequence of a long debugging history: on some
-/// systems (confirmed: KDE, XWayland) WebKitGTK never repaints this
-/// window's buffer back to blank on its own, no matter how a repaint is
-/// requested or how tightly the request is ordered against a reactivation —
-/// every variant of "hide it and trust a forced repaint lands before it's
-/// shown again" left a stale frame reappearing the instant the window was
-/// un-hidden. Destroying the window sidesteps the question entirely: a
-/// freshly created `WebviewWindow` has never had anything painted into it.
+/// The overlay window is created the first time there is something to show
+/// and then kept for the rest of the session. What is on screen is decided
+/// inside it by `Overlay.svelte`, which renders nothing while idle.
 ///
-/// This has to live here rather than in the overlay's own frontend
-/// (`Overlay.svelte`), which is where it lived first and is a dead end:
-/// destroying the window that's running the code deciding when to bring it
-/// back also destroys that code. The very first idle cycle after launch —
-/// which happens automatically, since nothing is recording yet — would
-/// destroy the window and, with it, the only thing that could ever have
-/// asked for it to come back. Nothing else was left watching for the next
-/// activation. This ticker already polls every piece of state that decides
-/// overlay visibility (recording, speaking, MCP recording) for the tray
-/// icon and `status-tick`, and it's a plain sequential loop, so it can own
-/// the window's lifecycle too without needing any locking of its own: it is
-/// the only thing that ever touches the overlay window, by construction.
+/// It was, for a while, created fresh on every activation and destroyed once
+/// idle. That was a workaround: on some systems (confirmed: KDE, XWayland)
+/// WebKitGTK never repainted this window's buffer back to blank once its
+/// content was removed, so the last frame stayed stuck on screen — and
+/// destroying the window sidesteps that, since a new one has never had
+/// anything painted into it. The cause turned out to be the WebKitGTK
+/// bundled into the AppImage from ubuntu-22.04, the same one that rendered
+/// the overlay's closing animation without its alpha channel; releases now
+/// prefer the host's WebKitGTK (see
+/// `scripts/appimage-hooks/host-first-fallback.sh`) and neither symptom
+/// survives that.
+///
+/// Rebuilding the window per activation had a visible cost of its own: a
+/// fresh webview is mapped well before it has loaded `/overlay` and painted,
+/// which showed as a black box flashing over the overlay's bounds on every
+/// keybind press, and the page load delayed the overlay itself. Building it
+/// once pays both of those exactly once, at startup.
+///
+/// This lives here rather than in `Overlay.svelte` because the frontend
+/// cannot own a window whose destruction would take the deciding code with
+/// it. This ticker already polls every piece of state that decides overlay
+/// visibility (recording, speaking, MCP recording) for the tray icon and
+/// `status-tick`, and it is a plain sequential loop, so it can own the
+/// window without any locking of its own: it is the only thing that ever
+/// creates the overlay window, by construction.
 pub fn spawn_status_ticker(
     handle: tauri::AppHandle,
     state_for_ticker: Arc<AppState>,
@@ -230,11 +226,9 @@ pub fn spawn_status_ticker(
         let mut frame_idx = 0;
         let mut last_pos: Option<(String, String, String)> = None;
         let mut startup_tick_count: u32 = 0;
-        // Whether the overlay window currently exists, and (while it
-        // shouldn't) how long it's been idle — see this function's doc
-        // comment for why this loop owns creating/destroying it.
-        let mut overlay_visible = false;
-        let mut overlay_idle_since: Option<tokio::time::Instant> = None;
+        // Whether the overlay window has been built yet — see this
+        // function's doc comment for why this loop owns creating it.
+        let mut overlay_built = false;
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
@@ -317,13 +311,11 @@ pub fn spawn_status_ticker(
                 }
             }
 
-            // Decide whether the overlay window should exist right now, and
-            // create/destroy it to match — see this function's doc comment
-            // for why that lifecycle lives here. Mirrors the same condition
-            // Overlay.svelte derives client-side for its own content
-            // (`isRecordingOrSpeaking`), since that logic still decides what
-            // to render inside the window once it exists; this only decides
-            // whether the window itself exists at all.
+            // Build the overlay window the first time there is anything to
+            // show, then keep it — see this function's doc comment. What is
+            // on screen is decided inside the window by Overlay.svelte, which
+            // renders nothing at all while idle; this only makes sure the
+            // window exists for it to render into.
             let should_show_overlay = {
                 let cfg = state_for_ticker.config.lock().await;
                 (is_recording && cfg.data.ui.show_overlay)
@@ -333,27 +325,14 @@ pub fn spawn_status_ticker(
                     || (state_for_ticker.is_mcp_recording() && cfg.data.mcp.visual_feedback)
                     || state_for_ticker.is_command_overlay_active()
             };
-            if should_show_overlay {
-                overlay_idle_since = None;
-                if !overlay_visible {
-                    let (position, monitor) = last_pos
-                        .as_ref()
-                        .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
-                        .unwrap_or(("center", "primary"));
-                    match crate::window::open_overlay_window(&handle, position, monitor) {
-                        Ok(_) => overlay_visible = true,
-                        Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
-                    }
-                }
-            } else if overlay_visible {
-                match overlay_idle_since {
-                    None => overlay_idle_since = Some(tokio::time::Instant::now()),
-                    Some(since) if since.elapsed() >= OVERLAY_HIDE_DEBOUNCE => {
-                        crate::window::hide_overlay(&handle);
-                        overlay_visible = false;
-                        overlay_idle_since = None;
-                    }
-                    _ => {}
+            if should_show_overlay && !overlay_built {
+                let (position, monitor) = last_pos
+                    .as_ref()
+                    .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
+                    .unwrap_or(("center", "primary"));
+                match crate::window::open_overlay_window(&handle, position, monitor) {
+                    Ok(_) => overlay_built = true,
+                    Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
                 }
             }
 

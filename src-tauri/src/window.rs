@@ -393,30 +393,6 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
-/// Actually destroy the overlay window when it has nothing to show.
-///
-/// Every attempt at forcing WebKitGTK/the compositor to repaint the window
-/// back to blank instead of destroying it — hiding it (with or without a
-/// forced repaint nudge first, gated by a generation counter, a lock, or
-/// both), moving it, resizing it, mapping an extra window from this
-/// process, spawning a genuinely separate process, changing its X11
-/// window-type hint — failed to reliably clear a stuck frame on the
-/// reported system (KDE, XWayland): a stale frame WebKitGTK had already
-/// painted kept reappearing the instant the window was shown again, no
-/// matter how the repaint was requested or how tightly the request
-/// ordering was controlled. A destroyed window has nothing for the
-/// compositor to display, stale buffer or not, which sidesteps the
-/// question entirely — see `tray::spawn_status_ticker`'s doc comment for
-/// why this is called from there rather than from the overlay's own
-/// frontend: that was tried first and is a dead end, since destroying the
-/// window that's running the code deciding when to bring it back also
-/// destroys that code.
-pub fn hide_overlay(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        let _ = window.close();
-    }
-}
-
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
 /// the monitor geometry.
 fn overlay_anchor_y(monitor_y: i32, monitor_height: i32, window_height: i32, margin: i32, anchor: &str) -> i32 {

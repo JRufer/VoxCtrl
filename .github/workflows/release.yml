@@ -522,6 +522,13 @@ jobs:
             build machine's — which is most desktops, and all rolling
             releases — gets clean overlay animations.
 
+            With that fixed, the overlay window no longer has to be rebuilt
+            from scratch for every dictation — it was being destroyed and
+            recreated to work around the same WebKitGTK leaving stale frames
+            on screen. It is now built once and kept, so the overlay appears
+            without waiting for a page load, and the black box that flashed
+            where the window was about to be is gone.
+
             Every graphics setting VoxCtrl applies on Linux is now a
             *default* rather than a fixed value, so any of them can be
             overridden from the shell without needing a rebuild.
