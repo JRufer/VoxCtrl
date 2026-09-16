@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
@@ -7,6 +8,15 @@ use crate::state::AppState;
 /// Set once the Tauri app is built, so background tasks started before it (the
 /// hotkey gesture loop) can raise windows.
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+/// Bumped by every `show_overlay` / `hide_overlay_window` call, so a hide
+/// that's still mid-flight (see `hide_overlay`'s doc comment — it awaits a
+/// real repaint before unmapping, which takes long enough for a fast
+/// reactivation to land in the middle of it) can tell it's been superseded
+/// and back off instead of racing the show that followed it. Whichever one
+/// actually executed last used to win arbitrarily; this makes "last one
+/// requested" win instead.
+static OVERLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Label of the first-run setup window.
 pub const SETUP_WINDOW: &str = "udev-warning";
@@ -356,10 +366,27 @@ pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
     }
 }
 
+/// Bump `OVERLAY_GENERATION` and return the new value. Called at the start
+/// of `show_overlay` and of every `hide_overlay_window` request: showing
+/// invalidates any hide still mid-flight (so it backs off instead of
+/// hiding a window a newer activation just showed), and each new hide
+/// request invalidates whichever one came before it, so only the most
+/// recently requested transition ever actually touches the window.
+pub fn bump_overlay_generation() -> u64 {
+    OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// Whether `expected` is still the current generation — i.e. nothing newer
+/// has superseded the caller's in-flight transition.
+pub fn overlay_generation_current(expected: u64) -> bool {
+    OVERLAY_GENERATION.load(Ordering::SeqCst) == expected
+}
+
 /// Re-map the overlay window before it has something to show again.
 /// Counterpart to `hide_overlay`. Re-asserts always-on-top since window
 /// managers don't reliably remember stacking level across an unmap/remap.
 pub fn show_overlay(app: &tauri::AppHandle) {
+    bump_overlay_generation();
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
         let _ = window.show();
     }

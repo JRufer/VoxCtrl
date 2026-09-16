@@ -661,10 +661,23 @@ pub fn get_custom_overlays_dir() -> String {
 /// comment for why: without this, the window unmaps still holding
 /// whatever was last visibly composited, and each new activation's content
 /// visibly stacks on top of that leftover instead of starting blank).
+///
+/// Bails out early if a newer show/hide request has landed while this one
+/// was waiting (checked via `window::overlay_generation_current` after the
+/// await): this flow spans ~80ms, long enough for a fast reactivation to
+/// fire `show_overlay_window` while it's still in flight — without this
+/// check, whichever one happened to finish last would win arbitrarily,
+/// sometimes hiding a window the newer activation just showed.
 #[tauri::command]
 pub async fn hide_overlay_window(app: tauri::AppHandle) {
+    let generation = crate::window::bump_overlay_generation();
+
     crate::window::nudge_overlay_repaint(&app);
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    if !crate::window::overlay_generation_current(generation) {
+        return;
+    }
+
     crate::window::hide_overlay(&app);
 }
 
