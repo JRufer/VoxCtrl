@@ -354,9 +354,21 @@ done
 #
 # This has to run before the strip loop below, which skips usr/lib/fallback.
 # Keep this list in sync with .github/workflows/release.yml.
+#   libwebkit2gtk / libjavascriptcoregtk — the ubuntu-22.04 build host's
+#     WebKitGTK renders a transparent window's compositing layers without
+#     their alpha channel, so an overlay animating as it closes leaves an
+#     opaque, blurry copy of its last frame on screen until the window is
+#     destroyed (confirmed by running a released AppImage with its bundled
+#     WebKit removed: the smear goes away). Newer WebKitGTK is fine, which is
+#     why a local build of this script — bundling this machine's own, newer
+#     WebKitGTK — never reproduced it. Host-first rather than stripped so a
+#     desktop without WebKitGTK of its own still has a working app, which is
+#     also why the helper processes bundled above stay where they are: they
+#     are only ever used when this bundled copy is.
 mkdir -p "$root/usr/lib/fallback"
 for pat in 'libsystemd.so*' 'libudev.so*' \
-           'libgstgl-1.0.so*' 'libwayland-server.so*'; do
+           'libgstgl-1.0.so*' 'libwayland-server.so*' \
+           'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done

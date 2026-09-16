@@ -294,9 +294,23 @@ jobs:
           #
           # This has to run before the strip loop below, which skips usr/lib/fallback.
           # Keep this list in sync with build_appimage.sh.
+          #   libwebkit2gtk / libjavascriptcoregtk — this runner's WebKitGTK
+          #     renders a transparent window's compositing layers without
+          #     their alpha channel, so an overlay animating as it closes
+          #     leaves an opaque, blurry copy of its last frame on screen
+          #     until the window is destroyed (confirmed by running a
+          #     released AppImage with its bundled WebKit removed: the smear
+          #     goes away). Newer WebKitGTK is fine, which is why a local
+          #     build_appimage.sh build — bundling the developer's own, newer
+          #     WebKitGTK — never reproduced it. Host-first rather than
+          #     stripped so a desktop without WebKitGTK of its own still has
+          #     a working app, which is also why the helper processes bundled
+          #     above stay where they are: they are only ever used when this
+          #     bundled copy is.
           mkdir -p "$root/usr/lib/fallback"
           for pat in 'libsystemd.so*' 'libudev.so*' \
-                     'libgstgl-1.0.so*' 'libwayland-server.so*'; do
+                     'libgstgl-1.0.so*' 'libwayland-server.so*' \
+                     'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*'; do
             find "$root" -name "$pat" -not -path '*/fallback/*' -print \
               -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
           done
@@ -486,32 +500,27 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.6.0
+            ## What's new in 0.6.1
 
             **Fixed: on the downloadable AppImage, an overlay that animated
             as it closed left a blurry, opaque smear on screen where it had
             been, until it blinked away.**
 
-            The AppImage ships a deliberately split graphics stack. The
-            system's own Mesa libraries are used at runtime (bundling them
-            breaks rendering on newer desktops than the one that built the
-            release), while WebKitGTK, GTK and Cairo have to stay bundled,
-            because WebKit's helper processes need to sit at a fixed path
-            inside the bundle.
+            The cause was the WebKitGTK bundled into the release itself. The
+            version on the machine that builds these AppImages renders a
+            transparent window's compositing layers without their alpha
+            channel, so anything static drew with correct transparency while
+            anything mid-animation turned into an opaque copy of its last
+            frame. Every newer WebKitGTK is fine — which is why an AppImage
+            built locally, bundling the build machine's own newer WebKitGTK,
+            never showed it and released builds always did.
 
-            Those two halves have to agree about one thing: the surface
-            WebKit draws into when a CSS transition promotes the overlay onto
-            its own compositing layer. When they disagreed, that surface came
-            back with no usable alpha channel — so anything static rendered
-            with correct transparency, and anything mid-animation turned into
-            an opaque smear of its last frame. It only ever showed up on
-            released builds, because a locally-built AppImage bundles the
-            build machine's own WebKitGTK, which already matches its Mesa.
-
-            Inside the AppImage the webview now composites through Mesa's
-            software rasterizer, which honours alpha identically on every
-            host, GPU and driver. It is limited to the overlay and the
-            settings window, and does not touch GPU speech inference.
+            VoxCtrl now prefers the WebKitGTK already installed on your
+            system, falling back to its bundled copy only on a desktop that
+            has none, so the AppImage still runs anywhere with nothing to
+            install first. Anyone whose system WebKitGTK is newer than the
+            build machine's — which is most desktops, and all rolling
+            releases — gets clean overlay animations.
 
             Every graphics setting VoxCtrl applies on Linux is now a
             *default* rather than a fixed value, so any of them can be
