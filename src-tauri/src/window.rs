@@ -180,8 +180,8 @@ pub const OVERLAY_WINDOW: &str = "overlay";
 // Wayland — by rounding to an integer X11 scale, which showed up as the
 // window edge clipping into the Voice Card style's rounded corners before
 // this was widened.
-const OVERLAY_WIDTH: f64 = 592.0;
-const OVERLAY_HEIGHT: f64 = 222.0;
+const OVERLAY_WIDTH: f64 = 1184.0;
+const OVERLAY_HEIGHT: f64 = 444.0;
 
 /// Build (or fetch) the dictation overlay: a transparent, frameless,
 /// always-on-top, click-through `WebviewWindow` rendering the `/overlay`
