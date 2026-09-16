@@ -55,6 +55,12 @@
     if (isRecordingOrSpeaking) {
       if (timeoutId) clearTimeout(timeoutId);
       renderOverlay = true;
+      // Re-map the overlay window before it has anything to show. Nothing
+      // short of actually unmapping the window (see the idle branch below)
+      // reliably clears a stuck frame on some systems, so the window is no
+      // longer left mapped for the app's whole session — it comes back
+      // here every time there's something to display.
+      invoke("show_overlay_window").catch(() => {});
       if (animateTimeoutId) clearTimeout(animateTimeoutId);
       animateTimeoutId = setTimeout(() => {
         animateActive = true;
@@ -68,21 +74,13 @@
       animateActive = false;
       timeoutId = setTimeout(() => {
         renderOverlay = false;
-        // Same WebKitGTK compositor-flush workaround as the style-switch
-        // effect below: unmounting the DOM node alone doesn't repaint the
-        // transparent overlay window, so an overlay's last frame can stay
-        // stuck on screen after the recording/speaking stops.
-        visible = false;
-        setTimeout(() => {
-          visible = true;
-        }, 25);
-        // Backstop for WebKitGTK builds where even that isn't enough to
-        // trigger a repaint (seen with the WebKitGTK bundled from an older
-        // host, e.g. CI's Ubuntu 22.04, vs. a newer one on the user's own
-        // system): ask the Rust side to nudge the window itself, which
-        // forces the compositor to recommit its surface regardless of
-        // WebKit's own paint-invalidation behavior.
-        invoke("repaint_overlay_window").catch(() => {});
+        // Actually unmap the window rather than trying to make WebKitGTK
+        // repaint it to blank: forcing a repaint (resizing/moving the
+        // window, mapping an extra window, changing its X11 window-type
+        // hint) was tried and none of it reliably cleared a stuck frame.
+        // An unmapped window has nothing for the compositor to display,
+        // stale buffer or not.
+        invoke("hide_overlay_window").catch(() => {});
       }, 450);
     }
     return () => {

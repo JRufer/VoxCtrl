@@ -652,13 +652,20 @@ pub fn get_custom_overlays_dir() -> String {
     crate::custom_overlays::overlays_dir().display().to_string()
 }
 
-/// Force a stale frame on the overlay window to actually clear. See
-/// `window::nudge_overlay_repaint` — called by the frontend right after it
-/// unmounts the overlay's content, as a backstop for WebKitGTK builds that
-/// don't repaint a transparent window to empty on their own.
+/// Actually unmap the overlay window once it has nothing left to show.
+/// See `window::hide_overlay` — called by the frontend right after it
+/// unmounts the overlay's content, once its outro animation finishes.
 #[tauri::command]
-pub fn repaint_overlay_window(app: tauri::AppHandle) {
-    crate::window::nudge_overlay_repaint(&app);
+pub fn hide_overlay_window(app: tauri::AppHandle) {
+    crate::window::hide_overlay(&app);
+}
+
+/// Re-map the overlay window before it has something to show again. See
+/// `window::show_overlay` — called by the frontend the moment it has
+/// something to render, counterpart to `hide_overlay_window` above.
+#[tauri::command]
+pub fn show_overlay_window(app: tauri::AppHandle) {
+    crate::window::show_overlay(&app);
 }
 
 /// The resolved, absolute path to the shared voice-cloning reference-clip

@@ -221,9 +221,6 @@ pub fn open_overlay_window(
         .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
-    // Mapped once: the `/overlay` route renders nothing visible while idle,
-    // so staying mapped avoids Wayland/XWayland re-map-steals-focus issues.
-    //
     // This has to happen *before* the calls below: on Linux, tao's
     // `set_ignore_cursor_events` reaches into the GTK window's underlying
     // GdkWindow and unwraps it unconditionally
@@ -311,27 +308,35 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
-/// Force WebKitGTK to actually re-layout and repaint the overlay's page.
+/// Actually unmap the overlay window when it has nothing to show.
 ///
-/// The window stays mapped for the app's whole session (see
-/// `open_overlay_window`'s doc comment on why it is never hidden/re-shown),
-/// so clearing it to blank relies entirely on WebKitGTK repainting the
-/// transparent page once its DOM content is removed. Some WebKitGTK builds
-/// don't: nothing ever draws to an empty page, so no repaint happens, and
-/// the last painted frame — a mid-animation overlay — stays on screen
-/// indefinitely. A move-and-back (tried first) only recomposites whatever
-/// buffer WebKit last submitted — it doesn't touch WebKit's own internal
-/// renderer, so a frame WebKit itself never repainted stays exactly as
-/// stuck. A size change does: it invalidates the webview's layout, which
-/// forces WebKit to actually repaint its content against the current (now
-/// empty) DOM, not just recomposite what it already had.
-pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
+/// Every attempt at forcing WebKitGTK/the compositor to repaint the window
+/// back to blank instead of unmapping it — moving it, resizing it, mapping
+/// an extra window from this process, spawning a genuinely separate
+/// process, changing its X11 window-type hint — failed to reliably clear a
+/// stuck frame on the reported system (KDE, XWayland). None of that matters
+/// once the window is actually withdrawn: an unmapped window has nothing
+/// for the compositor to display, stale buffer or not. This was avoided
+/// originally over a suspected Wayland/XWayland re-map-steals-focus issue,
+/// but that was never confirmed against this app's actual flags —
+/// `skip_taskbar(true)` + `focused(false)` + click-through are already set
+/// at window creation and re-applied by `show_overlay` below, which should
+/// cover it; if a focus-stealing regression does show up, that's the
+/// combination to revisit.
+pub fn hide_overlay(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        if let Ok(size) = window.inner_size() {
-            let _ = window.set_size(tauri::PhysicalSize::new(size.width.saturating_sub(1), size.height));
-            let _ = window.set_size(size);
-        }
+        let _ = window.hide();
     }
+}
+
+/// Re-map the overlay window before it has something to show again.
+/// Counterpart to `hide_overlay`. Re-asserts always-on-top since window
+/// managers don't reliably remember stacking level across an unmap/remap.
+pub fn show_overlay(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        let _ = window.show();
+    }
+    reassert_overlay_topmost(app);
 }
 
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
