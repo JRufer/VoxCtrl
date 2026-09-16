@@ -296,24 +296,25 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
-/// Force the compositor to recommit the overlay window's surface.
+/// Force WebKitGTK to actually re-layout and repaint the overlay's page.
 ///
 /// The window stays mapped for the app's whole session (see
 /// `open_overlay_window`'s doc comment on why it is never hidden/re-shown),
 /// so clearing it to blank relies entirely on WebKitGTK repainting the
-/// transparent surface once its DOM content is removed. Some WebKitGTK
-/// builds don't: nothing ever draws to an empty page, so no repaint is
-/// requested, and the last painted frame — a mid-animation overlay — stays
-/// on screen indefinitely since nothing else ever asks this window to
-/// recommit its buffer. A 1px move-and-back forces a real geometry commit
-/// through the window manager/compositor, the same "toggle off then back
-/// on" trick `reassert_overlay_topmost` uses above, and is unconditional:
-/// it doesn't depend on which GTK/WebKit version bundled the fix.
+/// transparent page once its DOM content is removed. Some WebKitGTK builds
+/// don't: nothing ever draws to an empty page, so no repaint happens, and
+/// the last painted frame — a mid-animation overlay — stays on screen
+/// indefinitely. A move-and-back (tried first) only recomposites whatever
+/// buffer WebKit last submitted — it doesn't touch WebKit's own internal
+/// renderer, so a frame WebKit itself never repainted stays exactly as
+/// stuck. A size change does: it invalidates the webview's layout, which
+/// forces WebKit to actually repaint its content against the current (now
+/// empty) DOM, not just recomposite what it already had.
 pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        if let Ok(pos) = window.outer_position() {
-            let _ = window.set_position(tauri::PhysicalPosition::new(pos.x + 1, pos.y));
-            let _ = window.set_position(pos);
+        if let Ok(size) = window.inner_size() {
+            let _ = window.set_size(tauri::PhysicalSize::new(size.width.saturating_sub(1), size.height));
+            let _ = window.set_size(size);
         }
     }
 }
