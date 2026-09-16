@@ -79,16 +79,49 @@ STACK=(
 
 echo
 echo "Removing the bundled GTK stack (the host's will be used instead):"
-removed=0
-for pat in "${STACK[@]}"; do
-    while IFS= read -r lib; do
-        [ -n "$lib" ] || continue
-        echo "    $(basename "$lib")"
-        rm -f "$lib"
-        removed=$((removed + 1))
-    done < <(find "$ROOT" -name "$pat" 2>/dev/null)
+
+# `-L` matters: AppDir library directories are often reached through a
+# symlink, and plain `find` will not descend into one. An earlier version of
+# this script omitted it, removed nothing, and still launched — which looked
+# like a clean test of the hypothesis while testing nothing at all. Hence both
+# the `-L` here and the hard stop below.
+collect_stack() {
+    local pat
+    for pat in "${STACK[@]}"; do
+        find -L "$ROOT" -name "$pat" 2>/dev/null
+    done | sort -u
+}
+
+mapfile -t FOUND < <(collect_stack)
+
+if [ "${#FOUND[@]}" -eq 0 ]; then
+    echo "    (none found)"
+    echo
+    echo "ERROR: none of the bundled GTK libraries could be found to remove." >&2
+    echo "Refusing to launch: a run with nothing removed proves nothing." >&2
+    echo >&2
+    echo "Libraries that ARE in this bundle, for diagnosis:" >&2
+    find -L "$ROOT" -name '*.so*' 2>/dev/null \
+        | sed "s|$ROOT/||" | sort | head -40 >&2
+    exit 1
+fi
+
+for lib in "${FOUND[@]}"; do
+    echo "    ${lib#$ROOT/}"
+    chmod u+w "$lib" 2>/dev/null
+    rm -f "$lib"
 done
-echo "  ($removed files)"
+echo "  (${#FOUND[@]} files removed)"
+
+# Prove the removal actually took, rather than trusting that it did.
+mapfile -t STILL_THERE < <(collect_stack)
+if [ "${#STILL_THERE[@]}" -ne 0 ]; then
+    echo >&2
+    echo "ERROR: ${#STILL_THERE[@]} GTK libraries survived removal:" >&2
+    printf '    %s\n' "${STILL_THERE[@]#$ROOT/}" >&2
+    echo "Refusing to launch: the bundle would still shadow the host's GTK." >&2
+    exit 1
+fi
 
 # Loadable modules built against the bundled libraries. Left in place, the
 # host's gdk-pixbuf/GTK would try to load ubuntu-22.04 modules and fail.
