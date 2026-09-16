@@ -652,41 +652,46 @@ pub fn get_custom_overlays_dir() -> String {
     crate::custom_overlays::overlays_dir().display().to_string()
 }
 
-/// Actually unmap the overlay window once it has nothing left to show. See
-/// `window::hide_overlay` — called by the frontend right after it unmounts
-/// the overlay's content, once its outro animation finishes.
+/// Actually destroy the overlay window once it has nothing left to show.
+/// See `window::hide_overlay` — called by the frontend right after it
+/// unmounts the overlay's content, once its outro animation finishes.
 ///
-/// Nudges a real repaint first and waits a beat for WebKit's render
-/// pipeline to actually process it (see `window::hide_overlay`'s doc
-/// comment for why: without this, the window unmaps still holding
-/// whatever was last visibly composited, and each new activation's content
-/// visibly stacks on top of that leftover instead of starting blank).
-///
-/// Bails out early if a newer show/hide request has landed while this one
-/// was waiting (checked via `window::overlay_generation_current` after the
-/// await): this flow spans ~80ms, long enough for a fast reactivation to
-/// fire `show_overlay_window` while it's still in flight — without this
-/// check, whichever one happened to finish last would win arbitrarily,
-/// sometimes hiding a window the newer activation just showed.
+/// Bumps the generation counter first so a `show_overlay_window` request
+/// that's already in flight (or arrives immediately after) wins instead of
+/// racing this: without that, a reactivation quick enough to overlap this
+/// call could have its freshly (re)created window destroyed out from under
+/// it, or this hide could destroy a window that request just rebuilt.
 #[tauri::command]
-pub async fn hide_overlay_window(app: tauri::AppHandle) {
-    let generation = crate::window::bump_overlay_generation();
-
-    crate::window::nudge_overlay_repaint(&app);
-    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-    if !crate::window::overlay_generation_current(generation) {
-        return;
-    }
-
+pub fn hide_overlay_window(app: tauri::AppHandle) {
+    crate::window::bump_overlay_generation();
     crate::window::hide_overlay(&app);
 }
 
-/// Re-map the overlay window before it has something to show again. See
-/// `window::show_overlay` — called by the frontend the moment it has
-/// something to render, counterpart to `hide_overlay_window` above.
+/// Rebuild the overlay window from scratch before it has something to show
+/// again — see `window::hide_overlay`'s doc comment for why recreation
+/// rather than just re-showing. Counterpart to `hide_overlay_window`
+/// above; called by the frontend the moment it has something to render.
 #[tauri::command]
-pub fn show_overlay_window(app: tauri::AppHandle) {
-    crate::window::show_overlay(&app);
+pub async fn show_overlay_window(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let generation = crate::window::bump_overlay_generation();
+
+    let (position, monitor) = {
+        let cfg = state.config.lock().await;
+        (cfg.data.ui.overlay_position.clone(), cfg.data.ui.overlay_monitor.clone())
+    };
+
+    // A hide requested after this point but before the window is actually
+    // rebuilt below would otherwise destroy the window this call is about
+    // to (re)create out from under it.
+    if !crate::window::overlay_generation_current(generation) {
+        return Ok(());
+    }
+
+    crate::window::open_overlay_window(&app, &position, &monitor)?;
+    Ok(())
 }
 
 /// The resolved, absolute path to the shared voice-cloning reference-clip
