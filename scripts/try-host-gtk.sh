@@ -29,13 +29,31 @@
 set -uo pipefail
 
 KEEP_ONLY=false
-if [ "${1:-}" = "--keep" ]; then
-    KEEP_ONLY=true
+STRIP_GTK=true
+STRIP_WEBKIT=false
+
+while [ $# -gt 1 ]; do
+    case "$1" in
+        --keep)    KEEP_ONLY=true ;;
+        --gtk)     STRIP_GTK=true;  STRIP_WEBKIT=false ;;
+        # The bundled WebKit helper processes and injected bundle come from
+        # the build host, while libwebkit2gtk itself is excluded from the
+        # bundle by linuxdeploy and therefore comes from the user's system.
+        # On a CI build that pairs ubuntu-22.04 helpers with whatever
+        # WebKitGTK the host has — and the web process is the one that
+        # actually renders and composites the page.
+        --webkit)  STRIP_GTK=false; STRIP_WEBKIT=true ;;
+        --all)     STRIP_GTK=true;  STRIP_WEBKIT=true ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
     shift
-fi
+done
 
 if [ $# -ne 1 ]; then
-    echo "Usage: $0 [--keep] <AppImage>" >&2
+    echo "Usage: $0 [--keep] [--gtk|--webkit|--all] <AppImage>" >&2
+    echo "  --gtk     (default) run against the host's GTK stack" >&2
+    echo "  --webkit  run against the host's WebKit helper processes" >&2
+    echo "  --all     both" >&2
     exit 1
 fi
 
@@ -76,6 +94,50 @@ STACK=(
     'libepoxy.so*' 'libharfbuzz.so*' 'libfribidi.so*'
     'librsvg-2.so*'
 )
+
+if [ "$STRIP_WEBKIT" = true ]; then
+    echo
+    echo "Removing the bundled WebKit helper processes and injected bundle:"
+    wk_removed=0
+    while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        echo "    ${dir#$ROOT/}"
+        chmod -R u+w "$dir" 2>/dev/null
+        rm -rf "$dir"
+        wk_removed=$((wk_removed + 1))
+    done < <(find -L "$ROOT" -type d -name 'webkit2gtk-4.*' 2>/dev/null | sort -u)
+
+    if [ "$wk_removed" -eq 0 ]; then
+        echo "    (none found)"
+        echo >&2
+        echo "ERROR: no bundled WebKit helper directory to remove." >&2
+        echo "Refusing to launch: a run with nothing removed proves nothing." >&2
+        exit 1
+    fi
+
+    # AppRun points WebKit at those bundled helpers. With them gone the
+    # exports have to go too, or WebKit follows them to paths that no longer
+    # exist instead of falling back to the ones its own library ships with.
+    for script in "$ROOT/AppRun" "$ROOT/apprun-hooks/linuxdeploy-plugin-gtk.sh"; do
+        [ -f "$script" ] || continue
+        sed -i -E 's/^([[:space:]]*export[[:space:]]+(WEBKIT_EXEC_PATH|WEBKIT_INJECTED_BUNDLE_PATH)=)/# \1/' "$script"
+    done
+    echo "  (WEBKIT_EXEC_PATH / WEBKIT_INJECTED_BUNDLE_PATH exports neutralised)"
+fi
+
+if [ "$STRIP_GTK" = false ]; then
+    echo
+    echo "── Launching (GTK left bundled). Watch the overlay CLOSE. ──"
+    echo "   (Ctrl-C here when you're done.)"
+    echo
+    if [ "$KEEP_ONLY" = true ]; then
+        echo "Prepared (not run): $ROOT/AppRun"
+        echo "Remove it afterwards with:  rm -rf $WORK"
+        exit 0
+    fi
+    "$ROOT/AppRun"
+    exit $?
+fi
 
 echo
 echo "Removing the bundled GTK stack (the host's will be used instead):"

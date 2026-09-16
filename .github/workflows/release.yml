@@ -14,6 +14,11 @@ on:
         description: "Tag to (re-)build (e.g. v0.1.4). Defaults to the app version in tauri.conf.json."
         required: false
         type: string
+      publish:
+        description: "Create/update the draft release. Turn OFF to just build a branch and download the result from this run's Artifacts."
+        required: false
+        default: true
+        type: boolean
 
 # Only one release build per branch at a time; a newer push cancels an
 # in-progress one so the release reflects the latest commit.
@@ -420,8 +425,19 @@ jobs:
     name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
-    # Run even if some build variants failed so partial releases still publish
-    if: always() && contains(needs.build.result, 'success')
+    # Run even if some build variants failed so partial releases still publish.
+    #
+    # Skipped entirely for a manual run with `publish` off, which is how a
+    # branch gets built without touching the release: the build job above
+    # already uploads each bundle with `upload-artifact`, so the AppImage is
+    # downloadable from the run's own Artifacts section either way. That
+    # matters for a bug that only reproduces in a CI-built bundle — testing a
+    # fix for one used to mean merging to master and cutting a release first,
+    # which made it far too easy to end up testing a build that predated the
+    # fix and reading the result as the fix having failed.
+    if: >-
+      always() && contains(needs.build.result, 'success')
+      && (github.event_name != 'workflow_dispatch' || inputs.publish)
 
     steps:
       # Needed to read the app version for the default tag name.
