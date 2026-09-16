@@ -475,6 +475,24 @@ pub fn run() {
                 audio_level_rx,
             );
 
+            // Build the overlay window now rather than on the first
+            // dictation. Constructing it costs one brief flash of an empty
+            // window — a webview is mapped before it has loaded `/overlay`
+            // and painted — and that cost has to land somewhere. Paid here it
+            // lands during startup, alongside everything else the app is
+            // doing before the user has asked for anything; paid on the first
+            // keybind press it lands in the middle of the thing the user is
+            // watching. `tray::spawn_status_ticker` still builds it if this
+            // fails, so a failure here delays the overlay rather than losing
+            // it.
+            if let Err(e) = crate::window::open_overlay_window(
+                app.handle(),
+                &cfg_data.ui.overlay_position,
+                &cfg_data.ui.overlay_monitor,
+            ) {
+                tracing::warn!("Could not pre-build the dictation overlay: {e}");
+            }
+
             // Setup system tray
             let _tray = tray::create_tray(app)?;
             tray::sync_tts_memory_item(app.handle().clone(), app_state.clone());
@@ -501,16 +519,13 @@ pub fn run() {
             ];
 
             // ── Dictation overlay ────────────────────────────────────────────────
-            // Unlike every other window here, the overlay is not created at
-            // startup: window::open_overlay_window builds the transparent,
+            // window::open_overlay_window builds the transparent,
             // click-through, always-on-top WebviewWindow that renders the
             // `/overlay` route (src/lib/Overlay/Overlay.svelte) — see that
             // function's doc comment and docs/overlays.md for how it's put
-            // together — but it's tray::spawn_status_ticker (below) that
-            // decides when to actually call it, building the window fresh on
-            // the first activation and destroying it again once idle. See
-            // that function's doc comment for why the window's lifecycle is
-            // owned there rather than created once and left mapped.
+            // together. It is built once, above, and kept for the session;
+            // tray::spawn_status_ticker (below) builds it there instead if
+            // that failed, and nothing destroys it.
             let overlay_handle = app.handle().clone();
             // overlay_tx carries position updates (sent whenever
             // config.ui.overlay_position / overlay_monitor change — see

@@ -177,9 +177,10 @@ pub fn sync_tts_memory_item(app: tauri::AppHandle, state: Arc<AppState>) {
 /// Emits `status-tick`, animates the tray icon, and builds the dictation
 /// overlay window.
 ///
-/// The overlay window is created the first time there is something to show
-/// and then kept for the rest of the session. What is on screen is decided
-/// inside it by `Overlay.svelte`, which renders nothing while idle.
+/// The overlay window is normally built during startup (`lib.rs`) and kept
+/// for the rest of the session; this loop builds it on the first activation
+/// only if that failed. What is on screen is decided inside it by
+/// `Overlay.svelte`, which renders nothing while idle.
 ///
 /// It was, for a while, created fresh on every activation and destroyed once
 /// idle. That was a workaround: on some systems (confirmed: KDE, XWayland)
