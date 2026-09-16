@@ -470,28 +470,33 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.5.9
+            ## What's new in 0.6.0
 
-            **Fixed: the dictation overlay freezing solid on screen and
-            never closing, on some Linux desktops.**
+            **Fixed: the dictation overlay turned into a blurry, semi-opaque
+            smear on Linux while it animated open or closed.**
 
-            Reported on KDE/Wayland (via XWayland): every overlay style
-            could get stuck fully visible after releasing the keybind —
-            sometimes with older styles still faintly visible underneath the
-            current one — with no way to clear it short of quitting the app.
-            Root cause: on affected systems, WebKitGTK never repaints the
-            overlay window's buffer back to blank on its own once its
-            content is removed, so the window kept showing whatever was
-            last on screen no matter when or how a repaint was requested.
+            WebKitGTK's accelerated compositor promotes any element animating
+            `opacity`/`transform` — which is every one of the overlay's
+            load/unload transitions — to its own GPU-backed layer, then blends
+            that layer back onto the transparent window with the wrong alpha.
+            A static frame never gets layer-promoted, which is why the overlay
+            looked fine at rest and only smeared mid-animation.
 
-            The overlay window is now created fresh the moment there's
-            something to show and destroyed again shortly after going idle,
-            instead of being built once at startup and left open for the
-            app's whole session — a freshly created window has never had
-            anything painted into it, so there's no stale frame left behind
-            to get stuck. This is now owned entirely by the backend, so it
-            works the same regardless of which overlay style (built-in or
-            custom) is selected.
+            VoxCtrl now forces WebKitGTK off the accelerated-compositing path
+            on Linux, so every frame — animating or not — respects the
+            window's real per-pixel transparency.
+
+            This lands on top of 0.5.9's fix for the overlay freezing solid
+            and never closing on some Linux desktops (KDE/Wayland via
+            XWayland) — the overlay window is now created fresh each time
+            there's something to show and destroyed again shortly after
+            going idle, rather than staying mapped for the app's whole
+            session.
+
+            ### Notes
+
+            The installers are not code-signed yet, so SmartScreen will warn
+            that the publisher is unknown.
 
             ## Downloads
 

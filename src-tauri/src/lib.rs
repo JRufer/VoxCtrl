@@ -72,6 +72,32 @@ pub fn run() {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
+        // WebKitGTK's accelerated compositor treats a layer-promoted element
+        // (anything animating `opacity`/`transform`, which is every overlay
+        // load/unload animation) as opaque while it owns its own GPU texture,
+        // then blends that texture back into the transparent X11 window with
+        // the wrong alpha — the overlay reads as a blurry, semi-opaque smear
+        // for the duration of the transition instead of fading through real
+        // transparency. It only shows up mid-animation because a static frame
+        // never gets layer-promoted in the first place.
+        //
+        // The bug lives in the accelerated-compositing path itself, so how
+        // visible it is depends on exactly which libwebkit2gtk the AppImage
+        // ends up running: build_appimage.sh and the release workflow both
+        // strip the *graphics* libraries (libEGL/libGL/libgbm/libdrm/...) so
+        // the AppImage falls through to the host's copies, but they
+        // deliberately bundle libwebkit2gtk itself (see the "Bundle WebKitGTK
+        // 4.1 helper processes" step in both) — a WebKitGTK process needs its
+        // own helper binaries at an exact relative path, so it can't be
+        // host-first like the graphics libs. That means a locally-built
+        // AppImage ships whatever libwebkit2gtk-4.1-dev the developer's own
+        // distro has (new enough, apparently, to not hit this), while the CI
+        // build ships ubuntu-22.04's apt version — which does. Forcing WebKit
+        // off the accelerated-compositing path entirely (software/Cairo
+        // rendering throughout) sidesteps the bug regardless of which
+        // WebKitGTK version is bundled, so it fixes both.
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
         // The dictation overlay needs a window that can set its own absolute
         // position and reliably stay above other windows. A native Wayland
         // toplevel can do neither — position and stacking are compositor
