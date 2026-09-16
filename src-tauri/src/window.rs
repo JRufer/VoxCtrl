@@ -192,11 +192,61 @@ const OVERLAY_HEIGHT: f64 = 444.0;
 ///
 /// `anchor` / `monitor_pref` are `config.ui.overlay_position` /
 /// `overlay_monitor`.
+/// How long the overlay may stay hidden waiting for its content to paint.
+///
+/// The frontend normally reports in well inside this (see `reveal_overlay`),
+/// so this only matters when it cannot — a custom overlay whose script throws
+/// before the report, say. Long enough not to pre-empt a slow first paint,
+/// short enough that the worst case is still a prompt overlay rather than a
+/// missing one.
+const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(600);
+
+/// Make the overlay window visible, if it is not already.
+///
+/// A freshly built `WebviewWindow` is mapped long before there is anything to
+/// see in it: the webview has to be created, `/overlay` loaded, Svelte
+/// mounted and a frame painted, which is tens to hundreds of milliseconds
+/// during which the window is on screen with nothing drawn into it. That was
+/// showing up as a black box flashing over the overlay's full bounds on every
+/// keybind press. It only became visible when the window started being built
+/// fresh for each dictation (see `tray.rs`'s `spawn_status_ticker`); built
+/// once at startup it happened a single time, before anyone was watching.
+///
+/// So the window is created fully transparent (`set_opacity(0.0)` in
+/// `open_overlay_window`) and revealed here, once the frontend reports that it
+/// has painted. Opacity rather than staying unmapped or parking it offscreen:
+/// an unmapped webview may not render at all, so waiting on a paint that never
+/// comes would hang, and an offscreen position can be clamped by the window
+/// manager. A mapped, fully transparent window renders exactly as normal and
+/// is reliably invisible — including any frame the window manager draws
+/// around it, which is why this works whatever is actually drawing the black.
+///
+/// On a desktop with no compositor `set_opacity` does nothing, and the overlay
+/// simply behaves as it did before: visible immediately, black box and all.
+pub fn reveal_overlay(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
+        return;
+    };
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.set_opacity(1.0);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = window;
+}
+
 pub fn open_overlay_window(
     app: &tauri::AppHandle,
     anchor: &str,
     monitor_pref: &str,
 ) -> Result<tauri::WebviewWindow, String> {
+    // Only a window built by this call starts hidden. Re-entering with one
+    // already on screen must not blank the overlay the user is looking at.
+    let is_new = app.get_webview_window(OVERLAY_WINDOW).is_none();
+
     let window = match app.get_webview_window(OVERLAY_WINDOW) {
         Some(existing) => existing,
         None => tauri::WebviewWindowBuilder::new(
@@ -256,6 +306,12 @@ pub fn open_overlay_window(
             if let Some(gdk_window) = gtk_window.window() {
                 gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
             }
+            // Mapped but fully transparent until its content has painted —
+            // see `reveal_overlay`. Set before `show()` so there is no frame
+            // in which the window is both mapped and opaque.
+            if is_new {
+                gtk_window.set_opacity(0.0);
+            }
         }
     }
 
@@ -283,6 +339,18 @@ pub fn open_overlay_window(
     }
 
     reposition_overlay_inner(&window, anchor, monitor_pref);
+
+    // Safety net for the hidden-until-painted gate above: if the frontend
+    // never reports in, reveal it anyway. An overlay that flashes black is a
+    // blemish; one that never appears is a broken feature, and a custom
+    // overlay is arbitrary user-supplied HTML that may simply fail.
+    if is_new {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(OVERLAY_REVEAL_TIMEOUT).await;
+            reveal_overlay(&handle);
+        });
+    }
 
     Ok(window)
 }

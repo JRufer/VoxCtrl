@@ -553,6 +553,7 @@ pub fn run() {
             speak_text,
             get_custom_overlays,
             get_custom_overlay,
+            overlay_content_ready,
             get_custom_overlays_dir,
             get_cloned_tts_voices_dir,
             list_audio_devices,

@@ -1758,6 +1758,18 @@ pub async fn get_available_monitors(app: tauri::AppHandle) -> Result<Vec<Monitor
     rx.await.map_err(|e| format!("Failed to receive monitors: {}", e))
 }
 
+/// The overlay's frontend reporting that it has painted a frame.
+///
+/// The overlay window is built fully transparent so the user never sees it
+/// during the tens-to-hundreds of milliseconds it takes to create the
+/// webview, load `/overlay` and mount — see `window::reveal_overlay`. This is
+/// what takes it off the safety-net timeout and shows it as soon as there is
+/// actually something to look at.
+#[tauri::command]
+pub fn overlay_content_ready(app: tauri::AppHandle) {
+    crate::window::reveal_overlay(&app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
