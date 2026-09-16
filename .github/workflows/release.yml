@@ -470,46 +470,23 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.5.1
+            ## What's new in 0.6.0
 
-            **A Bug Report page, so testing the new Windows builds does not
-            require a GitHub account.**
+            **Fixed: the dictation overlay turned into a blurry, semi-opaque
+            smear on Linux while it animated open or closed.**
 
-            0.5.0 shipped VoxCtrl's first Windows build, and this release adds
-            the Windows GPU build beside it. Both were built by one person on
-            one machine — so the thing they needed most was a way for anyone
-            else to say what broke.
+            WebKitGTK's accelerated compositor promotes any element animating
+            `opacity`/`transform` — which is every one of the overlay's
+            load/unload transitions — to its own GPU-backed layer, then blends
+            that layer back onto the transparent window with the wrong alpha.
+            A static frame never gets layer-promoted, which is why the overlay
+            looked fine at rest and only smeared mid-animation.
 
-            ### Settings → Bug Report
-
-            Describe the problem and press a button. VoxCtrl gathers the log,
-            your OS and hardware, which build you are running and what it can
-            offload to the GPU, and your settings — then sends it, files it on
-            GitHub, saves it to a file, or drafts an email, whichever you pick.
-            **The one-click route needs no GitHub account.**
-
-            It is opt-in in the strongest sense: nothing runs at startup, on a
-            timer, or in the background, and **the page shows you the entire
-            report before anything leaves your machine**. What is in the preview
-            is what gets filed; there is no fuller version behind it.
-
-            What never travels: anything you dictated, any audio, any API key or
-            access token, your username, hostname or IP address, any file path,
-            your custom vocabulary, snippets or prompts, and the labels,
-            commands and URLs of your output targets. Redaction works from an
-            allowlist rather than a blocklist, and a test walks the real config
-            and fails the build naming any setting nobody has classified — so a
-            setting added later cannot leak into a public issue by being
-            forgotten.
-
-            Full detail, including how to check all of it yourself:
-            [docs/bug_reports.md](https://github.com/JRufer/VoxCtrl/blob/master/docs/bug_reports.md).
+            VoxCtrl now forces WebKitGTK off the accelerated-compositing path
+            on Linux, so every frame — animating or not — respects the
+            window's real per-pixel transparency.
 
             ### Notes
-
-            Reports are rate-limited — five a day, twenty a month, duplicates
-            refused — and saving a report to a file is never limited, so a real
-            bug always has a way out.
 
             The installers are not code-signed yet, so SmartScreen will warn
             that the publisher is unknown.
