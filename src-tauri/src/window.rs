@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
@@ -8,28 +7,6 @@ use crate::state::AppState;
 /// Set once the Tauri app is built, so background tasks started before it (the
 /// hotkey gesture loop) can raise windows.
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
-
-/// Bumped by every `show_overlay` / `hide_overlay_window` call, so a hide
-/// that's still mid-flight (see `hide_overlay`'s doc comment — it awaits a
-/// real repaint before unmapping, which takes long enough for a fast
-/// reactivation to land in the middle of it) can tell it's been superseded
-/// and back off instead of racing the show that followed it. Whichever one
-/// actually executed last used to win arbitrarily; this makes "last one
-/// requested" win instead.
-static OVERLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-/// Serializes overlay show/hide transitions so at most one is ever actually
-/// touching the window at a time. The generation counter alone still let a
-/// stale hide's repaint nudge run concurrently with a newer show — nothing
-/// stopped `nudge_overlay_repaint` itself from firing after a fresher
-/// request had already re-shown the window with new content, since the
-/// generation check only gated the final unmap, not the nudge before it.
-/// Holding this for a transition's whole duration, and re-checking the
-/// generation immediately after acquiring it, closes that gap: a
-/// superseded request either finds the counter already stale and no-ops
-/// before touching the window at all, or blocks until the one ahead of it
-/// (which does hold a still-current generation) finishes first.
-static OVERLAY_TRANSITION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Label of the first-run setup window.
 pub const SETUP_WINDOW: &str = "udev-warning";
@@ -331,86 +308,28 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
-/// Actually unmap the overlay window when it has nothing to show.
+/// Actually destroy the overlay window when it has nothing to show.
 ///
 /// Every attempt at forcing WebKitGTK/the compositor to repaint the window
-/// back to blank instead of unmapping it — moving it, resizing it, mapping
-/// an extra window from this process, spawning a genuinely separate
-/// process, changing its X11 window-type hint — failed to reliably clear a
-/// stuck frame on the reported system (KDE, XWayland). None of that matters
-/// once the window is actually withdrawn: an unmapped window has nothing
-/// for the compositor to display, stale buffer or not. This was avoided
-/// originally over a suspected Wayland/XWayland re-map-steals-focus issue,
-/// but that was never confirmed against this app's actual flags —
-/// `skip_taskbar(true)` + `focused(false)` + click-through are already set
-/// at window creation and re-applied by `show_overlay` below, which should
-/// cover it; if a focus-stealing regression does show up, that's the
-/// combination to revisit.
-///
-/// Unmapping alone isn't enough, though: WebKitGTK here never repaints this
-/// window's *buffer* on its own — confirmed across this whole investigation,
-/// this is the same root cause the earlier repaint attempts all ran into.
-/// Unmounting the DOM doesn't clear what's already composited, so hiding
-/// straight after leaves the last visible frame sitting in the buffer, and
-/// showing the window again later displays that stale frame instantly,
-/// with the next activation's content painting in over top of it — every
-/// style's leftover stacking on the next since none of them ever actually
-/// got cleared. Callers should await `flush_overlay_repaint` (which gives
-/// WebKit's render pipeline a moment to actually process the repaint) right
-/// before this, so the buffer is genuinely blank by the time it unmaps —
-/// see `commands::hide_overlay_window`.
+/// back to blank instead of destroying it — hiding it (with or without a
+/// forced repaint nudge first, gated by a generation counter, a lock, or
+/// both), moving it, resizing it, mapping an extra window from this
+/// process, spawning a genuinely separate process, changing its X11
+/// window-type hint — failed to reliably clear a stuck frame on the
+/// reported system (KDE, XWayland): a stale frame WebKitGTK had already
+/// painted kept reappearing the instant the window was shown again, no
+/// matter how the repaint was requested or how tightly the request
+/// ordering was controlled. A destroyed window has nothing for the
+/// compositor to display, stale buffer or not, which sidesteps the
+/// question entirely — see `tray::spawn_status_ticker`'s doc comment for
+/// why this is called from there rather than from the overlay's own
+/// frontend: that was tried first and is a dead end, since destroying the
+/// window that's running the code deciding when to bring it back also
+/// destroys that code.
 pub fn hide_overlay(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        let _ = window.hide();
+        let _ = window.close();
     }
-}
-
-/// Force WebKitGTK to actually re-layout and repaint the overlay's page,
-/// rather than just recomposite whatever it already had. A size change
-/// invalidates the webview's layout, which forces a real repaint against
-/// the current DOM — unlike a window move, which only asks the compositor
-/// to recomposite the same stale buffer WebKit already submitted.
-pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        if let Ok(size) = window.inner_size() {
-            let _ = window.set_size(tauri::PhysicalSize::new(size.width.saturating_sub(1), size.height));
-            let _ = window.set_size(size);
-        }
-    }
-}
-
-/// Bump `OVERLAY_GENERATION` and return the new value. Called at the start
-/// of `show_overlay` and of every `hide_overlay_window` request: showing
-/// invalidates any hide still mid-flight (so it backs off instead of
-/// hiding a window a newer activation just showed), and each new hide
-/// request invalidates whichever one came before it, so only the most
-/// recently requested transition ever actually touches the window.
-pub fn bump_overlay_generation() -> u64 {
-    OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
-}
-
-/// Whether `expected` is still the current generation — i.e. nothing newer
-/// has superseded the caller's in-flight transition.
-pub fn overlay_generation_current(expected: u64) -> bool {
-    OVERLAY_GENERATION.load(Ordering::SeqCst) == expected
-}
-
-/// The lock every show/hide transition holds for its whole duration — see
-/// `OVERLAY_TRANSITION_LOCK`'s doc comment for why a generation check alone
-/// isn't enough.
-pub fn overlay_transition_lock() -> &'static tokio::sync::Mutex<()> {
-    &OVERLAY_TRANSITION_LOCK
-}
-
-/// Re-map the overlay window before it has something to show again.
-/// Counterpart to `hide_overlay`. Re-asserts always-on-top since window
-/// managers don't reliably remember stacking level across an unmap/remap.
-pub fn show_overlay(app: &tauri::AppHandle) {
-    bump_overlay_generation();
-    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        let _ = window.show();
-    }
-    reassert_overlay_topmost(app);
 }
 
 /// Top-left Y for the overlay given the anchor, in the same pixel space as

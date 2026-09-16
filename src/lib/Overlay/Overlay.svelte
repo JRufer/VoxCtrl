@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { recording, speaking, mcpRecording, status } from "../../stores/status";
@@ -55,12 +55,13 @@
     if (isRecordingOrSpeaking) {
       if (timeoutId) clearTimeout(timeoutId);
       renderOverlay = true;
-      // Re-map the overlay window before it has anything to show. Nothing
-      // short of actually unmapping the window (see the idle branch below)
-      // reliably clears a stuck frame on some systems, so the window is no
-      // longer left mapped for the app's whole session — it comes back
-      // here every time there's something to display.
-      invoke("show_overlay_window").catch(() => {});
+      // The overlay window itself is created/destroyed by the Rust backend
+      // (tray::spawn_status_ticker), not requested from here: this
+      // component's own code stops running the instant the window that
+      // hosts it is destroyed, so it can't be the thing that asks for the
+      // window to come back next time — nothing would be left to notice
+      // the next activation. This effect only drives the *content* inside
+      // an already-live window.
       if (animateTimeoutId) clearTimeout(animateTimeoutId);
       animateTimeoutId = setTimeout(() => {
         animateActive = true;
@@ -72,24 +73,8 @@
       loadActiveCustomOverlay($config.ui.overlay_style);
     } else {
       animateActive = false;
-      timeoutId = setTimeout(async () => {
+      timeoutId = setTimeout(() => {
         renderOverlay = false;
-        // Wait for the DOM removal above to actually apply before asking
-        // Rust to flush-and-hide: hide_overlay_window forces a repaint of
-        // whatever is currently on the page, so it has to run after the
-        // content is really gone, not just after this line executes.
-        await tick();
-        // Actually unmap the window rather than trying to make WebKitGTK
-        // repaint it to blank on its own: forcing a repaint (resizing/
-        // moving the window, mapping an extra window, changing its X11
-        // window-type hint) was tried and none of it reliably cleared a
-        // stuck frame while the window stayed mapped. An unmapped window
-        // has nothing for the compositor to display, stale buffer or not —
-        // but hide_overlay_window still flushes a real repaint first, so
-        // the buffer it unmaps with is blank rather than whatever was last
-        // visible, which otherwise reappears instantly the next time the
-        // window is shown.
-        invoke("hide_overlay_window").catch(() => {});
       }, 450);
     }
     return () => {
