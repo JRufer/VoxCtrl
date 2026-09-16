@@ -95,34 +95,77 @@ STACK=(
     'librsvg-2.so*'
 )
 
+# Report which WebKitGTK a bundle actually carries. Both builds name the file
+# libwebkit2gtk-4.1.so.0, so the filename says nothing — the version has to
+# come out of the binary itself. Reading the filename is exactly how an
+# earlier pass concluded WebKit was not bundled at all.
+webkit_version() {
+    local lib="$1" ver
+    ver=$(basename "$(readlink -f "$lib")")
+    if [ "$ver" = "$(basename "$lib")" ]; then
+        # Not a versioned symlink; ask the binary.
+        ver=$(strings "$lib" 2>/dev/null | grep -oE 'WebKitGTK/[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        [ -n "$ver" ] || ver="(version not readable from the binary)"
+    fi
+    echo "$ver"
+}
+
 if [ "$STRIP_WEBKIT" = true ]; then
     echo
-    echo "Removing the bundled WebKit helper processes and injected bundle:"
+    echo "Bundled WebKitGTK in this AppImage:"
+    mapfile -t WK_LIBS < <(find -L "$ROOT" \( -name 'libwebkit2gtk-4.*.so*' \
+                                          -o -name 'libjavascriptcoregtk-4.*.so*' \) 2>/dev/null | sort -u)
+    for lib in "${WK_LIBS[@]}"; do
+        printf '    %-44s %s\n' "${lib#$ROOT/}" "$(webkit_version "$lib")"
+    done
+    [ "${#WK_LIBS[@]}" -eq 0 ] && echo "    (none — already using the host's)"
+
+    echo
+    echo "Removing the bundled WebKit entirely (library, helper processes and"
+    echo "injected bundle) so the host's WebKitGTK is used instead:"
+
+    # The library and its helpers are one unit: the bundled libwebkit2gtk has
+    # the bundled helper path compiled into it, so removing only the helpers
+    # leaves it unable to spawn its web process and the app aborts at startup.
+    # Both go, and the host's matching pair is used.
     wk_removed=0
+    for lib in "${WK_LIBS[@]}"; do
+        echo "    ${lib#$ROOT/}"
+        chmod u+w "$lib" 2>/dev/null
+        rm -f "$lib"
+        wk_removed=$((wk_removed + 1))
+    done
     while IFS= read -r dir; do
         [ -n "$dir" ] || continue
-        echo "    ${dir#$ROOT/}"
+        echo "    ${dir#$ROOT/}/"
         chmod -R u+w "$dir" 2>/dev/null
         rm -rf "$dir"
         wk_removed=$((wk_removed + 1))
     done < <(find -L "$ROOT" -type d -name 'webkit2gtk-4.*' 2>/dev/null | sort -u)
 
     if [ "$wk_removed" -eq 0 ]; then
-        echo "    (none found)"
+        echo "    (nothing found)"
         echo >&2
-        echo "ERROR: no bundled WebKit helper directory to remove." >&2
+        echo "ERROR: no bundled WebKit to remove." >&2
         echo "Refusing to launch: a run with nothing removed proves nothing." >&2
         exit 1
     fi
 
-    # AppRun points WebKit at those bundled helpers. With them gone the
-    # exports have to go too, or WebKit follows them to paths that no longer
-    # exist instead of falling back to the ones its own library ships with.
+    # AppRun points WebKit at the bundled helpers. With them gone the exports
+    # must go too, or the host's WebKit is sent to paths that no longer exist
+    # instead of using the helpers its own library ships with.
     for script in "$ROOT/AppRun" "$ROOT/apprun-hooks/linuxdeploy-plugin-gtk.sh"; do
         [ -f "$script" ] || continue
         sed -i -E 's/^([[:space:]]*export[[:space:]]+(WEBKIT_EXEC_PATH|WEBKIT_INJECTED_BUNDLE_PATH)=)/# \1/' "$script"
     done
-    echo "  (WEBKIT_EXEC_PATH / WEBKIT_INJECTED_BUNDLE_PATH exports neutralised)"
+    echo "  ($wk_removed removed; WEBKIT_EXEC_PATH / WEBKIT_INJECTED_BUNDLE_PATH neutralised)"
+
+    if ! ldconfig -p 2>/dev/null | grep -q 'libwebkit2gtk-4\.1\.so'; then
+        echo >&2
+        echo "WARNING: this host has no libwebkit2gtk-4.1 installed, so there is" >&2
+        echo "nothing to fall back to and the app will not start. Install it first" >&2
+        echo "(e.g. pacman -S webkit2gtk-4.1 / apt install libwebkit2gtk-4.1-0)." >&2
+    fi
 fi
 
 if [ "$STRIP_GTK" = false ]; then
