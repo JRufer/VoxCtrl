@@ -72,30 +72,19 @@ pub fn run() {
         // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 
-        // WebKitGTK's accelerated compositor treats a layer-promoted element
-        // (anything animating `opacity`/`transform`, which is every overlay
-        // load/unload animation) as opaque while it owns its own GPU texture,
-        // then blends that texture back into the transparent X11 window with
-        // the wrong alpha — the overlay reads as a blurry, semi-opaque smear
-        // for the duration of the transition instead of fading through real
-        // transparency. It only shows up mid-animation because a static frame
-        // never gets layer-promoted in the first place.
-        //
-        // The bug lives in the accelerated-compositing path itself, so how
-        // visible it is depends on exactly which libwebkit2gtk the AppImage
-        // ends up running: build_appimage.sh and the release workflow both
-        // strip the *graphics* libraries (libEGL/libGL/libgbm/libdrm/...) so
-        // the AppImage falls through to the host's copies, but they
-        // deliberately bundle libwebkit2gtk itself (see the "Bundle WebKitGTK
-        // 4.1 helper processes" step in both) — a WebKitGTK process needs its
-        // own helper binaries at an exact relative path, so it can't be
-        // host-first like the graphics libs. That means a locally-built
-        // AppImage ships whatever libwebkit2gtk-4.1-dev the developer's own
-        // distro has (new enough, apparently, to not hit this), while the CI
-        // build ships ubuntu-22.04's apt version — which does. Forcing WebKit
-        // off the accelerated-compositing path entirely (software/Cairo
-        // rendering throughout) sidesteps the bug regardless of which
-        // WebKitGTK version is bundled, so it fixes both.
+        // Originally set on the theory that WebKitGTK's accelerated
+        // compositor was blending layer-promoted elements (anything
+        // animating `opacity`/`transform`, i.e. every overlay load/unload
+        // transition) against the transparent window with the wrong alpha.
+        // Confirmed on a live KDE/KWin system that this alone does NOT fix
+        // the "overlay closes into a blurry smear" symptom — see
+        // `window::open_overlay_window`'s `set_override_redirect` comment
+        // for the actual cause (the window manager's own close-window
+        // animation, unrelated to what WebKit renders inside the window).
+        // Left in place as a harmless, and possibly still relevant on older
+        // libwebkit2gtk, no-op: on WebKitGTK builds new enough to have
+        // dropped the legacy software/Cairo rendering path (2.40+), setting
+        // this does nothing at all.
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
 
         // The dictation overlay needs a window that can set its own absolute
