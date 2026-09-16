@@ -659,7 +659,6 @@ pub fn get_custom_overlays_dir() -> String {
 #[tauri::command]
 pub fn repaint_overlay_window(app: tauri::AppHandle) {
     crate::window::nudge_overlay_repaint(&app);
-    crate::window::flush_compositor_frame(&app);
 }
 
 /// The resolved, absolute path to the shared voice-cloning reference-clip

@@ -243,12 +243,27 @@ pub fn open_overlay_window(
 
     // Keeps the window out of focus grabs / alt-tab at the window-manager
     // level, on top of `skip_taskbar` + `focused(false)` above.
+    //
+    // `Utility` rather than `Notification`: the app is forced through
+    // XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11` override — this
+    // window's absolute positioning and always-on-top depend on it), and
+    // KWin's X11 compositing path gives `_NET_WM_WINDOW_TYPE_NOTIFICATION`
+    // windows different, short-lived-oriented repaint handling. Reported
+    // symptom this is meant to fix: every overlay style, on every keybind
+    // release, freezes solid on screen — sometimes clearing when another
+    // application is launched, never on its own, only fixed by quitting the
+    // app entirely — despite the overlay's own content genuinely finishing
+    // its unmount (confirmed: the next activation correctly animates in
+    // over the stuck frame). `Utility` is KWin's ordinary type for a
+    // persistent always-on-top panel and goes through the normal
+    // compositing/repaint path, while still being excluded from alt-tab in
+    // every WM this has been checked against.
     #[cfg(target_os = "linux")]
     {
         use gtk::prelude::*;
         if let Ok(gtk_window) = window.gtk_window() {
             if let Some(gdk_window) = gtk_window.window() {
-                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Notification);
+                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
             }
         }
     }
@@ -317,32 +332,6 @@ pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
             let _ = window.set_size(size);
         }
     }
-}
-
-/// Reproduce, on demand, the one thing confirmed to actually clear a frozen
-/// overlay: launching a brand new application — not restoring an already-
-/// running one, which does nothing.
-///
-/// That rules out frame-callback throttling scoped to the overlay's own
-/// surface (a same-process fix — moving or resizing the overlay window
-/// itself, or even mapping an *extra* window from within VoxCtrl's own
-/// already-running process — would have been enough to test that, and none
-/// of them worked). "Only a genuinely new app launch helps" instead points
-/// at something scoped to the client *connection*: nothing the
-/// already-connected VoxCtrl process does to its own windows can unstick
-/// it, only a fresh process connecting to the Wayland display from
-/// scratch. See `run_overlay_flush_helper` in `main.rs` for what that
-/// process actually does.
-pub fn flush_compositor_frame(_app: &tauri::AppHandle) {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let _ = std::process::Command::new(exe)
-        .arg("--overlay-flush-helper")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
 }
 
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
