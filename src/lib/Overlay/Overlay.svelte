@@ -68,6 +68,14 @@
       animateActive = false;
       timeoutId = setTimeout(() => {
         renderOverlay = false;
+        // Same WebKitGTK compositor-flush workaround as the style-switch
+        // effect below: unmounting the DOM node alone doesn't repaint the
+        // transparent overlay window, so a custom overlay's last frame can
+        // stay stuck on screen after the recording/speaking stops.
+        visible = false;
+        setTimeout(() => {
+          visible = true;
+        }, 25);
       }, 450);
     }
     return () => {
