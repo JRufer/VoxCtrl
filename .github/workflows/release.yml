@@ -486,6 +486,13 @@ jobs:
             on Linux, so every frame — animating or not — respects the
             window's real per-pixel transparency.
 
+            This lands on top of 0.5.9's fix for the overlay freezing solid
+            and never closing on some Linux desktops (KDE/Wayland via
+            XWayland) — the overlay window is now created fresh each time
+            there's something to show and destroyed again shortly after
+            going idle, rather than staying mapped for the app's whole
+            session.
+
             ### Notes
 
             The installers are not code-signed yet, so SmartScreen will warn

@@ -245,6 +245,7 @@ pub fn register_command_trigger_target(app_handle: &tauri::AppHandle) {
             if show_overlay {
                 let cmd_name = command_name.to_string();
                 let summary = text_summary.to_string();
+                state.activate_command_overlay(std::time::Duration::from_secs(duration_secs as u64));
                 let _ = app_handle_clone.emit(
                     "command-executed",
                     serde_json::json!({

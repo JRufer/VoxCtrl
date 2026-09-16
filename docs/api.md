@@ -592,12 +592,14 @@ returns the new identifier.
 
 ### Overlay
 
-The overlay window has no explicit show/hide command — it is built once at
-startup (`window::open_overlay_window`) and stays mapped for the app's
-lifetime; its content visibility is driven entirely by the `status-tick` /
-`audio-level` events and `ui.show_overlay` / `tts.response_overlay` /
-`mcp.visual_feedback` config, the same way every consumer of those already
-reacts to them. See the [Overlay UI Guide](./overlays.md).
+The overlay window has no explicit show/hide command — it is created and
+destroyed entirely from the Rust backend (`tray::spawn_status_ticker`, which
+polls the same recording/speaking/MCP-recording state and `ui.show_overlay` /
+`tts.response_overlay` / `mcp.visual_feedback` config that decides everything
+else that reacts to them), not requested by the frontend. Once the window
+exists, its *content* is driven by the `status-tick` / `audio-level` events
+the same way every other consumer of those already reacts to them. See the
+[Overlay UI Guide](./overlays.md).
 
 #### `get_custom_overlays() → CustomOverlayInfo[]`
 Lists every user-authored custom overlay folder under the local overlays

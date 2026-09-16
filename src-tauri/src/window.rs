@@ -221,9 +221,6 @@ pub fn open_overlay_window(
         .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
-    // Mapped once: the `/overlay` route renders nothing visible while idle,
-    // so staying mapped avoids Wayland/XWayland re-map-steals-focus issues.
-    //
     // This has to happen *before* the calls below: on Linux, tao's
     // `set_ignore_cursor_events` reaches into the GTK window's underlying
     // GdkWindow and unwraps it unconditionally
@@ -243,12 +240,27 @@ pub fn open_overlay_window(
 
     // Keeps the window out of focus grabs / alt-tab at the window-manager
     // level, on top of `skip_taskbar` + `focused(false)` above.
+    //
+    // `Utility` rather than `Notification`: the app is forced through
+    // XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11` override — this
+    // window's absolute positioning and always-on-top depend on it), and
+    // KWin's X11 compositing path gives `_NET_WM_WINDOW_TYPE_NOTIFICATION`
+    // windows different, short-lived-oriented repaint handling. Reported
+    // symptom this is meant to fix: every overlay style, on every keybind
+    // release, freezes solid on screen — sometimes clearing when another
+    // application is launched, never on its own, only fixed by quitting the
+    // app entirely — despite the overlay's own content genuinely finishing
+    // its unmount (confirmed: the next activation correctly animates in
+    // over the stuck frame). `Utility` is KWin's ordinary type for a
+    // persistent always-on-top panel and goes through the normal
+    // compositing/repaint path, while still being excluded from alt-tab in
+    // every WM this has been checked against.
     #[cfg(target_os = "linux")]
     {
         use gtk::prelude::*;
         if let Ok(gtk_window) = window.gtk_window() {
             if let Some(gdk_window) = gtk_window.window() {
-                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Notification);
+                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
             }
         }
     }
@@ -293,6 +305,30 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
         let _ = window.set_always_on_top(false);
         let _ = window.set_always_on_top(true);
+    }
+}
+
+/// Actually destroy the overlay window when it has nothing to show.
+///
+/// Every attempt at forcing WebKitGTK/the compositor to repaint the window
+/// back to blank instead of destroying it — hiding it (with or without a
+/// forced repaint nudge first, gated by a generation counter, a lock, or
+/// both), moving it, resizing it, mapping an extra window from this
+/// process, spawning a genuinely separate process, changing its X11
+/// window-type hint — failed to reliably clear a stuck frame on the
+/// reported system (KDE, XWayland): a stale frame WebKitGTK had already
+/// painted kept reappearing the instant the window was shown again, no
+/// matter how the repaint was requested or how tightly the request
+/// ordering was controlled. A destroyed window has nothing for the
+/// compositor to display, stale buffer or not, which sidesteps the
+/// question entirely — see `tray::spawn_status_ticker`'s doc comment for
+/// why this is called from there rather than from the overlay's own
+/// frontend: that was tried first and is a dead end, since destroying the
+/// window that's running the code deciding when to bring it back also
+/// destroys that code.
+pub fn hide_overlay(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        let _ = window.close();
     }
 }
 

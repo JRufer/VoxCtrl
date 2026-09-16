@@ -55,6 +55,13 @@
     if (isRecordingOrSpeaking) {
       if (timeoutId) clearTimeout(timeoutId);
       renderOverlay = true;
+      // The overlay window itself is created/destroyed by the Rust backend
+      // (tray::spawn_status_ticker), not requested from here: this
+      // component's own code stops running the instant the window that
+      // hosts it is destroyed, so it can't be the thing that asks for the
+      // window to come back next time — nothing would be left to notice
+      // the next activation. This effect only drives the *content* inside
+      // an already-live window.
       if (animateTimeoutId) clearTimeout(animateTimeoutId);
       animateTimeoutId = setTimeout(() => {
         animateActive = true;
@@ -68,14 +75,6 @@
       animateActive = false;
       timeoutId = setTimeout(() => {
         renderOverlay = false;
-        // Same WebKitGTK compositor-flush workaround as the style-switch
-        // effect below: unmounting the DOM node alone doesn't repaint the
-        // transparent overlay window, so a custom overlay's last frame can
-        // stay stuck on screen after the recording/speaking stops.
-        visible = false;
-        setTimeout(() => {
-          visible = true;
-        }, 25);
       }, 450);
     }
     return () => {

@@ -21,6 +21,12 @@ pub struct AppState {
     pub overlay_enabled: Arc<AtomicBool>,
     /// True while MCP server is actively recording/listening to the microphone
     pub mcp_recording: Arc<AtomicBool>,
+    /// When the command-executed overlay pill should stop showing, if it's
+    /// currently active. Set by `services::register_command_trigger_target`
+    /// and read by `tray::spawn_status_ticker`'s overlay-visibility decision —
+    /// see that function's doc comment for why this needs to live in shared
+    /// state rather than only being a frontend timer.
+    pub command_overlay_until: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
     /// True while the user is recording a new keybind in the settings UI.
     /// Any hotkey gesture event received while this is true is silently dropped,
     /// so the user cannot accidentally trigger dictation while pressing keys
@@ -229,6 +235,19 @@ impl AppState {
 
     pub fn set_overlay_enabled(&self, v: bool) {
         self.overlay_enabled.store(v, Ordering::SeqCst);
+    }
+
+    /// Mark the command-executed overlay pill active for `duration` from now.
+    pub fn activate_command_overlay(&self, duration: std::time::Duration) {
+        *self.command_overlay_until.lock().unwrap() = Some(std::time::Instant::now() + duration);
+    }
+
+    /// Whether the command-executed overlay pill should still be showing.
+    pub fn is_command_overlay_active(&self) -> bool {
+        self.command_overlay_until
+            .lock()
+            .unwrap()
+            .is_some_and(|until| std::time::Instant::now() < until)
     }
 
     /// Claim the right to run an update, returning false if one is already
