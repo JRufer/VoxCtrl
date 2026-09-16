@@ -129,14 +129,18 @@ report_bundle() {
     echo "  Bundled graphics/UI libraries (these differ by build host):"
     local found=0
     for name in "${INTEREST[@]}"; do
-        local hit
-        hit=$(awk -F'\t' -v n="$name" '$1 == n {print $2; exit}' "$inv")
-        if [ -n "$hit" ]; then
-            printf '    %-24s %s\n' "$name" "$hit"
+        # Prefix match, not equality: the stem of libwebkit2gtk-4.1.so.0 is
+        # "libwebkit2gtk-4.1" and of libpango-1.0.so.0 is "libpango-1.0", so
+        # matching on equality silently reports these as absent — which is
+        # exactly how an earlier run of this script made it look as though
+        # WebKit were bundled when it is not.
+        while IFS=$'\t' read -r stem version; do
+            [ -n "$stem" ] || continue
+            printf '    %-24s %s\n' "$stem" "$version"
             found=1
-        fi
+        done < <(awk -F'\t' -v n="$name" 'index($1, n) == 1 {print $1 "\t" $2}' "$inv" | sort -u)
     done
-    [ "$found" -eq 0 ] && echo "    (none found)"
+    [ "$found" -eq 0 ] && echo "    (none found — resolved from the host)"
     echo
     echo "  Stripped from the bundle — resolving to the host at runtime:"
     for name in "${HOST_FIRST[@]}"; do
