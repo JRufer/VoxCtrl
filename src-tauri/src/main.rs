@@ -24,14 +24,12 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         init_x11_threads();
-        // Disable DMA-BUF renderer to fix black transparent background on Nvidia/proprietary drivers.
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        // Kept as a harmless (possibly no-op on newer WebKitGTK) belt-and-
-        // suspenders alongside the real fix for the overlay's closing-
-        // animation smear, which turned out to be the window manager's own
-        // close effect, not WebKit's compositor. See lib.rs::run() and
-        // window::open_overlay_window's set_override_redirect comment.
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        // Graphics-stack defaults, applied here because GTK, GDK and WebKit
+        // each read this environment once, when they initialise — which is
+        // after this point and before anything else the app does. Includes
+        // the fix for the overlay's closing animation smearing on a released
+        // AppImage; see voxctrl_app_lib::render_env for the reasoning.
+        voxctrl_app_lib::render_env::apply();
     }
 
     let args: Vec<String> = std::env::args().collect();

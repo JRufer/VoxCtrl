@@ -221,47 +221,6 @@ pub fn open_overlay_window(
         .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
-    // Take the window out of window-manager management entirely, before it
-    // is ever mapped (X11/GDK only honour this while the window is unmapped,
-    // so it has to happen ahead of `show()` below; `realize()` creates the
-    // underlying GdkWindow without mapping it, same precondition `show()`
-    // itself needs — see the next comment).
-    //
-    // The overlay is created and destroyed once per dictation (see
-    // `tray.rs`'s `spawn_status_ticker`), which makes every recording a
-    // "window close" as far as the window manager is concerned. Compositing
-    // WMs generally animate that: KWin's default close effect freezes the
-    // window's last frame, shrinks and blurs it, then fades it out — a
-    // fixed-duration effect layered on top of whatever the overlay's own CSS
-    // close transition already did, which is what actually produced the
-    // "blurry smear that lingers, then blinks away" symptom (confirmed:
-    // its length matched `OVERLAY_HIDE_DEBOUNCE` below, not the ~450ms the
-    // frontend's own close transition takes). Neither the `Utility` type
-    // hint below nor forcing WebKit's software rendering path
-    // (`WEBKIT_DISABLE_COMPOSITING_MODE` in `lib.rs`) touch this, because
-    // it isn't a content-rendering bug — it's the window manager animating
-    // its own close event for a window it manages, independent of what was
-    // rendered inside it. `set_override_redirect` removes it from window
-    // management altogether — the same mechanism tooltips and popup menus
-    // use to skip the window manager entirely and go straight through to
-    // X11 compositing: no management, no close effect. The window still
-    // needs to end up on top of everything else: unlike a WM-managed always-on-top window,
-    // an override-redirect window gets that for free from X11's stacking
-    // order (newly mapped windows land at the top), so this is a net
-    // simplification, not a trade-off. `always_on_top`/`reassert_overlay_topmost`
-    // are left in place; they become no-ops for an unmanaged window rather
-    // than doing anything harmful.
-    #[cfg(target_os = "linux")]
-    {
-        use gtk::prelude::*;
-        if let Ok(gtk_window) = window.gtk_window() {
-            gtk_window.realize();
-            if let Some(gdk_window) = gtk_window.window() {
-                gdk_window.set_override_redirect(true);
-            }
-        }
-    }
-
     // This has to happen *before* the calls below: on Linux, tao's
     // `set_ignore_cursor_events` reaches into the GTK window's underlying
     // GdkWindow and unwraps it unconditionally
@@ -269,8 +228,7 @@ pub fn open_overlay_window(
     // That GdkWindow doesn't exist until the widget is realized, which GTK
     // does synchronously inside `show()` — calling it any earlier panics
     // (and, being inside a GTK callback, aborts the whole process instead of
-    // unwinding). The explicit `realize()` above already satisfies this, so
-    // `show()` here only has to map the (already realized) window.
+    // unwinding).
     if let Err(e) = window.show() {
         tracing::error!("Failed to show overlay window: {:?}", e);
     }

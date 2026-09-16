@@ -472,19 +472,34 @@ jobs:
           body: |
             ## What's new in 0.6.0
 
-            **Fixed: the dictation overlay turned into a blurry, semi-opaque
-            smear on Linux while it animated open or closed.**
+            **Fixed: on the downloadable AppImage, an overlay that animated
+            as it closed left a blurry, opaque smear on screen where it had
+            been, until it blinked away.**
 
-            WebKitGTK's accelerated compositor promotes any element animating
-            `opacity`/`transform` — which is every one of the overlay's
-            load/unload transitions — to its own GPU-backed layer, then blends
-            that layer back onto the transparent window with the wrong alpha.
-            A static frame never gets layer-promoted, which is why the overlay
-            looked fine at rest and only smeared mid-animation.
+            The AppImage ships a deliberately split graphics stack. The
+            system's own Mesa libraries are used at runtime (bundling them
+            breaks rendering on newer desktops than the one that built the
+            release), while WebKitGTK, GTK and Cairo have to stay bundled,
+            because WebKit's helper processes need to sit at a fixed path
+            inside the bundle.
 
-            VoxCtrl now forces WebKitGTK off the accelerated-compositing path
-            on Linux, so every frame — animating or not — respects the
-            window's real per-pixel transparency.
+            Those two halves have to agree about one thing: the surface
+            WebKit draws into when a CSS transition promotes the overlay onto
+            its own compositing layer. When they disagreed, that surface came
+            back with no usable alpha channel — so anything static rendered
+            with correct transparency, and anything mid-animation turned into
+            an opaque smear of its last frame. It only ever showed up on
+            released builds, because a locally-built AppImage bundles the
+            build machine's own WebKitGTK, which already matches its Mesa.
+
+            Inside the AppImage the webview now composites through Mesa's
+            software rasterizer, which honours alpha identically on every
+            host, GPU and driver. It is limited to the overlay and the
+            settings window, and does not touch GPU speech inference.
+
+            Every graphics setting VoxCtrl applies on Linux is now a
+            *default* rather than a fixed value, so any of them can be
+            overridden from the shell without needing a rebuild.
 
             This lands on top of 0.5.9's fix for the overlay freezing solid
             and never closing on some Linux desktops (KDE/Wayland via

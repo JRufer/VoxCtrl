@@ -19,6 +19,7 @@ mod installer;
 mod host_env;
 mod mint_shortcuts;
 mod pipeline;
+pub mod render_env;
 mod services;
 mod startup_log;
 mod state;
@@ -69,23 +70,12 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        // Workaround for WebKitGTK blank window/rendering issues due to DMABUF creation failures
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-
-        // Originally set on the theory that WebKitGTK's accelerated
-        // compositor was blending layer-promoted elements (anything
-        // animating `opacity`/`transform`, i.e. every overlay load/unload
-        // transition) against the transparent window with the wrong alpha.
-        // Confirmed on a live KDE/KWin system that this alone does NOT fix
-        // the "overlay closes into a blurry smear" symptom — see
-        // `window::open_overlay_window`'s `set_override_redirect` comment
-        // for the actual cause (the window manager's own close-window
-        // animation, unrelated to what WebKit renders inside the window).
-        // Left in place as a harmless, and possibly still relevant on older
-        // libwebkit2gtk, no-op: on WebKitGTK builds new enough to have
-        // dropped the legacy software/Cairo rendering path (2.40+), setting
-        // this does nothing at all.
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        // Graphics-stack defaults, including the one that keeps the
+        // overlay's closing animation from smearing on a released AppImage.
+        // See `render_env`'s module documentation — `main()` applies these
+        // first, before anything at all has run; this covers the paths that
+        // reach `run()` without going through it.
+        crate::render_env::apply();
 
         // The dictation overlay needs a window that can set its own absolute
         // position and reliably stay above other windows. A native Wayland
