@@ -26,9 +26,8 @@ fn main() {
         init_x11_threads();
         // Graphics-stack defaults, applied here because GTK, GDK and WebKit
         // each read this environment once, when they initialise — which is
-        // after this point and before anything else the app does. Includes
-        // the fix for the overlay's closing animation smearing on a released
-        // AppImage; see voxctrl_app_lib::render_env for the reasoning.
+        // after this point and before anything else the app does. See
+        // voxctrl_app_lib::render_env.
         voxctrl_app_lib::render_env::apply();
     }
 

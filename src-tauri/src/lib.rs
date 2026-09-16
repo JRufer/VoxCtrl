@@ -70,11 +70,9 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        // Graphics-stack defaults, including the one that keeps the
-        // overlay's closing animation from smearing on a released AppImage.
-        // See `render_env`'s module documentation — `main()` applies these
-        // first, before anything at all has run; this covers the paths that
-        // reach `run()` without going through it.
+        // Graphics-stack defaults. `main()` applies these first, before
+        // anything at all has run; this covers the paths that reach `run()`
+        // without going through it. See `render_env`.
         crate::render_env::apply();
 
         // The dictation overlay needs a window that can set its own absolute
