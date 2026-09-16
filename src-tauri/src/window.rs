@@ -323,9 +323,36 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
 /// at window creation and re-applied by `show_overlay` below, which should
 /// cover it; if a focus-stealing regression does show up, that's the
 /// combination to revisit.
+///
+/// Unmapping alone isn't enough, though: WebKitGTK here never repaints this
+/// window's *buffer* on its own — confirmed across this whole investigation,
+/// this is the same root cause the earlier repaint attempts all ran into.
+/// Unmounting the DOM doesn't clear what's already composited, so hiding
+/// straight after leaves the last visible frame sitting in the buffer, and
+/// showing the window again later displays that stale frame instantly,
+/// with the next activation's content painting in over top of it — every
+/// style's leftover stacking on the next since none of them ever actually
+/// got cleared. Callers should await `flush_overlay_repaint` (which gives
+/// WebKit's render pipeline a moment to actually process the repaint) right
+/// before this, so the buffer is genuinely blank by the time it unmaps —
+/// see `commands::hide_overlay_window`.
 pub fn hide_overlay(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
         let _ = window.hide();
+    }
+}
+
+/// Force WebKitGTK to actually re-layout and repaint the overlay's page,
+/// rather than just recomposite whatever it already had. A size change
+/// invalidates the webview's layout, which forces a real repaint against
+/// the current DOM — unlike a window move, which only asks the compositor
+/// to recomposite the same stale buffer WebKit already submitted.
+pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        if let Ok(size) = window.inner_size() {
+            let _ = window.set_size(tauri::PhysicalSize::new(size.width.saturating_sub(1), size.height));
+            let _ = window.set_size(size);
+        }
     }
 }
 

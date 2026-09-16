@@ -652,11 +652,19 @@ pub fn get_custom_overlays_dir() -> String {
     crate::custom_overlays::overlays_dir().display().to_string()
 }
 
-/// Actually unmap the overlay window once it has nothing left to show.
-/// See `window::hide_overlay` — called by the frontend right after it
-/// unmounts the overlay's content, once its outro animation finishes.
+/// Actually unmap the overlay window once it has nothing left to show. See
+/// `window::hide_overlay` — called by the frontend right after it unmounts
+/// the overlay's content, once its outro animation finishes.
+///
+/// Nudges a real repaint first and waits a beat for WebKit's render
+/// pipeline to actually process it (see `window::hide_overlay`'s doc
+/// comment for why: without this, the window unmaps still holding
+/// whatever was last visibly composited, and each new activation's content
+/// visibly stacks on top of that leftover instead of starting blank).
 #[tauri::command]
-pub fn hide_overlay_window(app: tauri::AppHandle) {
+pub async fn hide_overlay_window(app: tauri::AppHandle) {
+    crate::window::nudge_overlay_repaint(&app);
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     crate::window::hide_overlay(&app);
 }
 

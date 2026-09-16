@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { recording, speaking, mcpRecording, status } from "../../stores/status";
@@ -72,14 +72,23 @@
       loadActiveCustomOverlay($config.ui.overlay_style);
     } else {
       animateActive = false;
-      timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(async () => {
         renderOverlay = false;
+        // Wait for the DOM removal above to actually apply before asking
+        // Rust to flush-and-hide: hide_overlay_window forces a repaint of
+        // whatever is currently on the page, so it has to run after the
+        // content is really gone, not just after this line executes.
+        await tick();
         // Actually unmap the window rather than trying to make WebKitGTK
-        // repaint it to blank: forcing a repaint (resizing/moving the
-        // window, mapping an extra window, changing its X11 window-type
-        // hint) was tried and none of it reliably cleared a stuck frame.
-        // An unmapped window has nothing for the compositor to display,
-        // stale buffer or not.
+        // repaint it to blank on its own: forcing a repaint (resizing/
+        // moving the window, mapping an extra window, changing its X11
+        // window-type hint) was tried and none of it reliably cleared a
+        // stuck frame while the window stayed mapped. An unmapped window
+        // has nothing for the compositor to display, stale buffer or not —
+        // but hide_overlay_window still flushes a real repaint first, so
+        // the buffer it unmaps with is blank rather than whatever was last
+        // visible, which otherwise reappears instantly the next time the
+        // window is shown.
         invoke("hide_overlay_window").catch(() => {});
       }, 450);
     }
