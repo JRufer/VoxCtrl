@@ -319,55 +319,30 @@ pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
     }
 }
 
-/// Label of the momentary window `flush_compositor_frame` maps to unstick a
-/// frozen overlay.
-const REPAINT_FLUSH_WINDOW: &str = "overlay-repaint-flush";
-
 /// Reproduce, on demand, the one thing confirmed to actually clear a frozen
-/// overlay: launching any other application, even one that never overlaps
-/// it on screen.
+/// overlay: launching a brand new application — not restoring an already-
+/// running one, which does nothing.
 ///
-/// That points at frame-callback throttling rather than a WebKitGTK paint
-/// bug: Wayland compositors (KWin included) stop sending "frame done"
-/// callbacks to surfaces they consider occluded or inactive, to save power.
-/// If WebKitGTK's renderer waits on that callback before it may present its
-/// next repaint, an already-repainted-but-never-presented frame sits stuck
-/// — which is why `nudge_overlay_repaint` above (resizing the *same*
-/// window) didn't help: the overlay's own surface is exactly the one being
-/// throttled. Mapping any *new* toplevel window is one of the few things
-/// guaranteed to make the compositor run a full restack/repaint pass across
-/// every mapped surface, flushing the stuck one along with it. This maps a
-/// 1x1, off-screen, undecorated window to trigger that pass, then closes it
-/// a beat later, instead of waiting on the user to launch something else.
-pub fn flush_compositor_frame(app: &tauri::AppHandle) {
-    if app.get_webview_window(REPAINT_FLUSH_WINDOW).is_some() {
-        return; // a flush is already in flight
-    }
-    let built = tauri::WebviewWindowBuilder::new(
-        app,
-        REPAINT_FLUSH_WINDOW,
-        tauri::WebviewUrl::App("/overlay".into()),
-    )
-    .inner_size(1.0, 1.0)
-    .position(-10000.0, -10000.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(true)
-    .shadow(false)
-    .skip_taskbar(true)
-    .focused(false)
-    .visible(true)
-    .build();
-
-    if built.is_ok() {
-        let app = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(60));
-            if let Some(w) = app.get_webview_window(REPAINT_FLUSH_WINDOW) {
-                let _ = w.close();
-            }
-        });
-    }
+/// That rules out frame-callback throttling scoped to the overlay's own
+/// surface (a same-process fix — moving or resizing the overlay window
+/// itself, or even mapping an *extra* window from within VoxCtrl's own
+/// already-running process — would have been enough to test that, and none
+/// of them worked). "Only a genuinely new app launch helps" instead points
+/// at something scoped to the client *connection*: nothing the
+/// already-connected VoxCtrl process does to its own windows can unstick
+/// it, only a fresh process connecting to the Wayland display from
+/// scratch. See `run_overlay_flush_helper` in `main.rs` for what that
+/// process actually does.
+pub fn flush_compositor_frame(_app: &tauri::AppHandle) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let _ = std::process::Command::new(exe)
+        .arg("--overlay-flush-helper")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
