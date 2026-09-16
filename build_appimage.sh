@@ -154,6 +154,19 @@ export QT_QPA_PLATFORM=offscreen
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=true
 
+# Baked into the binary and reported by `./VoxCtrl-....AppImage --version`, so
+# a built AppImage can always say which commit it came from. `-dirty` marks a
+# build made with uncommitted changes, which is the normal case when testing a
+# fix before pushing it.
+if command -v git &>/dev/null && git -C "$ROOT_DIR" rev-parse --git-dir &>/dev/null; then
+    VOXCTRL_BUILD_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    if ! git -C "$ROOT_DIR" diff --quiet HEAD 2>/dev/null; then
+        VOXCTRL_BUILD_SHA="${VOXCTRL_BUILD_SHA}-dirty"
+    fi
+    export VOXCTRL_BUILD_SHA
+    info "Build stamp: $VOXCTRL_BUILD_SHA"
+fi
+
 # Check if an NVIDIA GPU is present on the system
 HAS_NVIDIA_GPU=false
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then

@@ -32,6 +32,11 @@ permissions:
 env:
   CARGO_HTTP_MULTIPLEXING: false
   CARGO_HTTP_HTTP2: false
+  # Baked into the binary and reported by `--version`, so any artifact from
+  # this workflow can say exactly which commit produced it. Without it, a
+  # downloaded build cannot be told apart from an earlier one, and a test
+  # against the wrong build reads as a fix that did not work.
+  VOXCTRL_BUILD_SHA: ${{ github.sha }}
   # Where Settings → Bug Report sends a report when the user presses Send.
   #
   # Baked in at build time rather than read from config, so nothing on a user's

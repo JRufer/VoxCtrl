@@ -11,6 +11,15 @@ fn main() {
     // binary via scripts/prepare-sidecar.mjs before Tauri bundles.
     ensure_sidecar_placeholder("voxctrl-llm-sidecar");
 
+    // `VOXCTRL_BUILD_SHA` is baked into the binary by `option_env!` (see
+    // `lib.rs`'s `BUILD_SHA`), which is resolved at compile time — so without
+    // this, a rebuild after the SHA changes would silently keep the old
+    // value. That is precisely the failure this is meant to prevent: an
+    // AppImage that cannot say which commit it was built from led to three
+    // separate rounds of reading results off a build that did not contain the
+    // change being tested.
+    println!("cargo:rerun-if-env-changed=VOXCTRL_BUILD_SHA");
+
     tauri_build::build()
 }
 

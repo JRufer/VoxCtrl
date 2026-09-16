@@ -40,6 +40,27 @@ pub fn run_cli_installer() -> Result<(), String> {
     crate::installer::run_cli_installer()
 }
 
+/// The commit this binary was built from, or `"unknown"` for a build that did
+/// not set `VOXCTRL_BUILD_SHA` (a bare `cargo build`, say).
+///
+/// Set by `.github/workflows/release.yml` and `build_appimage.sh`; see
+/// `build.rs` for why it needs a `rerun-if-env-changed`.
+pub const BUILD_SHA: &str = match option_env!("VOXCTRL_BUILD_SHA") {
+    Some(sha) => sha,
+    None => "unknown",
+};
+
+/// What this build is, as one line: the version, and the commit behind it.
+///
+/// Reported by `--version` and written to the startup log. A packaged build
+/// otherwise has no way to say which source it came from, and answering
+/// "does this build actually contain the fix?" by guessing has repeatedly
+/// produced confident conclusions from builds that predated the change being
+/// tested.
+pub fn version_string() -> String {
+    format!("VoxCtrl {} (build {})", env!("CARGO_PKG_VERSION"), BUILD_SHA)
+}
+
 #[cfg(test)]
 pub mod test_utils {
     use std::sync::{Mutex, OnceLock};
@@ -153,6 +174,12 @@ pub fn run() {
     } else {
         let _ = registry.try_init();
     }
+
+    // First line in every log and every bug report: which build this is. A
+    // report or a reproduction attempt against an unidentified build has
+    // repeatedly turned out to be against one that predated the change in
+    // question.
+    tracing::info!("{}", version_string());
 
     // Make sure the documented Custom/ overlay example exists — see
     // refresh_bundled_example's doc comment: it never touches Custom/ once
