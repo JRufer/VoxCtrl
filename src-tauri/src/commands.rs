@@ -662,15 +662,24 @@ pub fn get_custom_overlays_dir() -> String {
 /// whatever was last visibly composited, and each new activation's content
 /// visibly stacks on top of that leftover instead of starting blank).
 ///
-/// Bails out early if a newer show/hide request has landed while this one
-/// was waiting (checked via `window::overlay_generation_current` after the
-/// await): this flow spans ~80ms, long enough for a fast reactivation to
-/// fire `show_overlay_window` while it's still in flight — without this
-/// check, whichever one happened to finish last would win arbitrarily,
-/// sometimes hiding a window the newer activation just showed.
+/// Bumps the generation counter, then acquires `window::overlay_transition_lock`
+/// and re-checks it before touching the window at all, and again before the
+/// final unmap. The lock is what actually matters: a bare generation check
+/// still let a superseded hide's `nudge_overlay_repaint` fire concurrently
+/// with a newer show — nothing gated the nudge itself, only the unmap after
+/// it — so a stale hide could resize the window while it was already
+/// showing a newer activation's content. Holding the lock for the whole
+/// transition means at most one of show/hide is ever actually touching the
+/// window at a time; the generation check on top of that means a
+/// superseded request skips touching it altogether rather than just
+/// queuing behind the one that supersedes it.
 #[tauri::command]
 pub async fn hide_overlay_window(app: tauri::AppHandle) {
     let generation = crate::window::bump_overlay_generation();
+    let _guard = crate::window::overlay_transition_lock().lock().await;
+    if !crate::window::overlay_generation_current(generation) {
+        return;
+    }
 
     crate::window::nudge_overlay_repaint(&app);
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
@@ -684,8 +693,22 @@ pub async fn hide_overlay_window(app: tauri::AppHandle) {
 /// Re-map the overlay window before it has something to show again. See
 /// `window::show_overlay` — called by the frontend the moment it has
 /// something to render, counterpart to `hide_overlay_window` above.
+///
+/// Goes through the same generation-bump + `overlay_transition_lock` dance
+/// as `hide_overlay_window` (see its doc comment): waiting for the lock
+/// means this can't run concurrently with an in-flight hide's repaint
+/// nudge, and the generation re-check means a show superseded by an even
+/// newer request while it was waiting skips touching the window instead of
+/// showing it only for the newer request to immediately act on a stale
+/// view of things.
 #[tauri::command]
-pub fn show_overlay_window(app: tauri::AppHandle) {
+pub async fn show_overlay_window(app: tauri::AppHandle) {
+    let generation = crate::window::bump_overlay_generation();
+    let _guard = crate::window::overlay_transition_lock().lock().await;
+    if !crate::window::overlay_generation_current(generation) {
+        return;
+    }
+
     crate::window::show_overlay(&app);
 }
 

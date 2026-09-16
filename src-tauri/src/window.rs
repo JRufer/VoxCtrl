@@ -18,6 +18,19 @@ static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 /// requested" win instead.
 static OVERLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+/// Serializes overlay show/hide transitions so at most one is ever actually
+/// touching the window at a time. The generation counter alone still let a
+/// stale hide's repaint nudge run concurrently with a newer show — nothing
+/// stopped `nudge_overlay_repaint` itself from firing after a fresher
+/// request had already re-shown the window with new content, since the
+/// generation check only gated the final unmap, not the nudge before it.
+/// Holding this for a transition's whole duration, and re-checking the
+/// generation immediately after acquiring it, closes that gap: a
+/// superseded request either finds the counter already stale and no-ops
+/// before touching the window at all, or blocks until the one ahead of it
+/// (which does hold a still-current generation) finishes first.
+static OVERLAY_TRANSITION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Label of the first-run setup window.
 pub const SETUP_WINDOW: &str = "udev-warning";
 
@@ -380,6 +393,13 @@ pub fn bump_overlay_generation() -> u64 {
 /// has superseded the caller's in-flight transition.
 pub fn overlay_generation_current(expected: u64) -> bool {
     OVERLAY_GENERATION.load(Ordering::SeqCst) == expected
+}
+
+/// The lock every show/hide transition holds for its whole duration — see
+/// `OVERLAY_TRANSITION_LOCK`'s doc comment for why a generation check alone
+/// isn't enough.
+pub fn overlay_transition_lock() -> &'static tokio::sync::Mutex<()> {
+    &OVERLAY_TRANSITION_LOCK
 }
 
 /// Re-map the overlay window before it has something to show again.
