@@ -221,14 +221,58 @@ pub fn open_overlay_window(
         .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
-    // This has to happen *before* the calls below: on Linux, tao's
-    // `set_ignore_cursor_events` reaches into the GTK window's underlying
-    // GdkWindow and unwraps it unconditionally
+    // Everything the window manager reads when deciding how to present a
+    // window has to be set BEFORE the window is mapped. Applied afterwards,
+    // the window is mapped as a default-type window at a position of the
+    // WM's choosing, and the WM then re-evaluates it a moment later — which
+    // on KWin draws a brief black frame around the window's full bounds on
+    // every activation. `realize()` creates the underlying GdkWindow without
+    // mapping it, which is what gives us somewhere to put these first.
+    //
+    // This is only visible because the overlay window is now built fresh for
+    // each dictation and destroyed when it goes idle (see `tray.rs`'s
+    // `spawn_status_ticker`). Built once at startup, as it used to be, the
+    // same re-evaluation happened a single time where nobody was looking.
+    //
+    // The type hint is `Utility` rather than `Notification`: the app is
+    // forced through XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11`
+    // override — this window's absolute positioning and always-on-top depend
+    // on it), and KWin's X11 compositing path gives
+    // `_NET_WM_WINDOW_TYPE_NOTIFICATION` windows different,
+    // short-lived-oriented repaint handling. Reported symptom that was meant
+    // to fix: every overlay style, on every keybind release, freezes solid on
+    // screen — sometimes clearing when another application is launched, never
+    // on its own, only fixed by quitting the app entirely — despite the
+    // overlay's own content genuinely finishing its unmount (confirmed: the
+    // next activation correctly animates in over the stuck frame). `Utility`
+    // is KWin's ordinary type for a persistent always-on-top panel and goes
+    // through the normal compositing/repaint path, while still being excluded
+    // from alt-tab in every WM this has been checked against.
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.realize();
+            if let Some(gdk_window) = gtk_window.window() {
+                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
+            }
+        }
+    }
+
+    // Likewise the position: placed before mapping, the window appears where
+    // it belongs instead of being put somewhere by the WM and moved after the
+    // fact. It is applied again below, since a WM is free to place a window
+    // where it likes regardless of what was asked for before the map.
+    reposition_overlay_inner(&window, anchor, monitor_pref);
+
+    // On Linux, tao's `set_ignore_cursor_events` reaches into the GTK
+    // window's underlying GdkWindow and unwraps it unconditionally
     // (tao/src/platform_impl/linux/event_loop.rs, WindowRequest::CursorIgnoreEvents).
-    // That GdkWindow doesn't exist until the widget is realized, which GTK
-    // does synchronously inside `show()` — calling it any earlier panics
-    // (and, being inside a GTK callback, aborts the whole process instead of
-    // unwinding).
+    // That GdkWindow does not exist until the widget is realized, so it has
+    // to come after the block above (which realizes it explicitly) or after
+    // `show()` (which realizes it as a side effect). Calling it any earlier
+    // panics — and, being inside a GTK callback, aborts the whole process
+    // instead of unwinding.
     if let Err(e) = window.show() {
         tracing::error!("Failed to show overlay window: {:?}", e);
     }
@@ -236,33 +280,6 @@ pub fn open_overlay_window(
     // Click-through: mouse events pass to whatever is beneath the overlay.
     if let Err(e) = window.set_ignore_cursor_events(true) {
         tracing::warn!("Failed to make overlay window click-through: {:?}", e);
-    }
-
-    // Keeps the window out of focus grabs / alt-tab at the window-manager
-    // level, on top of `skip_taskbar` + `focused(false)` above.
-    //
-    // `Utility` rather than `Notification`: the app is forced through
-    // XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11` override — this
-    // window's absolute positioning and always-on-top depend on it), and
-    // KWin's X11 compositing path gives `_NET_WM_WINDOW_TYPE_NOTIFICATION`
-    // windows different, short-lived-oriented repaint handling. Reported
-    // symptom this is meant to fix: every overlay style, on every keybind
-    // release, freezes solid on screen — sometimes clearing when another
-    // application is launched, never on its own, only fixed by quitting the
-    // app entirely — despite the overlay's own content genuinely finishing
-    // its unmount (confirmed: the next activation correctly animates in
-    // over the stuck frame). `Utility` is KWin's ordinary type for a
-    // persistent always-on-top panel and goes through the normal
-    // compositing/repaint path, while still being excluded from alt-tab in
-    // every WM this has been checked against.
-    #[cfg(target_os = "linux")]
-    {
-        use gtk::prelude::*;
-        if let Ok(gtk_window) = window.gtk_window() {
-            if let Some(gdk_window) = gtk_window.window() {
-                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
-            }
-        }
     }
 
     reposition_overlay_inner(&window, anchor, monitor_pref);
