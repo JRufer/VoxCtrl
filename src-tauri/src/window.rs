@@ -318,48 +318,60 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     }
 }
 
-/// Actually destroy the overlay window when it has nothing to show, rather
-/// than hiding it.
+/// Actually unmap the overlay window when it has nothing to show.
 ///
-/// Hiding (unmap without destroy) was tried first and fixed the original
-/// freeze, but WebKitGTK here never repaints this window's *buffer* on its
-/// own — confirmed repeatedly across this whole investigation — so a
-/// hidden-then-reshown window kept displaying whatever was last visibly
-/// composited, with the new activation's content painting in over top of
-/// it. A flush-before-hide nudge (resize the window, wait ~80ms, then
-/// unmap) helped but wasn't reliable under fast reactivation — apparently
-/// not a timing shortfall so much as WebKitGTK's render pipeline being
-/// arbitrarily slower than that under load here, since it took a full ~10s
-/// idle gap between activations, not a bigger fixed delay, to reliably
-/// avoid it.
+/// Every attempt at forcing WebKitGTK/the compositor to repaint the window
+/// back to blank instead of unmapping it — moving it, resizing it, mapping
+/// an extra window from this process, spawning a genuinely separate
+/// process, changing its X11 window-type hint — failed to reliably clear a
+/// stuck frame on the reported system (KDE, XWayland). None of that matters
+/// once the window is actually withdrawn: an unmapped window has nothing
+/// for the compositor to display, stale buffer or not. This was avoided
+/// originally over a suspected Wayland/XWayland re-map-steals-focus issue,
+/// but that was never confirmed against this app's actual flags —
+/// `skip_taskbar(true)` + `focused(false)` + click-through are already set
+/// at window creation and re-applied by `show_overlay` below, which should
+/// cover it; if a focus-stealing regression does show up, that's the
+/// combination to revisit.
 ///
-/// Destroying the window sidesteps the whole question: a freshly created
-/// `WebviewWindow` has never had anything painted into it, so there is no
-/// stale buffer to flush or wait out. `open_overlay_window` (called by
-/// `show_overlay` below) already handles full recreation — click-through,
-/// the X11 type hint, positioning — since it already needs to build the
-/// window from scratch on first launch.
-///
-/// Every attempt at avoiding a full unmap — resizing, moving, mapping an
-/// extra window, spawning a separate process, changing the X11 window-type
-/// hint — failed to reliably clear a stuck frame on the reported system
-/// (KDE, XWayland), which is why this goes all the way to destroying the
-/// window rather than something lighter. `skip_taskbar(true)` +
-/// `focused(false)` + click-through, re-applied on every recreation, cover
-/// the focus-stealing concern that originally kept this window
-/// permanently mapped.
+/// Unmapping alone isn't enough, though: WebKitGTK here never repaints this
+/// window's *buffer* on its own — confirmed across this whole investigation,
+/// this is the same root cause the earlier repaint attempts all ran into.
+/// Unmounting the DOM doesn't clear what's already composited, so hiding
+/// straight after leaves the last visible frame sitting in the buffer, and
+/// showing the window again later displays that stale frame instantly,
+/// with the next activation's content painting in over top of it — every
+/// style's leftover stacking on the next since none of them ever actually
+/// got cleared. Callers should await `flush_overlay_repaint` (which gives
+/// WebKit's render pipeline a moment to actually process the repaint) right
+/// before this, so the buffer is genuinely blank by the time it unmaps —
+/// see `commands::hide_overlay_window`.
 pub fn hide_overlay(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        let _ = window.close();
+        let _ = window.hide();
+    }
+}
+
+/// Force WebKitGTK to actually re-layout and repaint the overlay's page,
+/// rather than just recomposite whatever it already had. A size change
+/// invalidates the webview's layout, which forces a real repaint against
+/// the current DOM — unlike a window move, which only asks the compositor
+/// to recomposite the same stale buffer WebKit already submitted.
+pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        if let Ok(size) = window.inner_size() {
+            let _ = window.set_size(tauri::PhysicalSize::new(size.width.saturating_sub(1), size.height));
+            let _ = window.set_size(size);
+        }
     }
 }
 
 /// Bump `OVERLAY_GENERATION` and return the new value. Called at the start
-/// of `show_overlay` and of every `hide_overlay_window` request, so a show
-/// that lands while a previous hide request is still being processed (or
-/// vice versa) can tell it's been superseded and back off instead of
-/// racing it — only the most recently requested transition ever actually
-/// touches the window.
+/// of `show_overlay` and of every `hide_overlay_window` request: showing
+/// invalidates any hide still mid-flight (so it backs off instead of
+/// hiding a window a newer activation just showed), and each new hide
+/// request invalidates whichever one came before it, so only the most
+/// recently requested transition ever actually touches the window.
 pub fn bump_overlay_generation() -> u64 {
     OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
 }
@@ -368,6 +380,17 @@ pub fn bump_overlay_generation() -> u64 {
 /// has superseded the caller's in-flight transition.
 pub fn overlay_generation_current(expected: u64) -> bool {
     OVERLAY_GENERATION.load(Ordering::SeqCst) == expected
+}
+
+/// Re-map the overlay window before it has something to show again.
+/// Counterpart to `hide_overlay`. Re-asserts always-on-top since window
+/// managers don't reliably remember stacking level across an unmap/remap.
+pub fn show_overlay(app: &tauri::AppHandle) {
+    bump_overlay_generation();
+    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
+        let _ = window.show();
+    }
+    reassert_overlay_topmost(app);
 }
 
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
