@@ -319,6 +319,57 @@ pub fn nudge_overlay_repaint(app: &tauri::AppHandle) {
     }
 }
 
+/// Label of the momentary window `flush_compositor_frame` maps to unstick a
+/// frozen overlay.
+const REPAINT_FLUSH_WINDOW: &str = "overlay-repaint-flush";
+
+/// Reproduce, on demand, the one thing confirmed to actually clear a frozen
+/// overlay: launching any other application, even one that never overlaps
+/// it on screen.
+///
+/// That points at frame-callback throttling rather than a WebKitGTK paint
+/// bug: Wayland compositors (KWin included) stop sending "frame done"
+/// callbacks to surfaces they consider occluded or inactive, to save power.
+/// If WebKitGTK's renderer waits on that callback before it may present its
+/// next repaint, an already-repainted-but-never-presented frame sits stuck
+/// — which is why `nudge_overlay_repaint` above (resizing the *same*
+/// window) didn't help: the overlay's own surface is exactly the one being
+/// throttled. Mapping any *new* toplevel window is one of the few things
+/// guaranteed to make the compositor run a full restack/repaint pass across
+/// every mapped surface, flushing the stuck one along with it. This maps a
+/// 1x1, off-screen, undecorated window to trigger that pass, then closes it
+/// a beat later, instead of waiting on the user to launch something else.
+pub fn flush_compositor_frame(app: &tauri::AppHandle) {
+    if app.get_webview_window(REPAINT_FLUSH_WINDOW).is_some() {
+        return; // a flush is already in flight
+    }
+    let built = tauri::WebviewWindowBuilder::new(
+        app,
+        REPAINT_FLUSH_WINDOW,
+        tauri::WebviewUrl::App("/overlay".into()),
+    )
+    .inner_size(1.0, 1.0)
+    .position(-10000.0, -10000.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(true)
+    .build();
+
+    if built.is_ok() {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            if let Some(w) = app.get_webview_window(REPAINT_FLUSH_WINDOW) {
+                let _ = w.close();
+            }
+        });
+    }
+}
+
 /// Top-left Y for the overlay given the anchor, in the same pixel space as
 /// the monitor geometry.
 fn overlay_anchor_y(monitor_y: i32, monitor_height: i32, window_height: i32, margin: i32, anchor: &str) -> i32 {
