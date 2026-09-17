@@ -192,11 +192,66 @@ const OVERLAY_HEIGHT: f64 = 444.0;
 ///
 /// `anchor` / `monitor_pref` are `config.ui.overlay_position` /
 /// `overlay_monitor`.
+/// How long the overlay may stay hidden waiting for its content to paint.
+///
+/// The frontend normally reports in well inside this (see `reveal_overlay`),
+/// so this only matters when it cannot — a custom overlay whose script throws
+/// before the report, say. Long enough not to pre-empt a slow first paint,
+/// short enough that the worst case is still a prompt overlay rather than a
+/// missing one.
+const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(600);
+
+/// Make the overlay window visible, if it is not already.
+///
+/// A freshly built `WebviewWindow` is mapped long before there is anything to
+/// see in it: the webview has to be created, `/overlay` loaded, Svelte
+/// mounted and a frame painted, which is tens to hundreds of milliseconds
+/// during which the window is on screen with nothing drawn into it. That was
+/// showing up as a black box flashing over the overlay's full bounds on every
+/// keybind press. It only became visible when the window started being built
+/// fresh for each dictation (see `tray.rs`'s `spawn_status_ticker`); built
+/// once at startup it happened a single time, before anyone was watching.
+///
+/// So the window is created fully transparent (`set_opacity(0.0)` in
+/// `open_overlay_window`) and revealed here, once the frontend reports that it
+/// has painted. Opacity rather than staying unmapped or parking it offscreen:
+/// an unmapped webview may not render at all, so waiting on a paint that never
+/// comes would hang, and an offscreen position can be clamped by the window
+/// manager.
+///
+/// Be clear about what this did and did not achieve, so it is not mistaken
+/// for the fix: on the system where the black box was reported (KDE/KWin,
+/// XWayland) it made no observable difference. What removed it from every
+/// activation was building the window once instead of per dictation, and what
+/// moved the remaining one out of sight was building it during startup. This
+/// is kept because not showing a window that has nothing painted in it is
+/// right regardless, and it is contained and safe: a mapped, fully
+/// transparent window renders exactly as normal, and where there is no
+/// compositor `set_opacity` does nothing and behaviour is simply unchanged.
+pub fn reveal_overlay(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
+        return;
+    };
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.set_opacity(1.0);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = window;
+}
+
 pub fn open_overlay_window(
     app: &tauri::AppHandle,
     anchor: &str,
     monitor_pref: &str,
 ) -> Result<tauri::WebviewWindow, String> {
+    // Only a window built by this call starts hidden. Re-entering with one
+    // already on screen must not blank the overlay the user is looking at.
+    let is_new = app.get_webview_window(OVERLAY_WINDOW).is_none();
+
     let window = match app.get_webview_window(OVERLAY_WINDOW) {
         Some(existing) => existing,
         None => tauri::WebviewWindowBuilder::new(
@@ -221,14 +276,64 @@ pub fn open_overlay_window(
         .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
-    // This has to happen *before* the calls below: on Linux, tao's
-    // `set_ignore_cursor_events` reaches into the GTK window's underlying
-    // GdkWindow and unwraps it unconditionally
+    // Everything the window manager reads when deciding how to present a
+    // window has to be set BEFORE the window is mapped. Applied afterwards,
+    // the window is mapped as a default-type window at a position of the
+    // WM's choosing, and the WM then re-evaluates it a moment later — which
+    // on KWin draws a brief black frame around the window's full bounds on
+    // every activation. `realize()` creates the underlying GdkWindow without
+    // mapping it, which is what gives us somewhere to put these first.
+    //
+    // This is only visible because the overlay window is now built fresh for
+    // each dictation and destroyed when it goes idle (see `tray.rs`'s
+    // `spawn_status_ticker`). Built once at startup, as it used to be, the
+    // same re-evaluation happened a single time where nobody was looking.
+    //
+    // The type hint is `Utility` rather than `Notification`: the app is
+    // forced through XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11`
+    // override — this window's absolute positioning and always-on-top depend
+    // on it), and KWin's X11 compositing path gives
+    // `_NET_WM_WINDOW_TYPE_NOTIFICATION` windows different,
+    // short-lived-oriented repaint handling. Reported symptom that was meant
+    // to fix: every overlay style, on every keybind release, freezes solid on
+    // screen — sometimes clearing when another application is launched, never
+    // on its own, only fixed by quitting the app entirely — despite the
+    // overlay's own content genuinely finishing its unmount (confirmed: the
+    // next activation correctly animates in over the stuck frame). `Utility`
+    // is KWin's ordinary type for a persistent always-on-top panel and goes
+    // through the normal compositing/repaint path, while still being excluded
+    // from alt-tab in every WM this has been checked against.
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.realize();
+            if let Some(gdk_window) = gtk_window.window() {
+                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
+            }
+            // Mapped but fully transparent until its content has painted —
+            // see `reveal_overlay`. Set before `show()` so there is no frame
+            // in which the window is both mapped and opaque.
+            if is_new {
+                gtk_window.set_opacity(0.0);
+            }
+        }
+    }
+
+    // Likewise the position: placed before mapping, the window appears where
+    // it belongs instead of being put somewhere by the WM and moved after the
+    // fact. It is applied again below, since a WM is free to place a window
+    // where it likes regardless of what was asked for before the map.
+    reposition_overlay_inner(&window, anchor, monitor_pref);
+
+    // On Linux, tao's `set_ignore_cursor_events` reaches into the GTK
+    // window's underlying GdkWindow and unwraps it unconditionally
     // (tao/src/platform_impl/linux/event_loop.rs, WindowRequest::CursorIgnoreEvents).
-    // That GdkWindow doesn't exist until the widget is realized, which GTK
-    // does synchronously inside `show()` — calling it any earlier panics
-    // (and, being inside a GTK callback, aborts the whole process instead of
-    // unwinding).
+    // That GdkWindow does not exist until the widget is realized, so it has
+    // to come after the block above (which realizes it explicitly) or after
+    // `show()` (which realizes it as a side effect). Calling it any earlier
+    // panics — and, being inside a GTK callback, aborts the whole process
+    // instead of unwinding.
     if let Err(e) = window.show() {
         tracing::error!("Failed to show overlay window: {:?}", e);
     }
@@ -238,34 +343,19 @@ pub fn open_overlay_window(
         tracing::warn!("Failed to make overlay window click-through: {:?}", e);
     }
 
-    // Keeps the window out of focus grabs / alt-tab at the window-manager
-    // level, on top of `skip_taskbar` + `focused(false)` above.
-    //
-    // `Utility` rather than `Notification`: the app is forced through
-    // XWayland on Linux (see `lib.rs`'s `GDK_BACKEND=x11` override — this
-    // window's absolute positioning and always-on-top depend on it), and
-    // KWin's X11 compositing path gives `_NET_WM_WINDOW_TYPE_NOTIFICATION`
-    // windows different, short-lived-oriented repaint handling. Reported
-    // symptom this is meant to fix: every overlay style, on every keybind
-    // release, freezes solid on screen — sometimes clearing when another
-    // application is launched, never on its own, only fixed by quitting the
-    // app entirely — despite the overlay's own content genuinely finishing
-    // its unmount (confirmed: the next activation correctly animates in
-    // over the stuck frame). `Utility` is KWin's ordinary type for a
-    // persistent always-on-top panel and goes through the normal
-    // compositing/repaint path, while still being excluded from alt-tab in
-    // every WM this has been checked against.
-    #[cfg(target_os = "linux")]
-    {
-        use gtk::prelude::*;
-        if let Ok(gtk_window) = window.gtk_window() {
-            if let Some(gdk_window) = gtk_window.window() {
-                gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
-            }
-        }
-    }
-
     reposition_overlay_inner(&window, anchor, monitor_pref);
+
+    // Safety net for the hidden-until-painted gate above: if the frontend
+    // never reports in, reveal it anyway. An overlay that flashes black is a
+    // blemish; one that never appears is a broken feature, and a custom
+    // overlay is arbitrary user-supplied HTML that may simply fail.
+    if is_new {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(OVERLAY_REVEAL_TIMEOUT).await;
+            reveal_overlay(&handle);
+        });
+    }
 
     Ok(window)
 }
@@ -305,30 +395,6 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
         let _ = window.set_always_on_top(false);
         let _ = window.set_always_on_top(true);
-    }
-}
-
-/// Actually destroy the overlay window when it has nothing to show.
-///
-/// Every attempt at forcing WebKitGTK/the compositor to repaint the window
-/// back to blank instead of destroying it — hiding it (with or without a
-/// forced repaint nudge first, gated by a generation counter, a lock, or
-/// both), moving it, resizing it, mapping an extra window from this
-/// process, spawning a genuinely separate process, changing its X11
-/// window-type hint — failed to reliably clear a stuck frame on the
-/// reported system (KDE, XWayland): a stale frame WebKitGTK had already
-/// painted kept reappearing the instant the window was shown again, no
-/// matter how the repaint was requested or how tightly the request
-/// ordering was controlled. A destroyed window has nothing for the
-/// compositor to display, stale buffer or not, which sidesteps the
-/// question entirely — see `tray::spawn_status_ticker`'s doc comment for
-/// why this is called from there rather than from the overlay's own
-/// frontend: that was tried first and is a dead end, since destroying the
-/// window that's running the code deciding when to bring it back also
-/// destroys that code.
-pub fn hide_overlay(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
-        let _ = window.close();
     }
 }
 

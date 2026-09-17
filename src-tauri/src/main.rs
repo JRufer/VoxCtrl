@@ -26,13 +26,22 @@ fn main() {
         init_x11_threads();
         // Graphics-stack defaults, applied here because GTK, GDK and WebKit
         // each read this environment once, when they initialise — which is
-        // after this point and before anything else the app does. Includes
-        // the fix for the overlay's closing animation smearing on a released
-        // AppImage; see voxctrl_app_lib::render_env for the reasoning.
+        // after this point and before anything else the app does. See
+        // voxctrl_app_lib::render_env.
         voxctrl_app_lib::render_env::apply();
     }
 
     let args: Vec<String> = std::env::args().collect();
+
+    // Answered before anything else starts up, so it works on a machine where
+    // the app itself cannot run. This is how a packaged build is asked which
+    // commit it came from — without it, "is the fix actually in this
+    // AppImage?" can only be guessed at.
+    if args.len() > 1 && matches!(args[1].as_str(), "--version" | "-V" | "version") {
+        println!("{}", voxctrl_app_lib::version_string());
+        std::process::exit(0);
+    }
+
     if args.len() > 1 && (args[1] == "--install" || args[1] == "install") {
         if let Err(e) = voxctrl_app_lib::run_cli_installer() {
             eprintln!("Installation failed: {}", e);

@@ -154,6 +154,19 @@ export QT_QPA_PLATFORM=offscreen
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=true
 
+# Baked into the binary and reported by `./VoxCtrl-....AppImage --version`, so
+# a built AppImage can always say which commit it came from. `-dirty` marks a
+# build made with uncommitted changes, which is the normal case when testing a
+# fix before pushing it.
+if command -v git &>/dev/null && git -C "$ROOT_DIR" rev-parse --git-dir &>/dev/null; then
+    VOXCTRL_BUILD_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    if ! git -C "$ROOT_DIR" diff --quiet HEAD 2>/dev/null; then
+        VOXCTRL_BUILD_SHA="${VOXCTRL_BUILD_SHA}-dirty"
+    fi
+    export VOXCTRL_BUILD_SHA
+    info "Build stamp: $VOXCTRL_BUILD_SHA"
+fi
+
 # Check if an NVIDIA GPU is present on the system
 HAS_NVIDIA_GPU=false
 if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
@@ -354,9 +367,21 @@ done
 #
 # This has to run before the strip loop below, which skips usr/lib/fallback.
 # Keep this list in sync with .github/workflows/release.yml.
+#   libwebkit2gtk / libjavascriptcoregtk — the ubuntu-22.04 build host's
+#     WebKitGTK renders a transparent window's compositing layers without
+#     their alpha channel, so an overlay animating as it closes leaves an
+#     opaque, blurry copy of its last frame on screen until the window is
+#     destroyed (confirmed by running a released AppImage with its bundled
+#     WebKit removed: the smear goes away). Newer WebKitGTK is fine, which is
+#     why a local build of this script — bundling this machine's own, newer
+#     WebKitGTK — never reproduced it. Host-first rather than stripped so a
+#     desktop without WebKitGTK of its own still has a working app, which is
+#     also why the helper processes bundled above stay where they are: they
+#     are only ever used when this bundled copy is.
 mkdir -p "$root/usr/lib/fallback"
 for pat in 'libsystemd.so*' 'libudev.so*' \
-           'libgstgl-1.0.so*' 'libwayland-server.so*'; do
+           'libgstgl-1.0.so*' 'libwayland-server.so*' \
+           'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done

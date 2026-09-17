@@ -14,6 +14,11 @@ on:
         description: "Tag to (re-)build (e.g. v0.1.4). Defaults to the app version in tauri.conf.json."
         required: false
         type: string
+      publish:
+        description: "Create/update the draft release. Turn OFF to just build a branch and download the result from this run's Artifacts."
+        required: false
+        default: true
+        type: boolean
 
 # Only one release build per branch at a time; a newer push cancels an
 # in-progress one so the release reflects the latest commit.
@@ -27,6 +32,11 @@ permissions:
 env:
   CARGO_HTTP_MULTIPLEXING: false
   CARGO_HTTP_HTTP2: false
+  # Baked into the binary and reported by `--version`, so any artifact from
+  # this workflow can say exactly which commit produced it. Without it, a
+  # downloaded build cannot be told apart from an earlier one, and a test
+  # against the wrong build reads as a fix that did not work.
+  VOXCTRL_BUILD_SHA: ${{ github.sha }}
   # Where Settings → Bug Report sends a report when the user presses Send.
   #
   # Baked in at build time rather than read from config, so nothing on a user's
@@ -289,9 +299,23 @@ jobs:
           #
           # This has to run before the strip loop below, which skips usr/lib/fallback.
           # Keep this list in sync with build_appimage.sh.
+          #   libwebkit2gtk / libjavascriptcoregtk — this runner's WebKitGTK
+          #     renders a transparent window's compositing layers without
+          #     their alpha channel, so an overlay animating as it closes
+          #     leaves an opaque, blurry copy of its last frame on screen
+          #     until the window is destroyed (confirmed by running a
+          #     released AppImage with its bundled WebKit removed: the smear
+          #     goes away). Newer WebKitGTK is fine, which is why a local
+          #     build_appimage.sh build — bundling the developer's own, newer
+          #     WebKitGTK — never reproduced it. Host-first rather than
+          #     stripped so a desktop without WebKitGTK of its own still has
+          #     a working app, which is also why the helper processes bundled
+          #     above stay where they are: they are only ever used when this
+          #     bundled copy is.
           mkdir -p "$root/usr/lib/fallback"
           for pat in 'libsystemd.so*' 'libudev.so*' \
-                     'libgstgl-1.0.so*' 'libwayland-server.so*'; do
+                     'libgstgl-1.0.so*' 'libwayland-server.so*' \
+                     'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*'; do
             find "$root" -name "$pat" -not -path '*/fallback/*' -print \
               -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
           done
@@ -420,8 +444,19 @@ jobs:
     name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
-    # Run even if some build variants failed so partial releases still publish
-    if: always() && contains(needs.build.result, 'success')
+    # Run even if some build variants failed so partial releases still publish.
+    #
+    # Skipped entirely for a manual run with `publish` off, which is how a
+    # branch gets built without touching the release: the build job above
+    # already uploads each bundle with `upload-artifact`, so the AppImage is
+    # downloadable from the run's own Artifacts section either way. That
+    # matters for a bug that only reproduces in a CI-built bundle — testing a
+    # fix for one used to mean merging to master and cutting a release first,
+    # which made it far too easy to end up testing a build that predated the
+    # fix and reading the result as the fix having failed.
+    if: >-
+      always() && contains(needs.build.result, 'success')
+      && (github.event_name != 'workflow_dispatch' || inputs.publish)
 
     steps:
       # Needed to read the app version for the default tag name.
@@ -470,45 +505,52 @@ jobs:
           # scalar — a `#` inside `body:` would be published as text, so a row
           # is removed rather than commented out.
           body: |
-            ## What's new in 0.6.0
+            ## What's new in 0.6.1
 
             **Fixed: on the downloadable AppImage, an overlay that animated
             as it closed left a blurry, opaque smear on screen where it had
             been, until it blinked away.**
 
-            The AppImage ships a deliberately split graphics stack. The
-            system's own Mesa libraries are used at runtime (bundling them
-            breaks rendering on newer desktops than the one that built the
-            release), while WebKitGTK, GTK and Cairo have to stay bundled,
-            because WebKit's helper processes need to sit at a fixed path
-            inside the bundle.
+            The cause was the WebKitGTK bundled into the release itself. The
+            version on the machine that builds these AppImages renders a
+            transparent window's compositing layers without their alpha
+            channel, so anything static drew with correct transparency while
+            anything mid-animation turned into an opaque copy of its last
+            frame. Every newer WebKitGTK is fine — which is why an AppImage
+            built locally, bundling the build machine's own newer WebKitGTK,
+            never showed it and released builds always did.
 
-            Those two halves have to agree about one thing: the surface
-            WebKit draws into when a CSS transition promotes the overlay onto
-            its own compositing layer. When they disagreed, that surface came
-            back with no usable alpha channel — so anything static rendered
-            with correct transparency, and anything mid-animation turned into
-            an opaque smear of its last frame. It only ever showed up on
-            released builds, because a locally-built AppImage bundles the
-            build machine's own WebKitGTK, which already matches its Mesa.
+            VoxCtrl now prefers the WebKitGTK already installed on your
+            system, falling back to its bundled copy only on a desktop that
+            has none, so the AppImage still runs anywhere with nothing to
+            install first. Anyone whose system WebKitGTK is newer than the
+            build machine's — which is most desktops, and all rolling
+            releases — gets clean overlay animations.
 
-            Inside the AppImage the webview now composites through Mesa's
-            software rasterizer, which honours alpha identically on every
-            host, GPU and driver. It is limited to the overlay and the
-            settings window, and does not touch GPU speech inference.
+            **The overlay also opens faster.** 0.5.9 had to destroy and
+            rebuild the overlay window for every dictation, to work around
+            that same WebKitGTK leaving stale frames stuck on screen. With
+            the cause fixed, the window is built once at startup and kept —
+            so an overlay no longer waits on a page load to appear, and the
+            black box that flashed where it was about to be is gone from
+            every activation. Constructing a webview costs one brief flash of
+            an empty window, and that now happens once during startup rather
+            than on each keybind press.
 
             Every graphics setting VoxCtrl applies on Linux is now a
             *default* rather than a fixed value, so any of them can be
             overridden from the shell without needing a rebuild.
 
-            This lands on top of 0.5.9's fix for the overlay freezing solid
-            and never closing on some Linux desktops (KDE/Wayland via
-            XWayland) — the overlay window is now created fresh each time
-            there's something to show and destroyed again shortly after
-            going idle, rather than staying mapped for the app's whole
-            session.
-
             ### Notes
+
+            Builds now say which commit they came from:
+
+            ```
+            ./VoxCtrl-linux-x86_64-vulkan.AppImage --version
+            ```
+
+            The same line opens every log and every bug report, so a report
+            can always be matched to the exact build that produced it.
 
             The installers are not code-signed yet, so SmartScreen will warn
             that the publisher is unknown.

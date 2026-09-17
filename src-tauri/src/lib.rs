@@ -40,6 +40,94 @@ pub fn run_cli_installer() -> Result<(), String> {
     crate::installer::run_cli_installer()
 }
 
+/// The commit this binary was built from, or `"unknown"` for a build that did
+/// not set `VOXCTRL_BUILD_SHA` (a bare `cargo build`, say).
+///
+/// Set by `.github/workflows/release.yml` and `build_appimage.sh`; see
+/// `build.rs` for why it needs a `rerun-if-env-changed`.
+pub const BUILD_SHA: &str = match option_env!("VOXCTRL_BUILD_SHA") {
+    Some(sha) => sha,
+    None => "unknown",
+};
+
+/// What this build is, as one line: the version, and the commit behind it.
+///
+/// Reported by `--version` and written to the startup log. A packaged build
+/// otherwise has no way to say which source it came from, and answering
+/// "does this build actually contain the fix?" by guessing has repeatedly
+/// produced confident conclusions from builds that predated the change being
+/// tested.
+pub fn version_string() -> String {
+    format_version(env!("CARGO_PKG_VERSION"), BUILD_SHA)
+}
+
+/// Split out from [`version_string`] so the formatting is testable without
+/// rebuilding with a particular `VOXCTRL_BUILD_SHA`.
+///
+/// The SHA is shortened so CI and local builds read the same: the workflow
+/// passes the full 40-character `github.sha`, `build_appimage.sh` passes a
+/// short one. A `-dirty` suffix survives, since that is the part worth
+/// noticing.
+fn format_version(version: &str, build_sha: &str) -> String {
+    let sha = match build_sha.split_once('-') {
+        Some((hash, suffix)) => format!("{}-{}", short_sha(hash), suffix),
+        None => short_sha(build_sha).to_string(),
+    };
+    format!("VoxCtrl {version} (build {sha})")
+}
+
+fn short_sha(sha: &str) -> &str {
+    // Only shorten something that actually looks like a hash, so "unknown"
+    // stays readable rather than becoming "unknow".
+    if sha.len() > 7 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        &sha[..7]
+    } else {
+        sha
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::format_version;
+
+    /// The workflow passes `github.sha`, which is the full 40 characters.
+    #[test]
+    fn a_ci_sha_is_shortened() {
+        assert_eq!(
+            format_version("0.6.1", "57375d4d5882d8222b7a978190a058795acb9cee"),
+            "VoxCtrl 0.6.1 (build 57375d4)"
+        );
+    }
+
+    /// `build_appimage.sh` already passes a short one; it must not be
+    /// shortened twice or reported differently from the same CI build.
+    #[test]
+    fn a_local_sha_is_left_alone() {
+        assert_eq!(format_version("0.6.1", "57375d4"), "VoxCtrl 0.6.1 (build 57375d4)");
+    }
+
+    /// A build made with uncommitted changes has to say so — that is the
+    /// case where "which code is this?" matters most.
+    #[test]
+    fn a_dirty_build_keeps_its_marker() {
+        assert_eq!(
+            format_version("0.6.1", "57375d4-dirty"),
+            "VoxCtrl 0.6.1 (build 57375d4-dirty)"
+        );
+        assert_eq!(
+            format_version("0.6.1", "57375d4d5882d8222b7a978190a058795acb9cee-dirty"),
+            "VoxCtrl 0.6.1 (build 57375d4-dirty)"
+        );
+    }
+
+    /// A build with no SHA set should say so plainly rather than print a
+    /// truncated word that looks like a hash.
+    #[test]
+    fn an_unstamped_build_stays_readable() {
+        assert_eq!(format_version("0.6.1", "unknown"), "VoxCtrl 0.6.1 (build unknown)");
+    }
+}
+
 #[cfg(test)]
 pub mod test_utils {
     use std::sync::{Mutex, OnceLock};
@@ -70,11 +158,9 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        // Graphics-stack defaults, including the one that keeps the
-        // overlay's closing animation from smearing on a released AppImage.
-        // See `render_env`'s module documentation — `main()` applies these
-        // first, before anything at all has run; this covers the paths that
-        // reach `run()` without going through it.
+        // Graphics-stack defaults. `main()` applies these first, before
+        // anything at all has run; this covers the paths that reach `run()`
+        // without going through it. See `render_env`.
         crate::render_env::apply();
 
         // The dictation overlay needs a window that can set its own absolute
@@ -155,6 +241,12 @@ pub fn run() {
     } else {
         let _ = registry.try_init();
     }
+
+    // First line in every log and every bug report: which build this is. A
+    // report or a reproduction attempt against an unidentified build has
+    // repeatedly turned out to be against one that predated the change in
+    // question.
+    tracing::info!("{}", version_string());
 
     // Make sure the documented Custom/ overlay example exists — see
     // refresh_bundled_example's doc comment: it never touches Custom/ once
@@ -450,6 +542,24 @@ pub fn run() {
                 audio_level_rx,
             );
 
+            // Build the overlay window now rather than on the first
+            // dictation. Constructing it costs one brief flash of an empty
+            // window — a webview is mapped before it has loaded `/overlay`
+            // and painted — and that cost has to land somewhere. Paid here it
+            // lands during startup, alongside everything else the app is
+            // doing before the user has asked for anything; paid on the first
+            // keybind press it lands in the middle of the thing the user is
+            // watching. `tray::spawn_status_ticker` still builds it if this
+            // fails, so a failure here delays the overlay rather than losing
+            // it.
+            if let Err(e) = crate::window::open_overlay_window(
+                app.handle(),
+                &cfg_data.ui.overlay_position,
+                &cfg_data.ui.overlay_monitor,
+            ) {
+                tracing::warn!("Could not pre-build the dictation overlay: {e}");
+            }
+
             // Setup system tray
             let _tray = tray::create_tray(app)?;
             tray::sync_tts_memory_item(app.handle().clone(), app_state.clone());
@@ -476,16 +586,13 @@ pub fn run() {
             ];
 
             // ── Dictation overlay ────────────────────────────────────────────────
-            // Unlike every other window here, the overlay is not created at
-            // startup: window::open_overlay_window builds the transparent,
+            // window::open_overlay_window builds the transparent,
             // click-through, always-on-top WebviewWindow that renders the
             // `/overlay` route (src/lib/Overlay/Overlay.svelte) — see that
             // function's doc comment and docs/overlays.md for how it's put
-            // together — but it's tray::spawn_status_ticker (below) that
-            // decides when to actually call it, building the window fresh on
-            // the first activation and destroying it again once idle. See
-            // that function's doc comment for why the window's lifecycle is
-            // owned there rather than created once and left mapped.
+            // together. It is built once, above, and kept for the session;
+            // tray::spawn_status_ticker (below) builds it there instead if
+            // that failed, and nothing destroys it.
             let overlay_handle = app.handle().clone();
             // overlay_tx carries position updates (sent whenever
             // config.ui.overlay_position / overlay_monitor change — see
@@ -555,6 +662,7 @@ pub fn run() {
             speak_text,
             get_custom_overlays,
             get_custom_overlay,
+            overlay_content_ready,
             get_custom_overlays_dir,
             get_cloned_tts_voices_dir,
             list_audio_devices,

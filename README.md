@@ -29,7 +29,8 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
   * 6 offline voice engines: **Breeze-TTS-2** (voice cloning), **VoxCPM2** (OpenBMB voice cloning), **Pocket-TTS** (voice cloning from reference clip), **Piper** (high-quality ONNX), **Inflect-Micro-v2** (ultra-lightweight 38 MB ONNX), and **eSpeak-NG** (instant fallback).
   * **On-Demand Memory Mode**: Automatically unloads heavy TTS neural models from RAM/VRAM after a configurable idle period (`tts.idle_unload_secs`).
 * **Heads-Up HUD Overlay & Visuals**:
-  * Transparent, click-through, voice-reactive animated HUD overlays with 4 distinct styles: **Ocean Wave** (tide pool with bobbing buoy), **Voice Card** (holographic card with 20×6 VU meter), **Waveform** (oscilloscope CRT trace), and **Pulse Ring** (sonar radar dial).
+  * Transparent, click-through, voice-reactive animated HUD overlays with 8 distinct styles: **Ocean Wave** (tide pool with bobbing buoy), **Voice Card** (holographic card with 20×6 VU meter), **Waveform** (oscilloscope CRT trace), **Pulse Ring** (sonar radar dial), **Mono Bars**, **Neon Spectrum**, **Retro Terminal** and **Analog VU**.
+  * Drop-in custom overlays: an `index.html` + `style.css` pair in the overlays folder, re-read from disk on every activation, so an edit shows up on the next dictation with no restart.
   * Floating command trigger HUD pills (`⚡ TARGET ▸ Text`) showing dispatched actions.
 * **Privacy-Preserving Global Hotkeys**:
   * Registered via the XDG `GlobalShortcuts` portal on Linux (Wayland & X11) and native hooks on Windows.
@@ -295,7 +296,11 @@ For in-depth guides, architectural references, and developer documentation:
 | **[Global Hotkeys](docs/hotkeys.md)** | XDG portal shortcuts, gesture recognizer, and platform details. |
 | **[Integrations](docs/integrations.md)** | Model Context Protocol (MCP), DBus, and OpenAI LLM API integration. |
 | **[User Interface](docs/ui.md)** | HUD overlays, Cyber Obsidian settings dashboard, and system tray. |
+| **[Overlays](docs/overlays.md)** | Every built-in overlay style, the window's lifecycle, and writing your own. |
 | **[Configuration Reference](docs/configuration.md)** | Full schema definitions for all JSON and TOML configuration files. |
+| **[Installation](docs/installation.md)** | Packages, per-distribution dependencies, and what lands where on disk. |
+| **[Development](docs/development.md)** | Dev workflow, crate guide, identifying a build, and debugging packaged builds. |
+| **[AppImage Build Process](docs/appimage_build_process.md)** | How the Linux bundle is assembled, and the runtime library policy behind it. |
 | **[Privacy & Security](docs/privacy.md)** | Data sovereignty guarantees, verification steps, and zero-telemetry architecture. |
 | **[Windows Testing Guide](docs/windows_testing.md)** | Comprehensive testing matrix and validation steps on Windows 11. |
 | **[Windows Build Guide](docs/windows_build.md)** | Native Windows compilation steps and toolchain setup. |
