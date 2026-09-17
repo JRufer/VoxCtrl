@@ -220,6 +220,17 @@ stay clean on a newer host. The rules, each learned from a startup crash:
      `gstreamer1.0-plugins-base` does **not** depend on, so a desktop with no
      WebKit of its own can be missing it and the app dies with
      `error while loading shared libraries: libgstgl-1.0.so.0`.
+   * `libwebkit2gtk-4.1` / `libjavascriptcoregtk-4.1`: the build host's
+     WebKitGTK renders a transparent window's compositing layers **without
+     their alpha channel**, so an overlay animating as it closes left an
+     opaque, blurry copy of its last frame on screen until the window was
+     destroyed, while anything static drew correctly. Newer WebKitGTK is
+     fine, which is why a local `build_appimage.sh` build — bundling the
+     developer's own newer WebKitGTK — never reproduced it and released
+     builds always did. Preferring the host's copy fixes it for every
+     desktop that has one (all rolling releases, and most others), and the
+     bundled copy still starts on a desktop that has none, so rule 4's
+     "always self-contained enough to run" property holds.
 5. **WebKitGTK finds its helper processes relative to the working
    directory.** The Tauri bundler rewrites the compiled-in
    `/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1` to
@@ -232,6 +243,17 @@ stay clean on a newer host. The rules, each learned from a startup crash:
    bundled `usr/config/` for the same reason; the current audio.cpp-backed
    engines take a `--model <dir>` argument directly and no longer touch the
    process's working directory at all.
+
+   The library and its helpers are **one unit**: the bundled
+   `libwebkit2gtk` has the bundled helper path compiled into it, so removing
+   only the helpers makes it abort at startup with `Failed to spawn child
+   process "././/lib/.../WebKitNetworkProcess"`. Since rule 4 now prefers the
+   host's WebKitGTK, the AppRun hook also unsets `WEBKIT_EXEC_PATH` and
+   `WEBKIT_INJECTED_BUNDLE_PATH` whenever the host's copy wins — those point
+   into this bundle, and the injected bundle is version-locked to the library
+   it shipped with, so leaving them set would pair the host's library with
+   helpers it was never built against. The bundled helpers stay in place
+   regardless, since they are only ever reached when the bundled library is.
 6. **The AppImage runtime must not need FUSE 2.** appimagetool's built-in
    type-2 runtime statically links libfuse 2 and looks for a `fusermount`
    binary; Ubuntu 22.04 / Linux Mint 21 and newer ship fuse3 (`fusermount3`)

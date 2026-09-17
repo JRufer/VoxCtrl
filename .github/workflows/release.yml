@@ -527,25 +527,30 @@ jobs:
             build machine's — which is most desktops, and all rolling
             releases — gets clean overlay animations.
 
-            With that fixed, the overlay window no longer has to be rebuilt
-            from scratch for every dictation — it was being destroyed and
-            recreated to work around the same WebKitGTK leaving stale frames
-            on screen. It is now built once and kept, so the overlay appears
-            without waiting for a page load, and the black box that flashed
-            where the window was about to be is gone.
+            **The overlay also opens faster.** 0.5.9 had to destroy and
+            rebuild the overlay window for every dictation, to work around
+            that same WebKitGTK leaving stale frames stuck on screen. With
+            the cause fixed, the window is built once at startup and kept —
+            so an overlay no longer waits on a page load to appear, and the
+            black box that flashed where it was about to be is gone from
+            every activation. Constructing a webview costs one brief flash of
+            an empty window, and that now happens once during startup rather
+            than on each keybind press.
 
             Every graphics setting VoxCtrl applies on Linux is now a
             *default* rather than a fixed value, so any of them can be
             overridden from the shell without needing a rebuild.
 
-            This lands on top of 0.5.9's fix for the overlay freezing solid
-            and never closing on some Linux desktops (KDE/Wayland via
-            XWayland) — the overlay window is now created fresh each time
-            there's something to show and destroyed again shortly after
-            going idle, rather than staying mapped for the app's whole
-            session.
-
             ### Notes
+
+            Builds now say which commit they came from:
+
+            ```
+            ./VoxCtrl-linux-x86_64-vulkan.AppImage --version
+            ```
+
+            The same line opens every log and every bug report, so a report
+            can always be matched to the exact build that produced it.
 
             The installers are not code-signed yet, so SmartScreen will warn
             that the publisher is unknown.

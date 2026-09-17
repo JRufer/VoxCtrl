@@ -58,7 +58,74 @@ pub const BUILD_SHA: &str = match option_env!("VOXCTRL_BUILD_SHA") {
 /// produced confident conclusions from builds that predated the change being
 /// tested.
 pub fn version_string() -> String {
-    format!("VoxCtrl {} (build {})", env!("CARGO_PKG_VERSION"), BUILD_SHA)
+    format_version(env!("CARGO_PKG_VERSION"), BUILD_SHA)
+}
+
+/// Split out from [`version_string`] so the formatting is testable without
+/// rebuilding with a particular `VOXCTRL_BUILD_SHA`.
+///
+/// The SHA is shortened so CI and local builds read the same: the workflow
+/// passes the full 40-character `github.sha`, `build_appimage.sh` passes a
+/// short one. A `-dirty` suffix survives, since that is the part worth
+/// noticing.
+fn format_version(version: &str, build_sha: &str) -> String {
+    let sha = match build_sha.split_once('-') {
+        Some((hash, suffix)) => format!("{}-{}", short_sha(hash), suffix),
+        None => short_sha(build_sha).to_string(),
+    };
+    format!("VoxCtrl {version} (build {sha})")
+}
+
+fn short_sha(sha: &str) -> &str {
+    // Only shorten something that actually looks like a hash, so "unknown"
+    // stays readable rather than becoming "unknow".
+    if sha.len() > 7 && sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        &sha[..7]
+    } else {
+        sha
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::format_version;
+
+    /// The workflow passes `github.sha`, which is the full 40 characters.
+    #[test]
+    fn a_ci_sha_is_shortened() {
+        assert_eq!(
+            format_version("0.6.1", "57375d4d5882d8222b7a978190a058795acb9cee"),
+            "VoxCtrl 0.6.1 (build 57375d4)"
+        );
+    }
+
+    /// `build_appimage.sh` already passes a short one; it must not be
+    /// shortened twice or reported differently from the same CI build.
+    #[test]
+    fn a_local_sha_is_left_alone() {
+        assert_eq!(format_version("0.6.1", "57375d4"), "VoxCtrl 0.6.1 (build 57375d4)");
+    }
+
+    /// A build made with uncommitted changes has to say so — that is the
+    /// case where "which code is this?" matters most.
+    #[test]
+    fn a_dirty_build_keeps_its_marker() {
+        assert_eq!(
+            format_version("0.6.1", "57375d4-dirty"),
+            "VoxCtrl 0.6.1 (build 57375d4-dirty)"
+        );
+        assert_eq!(
+            format_version("0.6.1", "57375d4d5882d8222b7a978190a058795acb9cee-dirty"),
+            "VoxCtrl 0.6.1 (build 57375d4-dirty)"
+        );
+    }
+
+    /// A build with no SHA set should say so plainly rather than print a
+    /// truncated word that looks like a hash.
+    #[test]
+    fn an_unstamped_build_stays_readable() {
+        assert_eq!(format_version("0.6.1", "unknown"), "VoxCtrl 0.6.1 (build unknown)");
+    }
 }
 
 #[cfg(test)]

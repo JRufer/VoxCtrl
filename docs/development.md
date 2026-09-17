@@ -151,6 +151,45 @@ npm run tauri build
 #   Windows: .msi, .exe (NSIS)
 ```
 
+### Which build am I running?
+
+```bash
+./VoxCtrl-linux-x86_64-vulkan.AppImage --version
+# VoxCtrl 0.6.1 (build 57375d4)
+```
+
+Every build stamps the commit it was made from — `github.sha` in the release
+workflow, the working tree in `build_appimage.sh` (with `-dirty` for
+uncommitted changes) — and the same line opens every log and therefore every
+bug report. Ask this first when a fix appears not to work: a packaged build is
+otherwise indistinguishable from an earlier one, and a test against the wrong
+build reads exactly like a fix that failed.
+
+To build a branch without cutting a release, run the **Release** workflow
+manually with **publish** off; the AppImage lands in the run's Artifacts.
+
+### Debugging a bug that only reproduces in a packaged build
+
+Some bugs live in what the AppImage bundles rather than in the source — they
+reproduce from a released build and not from a local one, which means no
+source change can explain the difference. Two scripts narrow that down by
+measuring rather than guessing:
+
+```bash
+# What actually differs between a working and a failing bundle?
+./scripts/diff-appimage-stacks.sh GOOD.AppImage BAD.AppImage
+
+# Run a bundle against the host's GTK or WebKit instead of its own.
+./scripts/try-host-gtk.sh --gtk    BAD.AppImage
+./scripts/try-host-gtk.sh --webkit BAD.AppImage
+```
+
+Both are read-only with respect to the AppImage, need no FUSE, and install
+nothing. `try-host-gtk.sh` refuses to launch if it removed nothing, so a
+no-op can never be mistaken for a result. This is how the overlay's smeared
+closing animation was traced to the bundled WebKitGTK — see
+[AppImage Runtime Library Policy](appimage_build_process.md#-appimage-runtime-library-policy).
+
 ### CUDA GPU Acceleration (opt-in)
 
 CUDA inference acceleration is disabled by default so the app builds on any machine. Enable it with the `cuda` cargo feature:

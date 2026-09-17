@@ -217,12 +217,17 @@ const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(600);
 /// has painted. Opacity rather than staying unmapped or parking it offscreen:
 /// an unmapped webview may not render at all, so waiting on a paint that never
 /// comes would hang, and an offscreen position can be clamped by the window
-/// manager. A mapped, fully transparent window renders exactly as normal and
-/// is reliably invisible — including any frame the window manager draws
-/// around it, which is why this works whatever is actually drawing the black.
+/// manager.
 ///
-/// On a desktop with no compositor `set_opacity` does nothing, and the overlay
-/// simply behaves as it did before: visible immediately, black box and all.
+/// Be clear about what this did and did not achieve, so it is not mistaken
+/// for the fix: on the system where the black box was reported (KDE/KWin,
+/// XWayland) it made no observable difference. What removed it from every
+/// activation was building the window once instead of per dictation, and what
+/// moved the remaining one out of sight was building it during startup. This
+/// is kept because not showing a window that has nothing painted in it is
+/// right regardless, and it is contained and safe: a mapped, fully
+/// transparent window renders exactly as normal, and where there is no
+/// compositor `set_opacity` does nothing and behaviour is simply unchanged.
 pub fn reveal_overlay(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
         return;
