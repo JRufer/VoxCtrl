@@ -60,9 +60,8 @@ sudo apt install ./VoxCtrl-linux-x86_64-vulkan.deb
 
 Windows builds are distributed as self-contained NSIS setup installers:
 
-1. Download the installer for your system:
-   - **[VoxCtrl-windows-x86_64.exe (Standard CPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64.exe)** — For all modern Windows systems.
-   - **[VoxCtrl-windows-x86_64-webgpu.exe (Direct3D 12 GPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — Accelerates Moonshine speech recognition via Direct3D 12.
+1. Download the installer:
+   - **[VoxCtrl-windows-x86_64-webgpu.exe](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — For all modern Windows systems; accelerates Moonshine speech recognition via Direct3D 12 when a usable GPU is present, and falls back to the CPU otherwise.
 2. Run the installer (if prompted by SmartScreen, click **More info** → **Run anyway**).
 3. Complete the installer and launch VoxCtrl. See **[Windows Testing Guide](./windows_testing.md)** for a detailed walkthrough.
 

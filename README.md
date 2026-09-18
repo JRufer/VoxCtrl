@@ -114,9 +114,7 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
 
 ### Windows
 
-1. Download the installer from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest):
-   * **`VoxCtrl-windows-x86_64.exe`**: Standard edition (CPU inference for all engines).
-   * **`VoxCtrl-windows-x86_64-webgpu.exe`**: GPU-accelerated edition (Direct3D 12 WebGPU acceleration for Moonshine).
+1. Download **`VoxCtrl-windows-x86_64-webgpu.exe`** from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest). *It automatically utilizes Direct3D 12 WebGPU acceleration for Moonshine if a usable GPU is available, falling back gracefully to CPU compute.*
 2. Run the installer and launch VoxCtrl from the Start Menu or System Tray.
 
 ---

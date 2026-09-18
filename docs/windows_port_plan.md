@@ -28,7 +28,7 @@ readable, with corrections noted here.
   the Hotkeys tab and `docs/privacy.md` now say what the hook sees.
 - **CI.** The Windows `cargo check` no longer excludes anything and runs
   `--all-targets`; there is a Windows `cargo test` lane.
-- **Release.** Both `windows-cpu` and `windows-webgpu` matrix rows are enabled, publishing `VoxCtrl-windows-x86_64.exe` and `VoxCtrl-windows-x86_64-webgpu.exe`.
+- **Release.** The `windows-webgpu` matrix row is enabled, publishing `VoxCtrl-windows-x86_64-webgpu.exe`. The separate `windows-cpu` row was merged into it once released sizes showed the WebGPU feature costs nothing (17.1 MB vs. 17 MB at v0.6.3) — same rationale as the single Linux Vulkan build below.
 - **GPU Acceleration.** Direct3D 12 acceleration for Moonshine delivered via ONNX Runtime's WebGPU provider. S1-mini sidecar runs via Vulkan / CPU.
 - **First-run onboarding.** The 7-step Setup Wizard is fully operational on Windows.
 - **Bug Reporting.** Built-in telemetry-free, redacted diagnostics reporting implemented on Windows.

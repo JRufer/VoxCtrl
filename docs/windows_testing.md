@@ -12,9 +12,8 @@ This should take about fifteen minutes.
 
 ## 1. Install
 
-1. Download the installer for your hardware:
-   - **[VoxCtrl-windows-x86_64.exe (Standard CPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64.exe)** — Runs on any modern Windows machine (CPU inference).
-   - **[VoxCtrl-windows-x86_64-webgpu.exe (Direct3D 12 GPU)](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — Accelerates Moonshine speech recognition using your GPU (NVIDIA, AMD, Intel) via Direct3D 12.
+1. Download the installer:
+   - **[VoxCtrl-windows-x86_64-webgpu.exe](https://github.com/JRufer/VoxCtrl/releases/latest/download/VoxCtrl-windows-x86_64-webgpu.exe)** — Runs on any modern Windows machine; accelerates Moonshine speech recognition via Direct3D 12 (NVIDIA, AMD, Intel) when a usable GPU is present, and falls back to the CPU otherwise.
    - Or visit the **[Latest Release Page](https://github.com/JRufer/VoxCtrl/releases/latest)** to view all release assets and changelogs.
 2. Run the installer. Windows will show a blue **"Windows protected your PC"** box, because
    the installer is not yet signed with a certificate. Click **More info**, then
@@ -29,7 +28,7 @@ On first launch, a seven-step setup wizard automatically guides you through:
 1. **Welcome** — Overview of setup steps.
 2. **Speech Engine** — Choose from 4 transcription engines:
    - `whisper.cpp` (OpenAI Whisper running locally on CPU)
-   - `Moonshine` (fast ONNX engine tuned for real-world ambient noise; accelerated on GPU in the WebGPU build)
+   - `Moonshine` (fast ONNX engine tuned for real-world ambient noise; accelerated via Direct3D 12 when a usable GPU is present)
    - `Parakeet TDT` (NVIDIA FastConformer delivering ultra-fast non-autoregressive transcription)
    - `Remote Speech Engine` (connect to an external or LAN OpenAI-compatible `/v1/audio/transcriptions` server, with live connection testing)
 3. **Hotkey** — Bind your preferred global dictation gesture (default: hold **Windows key + Space**).
@@ -64,7 +63,7 @@ Check characters like `% ( ) + [ ] { } ^ ~` character by character. If any of th
 
 ### c. Try Multiple Speech Engines (Settings → Engine)
 - **`whisper.cpp`**: Try standard `tiny` or `base` models.
-- **`Moonshine`**: Test responsiveness. If using the `webgpu` build, verify GPU acceleration works smoothly.
+- **`Moonshine`**: Test responsiveness and verify GPU acceleration works smoothly on Direct3D 12 hardware.
 - **`Parakeet TDT`**: Test non-autoregressive transcription speed.
 - **`Remote Speech Engine`**: If you run a local or LAN transcription server (e.g. Faster-Whisper-Server, vLLM, Whisper standalone), test connecting with your custom URL and Bearer token.
 
@@ -140,7 +139,7 @@ These are known characteristics of the Windows platform:
 - **Elevated apps.** If a program is running as administrator, Windows blocks non-elevated apps from receiving global hooks and injecting keystrokes into it (e.g. Task Manager, certain installers). Run VoxCtrl as administrator if you need dictation in elevated windows.
 - **UAC prompts and Lock Screen.** Windows hides keyboard hooks on the secure desktop, so shortcuts will not fire there.
 - **SmartScreen warning.** The installer executable is not yet code-signed with an EV certificate, so Windows SmartScreen warns of an unknown publisher (**More info → Run anyway**).
-- **GPU acceleration focus.** The Windows GPU build (`VoxCtrl-windows-x86_64-webgpu.exe`) accelerates the `Moonshine` engine via Direct3D 12 WebGPU and runs `s1-mini` via Vulkan/CPU. `whisper.cpp` and `Parakeet` currently run on CPU on Windows due to an upstream whisper.cpp MSVC static Vulkan registration bug (whisper.cpp #3750).
+- **GPU acceleration focus.** The Windows build (`VoxCtrl-windows-x86_64-webgpu.exe`) accelerates the `Moonshine` engine via Direct3D 12 WebGPU when a usable GPU is present, and runs `s1-mini` via Vulkan/CPU. `whisper.cpp` and `Parakeet` currently run on CPU on Windows due to an upstream whisper.cpp MSVC static Vulkan registration bug (whisper.cpp #3750).
 - **Piper TTS on Windows.** Piper requires manual binary setup on Windows; for seamless out-of-the-box local neural TTS, choose **Pocket-TTS**, **Inflect-Micro-v2**, **VoxCPM2**, or **eSpeak-NG**.
 - **Right-hand modifier keys.** A shortcut recorded with Left Ctrl does not fire from Right Ctrl.
 
