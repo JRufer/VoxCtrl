@@ -20,6 +20,23 @@ mod denoise;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
+/// Below this peak amplitude, a buffer is treated as silence when deciding
+/// whether the microphone is actually delivering signal.
+///
+/// Windows can deny microphone access *silently*: `build_input_stream` and
+/// `Stream::play()` both succeed, but every buffer that arrives is exact
+/// zeros. A tiny epsilon rather than a literal zero comparison catches that
+/// case (and any hardware that dithers in a few ULPs of noise) while staying
+/// far below the self-noise of a real microphone in a quiet room, so genuine
+/// quiet speech is never mistaken for a dead stream.
+const SILENCE_PEAK_EPSILON: f32 = 1e-4;
+
+/// Whether every sample in `data` falls within the noise floor a denied or
+/// dead input stream delivers.
+fn is_silent(data: &[f32]) -> bool {
+    data.iter().all(|&s| s.abs() < SILENCE_PEAK_EPSILON)
+}
+
 /// How much of the audio from just *before* a recording started is kept and
 /// prepended to it.
 ///
@@ -147,13 +164,7 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
         if let Ok(mut devices) = host.input_devices() {
             if let Some(device) = devices.nth(idx as usize) {
                 if let Ok(config) = negotiate_config(&device) {
-                    let test_stream = device.build_input_stream(
-                        &config,
-                        |_: &[f32], _| {},
-                        |_| {},
-                        None,
-                    );
-                    if test_stream.is_ok() {
+                    if build_and_start_test_stream(&device, &config) {
                         info!("Startup test: Configured device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
                         return Ok(device);
                     } else {
@@ -167,13 +178,7 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
     // 2. Try default input device
     if let Some(device) = host.default_input_device() {
         if let Ok(config) = negotiate_config(&device) {
-            let test_stream = device.build_input_stream(
-                &config,
-                |_: &[f32], _| {},
-                |_| {},
-                None,
-            );
-            if test_stream.is_ok() {
+            if build_and_start_test_stream(&device, &config) {
                 info!("Startup test: Default input device ({}) is active and functional.", device.name().unwrap_or_default());
                 return Ok(device);
             } else {
@@ -186,13 +191,7 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
     if let Ok(devices) = host.input_devices() {
         for (idx, device) in devices.enumerate() {
             if let Ok(config) = negotiate_config(&device) {
-                let test_stream = device.build_input_stream(
-                    &config,
-                    |_: &[f32], _| {},
-                    |_| {},
-                    None,
-                );
-                if test_stream.is_ok() {
+                if build_and_start_test_stream(&device, &config) {
                     info!("Startup test: Fallback device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
                     return Ok(device);
                 }
@@ -202,6 +201,25 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
 
     // 4. Default fallback
     host.default_input_device().context("no active or functional input device found at startup")
+}
+
+/// Build a throwaway input stream on `device` and briefly start it, then stop
+/// it — `true` if both succeeded.
+///
+/// A device can accept `build_input_stream` and still refuse to actually
+/// capture: some backends only surface a real failure from `Stream::play()`,
+/// not from building the stream. Validating with the same open-then-play
+/// sequence the real capture loop uses (see [`open_stream`]) catches that
+/// instead of reporting a device "functional" that never actually started.
+fn build_and_start_test_stream(device: &cpal::Device, config: &StreamConfig) -> bool {
+    let Ok(stream) = device.build_input_stream(config, |_: &[f32], _| {}, |_| {}, None) else {
+        return false;
+    };
+    if stream.play().is_err() {
+        return false;
+    }
+    let _ = stream.pause();
+    true
 }
 
 // ── Capture processing ────────────────────────────────────────────────────────
@@ -244,6 +262,17 @@ struct CaptureProcessor {
     preroll: VecDeque<f32>,
     preroll_cap: usize,
     was_recording: bool,
+    /// Set once this stream has delivered a buffer that is not silence.
+    ///
+    /// Windows can deny microphone access without ever surfacing an error:
+    /// `build_input_stream` and `play()` both succeed, but the stream then
+    /// feeds nothing but exact zeros. Flipping "ready" the moment the stream
+    /// opens — which is all `open_stream` on its own can tell — would hide
+    /// exactly that case from the watchdog in `pipeline.rs`, so readiness
+    /// instead waits for proof that real audio is arriving. It is a one-way
+    /// latch for the life of the stream: once the mic has been heard from, a
+    /// quiet moment (the user pausing) must not un-ready it.
+    audio_ready: Option<Arc<AtomicBool>>,
 }
 
 impl CaptureProcessor {
@@ -254,6 +283,7 @@ impl CaptureProcessor {
         noise_suppression: Arc<AtomicBool>,
         hw_rate: u32,
         needs_resample: bool,
+        audio_ready: Option<Arc<AtomicBool>>,
     ) -> Self {
         let preroll_cap = (hw_rate as usize * PREROLL_MS as usize) / 1000;
         Self {
@@ -269,6 +299,7 @@ impl CaptureProcessor {
             preroll: VecDeque::with_capacity(preroll_cap + 1),
             preroll_cap,
             was_recording: false,
+            audio_ready,
         }
     }
 
@@ -278,6 +309,17 @@ impl CaptureProcessor {
         // memory, and a buffer either side of the change is equally correct.
         let is_recording = self.recording.load(Ordering::Relaxed);
         let current_gain = f32::from_bits(self.gain.load(Ordering::Relaxed));
+
+        // Latch readiness the first time this stream proves it is actually
+        // capturing, whether or not a recording is in progress — an always-on
+        // or monitoring-only stream is just as good a witness as a recording
+        // one, and waiting for a recording to start would only delay the
+        // watchdog that depends on this.
+        if let Some(ref ready) = self.audio_ready {
+            if !ready.load(Ordering::Relaxed) && !is_silent(data) {
+                ready.store(true, Ordering::Relaxed);
+            }
+        }
 
         // The level feed only has consumers while the overlay is visualising a
         // recording or the Audio tab is showing its VU meter. An always-on
@@ -366,6 +408,7 @@ fn make_input_callback(
     noise_suppression: Arc<AtomicBool>,
     hw_rate: u32,
     needs_resample: bool,
+    audio_ready: Option<Arc<AtomicBool>>,
 ) -> impl FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static {
     let mut processor = CaptureProcessor::new(
         gain,
@@ -374,6 +417,7 @@ fn make_input_callback(
         noise_suppression,
         hw_rate,
         needs_resample,
+        audio_ready,
     );
 
     move |data: &[f32], _: &cpal::InputCallbackInfo| {
@@ -407,6 +451,7 @@ fn open_stream(
     noise_suppression: &Arc<AtomicBool>,
     tx: &Sender<AudioChunk>,
     level_tx: &Option<Sender<f32>>,
+    audio_ready: &Option<Arc<AtomicBool>>,
 ) -> Option<cpal::Stream> {
     let stream = device
         .build_input_stream(
@@ -420,6 +465,7 @@ fn open_stream(
                 noise_suppression.clone(),
                 hw_rate,
                 needs_resample,
+                audio_ready.clone(),
             ),
             |e| warn!("Audio stream error: {e}"),
             None,
@@ -485,12 +531,13 @@ fn capture_loop(
         info!("Startup: Opening always-on stream (Option B)...");
         if let Some(stream) = open_stream(
             &device, &hw_config, hw_rate, needs_resample,
-            &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
+            &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
         ) {
             current_stream = Some(stream);
-            if let Some(ref ready) = audio_ready {
-                ready.store(true, Ordering::SeqCst);
-            }
+            // Not marked ready here: the stream opening only proves it was
+            // *allowed* to open. `audio_ready` is flipped by the capture
+            // callback itself, the first time a buffer arrives that isn't
+            // silence — see `CaptureProcessor::feed`.
             info!("Startup always-on stream successfully playing.");
         }
     }
@@ -517,6 +564,12 @@ fn capture_loop(
                         info!("Hot-reload: successfully negotiated new device '{}' ({} Hz)", device.name().unwrap_or_default(), hw_rate);
                         current_stream = None; // Drop old stream
                         was_recording = false; // Force rebuild
+                        // A new device has proven nothing yet — carrying the
+                        // old device's readiness forward would hide a switch
+                        // to a dead or silently-denied one.
+                        if let Some(ref ready) = audio_ready {
+                            ready.store(false, Ordering::SeqCst);
+                        }
                     }
                 }
                 Err(e) => warn!("Hot-reload failed to find functional device for index {current_idx}: {e}"),
@@ -540,12 +593,11 @@ fn capture_loop(
                 if current_stream.is_none() {
                     if let Some(stream) = open_stream(
                         &device, &hw_config, hw_rate, needs_resample,
-                        &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
+                        &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
                     ) {
                         current_stream = Some(stream);
-                        if let Some(ref ready) = audio_ready {
-                            ready.store(true, Ordering::SeqCst);
-                        }
+                        // See the startup open above: readiness is earned by
+                        // the callback, not assumed here.
                         info!("Switched to always-on mode: stream successfully playing.");
                     }
                 }
@@ -559,13 +611,14 @@ fn capture_loop(
                 info!("Dynamic microphone stream starting (Option A)...");
                 match open_stream(
                     &device, &hw_config, hw_rate, needs_resample,
-                    &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx,
+                    &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
                 ) {
                     Some(stream) => {
                         current_stream = Some(stream);
-                        if let Some(ref ready) = audio_ready {
-                            ready.store(true, Ordering::SeqCst);
-                        }
+                        // Left false until the callback confirms real audio —
+                        // this is exactly the case the Windows silent-denial
+                        // bug hits: the stream opens and plays fine, and the
+                        // only way to tell is whether any signal ever arrives.
                         info!("Dynamic microphone stream successfully playing (Option A).");
                         was_recording = true;
                     }
@@ -711,6 +764,7 @@ mod capture_tests {
             Arc::new(AtomicBool::new(false)),
             TARGET_SAMPLE_RATE,
             false,
+            None,
         )
     }
 
@@ -820,6 +874,7 @@ mod capture_tests {
             Arc::new(AtomicBool::new(false)),
             TARGET_SAMPLE_RATE,
             false,
+            None,
         );
 
         assert!(p.feed(&[0.5; 16]).level.is_none(), "idle stream reported a level");
@@ -830,5 +885,50 @@ mod capture_tests {
         monitoring.store(false, Ordering::SeqCst);
         recording.store(true, Ordering::SeqCst);
         assert_eq!(p.feed(&[0.5; 16]).level, Some(0.5), "the overlay got nothing");
+    }
+
+    #[test]
+    fn silence_classifies_exact_zero_and_near_zero_buffers() {
+        assert!(is_silent(&[0.0; 32]), "an all-zero buffer must read as silent");
+        assert!(
+            is_silent(&[0.0, 1e-6, -1e-6, 0.0]),
+            "dither far below the noise floor must still read as silent"
+        );
+        assert!(
+            !is_silent(&[0.0, 0.0, 0.01, 0.0]),
+            "a single real sample must be enough to call a buffer non-silent"
+        );
+    }
+
+    /// The Windows bug this exists for: a stream can open and `play()`
+    /// successfully while WASAPI hands it nothing but zeros, with no error
+    /// anywhere. `audio_ready` must stay false until a buffer proves
+    /// otherwise, and — once it has — must not flap back to false just
+    /// because the user paused talking.
+    #[test]
+    fn audio_ready_latches_on_first_real_signal_and_not_before() {
+        let recording = Arc::new(AtomicBool::new(true));
+        let ready = Arc::new(AtomicBool::new(false));
+        let mut p = CaptureProcessor::new(
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            recording.clone(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            TARGET_SAMPLE_RATE,
+            false,
+            Some(ready.clone()),
+        );
+
+        p.feed(&[0.0; 64]);
+        assert!(!ready.load(Ordering::SeqCst), "silence must not mark the stream ready");
+
+        p.feed(&[0.02; 64]);
+        assert!(ready.load(Ordering::SeqCst), "real signal must mark the stream ready");
+
+        p.feed(&[0.0; 64]);
+        assert!(
+            ready.load(Ordering::SeqCst),
+            "a later quiet buffer must not un-latch a confirmed stream"
+        );
     }
 }

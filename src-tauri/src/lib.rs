@@ -155,6 +155,29 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
     })
 }
 
+/// Whether these command-line arguments ask the wizard to simulate a failed
+/// setup/test step.
+///
+/// Exists so the "something went wrong" screen on the wizard's last page — the
+/// apology, the log capture, the email-us button — can be exercised without
+/// actually breaking hotkeys or a microphone, which matters most on Windows,
+/// where those are the two things most often reported broken and neither is
+/// easy to fake by hand.
+pub fn wants_wizard_error_test(args: &[String]) -> bool {
+    args.iter()
+        .any(|a| matches!(a.as_str(), "--simulate-wizard-error" | "--test-wizard-error"))
+}
+
+/// Set once at startup from the process's own argv, then read by the
+/// `wizard_error_test_active` command. A plain global rather than app state
+/// because it is fixed for the life of the process and every window — wizard,
+/// settings, single-instance re-launch — needs the same answer.
+static WIZARD_ERROR_TEST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn wizard_error_test_is_active() -> bool {
+    WIZARD_ERROR_TEST.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
@@ -492,7 +515,10 @@ pub fn run() {
             // to see the wizard, not to raise Settings. Without this the flag
             // would appear to do nothing at all on the second launch, which is
             // the launch a user testing it is most likely to make.
-            if wants_setup_wizard(&argv) {
+            if wants_wizard_error_test(&argv) {
+                WIZARD_ERROR_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            if wants_setup_wizard(&argv) || wants_wizard_error_test(&argv) {
                 if let Err(e) = crate::window::open_wizard_window(app) {
                     tracing::error!("Could not open the setup wizard: {e}");
                 }
@@ -618,7 +644,12 @@ pub fn run() {
             // wizard was asked for: it is about to ask which model the user
             // wants, and fetching a different one behind its back would waste
             // the download and confuse the step.
-            let forced_wizard = wants_setup_wizard(&std::env::args().collect::<Vec<_>>());
+            let launch_args: Vec<String> = std::env::args().collect();
+            if wants_wizard_error_test(&launch_args) {
+                WIZARD_ERROR_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            let forced_wizard =
+                wants_setup_wizard(&launch_args) || wants_wizard_error_test(&launch_args);
             if forced_wizard {
                 if let Err(e) = crate::window::open_wizard_window(&app.handle().clone()) {
                     tracing::error!("Could not open the setup wizard: {e}");
@@ -726,6 +757,8 @@ pub fn run() {
             bug_report::preview_bug_report,
             bug_report::submit_bug_report,
             bug_report::save_bug_report,
+            bug_report::wizard_error_test_active,
+            bug_report::wizard_failure_log,
             bug_report::open_external_url,
             bug_report::open_report_folder,
             bug_report::send_bug_report_email,

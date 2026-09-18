@@ -519,6 +519,38 @@ pub async fn reset_bug_report_identity() -> Result<String, String> {
     Ok(fresh)
 }
 
+// ── Wizard error screen ──────────────────────────────────────────────────────
+
+/// Whether this launch was started with `--simulate-wizard-error` (or
+/// `--test-wizard-error`), asking the wizard's last page to behave as if a
+/// setup or test step had failed.
+///
+/// Read by the wizard on mount rather than passed as a window-creation
+/// argument because the single-instance relaunch path (an already-running
+/// VoxCtrl handed a second `--simulate-wizard-error`) reuses the same wizard
+/// window plumbing as a normal `--setup`, with no per-window payload to carry
+/// the flag through.
+#[tauri::command]
+pub fn wizard_error_test_active() -> bool {
+    crate::wizard_error_test_is_active()
+}
+
+/// The same log excerpt a real bug report would carry — scrubbed of paths and
+/// account names, capped to the same size — for the wizard's "something went
+/// wrong" screen to offer the user for pasting into an email.
+///
+/// A plain string rather than the full [`voxctrl_bugreport::BugReport`]: that
+/// struct also carries the redacted config, targets and bindings, which this
+/// screen has no use for and which would only make the "copy log" button slow.
+#[tauri::command]
+pub async fn wizard_failure_log() -> Result<String, String> {
+    tokio::task::spawn_blocking(|| {
+        voxctrl_bugreport::logs::collect(&voxctrl_bugreport::scrub::Scrubber::from_env()).text
+    })
+    .await
+    .map_err(|e| format!("could not read the log: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

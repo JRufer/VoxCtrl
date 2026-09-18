@@ -201,6 +201,26 @@ Re-runnable afterwards with `voxctrl --setup` (also `--wizard`,
 running, or from Settings → General. A re-run builds a fresh window and starts
 at step one.
 
+`voxctrl --simulate-wizard-error` (also `--test-wizard-error`) opens the
+wizard straight to the last screen with a fake failure already recorded, for
+exercising the apology / log-capture / email-us flow (see below) without
+having to actually break a hotkey or a microphone to trigger it.
+
+### When setup doesn't work
+
+Anything that fails during the wizard's steps — a model download, a shortcut
+registration, an unexpected exception — is recorded (`wizard-state.svelte.ts`'s
+`recordIssue`/`wizard.issues`) and shown on the last screen instead of the
+normal "you're all set" copy. That screen also offers "Email us the log": it
+pulls the same tail-of-log excerpt a Settings → Bug Report submission would
+carry (`wizard_failure_log`, scrubbed of paths and account names the same way
+[`docs/bug_reports.md`](bug_reports.md) describes), puts it on the clipboard,
+and opens the user's email client with a draft addressed to the maintainer,
+subject "VoxCtrl Bug Report", asking them to paste the log in — deliberately
+lighter than the full Bug Report page, which also assembles a redacted copy of
+the config/targets/bindings and, on Windows, waits on a PowerShell system
+probe to do it.
+
 ---
 
 ## Frontend State Management

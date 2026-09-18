@@ -9,6 +9,8 @@
   let trayOpen = $state(false);
   let copied = $state(false);
   let unloadTtsIdle = $state(true);
+  let emailingLog = $state(false);
+  let logActionStatus = $state<string | null>(null);
 
   type SetupStatus = {
     hotkeys_active: boolean;
@@ -153,6 +155,42 @@
     }
   }
 
+  /**
+   * The wizard's own escape hatch for a setup that didn't work: pull the same
+   * log a bug report would quote, put it on the clipboard, and hand the user
+   * an email draft to jrufer@gmail.com already addressed and worded — all they
+   * have to do is paste.
+   *
+   * A dedicated command and a hand-built mailto rather than the full Settings
+   * → Bug Report flow: that flow builds a redacted copy of the config, targets
+   * and bindings too, which takes a PowerShell probe on Windows to assemble —
+   * exactly the slow, blocking thing this screen should not do to someone who
+   * has just watched setup fail.
+   */
+  async function emailUsTheLog() {
+    emailingLog = true;
+    logActionStatus = null;
+    try {
+      const log = await invoke<string>("wizard_failure_log");
+      try {
+        await navigator.clipboard.writeText(log);
+      } catch (e) {
+        console.error("Wizard: clipboard write failed:", e);
+      }
+      const subject = encodeURIComponent("VoxCtrl Bug Report");
+      const body = encodeURIComponent(
+        "Paste the log contents below and I will get back to you with a fix ASAP.\n\n",
+      );
+      const mailtoUrl = `mailto:jrufer@gmail.com?subject=${subject}&body=${body}`;
+      await invoke("send_bug_report_email", { mailtoUrl, attachmentPath: null });
+      logActionStatus = "Log copied to your clipboard — paste it into the email that just opened.";
+    } catch (e) {
+      logActionStatus = `Could not open your email app: ${e}`;
+    } finally {
+      emailingLog = false;
+    }
+  }
+
   async function openSettings() {
     try {
       await invoke("open_settings_tab", { tab: "general" });
@@ -195,8 +233,9 @@
         This window can close. VoxCtrl keeps running quietly in your system tray and listens for
         your hotkey in any app.
       {:else}
-        Your choices are saved, but {issues.length} problem{issues.length === 1 ? "" : "s"} will stop
-        VoxCtrl working end to end. The details are on the right — fix them here or in Settings.
+        Sorry about that — {issues.length} problem{issues.length === 1 ? "" : "s"} came up during setup
+        and will stop VoxCtrl working end to end. Your choices are still saved. The details are on
+        the right — fix them here or in Settings, or send us the log and we'll take it from there.
       {/if}
     </p>
     <div class="summary">
@@ -312,7 +351,13 @@
           {copied ? "✓ Copied" : "Copy diagnostics"}
         </button>
         <button class="vx-btn small" onclick={openSettings}>Open Settings</button>
+        <button class="vx-btn small" onclick={emailUsTheLog} disabled={emailingLog}>
+          {#if emailingLog}<span class="vx-spinner"></span>{/if} Email us the log
+        </button>
       </div>
+      {#if logActionStatus}
+        <div class="log-status">{logActionStatus}</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -486,6 +531,13 @@
     display: flex;
     gap: 8px;
     margin-top: auto;
+  }
+
+  .log-status {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--vx-txt-2);
   }
 
   .mock-screen {

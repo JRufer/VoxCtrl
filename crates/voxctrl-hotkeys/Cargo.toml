@@ -43,6 +43,7 @@ zbus = { workspace = true }
 # dependency graph via Tauri, so it adds nothing to compile.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
