@@ -234,6 +234,9 @@ jobs:
           appimage=$(find . -path '*/bundle/appimage/*.AppImage' ! -name '*.zsync' | head -1)
           if [ -z "${appimage:-}" ]; then echo "No AppImage found to slim"; exit 1; fi
           echo "Slimming $appimage"
+
+          # appimagetool.bin is not committed to the repo; fetch it here.
+          ./scripts/fetch-appimagetool.sh ./appimagetool.bin
           chmod +x ./appimagetool.bin
 
           work=$(mktemp -d)
