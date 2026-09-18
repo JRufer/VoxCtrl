@@ -360,6 +360,61 @@ pub fn open_overlay_window(
     Ok(window)
 }
 
+/// Poll interval for [`suspend_overlay_without_outputs`]. Far coarser than
+/// the ticker's own 150ms cadence: this only ever needs to react to a screen
+/// going idle/locked, never to anything on the hot dictation path.
+#[cfg(target_os = "linux")]
+pub const NO_OUTPUTS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Hide the overlay window while the compositor reports no real outputs, and
+/// show it again once one comes back.
+///
+/// The bundled WebKitGTK paces its compositor off a `DisplayVBlankMonitor`
+/// thread that divides by the current output's refresh rate. When a
+/// compositor (seen on Hyprland) drops to zero real outputs — idle, screen
+/// lock, DPMS off — and falls back to a placeholder monitor, that monitor has
+/// been observed reporting a scale of 0 to GTK
+/// (`gdk_monitor_set_scale: assertion 'scale > 0.' failed`); a refresh rate of
+/// 0 read into the same divide crashes the whole process with `SIGFPE`. Other
+/// GTK apps survive the assertion; VoxCtrl's bundled WebKitGTK does not
+/// survive the divide.
+///
+/// The overlay window is built once at startup and kept mapped for the rest
+/// of the session (see `open_overlay_window`'s doc comment for why it is not
+/// rebuilt per dictation), so whatever thread paces its compositor normally
+/// keeps running for as long as VoxCtrl does — including through an idle
+/// desktop, which is exactly when a compositor is most likely to drop to zero
+/// outputs. Unmapping the window for as long as there is nothing to display
+/// it on anyway is the one lever available without patching a stripped,
+/// bundled library: an unmapped `WebviewWindow` is not something WebKitGTK
+/// paces frames for. This narrows the crash window to the poll interval
+/// above rather than closing it, and it does nothing at all once WebKitGTK
+/// (bundled or the host's own — see
+/// `scripts/appimage-hooks/host-first-fallback.sh`) has the underlying
+/// divide-by-zero fixed upstream.
+#[cfg(target_os = "linux")]
+pub fn suspend_overlay_without_outputs(app: &tauri::AppHandle, suspended: &mut bool) {
+    let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
+        return;
+    };
+    // Any error is treated as "outputs present": this must never hide the
+    // overlay on a desktop that is working normally just because a query
+    // failed.
+    let has_outputs = window.available_monitors().map(|m| !m.is_empty()).unwrap_or(true);
+
+    if !has_outputs && !*suspended {
+        *suspended = true;
+        tracing::info!(
+            "No display outputs reported; hiding the overlay window until one returns \
+             (works around a SIGFPE in the bundled WebKitGTK's vblank thread)"
+        );
+        let _ = window.hide();
+    } else if has_outputs && *suspended {
+        *suspended = false;
+        let _ = window.show();
+    }
+}
+
 /// Re-apply the anchor/monitor position to the overlay window, if it
 /// currently exists.
 ///
