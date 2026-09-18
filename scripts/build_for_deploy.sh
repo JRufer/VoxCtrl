@@ -86,7 +86,7 @@ cp "assets/app_icon.png" "${BUNDLE_DIR}/assets/"
 
 # Desktop entry template (install.sh writes it programmatically, but include it
 # so advanced users can inspect it)
-cp "voxctrl.desktop" "${BUNDLE_DIR}/" 2>/dev/null || true
+cp "ai.voxctrl.app.desktop" "${BUNDLE_DIR}/" 2>/dev/null || true
 
 ok "Staged to ${BUNDLE_DIR}"
 
