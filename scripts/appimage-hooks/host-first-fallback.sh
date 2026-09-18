@@ -69,6 +69,43 @@ if [ -d "$fallback_src" ]; then
         if [ "$bundled_webkit_exposed" = false ]; then
             unset WEBKIT_EXEC_PATH
             unset WEBKIT_INJECTED_BUNDLE_PATH
+        else
+            # The bundled WebKitGTK's WebProcess aborts (SIGABRT, an assertion
+            # in Skia's colrv1_configure_skpaint) when it has to draw a glyph
+            # from a COLRv1-only colour emoji font. Fedora 41+ ships Noto
+            # Color Emoji only in that format (Noto-COLRv1.ttf) — no bitmap
+            # fallback — so any window with emoji in it (the setup wizard,
+            # settings) freezes the WebProcess the first time one is drawn.
+            # Reported and root-caused in #130.
+            #
+            # This only matters when the bundled WebKitGTK is the one in use:
+            # a host WebKitGTK new enough to handle COLRv1 is unaffected, and
+            # this whole branch is already gated on the host having none.
+            #
+            # A fontconfig override that rejects that one file by name is
+            # what the reporter's own workaround did, generalized: still
+            # include every other rule the host would normally apply, and
+            # only carve out this specific font so glyph fallback lands on
+            # whatever monochrome emoji font (or none) is left.
+            fontconfig_dir="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/voxctrl-fontconfig-$(id -u)"
+            if mkdir -p "$fontconfig_dir" 2>/dev/null; then
+                fontconfig_file="$fontconfig_dir/fonts.conf"
+                cat > "$fontconfig_file" <<'FONTCONFIG_EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
+  <selectfont>
+    <rejectfont>
+      <glob>*/Noto-COLRv1.ttf</glob>
+    </rejectfont>
+  </selectfont>
+</fontconfig>
+FONTCONFIG_EOF
+                if [ -f "$fontconfig_file" ] && [ -z "${FONTCONFIG_FILE:-}" ]; then
+                    export FONTCONFIG_FILE="$fontconfig_file"
+                fi
+            fi
         fi
     fi
 fi
