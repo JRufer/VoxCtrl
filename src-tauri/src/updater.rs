@@ -1,11 +1,12 @@
-//! The app's side of updating: when to check, what to show, and how to hand
-//! over to the new build.
+//! The app's side of updating: what to show, and how to hand over to the new
+//! build. Checking only ever happens because the user asked — VoxCtrl never
+//! reaches out on its own.
 //!
 //! The decisions that can be got wrong without a running desktop — is this
 //! version newer, which file replaces this installation, is the download the
 //! one GitHub published — live in `voxctrl-update` and are tested there. What
-//! is here is the part that needs Tauri: the launch check, the window, the
-//! progress events, and the restart.
+//! is here is the part that needs Tauri: the manual check command, the window,
+//! the progress events, and the restart.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,14 +20,6 @@ use voxctrl_update::{CheckOutcome, PendingUpdate, Progress, UpdateInfo};
 /// the one every release tag is compared against.
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// How long after launch the check runs.
-///
-/// Startup is already busy: the model is loading, the portal handshake is in
-/// flight, the tray is being built. A network round-trip thrown into that
-/// competes with the things the user is waiting for, and an update dialog that
-/// appears before the app has finished appearing reads as a fault.
-const LAUNCH_CHECK_DELAY: Duration = Duration::from_secs(10);
-
 /// What the frontend gets back from a check.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UpdateCheckPayload {
@@ -34,9 +27,6 @@ pub struct UpdateCheckPayload {
     pub current_version: String,
     /// The update that was found, or `None` when this is the latest release.
     pub update: Option<UpdateInfo>,
-    /// True when the user had previously chosen to skip this exact version, so
-    /// a manual check can still show it while the launch check stays quiet.
-    pub skipped: bool,
 }
 
 /// Run a check and remember the result. Returns what to show the user.
@@ -53,70 +43,23 @@ pub async fn check(state: &Arc<AppState>) -> Result<UpdateCheckPayload, String> 
         .await
         .map_err(|e| e.to_string())?;
 
-    let skipped_version = {
-        let cfg = state.config.lock().await;
-        cfg.data.updates.skipped_version.clone()
-    };
-
     match outcome {
         CheckOutcome::UpToDate { current } => {
             *state.pending_update.lock().await = None;
-            Ok(UpdateCheckPayload { current_version: current, update: None, skipped: false })
+            Ok(UpdateCheckPayload { current_version: current, update: None })
         }
         CheckOutcome::Available(pending) => {
             let info = pending.info.clone();
-            let skipped = !voxctrl_update::should_prompt(&info, skipped_version.as_deref());
             *state.pending_update.lock().await = Some(*pending);
-            Ok(UpdateCheckPayload {
-                current_version: CURRENT_VERSION.to_string(),
-                update: Some(info),
-                skipped,
-            })
+            Ok(UpdateCheckPayload { current_version: CURRENT_VERSION.to_string(), update: Some(info) })
         }
     }
 }
 
-/// Check once, shortly after launch, and raise the update window if there is
-/// something to say.
-///
-/// Every failure here is silent by design. The user did not ask for this check;
-/// a laptop that woke up on a train and could not reach GitHub has nothing to
-/// apologise for, and a modal error about it would be worse than the missing
-/// update. Failures go to the log, and Settings → General → "Check now" reports
-/// them properly, because there someone is waiting for an answer.
-pub fn spawn_launch_check(app: tauri::AppHandle, state: Arc<AppState>) {
-    tauri::async_runtime::spawn(async move {
-        {
-            let cfg = state.config.lock().await;
-            if !cfg.data.updates.auto_check {
-                tracing::info!("Update check on launch is disabled in settings");
-                return;
-            }
-        }
-
-        tokio::time::sleep(LAUNCH_CHECK_DELAY).await;
-
-        match check(&state).await {
-            Ok(payload) => match payload.update {
-                Some(info) if payload.skipped => {
-                    tracing::info!("Update {} is available but was skipped by the user", info.version);
-                }
-                Some(info) => {
-                    tracing::info!("Update available: {} → {}", info.current_version, info.version);
-                    if let Err(e) = crate::window::open_update_window(&app) {
-                        tracing::error!("Could not open the update window: {e}");
-                    }
-                }
-                None => tracing::info!("VoxCtrl {CURRENT_VERSION} is up to date"),
-            },
-            Err(e) => tracing::warn!("Update check failed: {e}"),
-        }
-    });
-}
-
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-/// Check GitHub now, on the user's explicit say-so.
+/// Check GitHub now, on the user's explicit say-so. This is the only way
+/// VoxCtrl ever contacts GitHub — there is no check on launch.
 #[tauri::command]
 pub async fn check_for_update(state: State<'_, Arc<AppState>>) -> Result<UpdateCheckPayload, String> {
     let state = state.inner().clone();
@@ -133,40 +76,7 @@ pub async fn get_pending_update(
     Ok(UpdateCheckPayload {
         current_version: CURRENT_VERSION.to_string(),
         update: pending.as_ref().map(|p| p.info.clone()),
-        skipped: false,
     })
-}
-
-/// Stop offering this particular version. A newer one still gets raised.
-#[tauri::command]
-pub async fn skip_update_version(
-    app: tauri::AppHandle,
-    state: State<'_, Arc<AppState>>,
-    version: String,
-) -> Result<(), String> {
-    {
-        let mut cfg = state.config.lock().await;
-        cfg.data.updates.skipped_version = Some(version.clone());
-        cfg.save().map_err(|e| e.to_string())?;
-        let _ = app.emit("config-changed", cfg.data.clone());
-    }
-    tracing::info!("Skipping update {version} at the user's request");
-    Ok(())
-}
-
-/// Turn the launch check on or off from the update window, so the answer to
-/// "stop telling me about this" does not require finding a settings tab.
-#[tauri::command]
-pub async fn set_update_auto_check(
-    app: tauri::AppHandle,
-    state: State<'_, Arc<AppState>>,
-    enabled: bool,
-) -> Result<(), String> {
-    let mut cfg = state.config.lock().await;
-    cfg.data.updates.auto_check = enabled;
-    cfg.save().map_err(|e| e.to_string())?;
-    let _ = app.emit("config-changed", cfg.data.clone());
-    Ok(())
 }
 
 /// Download the pending update, install it, and restart into it.
@@ -221,15 +131,6 @@ pub async fn install_update(
     tracing::info!("Update installed; restarting into {}", launch_path.display());
     let _ = app.emit("update-installed", pending.info.version.clone());
 
-    // A version the user has just installed is not one to keep skipping.
-    {
-        let mut cfg = state.config.lock().await;
-        if cfg.data.updates.skipped_version.is_some() {
-            cfg.data.updates.skipped_version = None;
-            let _ = cfg.save();
-        }
-    }
-
     voxctrl_update::apply::spawn_relaunch(&launch_path).map_err(|e| {
         state.end_update();
         e.to_string()
@@ -247,8 +148,8 @@ pub async fn install_update(
     Ok(())
 }
 
-/// Close the update window without doing anything. The same update is raised
-/// again on the next launch, which is what "Not now" should mean.
+/// Close the update window without doing anything. The pending update stays
+/// remembered, so the next manual check still finds it.
 #[tauri::command]
 pub async fn dismiss_update(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(crate::window::UPDATE_WINDOW) {

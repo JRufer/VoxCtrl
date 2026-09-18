@@ -24,7 +24,6 @@ fn fully_populated() -> AppConfig {
     cfg.tts.hf_token = Some("hf_test_not_a_real_token".into());
     cfg.tts.pocket_tts.legacy_hf_token = Some("hf_legacy_not_a_real_token".into());
     cfg.tts.breeze_tts_2.legacy_hf_token = Some("hf_legacy_not_a_real_token".into());
-    cfg.updates.skipped_version = Some("0.4.0".into());
     cfg.features.show_notification = Some(true);
     cfg.features
         .custom_vocabulary

@@ -21,7 +21,6 @@
   let currentVersion = $state("");
   let progress = $state<UpdateProgress | null>(null);
   let errorMsg = $state<string | null>(null);
-  let autoCheckDisabled = $state(false);
 
   let unlisten: UnlistenFn[] = [];
 
@@ -54,8 +53,8 @@
 
   async function load() {
     try {
-      // Whatever the launch check already found, so opening this window costs
-      // no network round-trip.
+      // Whatever the last manual check already found, so opening this window
+      // costs no network round-trip.
       let payload = await invoke<UpdateCheckPayload>("get_pending_update");
       if (!payload.update) {
         payload = await invoke<UpdateCheckPayload>("check_for_update");
@@ -86,25 +85,6 @@
 
   async function notNow() {
     await invoke("dismiss_update");
-  }
-
-  async function skip() {
-    if (!info) return;
-    try {
-      await invoke("skip_update_version", { version: info.version });
-    } catch (e) {
-      console.error("Could not record the skipped version:", e);
-    }
-    await notNow();
-  }
-
-  async function stopAutoChecking() {
-    try {
-      await invoke("set_update_auto_check", { enabled: false });
-      autoCheckDisabled = true;
-    } catch (e) {
-      console.error("Could not turn off automatic update checks:", e);
-    }
   }
 
   async function openReleasePage() {
@@ -148,7 +128,7 @@
         <p class="sub">Asking GitHub for the latest release…</p>
       </div>
     {:else if phase === "up-to-date"}
-      <p class="body">Nothing to install. VoxCtrl checks again the next time it starts.</p>
+      <p class="body">Nothing to install. Check again any time from Settings → General.</p>
     {:else if info}
       {#if info.notes}
         <section class="notes-block">
@@ -207,14 +187,8 @@
       {:else if info}
         <div class="left-actions">
           <button class="link" onclick={openReleasePage}>Full release notes</button>
-          {#if !autoCheckDisabled}
-            <button class="link muted" onclick={stopAutoChecking}>Stop checking automatically</button>
-          {:else}
-            <span class="hint">Automatic checks are off. Turn them back on in Settings → General.</span>
-          {/if}
         </div>
         <div class="right-actions">
-          <button class="btn-secondary" onclick={skip}>Skip this version</button>
           <button class="btn-secondary" onclick={notNow}>Not now</button>
           {#if info.can_self_update}
             <button class="btn-primary" onclick={install}>Update and restart</button>
@@ -311,12 +285,6 @@
   }
   .link {
     @apply text-[12px] font-semibold text-[var(--color-accent-blue)] underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-left;
-  }
-  .link.muted {
-    @apply text-[var(--color-obsidian-400)] font-normal no-underline;
-  }
-  .link.muted:hover {
-    @apply underline text-[var(--color-obsidian-200)];
   }
   .centered {
     @apply flex flex-col items-center justify-center gap-3 py-8;
