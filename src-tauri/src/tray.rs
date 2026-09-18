@@ -237,6 +237,10 @@ pub fn spawn_status_ticker(
         let mut overlay_suspended_no_outputs = false;
         #[cfg(target_os = "linux")]
         let mut last_output_check = tokio::time::Instant::now() - crate::window::NO_OUTPUTS_POLL_INTERVAL;
+        // Whether the overlay had something to show on the previous tick —
+        // see the transition check below, `window::nudge_overlay_repaint`.
+        #[cfg(target_os = "linux")]
+        let mut was_showing_overlay = false;
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
@@ -342,6 +346,28 @@ pub fn spawn_status_ticker(
                     Ok(_) => overlay_built = true,
                     Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
                 }
+            }
+
+            // On some WebKitGTK/compositor combinations the overlay's client
+            // buffer never repaints back to blank on its own once the last
+            // dictation's content is gone — see `window::nudge_overlay_repaint`
+            // for the confirmed repro and workaround (#129). Nudging twice,
+            // at 1s and 3s after the transition to idle, mirrors the delay
+            // the reporter found necessary by hand; harmless when nothing was
+            // ever stuck, since it is just a 2px resize and back.
+            #[cfg(target_os = "linux")]
+            if overlay_built && was_showing_overlay && !should_show_overlay {
+                let nudge_handle = handle.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    crate::window::nudge_overlay_repaint(&nudge_handle).await;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    crate::window::nudge_overlay_repaint(&nudge_handle).await;
+                });
+            }
+            #[cfg(target_os = "linux")]
+            {
+                was_showing_overlay = should_show_overlay;
             }
 
             #[cfg(target_os = "linux")]
