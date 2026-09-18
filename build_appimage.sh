@@ -56,6 +56,14 @@ if [ -f "./appimagetool" ] && [ ! -f "./appimagetool.bin" ]; then
     chmod +x appimagetool.bin
 fi
 
+# appimagetool.bin is not committed to the repo (it is a 15 MB third-party
+# binary); fetch it on demand, the same way scripts/fetch-uruntime.sh fetches
+# the AppImage runtime.
+if [ ! -f "./appimagetool.bin" ]; then
+    info "appimagetool.bin not found locally. Fetching it..."
+    "$ROOT_DIR/scripts/fetch-appimagetool.sh" "$ROOT_DIR/appimagetool.bin"
+fi
+
 # Create the wrapper script
 info "Creating headless FUSE-bypass wrapper script..."
 cat > ./appimagetool <<'EOF'
