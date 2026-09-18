@@ -196,10 +196,24 @@ const OVERLAY_HEIGHT: f64 = 444.0;
 ///
 /// The frontend normally reports in well inside this (see `reveal_overlay`),
 /// so this only matters when it cannot — a custom overlay whose script throws
-/// before the report, say. Long enough not to pre-empt a slow first paint,
-/// short enough that the worst case is still a prompt overlay rather than a
-/// missing one.
-const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(600);
+/// before the report, say, or a first paint that is simply slow.
+///
+/// This used to be 600ms, on the reasoning that the worst case was "a prompt
+/// overlay rather than a missing one". That reasoning assumed a slow paint
+/// still eventually paints *something* sane. Reported on Hyprland/XWayland
+/// with an older Intel iGPU (#134): the overlay this call pre-builds at
+/// startup — with nothing to show, since no dictation is running — came up
+/// and stayed on screen indefinitely after the timeout fired, rather than
+/// clearing once real content (or the lack of it) actually painted. The
+/// timeout firing before WebKitGTK's first real paint on a slow GPU path is
+/// the most likely explanation: what gets revealed at that point is whatever
+/// is sitting in an as-yet-unpainted backing buffer, and unlike a genuinely
+/// missing overlay (annoying but momentary — the next tick tries again),
+/// nothing ever repaints it back to blank afterwards. A longer window gives
+/// a slow first paint more room to actually finish before that risk is
+/// taken, at the cost of a slower-appearing overlay only in the case this is
+/// meant to catch (which is already the degraded path).
+const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(3000);
 
 /// Make the overlay window visible, if it is not already.
 ///
