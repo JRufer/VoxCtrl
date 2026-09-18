@@ -36,10 +36,19 @@ pub enum GestureKind {
     Stop,
 }
 
-/// A `double_tap_hold` that is never released — because the backend dropped the
-/// release, or the key is physically stuck — would record forever. Recording
-/// stops itself after this long.
-const DOUBLE_TAP_HOLD_MAX: Duration = Duration::from_secs(120);
+/// A `hold` or `double_tap_hold` that is never released — because the backend
+/// dropped the release, or the key is physically stuck — would record forever.
+/// Recording stops itself after this long.
+///
+/// The evdev backend can recover a dropped release itself: it notices its
+/// keyboard device disappearing and synthesizes the missing key-ups (see
+/// `linux.rs`'s `losing_the_keyboard_mid_hold_stops_the_recording`). The XDG
+/// `GlobalShortcuts` portal has nothing equivalent to notice — it is entirely
+/// dependent on the compositor sending a `Deactivated` signal, and at least
+/// one (`xdg-desktop-portal-hyprland`, manually bound via `hl.dsp.global`) has
+/// been seen not sending one at all — so `hold` needs the same backstop
+/// `double_tap_hold` already had.
+const STUCK_HOLD_MAX: Duration = Duration::from_secs(120);
 
 /// Shortest gap between releasing the first tap and pressing the second that
 /// still counts as two deliberate taps.
@@ -413,14 +422,26 @@ impl BindingState {
         let cancel = CancellationToken::new();
         self.hold_cancel = Some(cancel.clone());
         let active = self.hold_active.clone();
-        let event = self.pending_event(GestureKind::Start);
+        let start = self.pending_event(GestureKind::Start);
+        let stop = self.pending_event(GestureKind::Stop);
         let tx = tx.clone();
         let threshold = Duration::from_millis(self.binding.hold_threshold_ms as u64);
         tokio::spawn(async move {
             tokio::select! {
-                _ = tokio::time::sleep(threshold) => {
-                    active.store(true, std::sync::atomic::Ordering::SeqCst);
-                    let _ = tx.send(event);
+                _ = tokio::time::sleep(threshold) => {}
+                _ = cancel.cancelled() => return,
+            }
+            active.store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = tx.send(start);
+
+            // See `STUCK_HOLD_MAX`: a release that never arrives — most often
+            // the portal backend on a compositor that drops `Deactivated` —
+            // must not leave the microphone open indefinitely.
+            tokio::select! {
+                _ = tokio::time::sleep(STUCK_HOLD_MAX) => {
+                    if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                        let _ = tx.send(stop);
+                    }
                 }
                 _ = cancel.cancelled() => {}
             }
@@ -457,7 +478,7 @@ impl BindingState {
             let _ = tx.send(start);
 
             tokio::select! {
-                _ = tokio::time::sleep(DOUBLE_TAP_HOLD_MAX) => {
+                _ = tokio::time::sleep(STUCK_HOLD_MAX) => {
                     if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
                         let _ = tx.send(stop);
                     }
@@ -925,6 +946,27 @@ mod tests {
         engine.apply("h", Transition::Released, &tx);
         sleep(200).await;
         assert!(rx.try_recv().is_err(), "the pending start must be cancelled");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn hold_stops_itself_after_the_safety_timeout() {
+        // Regression for #124: a portal backend that never delivers a release
+        // (seen on Hyprland's xdg-desktop-portal-hyprland with a manual
+        // `hl.dsp.global` bind) must not leave the microphone open forever.
+        let (tx, mut rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding("h", GestureType::Hold, &["KEY_LEFTALT"])]);
+
+        engine.apply("h", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+
+        sleep(121_000).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+
+        // The real release, arriving late, must not send a duplicate stop.
+        engine.apply("h", Transition::Deactivated, &tx);
+        engine.apply("h", Transition::Released, &tx);
+        assert!(rx.try_recv().is_err(), "no duplicate stop on the real release");
     }
 
     #[tokio::test]

@@ -230,6 +230,13 @@ pub fn spawn_status_ticker(
         // Whether the overlay window has been built yet — see this
         // function's doc comment for why this loop owns creating it.
         let mut overlay_built = false;
+        // Guards against a SIGFPE in the bundled WebKitGTK's vblank thread
+        // when the compositor briefly has zero outputs — see
+        // `window::suspend_overlay_without_outputs`.
+        #[cfg(target_os = "linux")]
+        let mut overlay_suspended_no_outputs = false;
+        #[cfg(target_os = "linux")]
+        let mut last_output_check = tokio::time::Instant::now() - crate::window::NO_OUTPUTS_POLL_INTERVAL;
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
@@ -335,6 +342,12 @@ pub fn spawn_status_ticker(
                     Ok(_) => overlay_built = true,
                     Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
                 }
+            }
+
+            #[cfg(target_os = "linux")]
+            if overlay_built && last_output_check.elapsed() >= crate::window::NO_OUTPUTS_POLL_INTERVAL {
+                last_output_check = tokio::time::Instant::now();
+                crate::window::suspend_overlay_without_outputs(&handle, &mut overlay_suspended_no_outputs);
             }
 
             let active_target_id = state_for_ticker.active_target.lock().await.clone();
