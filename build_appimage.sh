@@ -59,6 +59,18 @@ fi
 # appimagetool.bin is not committed to the repo (it is a 15 MB third-party
 # binary); fetch it on demand, the same way scripts/fetch-uruntime.sh fetches
 # the AppImage runtime.
+#
+# A file merely existing isn't enough to trust it: a leftover copy from before
+# this file was untracked (or an interrupted download) can be zero-length or
+# truncated. Running that fails with `execve` returning ENOEXEC, which bash
+# then "helpfully" reinterprets as a shell script — producing a baffling
+# "Argument list too long" instead of a clear "this isn't a valid binary".
+# Checking it here means a stale/corrupt copy heals itself on the next run.
+if [ -f "./appimagetool.bin" ] && ! file -b "./appimagetool.bin" | grep -q 'ELF 64-bit.*x86-64'; then
+    warn "./appimagetool.bin exists but is not a valid x86-64 ELF binary. Refetching..."
+    rm -f "./appimagetool.bin"
+fi
+
 if [ ! -f "./appimagetool.bin" ]; then
     info "appimagetool.bin not found locally. Fetching it..."
     "$ROOT_DIR/scripts/fetch-appimagetool.sh" "$ROOT_DIR/appimagetool.bin"
