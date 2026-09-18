@@ -37,11 +37,15 @@ use voxctrl_routing::HotkeyBinding;
 use crate::win_keys::{keymap, SuppressPlan};
 use crate::{gestures::GestureEngine, keys::KeyMatcher, Backend, GestureSender, ListenerHealth};
 
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-    UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL,
-    WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
+    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT,
+    LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 /// Marker on every keystroke VoxCtrl synthesises. Defined by `voxctrl-winput`,
@@ -297,12 +301,81 @@ fn pump_once() -> PumpOutcome {
     PumpOutcome::Reinstall
 }
 
-/// Watch for the silent unhook.
+/// Whether `process` is running at a higher integrity level than this one —
+/// `None` when the query itself could not be made.
+///
+/// A handful of protected system processes deny even
+/// `PROCESS_QUERY_LIMITED_INFORMATION`, so "could not tell" is kept distinct
+/// from "not elevated": a caller that collapsed the two would call a locked-
+/// down process non-elevated, which is the one direction of mistake that
+/// leaves a real problem unreported.
+fn process_is_elevated(process: HANDLE) -> Option<bool> {
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 {
+            return None;
+        }
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut returned = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut TOKEN_ELEVATION as *mut core::ffi::c_void,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        );
+        CloseHandle(token);
+        (ok != 0).then_some(elevation.TokenIsElevated != 0)
+    }
+}
+
+/// True when the focused window belongs to a process elevated above VoxCtrl's
+/// own — Task Manager, an elevated terminal, an installer's UAC prompt.
+///
+/// Windows' User Interface Privilege Isolation blocks a lower-integrity
+/// `WH_KEYBOARD_LL` hook from receiving keys while such a window has focus.
+/// The hook stays installed, the pump thread stays alive, and `SEEN` keeps
+/// advancing for VoxCtrl's own window — nothing about the hook itself ever
+/// fails, so this is the only way to tell the user why their shortcuts just
+/// went quiet.
+fn foreground_window_is_elevated() -> bool {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 {
+            return false;
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return false;
+        }
+        let foreground_elevated = process_is_elevated(process);
+        CloseHandle(process);
+
+        // Both elevated is not a problem: VoxCtrl itself is high enough to be
+        // handed the keys. Only a strictly-higher foreground window blinds it.
+        let self_elevated = process_is_elevated(GetCurrentProcess()).unwrap_or(false);
+        foreground_elevated == Some(true) && !self_elevated
+    }
+}
+
+/// Watch for the silent unhook, and for the foreground window outranking
+/// VoxCtrl in privilege.
 ///
 /// Windows removes a hook procedure that overruns its timeout and tells the
 /// application nothing, so the only evidence is that events stop arriving. If
 /// the machine has been quiet for longer than a person plausibly pauses, ask the
 /// pump to drop out of its message loop and install a fresh hook.
+///
+/// The elevation check rides along on the same tick rather than getting a
+/// poller of its own: `GetForegroundWindow` plus two token queries is cheap,
+/// but polling it on every keystroke from the hook procedure would spend
+/// budget the hook cannot spare on something that changes only when focus
+/// does.
 fn spawn_watchdog(health: Arc<ListenerHealth>) {
     let _ = std::thread::Builder::new()
         .name("voxctrl-winhook-watchdog".into())
@@ -311,6 +384,9 @@ fn spawn_watchdog(health: Arc<ListenerHealth>) {
             let mut quiet_since = Instant::now();
             loop {
                 std::thread::sleep(WATCHDOG_TICK);
+
+                health.set_elevated_window_focused(foreground_window_is_elevated());
+
                 let seen = SEEN.load(Ordering::Relaxed);
                 if seen != last_seen {
                     last_seen = seen;

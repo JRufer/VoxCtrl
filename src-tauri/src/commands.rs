@@ -911,6 +911,11 @@ pub struct HotkeyStatusPayload {
     pub is_mint_desktop: bool,
     /// VoxCtrl's native D-Bus shortcut is registered in Mint's gsettings registry.
     pub mint_shortcut_registered: bool,
+    /// Windows only: the focused window belongs to a process elevated above
+    /// VoxCtrl's own, so its keyboard hook cannot see keys typed there. UIPI,
+    /// not a failure — the hook stays installed and would otherwise look
+    /// indistinguishable from "everything is fine".
+    pub elevated_window_focused: bool,
 }
 
 /// `XDG_CURRENT_DESKTOP` is a colon-separated list (e.g. `ubuntu:GNOME`); any
@@ -1049,6 +1054,14 @@ pub fn hotkey_status(health: &voxctrl_hotkeys::ListenerHealth) -> HotkeyStatusPa
                     .to_string()
             }
         }
+        voxctrl_hotkeys::Backend::WindowsHook if health.elevated_window_focused() => (
+            "VoxCtrl cannot see key presses right now: the focused window is running as \
+             administrator (Task Manager, an elevated terminal, an installer), and Windows \
+             blocks VoxCtrl's keyboard hook from receiving keys while such a window has \
+             focus. Switch back to a window that is not running as administrator and your \
+             shortcuts will work again."
+        )
+        .to_string(),
         voxctrl_hotkeys::Backend::WindowsHook => (
             "VoxCtrl is receiving shortcuts through a Windows low-level keyboard hook.              Every gesture style works, including bare modifiers, and no permission setup              was needed — but in this mode every keystroke passes through VoxCtrl. Keys are              matched against your shortcuts and discarded; nothing is stored or sent              anywhere. Windows does not deliver keys to this hook while an elevated              application has focus, or on the secure desktop (the UAC prompt and the lock              screen), so shortcuts do not fire there."
         )
@@ -1134,6 +1147,7 @@ pub fn hotkey_status(health: &voxctrl_hotkeys::ListenerHealth) -> HotkeyStatusPa
         }),
         is_mint_desktop,
         mint_shortcut_registered,
+        elevated_window_focused: health.elevated_window_focused(),
     }
 }
 
@@ -1158,6 +1172,7 @@ fn test_override(value: &str) -> Option<HotkeyStatusPayload> {
         manual_enable_hint: None,
         is_mint_desktop: false,
         mint_shortcut_registered: false,
+        elevated_window_focused: false,
     };
     match value {
         "portal" => Some(base),

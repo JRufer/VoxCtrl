@@ -112,6 +112,11 @@ pub struct ListenerHealth {
     /// problem from "this desktop has no portal", and it needs different advice.
     portal_refused: AtomicBool,
     bound_shortcuts: Mutex<Vec<BoundShortcut>>,
+    /// Windows only: the foreground window belongs to a process elevated above
+    /// VoxCtrl's own. UIPI then blocks the `WH_KEYBOARD_LL` hook from seeing
+    /// any key while that window has focus — the hook stays installed and the
+    /// pump thread stays alive, so nothing else here would ever notice.
+    elevated_window_focused: AtomicBool,
 }
 
 impl ListenerHealth {
@@ -168,6 +173,13 @@ impl ListenerHealth {
         self.x11_error.lock().ok().and_then(|e| e.clone())
     }
 
+    /// Windows only: the currently focused window belongs to a more
+    /// privileged process than VoxCtrl's own, so its keyboard hook cannot see
+    /// keys typed there. Always false on every other backend.
+    pub fn elevated_window_focused(&self) -> bool {
+        self.elevated_window_focused.load(Ordering::Relaxed)
+    }
+
     /// Gesture styles the running backend can deliver.
     pub fn gestures(&self) -> &'static [GestureType] {
         self.backend().gestures()
@@ -183,7 +195,11 @@ impl ListenerHealth {
             return true;
         }
         match self.backend() {
-            Backend::Portal | Backend::WindowsHook | Backend::X11 | Backend::MintDbus => true,
+            // An elevated foreground window blinds the hook by construction
+            // (UIPI), not because anything failed — so this is the one case
+            // where WindowsHook is not simply active.
+            Backend::WindowsHook => !self.elevated_window_focused(),
+            Backend::Portal | Backend::X11 | Backend::MintDbus => true,
             Backend::Evdev => self.keyboards_open() > 0,
             // Still deciding which backend to use — don't report a problem yet.
             Backend::Starting => true,
@@ -246,6 +262,11 @@ impl ListenerHealth {
 
     pub fn set_portal_refused(&self, refused: bool) {
         self.portal_refused.store(refused, Ordering::Relaxed);
+    }
+
+    /// Record the outcome of the Windows watchdog's periodic elevation check.
+    pub fn set_elevated_window_focused(&self, focused: bool) {
+        self.elevated_window_focused.store(focused, Ordering::Relaxed);
     }
 
     pub fn set_bound_shortcuts(&self, shortcuts: Vec<BoundShortcut>) {
@@ -470,6 +491,23 @@ mod tests {
             "a WH_KEYBOARD_LL hook is called for every keystroke on the machine"
         );
         assert!(h.backend().sees_raw_keys());
+    }
+
+    #[test]
+    fn an_elevated_foreground_window_blinds_the_windows_hook() {
+        // UIPI, not a failure: the hook stays installed and healthy, but
+        // Windows never delivers it a key while a more-privileged window has
+        // focus. Nothing else here would ever notice that on its own.
+        let h = ListenerHealth::default();
+        h.set_supported(true);
+        h.set_backend(Backend::WindowsHook);
+        assert!(h.is_active(), "no elevated window yet, so shortcuts should fire");
+
+        h.set_elevated_window_focused(true);
+        assert!(!h.is_active(), "an elevated foreground window must stop reporting active");
+
+        h.set_elevated_window_focused(false);
+        assert!(h.is_active(), "clearing the flag once focus moves back must restore active");
     }
 
     #[test]

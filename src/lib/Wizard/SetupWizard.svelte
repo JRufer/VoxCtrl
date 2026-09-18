@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import appIcon from "../../assets/app_icon.png";
   import { config, configLoaded } from "../../stores/config";
@@ -110,6 +111,59 @@
   async function skipAll() {
     await finish();
   }
+
+  /**
+   * Catch whatever a step's own try/catch didn't: a rejected promise nobody
+   * awaited, a render-time exception. Without this, a bug that isn't one of
+   * the handful of places already calling `wizard.recordIssue` just leaves the
+   * window looking frozen or blank, with nothing for the last screen to show
+   * and nothing for a report to point at.
+   */
+  function recordUncaught(detail: string) {
+    wizard.recordIssue({
+      id: `uncaught-${wizard.issues.filter((i) => i.id.startsWith("uncaught-")).length}`,
+      step: wizard.step,
+      title: "Something went wrong during setup that the wizard did not expect.",
+      detail,
+    });
+  }
+
+  onMount(() => {
+    const onError = (e: ErrorEvent) => {
+      recordUncaught(e.error?.stack || e.message || String(e));
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      recordUncaught(e.reason?.stack || e.reason?.message || String(e.reason));
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+
+    // `--simulate-wizard-error` / `--test-wizard-error`: skip straight to the
+    // last screen with a fake failure recorded, so the apology / log-capture /
+    // email-us flow can be exercised without actually breaking a hotkey or a
+    // microphone to trigger it for real.
+    invoke<boolean>("wizard_error_test_active")
+      .then((active) => {
+        if (!active) return;
+        wizard.recordIssue({
+          id: "simulated-test-failure",
+          step: 4,
+          title: "Simulated failure (--simulate-wizard-error) — the live test did not detect any transcribed audio.",
+          detail:
+            "This is a test fixture, not a real failure: it exists so the wizard's error screen " +
+            "(apology, log capture, copy-to-clipboard, email-us) can be verified without needing " +
+            "a genuinely broken hotkey or microphone.",
+        });
+        wizard.visited = STEP_LABELS.length - 1;
+        wizard.step = STEP_LABELS.length - 1;
+      })
+      .catch((e) => console.error("Wizard: could not check for the error-test flag:", e));
+
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  });
 </script>
 
 <div class="vx-wizard vx-root">

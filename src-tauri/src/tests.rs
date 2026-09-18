@@ -520,6 +520,29 @@ fn hotkey_status_marks_the_evdev_fallback_as_not_private() {
 }
 
 #[test]
+fn hotkey_status_flags_an_elevated_foreground_window() {
+    // Task Manager, an elevated terminal, a UAC prompt: the hook stays
+    // installed and healthy, but UIPI blinds it while such a window has
+    // focus. Without this, the payload would say "active" the whole time.
+    let _lock = crate::test_utils::get_env_lock().lock().unwrap();
+    let health = voxctrl_hotkeys::ListenerHealth::default();
+    health.set_supported(true);
+    health.set_backend(voxctrl_hotkeys::Backend::WindowsHook);
+    health.set_elevated_window_focused(true);
+
+    let res = crate::commands::hotkey_status(&health);
+    assert_eq!(res.backend, "windows_hook");
+    assert!(res.elevated_window_focused);
+    assert!(!res.is_active);
+    assert!(res.needs_attention);
+    assert!(
+        res.detail.to_lowercase().contains("administrator"),
+        "{}",
+        res.detail
+    );
+}
+
+#[test]
 fn hotkey_status_flags_kde_for_the_manual_enable_bug() {
     // xdg-desktop-portal-kde registers shortcuts disabled and gives VoxCtrl
     // no way to see that — this is the standing warning that fills the gap,
