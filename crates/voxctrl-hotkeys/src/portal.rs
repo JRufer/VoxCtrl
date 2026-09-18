@@ -621,14 +621,31 @@ async fn run(
             }
             event = deactivated.next() => {
                 let Some(event) = event else { break };
-                if let Some(ids) = by_shortcut.get(event.shortcut_id()) {
-                    // A portal shortcut is atomic: there is no partial release
-                    // to distinguish, so the combo ending and every key being
-                    // up are the same moment.
-                    for id in ids {
-                        engine.apply(id, Transition::Deactivated, &tx);
-                        engine.apply(id, Transition::Released, &tx);
+                match by_shortcut.get(event.shortcut_id()) {
+                    Some(ids) => {
+                        tracing::debug!(
+                            "portal hotkeys: `{}` released ({})",
+                            event.shortcut_id(),
+                            ids.join(", ")
+                        );
+                        // A portal shortcut is atomic: there is no partial
+                        // release to distinguish, so the combo ending and
+                        // every key being up are the same moment.
+                        for id in ids {
+                            engine.apply(id, Transition::Deactivated, &tx);
+                            engine.apply(id, Transition::Released, &tx);
+                        }
                     }
+                    // Mirrors the `activated` branch's logging: worth knowing
+                    // about for the same reason, and the two have to be told
+                    // apart — a `Deactivated` for a shortcut VoxCtrl still
+                    // holds active would otherwise look identical to one that
+                    // simply never arrives (see `gestures::STUCK_HOLD_MAX` for
+                    // what covers the latter).
+                    None => tracing::debug!(
+                        "portal hotkeys: `{}` released but matches no binding",
+                        event.shortcut_id()
+                    ),
                 }
             }
             event = changed.next() => {
