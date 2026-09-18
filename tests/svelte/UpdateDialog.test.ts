@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
+import { render, screen, fireEvent } from "@testing-library/svelte";
 import UpdateDialog from "../../src/lib/Update/UpdateDialog.svelte";
 import { formatBytes, progressPercent } from "../../src/lib/Update/update-types";
 
@@ -43,7 +43,7 @@ function updateInfo(overrides: Record<string, unknown> = {}) {
 function mockPending(update: Record<string, unknown> | null) {
   invoke.mockImplementation(async (cmd: string) => {
     if (cmd === "get_pending_update" || cmd === "check_for_update") {
-      return { current_version: "0.3.10", update, skipped: false };
+      return { current_version: "0.3.10", update };
     }
     return null;
   });
@@ -81,18 +81,6 @@ describe("Update dialog", () => {
 
     expect(invoke).toHaveBeenCalledWith("dismiss_update", undefined);
     expect(invoke).not.toHaveBeenCalledWith("install_update", expect.anything());
-  });
-
-  test("'Skip this version' records the version before closing", async () => {
-    mockPending(updateInfo());
-    render(UpdateDialog);
-
-    await fireEvent.click(await screen.findByText("Skip this version"));
-
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("skip_update_version", { version: "0.4.0" }),
-    );
-    expect(invoke).toHaveBeenCalledWith("dismiss_update", undefined);
   });
 
   test("shows download progress while installing", async () => {
@@ -135,17 +123,6 @@ describe("Update dialog", () => {
     await fireEvent.click(screen.getByText("Open download page"));
     expect(openExternal).toHaveBeenCalledWith(
       "https://github.com/JRufer/VoxCtrl/releases/tag/v0.4.0",
-    );
-  });
-
-  test("turning off automatic checks from the dialog reaches the backend", async () => {
-    mockPending(updateInfo());
-    render(UpdateDialog);
-
-    await fireEvent.click(await screen.findByText("Stop checking automatically"));
-
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("set_update_auto_check", { enabled: false }),
     );
   });
 

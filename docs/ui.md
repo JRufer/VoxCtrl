@@ -40,7 +40,7 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 ### General Tab
 - "Open setup wizard" button — re-runs the first-run wizard
 - **HuggingFace access token** — the single field for the token used by every gated model VoxCtrl can download (Pocket-TTS, Breeze-TTS-2, VoxCPM2); read-only, showing the value, when `HF_TOKEN` is exported. Writes `tts.hf_token`, the same field the setup wizard's voice step edits, so a token entered in either place shows up in the other.
-- "Check for a new version on launch" toggle, and a "Check for updates" button that reports the result inline
+- "Check for updates" button that reports the result inline (VoxCtrl never checks on its own)
 - MCP server toggle, visual feedback toggle, and record timeout control
 - Recording status indicator and word count
 - Manual record/stop button

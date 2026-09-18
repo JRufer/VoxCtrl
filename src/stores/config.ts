@@ -10,7 +10,6 @@ export interface AppConfig {
   openai: OpenAiConfig;
   tts: TtsConfig;
   mcp: McpConfig;
-  updates: UpdateConfig;
 }
 
 export interface S1MiniConfig {
@@ -156,13 +155,6 @@ export interface McpConfig {
   visual_feedback: boolean;
 }
 
-export interface UpdateConfig {
-  /** Ask GitHub for a newer release when the app starts. */
-  auto_check: boolean;
-  /** A version the user chose not to be reminded about again. */
-  skipped_version: string | null;
-}
-
 const defaultConfig: AppConfig = {
   engine: {
     backend: "whisper-cpp",
@@ -270,7 +262,6 @@ const defaultConfig: AppConfig = {
     },
   },
   mcp: { server_enabled: false, record_timeout: 15.0, visual_feedback: true },
-  updates: { auto_check: true, skipped_version: null },
 };
 
 export const config = writable<AppConfig>(defaultConfig);

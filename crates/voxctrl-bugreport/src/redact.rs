@@ -101,7 +101,6 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.vox_cpm_2.model_dir", Path),
     ("tts.vox_cpm_2.prewarm", Safe),
     ("tts.vox_cpm_2.gpu", Safe),
-    ("updates.skipped_version", Safe),
 ];
 
 fn handling_for(path: &str) -> Option<Handling> {

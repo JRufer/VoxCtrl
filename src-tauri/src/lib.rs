@@ -667,14 +667,6 @@ pub fn run() {
                 processing_frames,
             );
 
-            // Look for a new release, unless the user has turned that off or
-            // is standing in front of the setup wizard — a fresh install is on
-            // the latest version anyway, and an update dialog landing on top of
-            // step one of setup is nobody's idea of a first impression.
-            if !forced_wizard && cfg_data.ui.setup_completed {
-                updater::spawn_launch_check(app.handle().clone(), app_state.clone());
-            }
-
             startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         })
@@ -749,8 +741,6 @@ pub fn run() {
             updater::check_for_update,
             updater::get_pending_update,
             updater::install_update,
-            updater::skip_update_version,
-            updater::set_update_auto_check,
             updater::dismiss_update,
             updater::open_update_window,
             bug_report::bug_report_context,

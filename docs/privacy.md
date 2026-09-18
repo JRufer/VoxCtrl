@@ -14,7 +14,7 @@ Everything below describes what the code does, with pointers to where it does it
 | Does installing it grant any process new access to my keyboard? | **No.** No udev rule, no `input` group, nothing. |
 | Does my audio leave the machine? | **No by default.** Audio only leaves your machine if you explicitly configure the Remote Speech Engine pointing to an external or LAN server. |
 | Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
-| Does it phone home at all? | **Once, for updates.** On launch it asks GitHub what the latest release is — no identifiers, nothing about you — and one setting turns it off. [Details](#network). |
+| Does it phone home at all? | **Only when you press "Check for updates."** VoxCtrl never checks on its own; that request carries no identifiers, nothing about you. [Details](#network). |
 | Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
 | Does it need root? | **No.** Administrator rights are requested once, optionally, to install packages. |
 | Can I verify all this? | Yes — see [Verifying it yourself](#verifying-it-yourself). |
@@ -117,12 +117,12 @@ VoxCtrl has no telemetry, no analytics, and no automatic crash reporting.
 Nothing is ever sent about what you dictate, what you type, what you have
 installed, or who you are.
 
-It makes exactly one request you did not personally trigger: **the update
-check**. Everything else on the network happens because you asked for it:
+Every request it makes happens because you asked for it — including the
+update check:
 
 | Trigger | Destination | Sends |
 |---|---|---|
-| Update check, ~10 s after launch | `api.github.com/repos/JRufer/VoxCtrl/releases/latest` | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
+| Pressing "Check for updates" in Settings → General | `api.github.com/repos/JRufer/VoxCtrl/releases/latest` | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
 | Installing an offered update | `github.com` release download | Nothing beyond the request for the file |
 | Downloading a speech model | HuggingFace / the model host, on demand | Nothing beyond the request for the file |
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
@@ -133,7 +133,9 @@ check**. Everything else on the network happens because you asked for it:
 
 ### The update check, in full
 
-It is a plain unauthenticated `GET` for the public release listing — the same
+VoxCtrl never checks for updates on its own — there is no launch-time check
+and nothing to turn off. Pressing "Check for updates" in Settings → General
+sends a plain unauthenticated `GET` for the public release listing — the same
 URL anyone can open in a browser. There is no request body, no cookie, no
 account, no install ID, and no way for it to carry one: GitHub is told which
 version of VoxCtrl is asking (because the API requires a `User-Agent`) and
@@ -142,19 +144,17 @@ is what the update window shows you. Nothing is downloaded or installed unless
 you press **Update and restart**, and a downloaded update is checked against the
 SHA-256 checksum GitHub publishes for it before it replaces anything.
 
-**Turning it off:** Settings → General → untick "Check for a new version on
-launch" (or `"updates": { "auto_check": false }` in `config.json`). VoxCtrl then
-makes no request at all unless you press "Check now". The update window offers
-the same switch, so declining an update and stopping the checks is one click.
+On a distro-packaged install (anything under `/usr`, `/opt` or `/nix/store`),
+"Update and restart" is unavailable — VoxCtrl detects that its files belong to
+a package manager and points you at it instead of overwriting them. See
+`InstallKind::ManagedPackage` in `crates/voxctrl-update/src/install.rs`.
 
-Once the app and its models are on disk, VoxCtrl runs fully air-gapped —
-including with update checking left on, which fails quietly and changes nothing
-when there is no network.
+Once the app and its models are on disk, VoxCtrl runs fully air-gapped.
 
 **The code:** `crates/voxctrl-update/` is the whole of it — about 400 lines,
 with no dependency on the rest of the app. `release.rs` builds the one request,
-`apply.rs` downloads and verifies, `src-tauri/src/updater.rs` decides when to
-ask and what to show.
+`apply.rs` downloads and verifies, `src-tauri/src/updater.rs` is the manual
+check command and what it shows.
 
 ---
 
@@ -237,14 +237,15 @@ Press your shortcut. You will see `Activated` and `Deactivated` with a shortcut 
 sudo unshare -n sudo -u "$USER" ./VoxCtrl-x86_64.AppImage
 ```
 
-**See the update check for yourself.** With checking enabled, watch what leaves
-the machine in the first minute after launch:
+**See the update check for yourself.** Start a capture, then press "Check for
+updates" in Settings → General:
 
 ```bash
 sudo tcpdump -n -i any 'host api.github.com'   # one TLS connection, then nothing
 ```
 
-Untick "Check for a new version on launch" and the same command stays silent.
+Leave VoxCtrl running without pressing it and the same command stays silent —
+nothing triggers this request on its own.
 
 **Read the code.** The hotkey crate is about 1,500 lines and self-contained:
 
