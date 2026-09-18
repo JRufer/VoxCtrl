@@ -40,7 +40,6 @@
   type UpdateCheckPayload = {
     current_version: string;
     update: UpdateInfo | null;
-    skipped: boolean;
   };
 
   let checking = $state(false);
@@ -131,15 +130,9 @@
 
   <div class="field-group">
     <h3>Updates</h3>
-    <label class="field">
-      <span>Check for a new version on launch</span>
-      <input type="checkbox" bind:checked={cfg.updates.auto_check} onchange={markDirty} />
-    </label>
     <p class="hint">
-      Asks GitHub once, shortly after startup, whether a newer release has been published, and
-      offers to install it. The request carries nothing about you or your machine, and it is the
-      only network request VoxCtrl makes on its own. Turn it off and VoxCtrl never contacts GitHub
-      unless you press "Check now".
+      VoxCtrl never checks for updates on its own. Press "Check now" to ask GitHub whether a newer
+      release has been published — that request carries nothing about you or your machine.
     </p>
     <div class="field">
       <span>Check now</span>

@@ -196,10 +196,24 @@ const OVERLAY_HEIGHT: f64 = 444.0;
 ///
 /// The frontend normally reports in well inside this (see `reveal_overlay`),
 /// so this only matters when it cannot — a custom overlay whose script throws
-/// before the report, say. Long enough not to pre-empt a slow first paint,
-/// short enough that the worst case is still a prompt overlay rather than a
-/// missing one.
-const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(600);
+/// before the report, say, or a first paint that is simply slow.
+///
+/// This used to be 600ms, on the reasoning that the worst case was "a prompt
+/// overlay rather than a missing one". That reasoning assumed a slow paint
+/// still eventually paints *something* sane. Reported on Hyprland/XWayland
+/// with an older Intel iGPU (#134): the overlay this call pre-builds at
+/// startup — with nothing to show, since no dictation is running — came up
+/// and stayed on screen indefinitely after the timeout fired, rather than
+/// clearing once real content (or the lack of it) actually painted. The
+/// timeout firing before WebKitGTK's first real paint on a slow GPU path is
+/// the most likely explanation: what gets revealed at that point is whatever
+/// is sitting in an as-yet-unpainted backing buffer, and unlike a genuinely
+/// missing overlay (annoying but momentary — the next tick tries again),
+/// nothing ever repaints it back to blank afterwards. A longer window gives
+/// a slow first paint more room to actually finish before that risk is
+/// taken, at the cost of a slower-appearing overlay only in the case this is
+/// meant to catch (which is already the degraded path).
+const OVERLAY_REVEAL_TIMEOUT: Duration = Duration::from_millis(3000);
 
 /// Make the overlay window visible, if it is not already.
 ///
@@ -413,6 +427,38 @@ pub fn suspend_overlay_without_outputs(app: &tauri::AppHandle, suspended: &mut b
         *suspended = false;
         let _ = window.show();
     }
+}
+
+/// Force the overlay window's client-side buffer to repaint by resizing it
+/// by a couple of pixels and immediately back.
+///
+/// Reported (#129) on KDE/XWayland even with the host's own current
+/// WebKitGTK (2.52.5, well past the ubuntu-22.04 build this app bundles —
+/// see `scripts/appimage-hooks/host-first-fallback.sh`'s doc comment on that
+/// older copy's own, different transparency bug): the overlay stays frozen
+/// on its last frame after every dictation, and the stale pixels were
+/// confirmed (via `XGetImage`, which reads the client's own buffer rather
+/// than the compositor's output) to live in the client side, not something
+/// the window manager or compositor is doing. The reporter found that a real
+/// resize — grow by 2px, then shrink back, as two separate operations rather
+/// than one that cancels out — reliably clears it, and ran that by hand
+/// through a KWin script as a workaround. This is the same fix, run by the
+/// app itself rather than requiring an external script, and using tauri's
+/// own `set_size` rather than anything KDE-specific — so it costs nothing on
+/// a system where nothing was ever stuck to begin with.
+///
+/// A no-op when the overlay window doesn't exist. Best-effort throughout:
+/// this is drawn from the reporter's own confirmed-effective workaround, but
+/// has not been verified against their actual KDE/XWayland/host-WebKitGTK
+/// setup.
+#[cfg(target_os = "linux")]
+pub async fn nudge_overlay_repaint(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
+        return;
+    };
+    let _ = window.set_size(tauri::LogicalSize::new(OVERLAY_WIDTH + 2.0, OVERLAY_HEIGHT));
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    let _ = window.set_size(tauri::LogicalSize::new(OVERLAY_WIDTH, OVERLAY_HEIGHT));
 }
 
 /// Re-apply the anchor/monitor position to the overlay window, if it

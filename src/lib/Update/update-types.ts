@@ -15,7 +15,6 @@ export interface UpdateInfo {
 export interface UpdateCheckPayload {
   current_version: string;
   update: UpdateInfo | null;
-  skipped: boolean;
 }
 
 /** Bytes downloaded so far, as emitted on `update-progress`. */

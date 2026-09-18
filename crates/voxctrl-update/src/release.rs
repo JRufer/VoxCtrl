@@ -2,8 +2,8 @@
 //!
 //! One unauthenticated `GET` to the public releases API, sending nothing but a
 //! `User-Agent` (which GitHub requires) and carrying no identifier of any kind.
-//! It is the only request VoxCtrl makes on its own behalf, and it is the reason
-//! `updates.auto_check` exists in the config — see `docs/privacy.md`.
+//! It only ever runs because the user pressed "Check for updates" — see
+//! `docs/privacy.md`.
 
 use std::time::Duration;
 

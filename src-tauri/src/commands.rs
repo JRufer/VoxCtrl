@@ -1344,6 +1344,16 @@ fn shortcut_settings_candidates() -> &'static [(&'static str, &'static [&'static
 
 /// Fire-and-forget: these are GUI apps meant to stay open long after this
 /// command returns, so there is nothing useful to await here.
+///
+/// These are host desktop binaries (`kcmshell6`, `systemsettings`,
+/// `gnome-control-center`), not part of the bundle, so they are launched
+/// through `host_env::host_command` rather than `std::process::Command`
+/// directly: inside the AppImage, a plain `Command::new` hands them
+/// VoxCtrl's own environment, including an `LD_LIBRARY_PATH` that puts the
+/// bundle's libraries first. A host `kcmshell6` linked against the host's
+/// `libcurl` then resolves `libssl` from the bundle instead of the host and
+/// aborts before it can show a window (see host_env.rs's doc comment for the
+/// same failure mode with `gsettings`).
 #[cfg(target_os = "linux")]
 fn spawn_shortcut_settings(bin: &str, args: &[&str]) -> Result<(), String> {
     #[cfg(test)]
@@ -1352,7 +1362,7 @@ fn spawn_shortcut_settings(bin: &str, args: &[&str]) -> Result<(), String> {
             return Ok(());
         }
     }
-    std::process::Command::new(bin)
+    crate::host_env::host_command(bin)
         .args(args)
         .spawn()
         .map(|_| ())

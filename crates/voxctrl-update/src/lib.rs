@@ -11,9 +11,9 @@
 //!    against GitHub's published checksum, and moves it into place.
 //! 4. The caller relaunches via [`apply::spawn_relaunch`] and exits.
 //!
-//! Nothing here decides *whether* to check — that is `updates.auto_check` in
-//! the config, and the app consults it before calling in. This crate never
-//! reaches the network unless asked.
+//! Nothing here decides *when* to check — VoxCtrl never checks on its own.
+//! [`check`] only runs when the user presses "Check for updates" in Settings,
+//! so this crate never reaches the network unasked.
 
 pub mod apply;
 pub mod install;
@@ -154,22 +154,6 @@ pub fn evaluate(latest: &Release, current_version: &str, kind: InstallKind) -> C
         asset,
         kind,
     }))
-}
-
-/// Whether a found update should be raised with the user, given the version
-/// they last chose to skip.
-pub fn should_prompt(info: &UpdateInfo, skipped_version: Option<&str>) -> bool {
-    match skipped_version {
-        Some(skipped) => {
-            // Skipping is per-version: a *newer* release than the one skipped
-            // is a new decision, and gets asked about.
-            !version::Version::parse(skipped)
-                .zip(version::Version::parse(&info.version))
-                .map(|(skipped, found)| found <= skipped)
-                .unwrap_or(false)
-        }
-        None => true,
-    }
 }
 
 /// Download and install a pending update, returning the path to launch
@@ -343,28 +327,6 @@ mod tests {
         rel.html_url = String::new();
         let pending = evaluate(&rel, "0.3.10", appimage_kind());
         assert_eq!(pending.available().unwrap().info.release_url, RELEASES_PAGE_URL);
-    }
-
-    #[test]
-    fn a_skipped_version_is_not_raised_again() {
-        let rel = release_with("v0.4.0", vec![appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")]);
-        let pending = evaluate(&rel, "0.3.10", appimage_kind());
-        let info = &pending.available().unwrap().info;
-
-        assert!(!should_prompt(info, Some("0.4.0")));
-        assert!(!should_prompt(info, Some("v0.4.0")), "the tag form must match too");
-        // Skipping one version does not opt out of every future one.
-        assert!(should_prompt(info, Some("0.3.11")));
-        assert!(should_prompt(info, None));
-    }
-
-    #[test]
-    fn an_unparseable_skip_marker_does_not_silence_updates() {
-        let rel = release_with("v0.4.0", vec![]);
-        let pending = evaluate(&rel, "0.3.10", appimage_kind());
-        let info = &pending.available().unwrap().info;
-        assert!(should_prompt(info, Some("")));
-        assert!(should_prompt(info, Some("nonsense")));
     }
 
     #[tokio::test]

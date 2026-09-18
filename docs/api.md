@@ -194,6 +194,9 @@ interface SetupStatusPayload {
 
 ### Updates
 
+VoxCtrl never checks on its own; every command below only runs because the
+user triggered it from Settings → General or the update window.
+
 #### `check_for_update() → UpdateCheckPayload`
 Asks GitHub for the latest published release and compares it with the running
 version. Also resolves which release file matches this installation, so
@@ -215,7 +218,6 @@ interface UpdateInfo {
 interface UpdateCheckPayload {
   current_version: string;
   update: UpdateInfo | null;    // null when this is the latest release
-  skipped: boolean;             // the user pressed "Skip this version" on it
 }
 
 const result = await invoke<UpdateCheckPayload>('check_for_update');
@@ -240,21 +242,6 @@ itself, or if an install is already running.
 ```typescript
 await invoke('install_update');
 ```
-
----
-
-#### `skip_update_version(version: string) → void`
-Records `updates.skipped_version`, so this release is not raised again. A newer
-one still is.
-
-```typescript
-await invoke('skip_update_version', { version: '0.4.0' });
-```
-
----
-
-#### `set_update_auto_check(enabled: boolean) → void`
-Turns the launch-time check on or off and persists it (`updates.auto_check`).
 
 ---
 
