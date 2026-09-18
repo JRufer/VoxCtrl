@@ -43,7 +43,7 @@ This starts the Vite dev server and compiles the Rust backend in debug mode. Hot
 
 ## Production Build
 
-### Standard build (no GPU acceleration)
+### Standard build (CPU only)
 
 ```powershell
 npm run tauri build
@@ -55,7 +55,12 @@ Output artifacts land in `src-tauri\target\release\bundle\`:
 
 ### Build with WebGPU acceleration (Direct3D 12 for Moonshine)
 
-To build the Windows GPU release variant that accelerates Moonshine speech recognition via ONNX Runtime's WebGPU execution provider over Direct3D 12:
+This is what the published Windows release actually ships — the CPU-only
+build above and the WebGPU build measure within 0.1 MB of each other, so
+there is no size cost to always enabling it, and it falls back to the CPU
+cleanly when no usable Direct3D 12 GPU is found.
+
+To build it, accelerating Moonshine speech recognition via ONNX Runtime's WebGPU execution provider over Direct3D 12:
 
 ```powershell
 npx tauri build --bundles nsis --features moonshine-webgpu
@@ -82,7 +87,7 @@ feature is opt-in and never required.
 backend fails to register on Windows MSVC static builds — which is what
 `whisper-rs-sys` produces for Rust — and falls back to the CPU while reporting
 that it found a GPU ([whisper.cpp#3750](https://github.com/ggml-org/whisper.cpp/issues/3750)).
-Because of this, the standard Windows installer focuses on robust CPU execution for Whisper/Parakeet, while the `windows-webgpu` build accelerates Moonshine via Direct3D 12, and the S1-mini sidecar utilizes Vulkan/CPU.
+Because of this, the published Windows installer runs Whisper/Parakeet on the CPU while accelerating Moonshine via Direct3D 12, and the S1-mini sidecar utilizes Vulkan/CPU.
 
 ### Using the build script
 

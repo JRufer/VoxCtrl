@@ -120,31 +120,23 @@ jobs:
             cuda: false
             vulkan: true
 
-          # ── Windows CPU ────────────────────────────────────────────────────
-          # NSIS installer, CPU inference. No Vulkan counterpart on purpose:
-          # whisper.cpp's Vulkan backend fails to register on Windows MSVC
-          # static builds — which is what whisper-rs-sys produces — and falls
-          # back to the CPU while reporting that it is on the GPU
-          # (ggml-org/whisper.cpp#3750, open against the exact whisper-rs this
-          # workspace pins). A GPU build that is silently a CPU build is worse
-          # than no GPU build, so Windows GPU support waits for either that fix
-          # or the DirectML execution provider.
-          - name: windows-cpu
-            os: windows-2022
-            features: ""
-            artifact_label: windows-x86_64
-            cuda: false
-
-          # ── Windows GPU ────────────────────────────────────────────────────
-          # Moonshine on the GPU via ONNX Runtime's WebGPU execution provider —
-          # Dawn over D3D12 on Windows, so NVIDIA, AMD and Intel alike, with no
-          # vendor SDK at build time and nothing extra to ship.
+          # ── Windows ────────────────────────────────────────────────────────
+          # The only Windows build, mirroring the Linux Vulkan row above: it
+          # accelerates Moonshine via ONNX Runtime's WebGPU execution provider
+          # — Dawn over D3D12, so NVIDIA, AMD and Intel alike — and falls back
+          # to the CPU cleanly when no usable GPU is found
+          # (crates/voxctrl-inference/src/moonshine.rs, `with_execution_providers`
+          # error path), so a separate CPU artifact bought nothing but a second
+          # download for users to choose wrong between. Measured at release
+          # v0.6.3, the CPU and WebGPU installers were 17.1 MB and 17 MB — the
+          # WebGPU feature costs nothing in binary size either.
           #
           # This accelerates Moonshine, not whisper.cpp: ggml's Vulkan backend
           # is the only GPU path whisper.cpp has here and it does not register
-          # on Windows MSVC static builds (ggml-org/whisper.cpp#3750). Someone
-          # reading "Windows GPU" should know which engine gets the GPU, which
-          # is why the app reports the two separately.
+          # on Windows MSVC static builds (ggml-org/whisper.cpp#3750), so
+          # whisper.cpp and Parakeet stay on the CPU regardless. The app
+          # reports the two separately so nobody reads "Windows GPU" and
+          # assumes it covers every engine.
           - name: windows-webgpu
             os: windows-2022
             features: "moonshine-webgpu"
@@ -562,8 +554,20 @@ jobs:
             | Platform | File suffix | GPU required |
             |---|---|---|
             | Linux | `-linux-x86_64-vulkan.AppImage` | None — GPU used if present |
-            | Windows | `-windows-x86_64.exe` | None |
-            | Windows (GPU) | `-windows-x86_64-webgpu.exe` | Any Direct3D 12 GPU |
+            | Windows | `-windows-x86_64-webgpu.exe` | None — GPU used if present |
+
+            **There is one Windows build now, too.** It accelerates the
+            **Moonshine** speech engine on any Direct3D 12 GPU — NVIDIA, AMD or
+            Intel — through ONNX Runtime's WebGPU provider, and runs on the CPU
+            when no usable GPU is found, so it replaces the separate CPU
+            installer rather than sitting beside it. Select Moonshine in
+            **Settings → Engine**; the tab says which backend the build
+            actually has. Whisper.cpp still runs on the CPU on Windows either
+            way, because its only GPU path here is ggml's Vulkan backend, which
+            does not register on Windows MSVC static builds. If your GPU is not
+            usable the app says so in the log and falls back to the CPU rather
+            than pretending. If you were running the separate CPU installer,
+            VoxCtrl's own updater will move you onto this one; nothing to do.
 
             **There is one Linux build now.** The Vulkan AppImage accelerates
             any NVIDIA/AMD/Intel GPU through the host Vulkan driver and runs on
@@ -580,18 +584,9 @@ jobs:
             The Linux `.deb` now requires `libvulkan1`, which the package
             manager pulls in for you.
 
-            **The Windows builds** are NSIS installers. Neither is code-signed
-            yet, so SmartScreen will warn that the publisher is unknown: choose
+            **The Windows build** is an NSIS installer, not code-signed yet, so
+            SmartScreen will warn that the publisher is unknown: choose
             **More info → Run anyway**.
-
-            **The Windows GPU build** accelerates the **Moonshine** speech
-            engine on any Direct3D 12 GPU — NVIDIA, AMD or Intel — through ONNX
-            Runtime's WebGPU provider. Select Moonshine in **Settings → Engine**;
-            the tab says which backend the build actually has. Whisper.cpp still
-            runs on the CPU on Windows either way, because its only GPU path
-            here is ggml's Vulkan backend, which does not register on Windows
-            MSVC static builds. If your GPU is not usable the app says so in the
-            log and falls back to the CPU rather than pretending.
 
             ### Windows — first run
 

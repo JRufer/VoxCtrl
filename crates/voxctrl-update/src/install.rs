@@ -167,9 +167,14 @@ pub fn select_asset<'a>(kind: &InstallKind, assets: &'a [ReleaseAsset]) -> Optio
         // does not — it runs on the same machine.
         InstallKind::WindowsInstaller { webgpu: true } => windows_named(assets, "-windows-x86_64-webgpu.exe")
             .or_else(|| windows_named(assets, "-windows-x86_64.exe")),
-        InstallKind::WindowsInstaller { webgpu: false } => {
-            windows_named(assets, "-windows-x86_64.exe")
-        }
+        // Releases from the version that merged the two Windows installers on
+        // carry no plain CPU build. The CPU installations already out there
+        // must land on the WebGPU build rather than find nothing and quietly
+        // stop updating — it runs on the CPU when the host has no usable GPU,
+        // so it is the same app on that machine. Same rule as the CPU
+        // AppImage above.
+        InstallKind::WindowsInstaller { webgpu: false } => windows_named(assets, "-windows-x86_64.exe")
+            .or_else(|| windows_named(assets, "-windows-x86_64-webgpu.exe")),
         InstallKind::ManagedPackage | InstallKind::Unmanaged => None,
     }
 }
@@ -331,15 +336,27 @@ mod tests {
     }
 
     #[test]
-    fn a_cpu_windows_install_is_never_upgraded_onto_the_gpu_build() {
-        // The GPU installer needs a GPU; handing it to a machine that asked for
-        // the CPU build would be a downgrade dressed as an update.
+    fn a_cpu_windows_install_stays_on_the_cpu_build_while_the_release_has_one() {
         let mut assets = release_assets();
         assets.push(asset("VoxCtrl_0.5.0_x64-setup-windows-x86_64-webgpu.exe"));
 
         let picked =
             select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.4.0_x64-setup-windows-x86_64.exe");
+    }
+
+    /// Releases from the version that merged the two Windows installers carry
+    /// no plain CPU build. The CPU installations already out there must land
+    /// on the WebGPU build rather than find nothing and quietly stop
+    /// updating — it runs on the CPU when the host has no usable GPU, so it
+    /// is the same app on that machine.
+    #[test]
+    fn a_cpu_windows_install_takes_the_webgpu_build_when_that_is_all_the_release_has() {
+        let assets = vec![asset("VoxCtrl_0.7.0_x64-setup-windows-x86_64-webgpu.exe")];
+
+        let picked =
+            select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
+        assert_eq!(picked.name, "VoxCtrl_0.7.0_x64-setup-windows-x86_64-webgpu.exe");
     }
 
     #[test]
