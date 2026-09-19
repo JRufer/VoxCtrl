@@ -152,6 +152,60 @@ mod linux {
         DictationInterface::text_injected(iface_ref.signal_context(), text).await?;
         Ok(())
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use zbus::export::futures_util::StreamExt;
+        use zbus::fdo::DBusProxy;
+
+        /// The caller has to keep the connection `start_service` returns.
+        ///
+        /// zbus closes a connection when its last handle drops, and closing it
+        /// releases the requested name and tears down the object server — so a
+        /// caller that discards the return value leaves `ai.voxctrl.Dictation`
+        /// unowned while startup has already logged it as registered. That is
+        /// how the documented start/stop API, and every Cinnamon/MATE shortcut
+        /// (which can only reach VoxCtrl by calling `ToggleBinding` on this
+        /// name), came to be missing from the bus with nothing in the log.
+        #[tokio::test]
+        async fn the_bus_name_lives_exactly_as_long_as_the_returned_connection() {
+            let state = Arc::new(Mutex::new(AppState::default()));
+            let (start_tx, _start_rx) = tokio::sync::mpsc::channel(4);
+            let (stop_tx, _stop_rx) = tokio::sync::mpsc::channel(4);
+
+            // No session bus in this environment (plain CI container): there is
+            // no bus to make an assertion about.
+            let Ok(conn) = start_service(state, start_tx, stop_tx).await else {
+                return;
+            };
+
+            let probe = Connection::session().await.unwrap();
+            let dbus = DBusProxy::new(&probe).await.unwrap();
+            let name = "ai.voxctrl.Dictation";
+
+            assert!(
+                dbus.name_has_owner(name.try_into().unwrap()).await.unwrap(),
+                "the connection handed back by `start_service` must own the name"
+            );
+
+            // Subscribed before the drop: the release is asynchronous, and
+            // polling for it would either race or need an arbitrary sleep.
+            let mut lost = dbus
+                .receive_name_owner_changed_with_args(&[(0, name), (2, "")])
+                .await
+                .unwrap();
+
+            drop(conn);
+
+            lost.next().await.unwrap();
+            assert!(
+                !dbus.name_has_owner(name.try_into().unwrap()).await.unwrap(),
+                "dropping the last handle releases the name — this is why it has \
+                 to be held for the life of the process"
+            );
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
