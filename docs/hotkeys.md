@@ -86,6 +86,47 @@ VoxCtrl talks to `org.freedesktop.portal.GlobalShortcuts` over D-Bus:
 
 Supported by KDE Plasma (5.27+), GNOME 48+, and Hyprland (via `xdg-desktop-portal-hyprland`). Compositors that do not implement the interface — Sway and most other wlroots compositors as of writing — fall through to the section below.
 
+#### Hyprland / Omarchy
+
+Updated 2026-09-18 23:49 UTC.
+
+On Hyprland, `xdg-desktop-portal-hyprland` (1.4.x) **does not apply** VoxCtrl's
+`preferred_trigger`. The portal logs `unknown shortcut data type preferred_trigger`
+and never binds the keys. Hold **starts and stops only if Hyprland itself**
+dispatches the portal shortcut id on press **and** on release.
+
+Copy the id from `hyprctl globalshortcuts` **while VoxCtrl is running**. Ids are
+order-sensitive (`voxctrl_key_leftctrl_key_space` for Left Ctrl + Space, not
+the reverse).
+
+Omarchy Lua (`~/.config/hypr/bindings.lua`), after unbinding any default on
+that combo:
+
+```lua
+local voxctrl_portal = "ai.voxctrl.app:voxctrl_key_leftctrl_key_space"
+o.bind("CTRL + SPACE", "VoxCtrl dictate hold", hl.dsp.global(voxctrl_portal))
+o.bind("CTRL + SPACE", "VoxCtrl dictate hold", hl.dsp.global(voxctrl_portal), { release = true })
+```
+
+`hl.dsp.global` is Hyprland's Lua dispatcher (`__lua` in `hyprctl binds`), not
+the special native `global` dispatcher. `{ release = true }` therefore matches
+only while the combo is still valid on key-up.
+
+**Chord order (Ctrl + Space hold):** press Ctrl, then Space. Release Space,
+then Ctrl. If both keys come up together, or Ctrl comes up first, Hyprland does
+not run the release bind, the portal never sends `Deactivated`, and recording
+stays up until a later release that does match. That is compositor bind matching,
+not a VoxCtrl hold timer (`hold_threshold_ms` is only when recording *starts*,
+default 200ms).
+
+A follow-up Ctrl+Space whose Space-up still matches the combo can deliver the
+missing `Deactivated` and stop a stuck overlay. Making simultaneous key-up work
+is a Hyprland/Omarchy bind follow-up (native `global` dispatcher), not a VoxCtrl
+code change.
+
+Do not `o.bind` the combo to the AppImage itself: that focuses the VoxCtrl
+window instead of talking to the portal.
+
 #### What can be a shortcut
 
 An accelerator is **any number of modifiers plus exactly one regular key**. `Super+Space`, `Ctrl+Alt+D` and `F5` are all fine.
