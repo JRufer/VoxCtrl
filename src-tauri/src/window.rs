@@ -322,6 +322,12 @@ pub fn open_overlay_window(
         use gtk::prelude::*;
         if let Ok(gtk_window) = window.gtk_window() {
             gtk_window.realize();
+            // Click-through is mouse only. An XWayland overlay that accepts
+            // keyboard focus eats Space-up of CTRL+SPACE; Hypr never sends
+            // portal Deactivated until focus returns — delay after release.
+            gtk_window.set_accept_focus(false);
+            gtk_window.set_can_focus(false);
+            gtk_window.set_focus_on_map(false);
             if let Some(gdk_window) = gtk_window.window() {
                 gdk_window.set_type_hint(gtk::gdk::WindowTypeHint::Utility);
             }
@@ -496,6 +502,14 @@ pub fn reassert_overlay_topmost(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(OVERLAY_WINDOW) {
         let _ = window.set_always_on_top(false);
         let _ = window.set_always_on_top(true);
+        #[cfg(target_os = "linux")]
+        {
+            use gtk::prelude::*;
+            if let Ok(gtk_window) = window.gtk_window() {
+                gtk_window.set_accept_focus(false);
+                gtk_window.set_can_focus(false);
+            }
+        }
     }
 }
 
