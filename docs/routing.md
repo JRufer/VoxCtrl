@@ -262,7 +262,7 @@ typing into the focused window — so voice command routing works the day anothe
 target is added, with no re-binding.
 
 **How Voice Command Routing Works:**
-- **Trigger Keyword**: Listens for the `"VoxCtrl"` keyword (case-insensitive, supporting `VoxCtrl`, `voxctrl`, `vox ctrl`, `vox-ctrl`, and optional punctuation like `VoxCtrl:`).
+- **Trigger Keyword**: Listens for the `"VoxCtrl"` keyword — pronounced **"Vox Control"** — near the start of the utterance (case-insensitive, supporting `VoxCtrl`, `voxctrl`, `vox ctrl`, `vox-ctrl`, `vox control`, and optional punctuation like `VoxCtrl:`). Matching is anchored to the first few words so that a "control"-like word later in an ordinary dictation (e.g. *"...better mind control over my emotions..."*) isn't misread as the wake phrase.
 - **Target Resolution**: Matches spoken target names against all configured target IDs and Labels (case-insensitively). Longest candidate target names take precedence (e.g. `"Personal Notes"` is matched before `"Notes"`).
 - **Conversational Lead-in Support**: Supports natural lead-in command phrases between the trigger keyword and the target name, such as *"VoxCtrl send this to my notes. I love you."*, *"VoxCtrl add this to my personal notes, help"*, *"VoxCtrl put this into my Notes: hello"*, or *"VoxCtrl send us to my notes. I love you."*.
 - **Payload Extraction**: Strips transition punctuation (`.`, `:`, `,`, `;`) and connector words (`saying`, `that`, `with text`) and routes the remaining text payload to the matched target.

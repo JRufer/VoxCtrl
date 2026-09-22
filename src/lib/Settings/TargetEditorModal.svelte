@@ -321,8 +321,9 @@
         <p class="hint">
           Names this target in the app, and is what you say to send dictation here through a
           Voice Command Router target: &ldquo;VoxCtrl, <em>{editingTarget.label || "Obsidian Notes"}</em>,
-          buy milk tomorrow&rdquo;. The Target ID works as a spoken name too, so pick something
-          easy to say and easy for speech recognition to catch.
+          buy milk tomorrow&rdquo;. VoxCtrl is pronounced &ldquo;Vox Control&rdquo; &mdash; say it
+          plainly like those two words at the start of your dictation. The Target ID works as a
+          spoken name too, so pick something easy to say and easy for speech recognition to catch.
         </p>
 
         <label class="field col">
@@ -353,6 +354,7 @@
             <h5>Voice Command Router Settings</h5>
             <p class="hint">
               Types dictated text into your active application by default. If your dictation contains <code>VoxCtrl &lt;target_name&gt; &lt;text&gt;</code> (for example, <em>"VoxCtrl Notes Hello world"</em>), VoxCtrl dynamically reroutes the text to that target instead.
+              Remember to say the keyword as &ldquo;Vox Control&rdquo; &mdash; that's how VoxCtrl is pronounced &mdash; as the very first thing you say, so speech recognition can catch it reliably.
             </p>
           </div>
         {/if}

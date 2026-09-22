@@ -1857,6 +1857,34 @@ fn test_parse_voice_command_matched_target() {
 }
 
 #[test]
+fn test_parse_voice_command_anchored_to_start() {
+    use crate::targets::parse_voice_command;
+
+    let speak_targets = vec![
+        OutputTarget {
+            id: "speak".into(),
+            label: "Speak Text Aloud (TTS)".into(),
+            delivery: DeliveryType::Speak,
+            ..OutputTarget::default_inject()
+        },
+    ];
+
+    // A small amount of leading filler before the trigger is still recognized.
+    let res = parse_voice_command("okay so vox control speak hello there", &speak_targets)
+        .expect("should still match with a little leading filler");
+    assert_eq!(res.matched_target_id, "speak");
+    assert_eq!(res.payload, "hello there");
+
+    // A "control"-like word appearing well into ordinary dictation must NOT be
+    // mistaken for the wake phrase — VoxCtrl is meant to be said first.
+    assert!(
+        parse_voice_command("I really need better mind control over my emotions today", &speak_targets)
+            .is_none(),
+        "should not trigger on a control word deep in a normal sentence"
+    );
+}
+
+#[test]
 fn test_parse_voice_command_disambiguates_longest_target_name() {
     use crate::targets::parse_voice_command;
 

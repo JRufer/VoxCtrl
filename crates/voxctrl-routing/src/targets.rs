@@ -1310,6 +1310,18 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     dp[len1][len2]
 }
 
+/// Trigger words are only recognized this many words into the utterance (0-indexed).
+/// VoxCtrl is meant to be said *first*; capping how far in we'll look keeps a
+/// stray "control"-like word later in a normal dictation (e.g. "...better mind
+/// control over my emotions...") from being misread as the wake phrase.
+const MAX_LEADING_TRIGGER_WORDS: usize = 3;
+
+/// Word index (0-based) of the word starting at `byte_pos` in `text`, assuming
+/// `byte_pos` lands on a word boundary.
+fn word_index_at(text: &str, byte_pos: usize) -> usize {
+    text[..byte_pos].split_whitespace().count()
+}
+
 /// Parse text for keyword "VoxCtrl" and target name/label matching.
 /// Supports both direct commands (e.g. "VoxCtrl notes Hi there") and natural,
 /// conversational phrasing (e.g. "VoxCtrl add this to my notes. What are you doing here?").
@@ -1323,24 +1335,27 @@ pub fn parse_voice_command(
     let mut found_pos = None;
     let mut trigger_len = 0;
 
-    // 1. Exact & standard triggers
+    // 1. Exact & standard triggers — only near the start of the utterance.
     let exact_triggers = ["voxctrl", "vox ctrl", "vox-ctrl", "vox control"];
     for trigger in &exact_triggers {
         if let Some(pos) = lower_text.find(trigger) {
-            if found_pos.map_or(true, |p| pos < p) {
+            if word_index_at(&lower_text, pos) <= MAX_LEADING_TRIGGER_WORDS
+                && found_pos.map_or(true, |p| pos < p)
+            {
                 found_pos = Some(pos);
                 trigger_len = trigger.len();
             }
         }
     }
 
-    // 2. Dynamic pattern trigger for any "<word> control" or "<word> ctrl" phrase
+    // 2. Dynamic pattern trigger for any "<word> control" or "<word> ctrl" phrase,
+    // still anchored near the start so it only catches a misheard "vox" prefix.
     if found_pos.is_none() {
         let words: Vec<&str> = lower_text.split_whitespace().collect();
         for (i, word) in words.iter().enumerate() {
             let clean_w = word.trim_matches(|c: char| c.is_ascii_punctuation());
             if clean_w == "control" || clean_w == "ctrl" || clean_w == "ctl" || clean_w == "kontrol" {
-                if i > 0 {
+                if i > 0 && i <= MAX_LEADING_TRIGGER_WORDS {
                     let start_idx = lower_text.find(words[0]).unwrap_or(0);
                     let ctrl_pos = lower_text.find(word).unwrap_or(0);
                     let end_pos = ctrl_pos + word.len();

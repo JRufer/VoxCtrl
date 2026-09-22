@@ -87,7 +87,7 @@
       // Update bindings that point to the old ID
       if (originalTargetId && originalTargetId !== editingTarget.id) {
         let bindingsChanged = false;
-        bindings = bindings.map(b => {
+        bindings = bindings.map((b) => {
           let updated = false;
           let newTargetIds = b.target_ids ? [...b.target_ids] : [b.target_id];
           for (let i = 0; i < newTargetIds.length; i++) {
@@ -98,7 +98,11 @@
           }
           if (updated) {
             bindingsChanged = true;
-            return { ...b, target_ids: newTargetIds, target_id: newTargetIds[0] };
+            return {
+              ...b,
+              target_ids: newTargetIds,
+              target_id: newTargetIds[0],
+            };
           }
           return b;
         });
@@ -108,7 +112,9 @@
         }
       }
 
-      targets = targets.map(t => t.id === originalTargetId ? editingTarget! : t);
+      targets = targets.map((t) =>
+        t.id === originalTargetId ? editingTarget! : t,
+      );
     }
     editingTarget = null;
     originalTargetId = null;
@@ -116,15 +122,22 @@
   }
 
   async function deleteTarget(id: string) {
-    const usedBy = bindings.filter(b => {
-      const ids = b.target_ids && b.target_ids.length > 0 ? b.target_ids : [b.target_id];
-      return ids.includes(id);
-    }).map(b => b.label || b.id);
+    const usedBy = bindings
+      .filter((b) => {
+        const ids =
+          b.target_ids && b.target_ids.length > 0
+            ? b.target_ids
+            : [b.target_id];
+        return ids.includes(id);
+      })
+      .map((b) => b.label || b.id);
     if (usedBy.length > 0) {
-      alert(`Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`);
+      alert(
+        `Cannot delete target. It is currently being used by hotkeys: ${usedBy.join(", ")}`,
+      );
       return;
     }
-    targets = targets.filter(t => t.id !== id);
+    targets = targets.filter((t) => t.id !== id);
     await persistTargets();
   }
 </script>
@@ -133,18 +146,25 @@
   <div class="section-header">
     <div>
       <h2>Output Commands</h2>
-      <p class="description">Define routing destinations where transcribed text is typed, copied, piped, or sent over network sockets.</p>
+      <p class="description">
+        Define routing destinations where transcribed text is typed, copied,
+        piped, or sent over network sockets.
+      </p>
     </div>
   </div>
 
   <p class="usage-note">
     <strong>Saying a command by name.</strong> Start dictation and say
-    <em>“VoxCtrl”</em>, then the command's name, then what you want to send — for
-    example <em>“VoxCtrl notes, remember to call the plumber”</em> routes
-    <em>remember to call the plumber</em> to the command named <strong>notes</strong>.
-    Everything after the name is the text. Natural phrasing works too
-    (<em>“VoxCtrl, add this to my notes: …”</em>). Say nothing of the sort and
-    dictation goes wherever your hotkey already points.
+    <em>“VoxCtrl”</em> (pronounced <strong>“Vox Control”</strong>), then the
+    command's name, then what you want to send — for example
+    <em>“Vox control notes, remember to call the plumber”</em>
+    routes
+    <em>remember to call the plumber</em> to the command named
+    <strong>notes</strong>. Everything after the name is the text. Natural
+    phrasing works too (<em>Vox control, add this to my notes: …”</em>). Say
+    “Vox Control” clearly as the first thing you say so speech recognition
+    catches it. Say nothing of the sort and dictation goes wherever your hotkey
+    already points.
   </p>
 
   <button class="btn-add-wide" onclick={addNewTarget}>
@@ -166,33 +186,59 @@
             <div class="binding-targets">File: {t.file_path}</div>
           {/if}
           {#if t.delivery === "socket"}
-            <div class="binding-targets">Socket: {t.socket_host}:{t.socket_port}</div>
+            <div class="binding-targets">
+              Socket: {t.socket_host}:{t.socket_port}
+            </div>
           {/if}
           {#if t.delivery === "pipe"}
-            <div class="binding-targets">Pipe: {t.pipe_path} {#if t.response_pipe}→ {t.response_pipe}{/if}</div>
+            <div class="binding-targets">
+              Pipe: {t.pipe_path}
+              {#if t.response_pipe}→ {t.response_pipe}{/if}
+            </div>
           {/if}
           {#if t.delivery === "http" || t.delivery === "webhook"}
-            <div class="binding-targets">API: {t.http_url || t.webhook_url}</div>
+            <div class="binding-targets">
+              API: {t.http_url || t.webhook_url}
+            </div>
           {/if}
           {#if t.delivery === "mcp"}
-            <div class="binding-targets">MCP Tool: {t.mcp_tool || "speak_text"}</div>
+            <div class="binding-targets">
+              MCP Tool: {t.mcp_tool || "speak_text"}
+            </div>
           {/if}
           {#if t.delivery === "speak"}
-            <div class="binding-targets">Speech: Plays transcribed text via TTS</div>
+            <div class="binding-targets">
+              Speech: Plays transcribed text via TTS
+            </div>
           {/if}
           {#if t.delivery === "chat"}
             <div class="binding-targets">
-              Chat: {t.chat_model || "no model"} @ {t.chat_url || "no endpoint"} → {t.chat_reply_mode || "speak"}
+              Chat: {t.chat_model || "no model"} @ {t.chat_url || "no endpoint"}
+              → {t.chat_reply_mode || "speak"}
             </div>
           {/if}
           <div class="binding-actions">
-            <button class="btn-action small" onclick={() => editTarget(t)}>Edit</button>
+            <button class="btn-action small" onclick={() => editTarget(t)}
+              >Edit</button
+            >
             {#if confirmDeleteTargetId === t.id}
               <span class="confirm-label">Delete?</span>
-              <button class="btn-action small danger" onclick={() => { deleteTarget(t.id); confirmDeleteTargetId = null; }}>Yes</button>
-              <button class="btn-action small" onclick={() => confirmDeleteTargetId = null}>No</button>
+              <button
+                class="btn-action small danger"
+                onclick={() => {
+                  deleteTarget(t.id);
+                  confirmDeleteTargetId = null;
+                }}>Yes</button
+              >
+              <button
+                class="btn-action small"
+                onclick={() => (confirmDeleteTargetId = null)}>No</button
+              >
             {:else}
-              <button class="btn-action small danger" onclick={() => confirmDeleteTargetId = t.id}>Delete</button>
+              <button
+                class="btn-action small danger"
+                onclick={() => (confirmDeleteTargetId = t.id)}>Delete</button
+              >
             {/if}
           </div>
         </div>
@@ -200,7 +246,10 @@
     {:else}
       <div class="empty-state">
         <span class="empty-icon">🎯</span>
-        <p>No output targets defined. Create one to route your transcription output!</p>
+        <p>
+          No output targets defined. Create one to route your transcription
+          output!
+        </p>
       </div>
     {/each}
   </div>
