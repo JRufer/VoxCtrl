@@ -14,8 +14,6 @@ pub struct AppState {
     pub recording: Arc<AtomicBool>,
     /// True while speech transcription/OpenAI post-processing is running
     pub processing: Arc<AtomicBool>,
-    /// True while an interim sliding-window transcription pass is actively running
-    pub interim_in_flight: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// Live mirror of `ui.show_overlay` so the hot status-forwarding loops can
@@ -150,14 +148,6 @@ impl AppState {
 
     pub fn set_processing(&self, v: bool) {
         self.processing.store(v, Ordering::SeqCst);
-    }
-
-    pub fn is_interim_in_flight(&self) -> bool {
-        self.interim_in_flight.load(Ordering::SeqCst)
-    }
-
-    pub fn set_interim_in_flight(&self, v: bool) {
-        self.interim_in_flight.store(v, Ordering::SeqCst);
     }
 
     pub fn is_audio_ready(&self) -> bool {
@@ -301,11 +291,11 @@ impl AppState {
     /// hides most of that behind the time they spend talking. In always-loaded
     /// mode the model is already there and this is a no-op.
     pub async fn preload_tts(&self) {
-        let tts_enabled = {
+        let unloads_when_idle = {
             let cfg = self.config.lock().await;
-            cfg.data.tts.enabled
+            cfg.data.tts.enabled && cfg.data.tts.unloads_when_idle()
         };
-        if !tts_enabled {
+        if !unloads_when_idle {
             return;
         }
         if let Some(tts) = self.tts_handle.lock().await.as_ref() {
@@ -315,24 +305,11 @@ impl AppState {
 
     /// True when dictating through `target_id` is likely to end in speech —
     /// either the target speaks the transcript itself, or it has a response
-    /// pipe whose reply VoxCtrl reads back, or it routes through the voice
-    /// command router when speech targets exist.
+    /// pipe whose reply VoxCtrl reads back. Used to decide whether a recording
+    /// is worth pre-loading the TTS model for; dictating into an editor is not.
     pub async fn target_leads_to_speech(&self, target_id: &str) -> bool {
         use voxctrl_routing::DeliveryType;
         let targets = self.targets.lock().await;
-
-        // If target is the voice command router, check if any target in the configuration uses speech
-        if target_id == "command"
-            || targets
-                .iter()
-                .any(|t| t.id == target_id && t.delivery == DeliveryType::Command)
-        {
-            return targets.iter().any(|t| {
-                t.delivery == DeliveryType::Speak
-                    || t.response_pipe.as_deref().is_some_and(|p| !p.trim().is_empty())
-            });
-        }
-
         targets.iter().any(|t| {
             t.id == target_id
                 && (t.delivery == DeliveryType::Speak

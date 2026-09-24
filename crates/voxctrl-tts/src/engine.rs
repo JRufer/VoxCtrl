@@ -158,10 +158,26 @@ impl TtsEngineWorker {
             model_loaded: model_loaded.clone(),
         };
 
-        // In always-loaded mode, ensure the model is preloaded on startup so the
-        // user never experiences cold-start latency on their first utterance.
-        if !config.unloads_when_idle() {
-            let _ = handle.tx.send(TtsCommand::Preload);
+        let prewarm = match config.engine {
+            TtsEngine::PocketTts => config.pocket_tts.prewarm,
+            TtsEngine::InflectMicro => config.inflect_micro.prewarm,
+            TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
+            TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
+            _ => false,
+        };
+        // Pre-warming loads the model at startup and keeps it there, which is
+        // exactly what the on-demand memory mode exists to avoid — so the two
+        // settings do not fight: on-demand wins and the model waits for its
+        // first real use (or a `preload()`).
+        if prewarm && !config.unloads_when_idle() {
+            let _ = handle.tx.send(TtsCommand::Play {
+                utterance: Utterance {
+                    text: " ".into(),
+                    voice: None,
+                    source_label: Some("prewarm".into()),
+                },
+                generation: 0,
+            });
         }
 
         let worker = Self {
@@ -267,34 +283,10 @@ impl TtsEngineWorker {
                         "TTS worker config dynamically updated (engine={:?}, memory_mode={:?})",
                         new_cfg.engine, new_cfg.memory_mode
                     );
-                    let was_unloading = current_config.unloads_when_idle();
-                    let now_unloading = new_cfg.unloads_when_idle();
                     current_config = new_cfg;
+                    // Switching to on-demand starts the clock now rather than
+                    // dropping a model that may be about to be used again.
                     last_used = Instant::now();
-
-                    // If switched from on_demand to always_loaded (e.g. toggled off in the tray),
-                    // preload/warm the model immediately so it stays ready in memory.
-                    if was_unloading && !now_unloading {
-                        let _ = match current_config.engine {
-                            TtsEngine::InflectMicro if inflect_model.is_none() => {
-                                ensure_inflect_micro_loaded(&current_config, &mut inflect_model).ok()
-                            }
-                            TtsEngine::PocketTts if audiocpp_session.is_none() => {
-                                ensure_pocket_tts_loaded(&current_config, &mut audiocpp_session).ok()
-                            }
-                            TtsEngine::BreezeTts2 if audiocpp_session.is_none() => {
-                                ensure_breeze_tts_2_loaded(&current_config, &mut audiocpp_session).ok()
-                            }
-                            TtsEngine::VoxCpm2 if audiocpp_session.is_none() => {
-                                ensure_vox_cpm_2_loaded(&current_config, &mut audiocpp_session).ok()
-                            }
-                            _ => None,
-                        };
-                        self.model_loaded.store(
-                            inflect_model.is_some() || audiocpp_session.is_some(),
-                            Ordering::SeqCst,
-                        );
-                    }
                 }
                 TtsCommand::Play { mut utterance, generation } => {
                     // Synthesis is about to touch the model; hold off the idle

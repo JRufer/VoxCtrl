@@ -66,7 +66,6 @@ fn make_test_state() -> AppState {
         router: Arc::new(OutputTargetRouter::new(Vec::new())),
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
-        interim_in_flight: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(true)),
         mcp_recording: Arc::new(AtomicBool::new(false)),

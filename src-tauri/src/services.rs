@@ -224,14 +224,8 @@ pub fn setup_tts_and_fifos(app_handle: &tauri::AppHandle, state: Arc<AppState>) 
 pub fn register_speak_target(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<Arc<AppState>>().inner().clone();
     voxctrl_routing::targets::set_speak_callback(std::sync::Arc::new(move |text| {
-        let text_str = text.to_string();
-        if let Ok(handle) = state.tts_handle.try_lock() {
-            if let Some(ref tts) = *handle {
-                tts.speak(text_str);
-                return;
-            }
-        }
         let state = state.clone();
+        let text_str = text.to_string();
         tauri::async_runtime::spawn(async move {
             let handle = state.tts_handle.lock().await;
             if let Some(ref tts) = *handle {

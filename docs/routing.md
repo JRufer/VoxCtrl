@@ -23,8 +23,8 @@ Both files are hot-reloaded when changed on disk.
 
 Defined in `~/.config/voxctrl/targets.toml`. Each `[[target]]` block describes one destination.
 
-**Saying one by name.** Start dictation and say *"Hey Vox"* (or *"Vox Control"*), then the command's
-name, then the text: *"Hey Vox, notes, remember to call the plumber"* (or *"Vox Control notes, remember to call the plumber"*) delivers
+**Saying one by name.** Start dictation and say *"VoxCtrl"*, then the command's
+name, then the text: *"VoxCtrl notes, remember to call the plumber"* delivers
 *remember to call the plumber* to the command named **notes**, whatever the
 active hotkey was pointed at. Everything after the name is the payload. The full
 matching rules — conversational lead-ins, fuzzy name matching, the overlay —
@@ -262,13 +262,13 @@ typing into the focused window — so voice command routing works the day anothe
 target is added, with no re-binding.
 
 **How Voice Command Routing Works:**
-- **Trigger Keyword**: Listens for the `"Hey Vox"` or `"Vox Control"` keywords (case-insensitive, supporting `Hey Vox`, `Hey, Vox`, `Hey-Vox`, `VoxCtrl`, `voxctrl`, `vox ctrl`, `vox-ctrl`, `vox control`, and trailing punctuation like `Hey Vox:`).
+- **Trigger Keyword**: Listens for the `"VoxCtrl"` keyword (case-insensitive, supporting `VoxCtrl`, `voxctrl`, `vox ctrl`, `vox-ctrl`, and optional punctuation like `VoxCtrl:`).
 - **Target Resolution**: Matches spoken target names against all configured target IDs and Labels (case-insensitively). Longest candidate target names take precedence (e.g. `"Personal Notes"` is matched before `"Notes"`).
-- **Conversational Lead-in Support**: Supports natural lead-in command phrases between the trigger keyword and the target name, such as *"Hey Vox, send this to my notes. I love you."*, *"Hey Vox, add this to my personal notes, help"*, *"Vox Control put this into my Notes: hello"*, or *"Hey, Vox, send us to my notes. I love you."*.
+- **Conversational Lead-in Support**: Supports natural lead-in command phrases between the trigger keyword and the target name, such as *"VoxCtrl send this to my notes. I love you."*, *"VoxCtrl add this to my personal notes, help"*, *"VoxCtrl put this into my Notes: hello"*, or *"VoxCtrl send us to my notes. I love you."*.
 - **Payload Extraction**: Strips transition punctuation (`.`, `:`, `,`, `;`) and connector words (`saying`, `that`, `with text`) and routes the remaining text payload to the matched target.
 - **Command UI Overlay**: When a voice command trigger is matched and executed, VoxCtrl automatically displays a temporary purple/indigo HUD overlay pill displaying the command name and text payload summary for a configurable duration (default: 3 seconds).
-- **Auto-Trigger Detection**: Dictating with the `"Hey Vox"` or `"Vox Control"` keyword (e.g. *"Hey Vox, notes Help me!"* or *"VoxCtrl notes Help me!"*) automatically activates voice command routing and surfaces the overlay pill regardless of whether the active hotkey target is set to `command` or `inject`.
-- **Fallback**: If no trigger keyword is spoken or if no target matches, it falls back to direct text injection into the active application (identical to the `inject` target).
+- **Auto-Trigger Detection**: Dictating with the `"VoxCtrl"` keyword (e.g. *"VoxCtrl notes Help me!"*) automatically activates voice command routing and surfaces the overlay pill regardless of whether the active hotkey target is set to `command` or `inject`.
+- **Fallback**: If no `"VoxCtrl"` keyword is spoken or if no target matches, it falls back to direct text injection into the active application (identical to the `inject` target).
 
 ---
 

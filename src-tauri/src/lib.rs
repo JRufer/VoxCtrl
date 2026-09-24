@@ -345,25 +345,11 @@ pub fn run() {
 
     let hotkey_health = Arc::new(voxctrl_hotkeys::ListenerHealth::default());
 
-    // TTS initial worker
-    let initial_tts_handle = if cfg_data.tts.enabled {
-        Some(voxctrl_tts::TtsEngineWorker::start(
-            cfg_data.tts.clone(),
-            cfg_data.features.custom_vocabulary.clone(),
-            None,
-            None,
-            None,
-        ))
-    } else {
-        None
-    };
-
     let app_state = Arc::new(AppState {
         config: config.clone(),
         router: router.clone(),
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
-        interim_in_flight: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),
@@ -387,7 +373,7 @@ pub fn run() {
         audio_tx: audio_tx.clone(),
         audio_wake: audio_wake_tx,
         inference_config_tx: inference_cfg_tx,
-        tts_handle: Arc::new(Mutex::new(initial_tts_handle.clone())),
+        tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         stop_key_held: Arc::new(AtomicBool::new(false)),
         speaking_tx: Arc::new(std::sync::OnceLock::new()),
@@ -438,9 +424,26 @@ pub fn run() {
         inference_cfg_rx,
     );
 
+    // TTS initial worker
+    let _tts_handle = if cfg_data.tts.enabled {
+        Some(voxctrl_tts::TtsEngineWorker::start(
+            cfg_data.tts.clone(),
+            cfg_data.features.custom_vocabulary.clone(),
+            None,
+            None,
+            None,
+        ))
+    } else {
+        None
+    };
+
     let state_for_tts = app_state.clone();
-    let tts_handle_clone = initial_tts_handle.clone();
+    let tts_handle_clone = _tts_handle.clone();
     tokio::spawn(async move {
+        {
+            let mut handle = state_for_tts.tts_handle.lock().await;
+            *handle = tts_handle_clone.clone();
+        }
         if let Some(tts) = tts_handle_clone {
             state_for_tts.spawn_fifo_responders(tts).await;
         }
