@@ -260,6 +260,20 @@
   </div>
 
   <div class="field-group">
+    <h3>Voice Commands</h3>
+    <label class="field">
+      <span>Recognise commands while you're still speaking</span>
+      <input type="checkbox" bind:checked={cfg.features.early_command_detection} onchange={markDirty} />
+    </label>
+    <p class="hint">
+      Transcribes the first few seconds of each recording early, so a command like
+      “Hey Vox, say …” shows its overlay and starts loading the voice before you let go
+      of the hotkey. Where the text goes is still decided by the full transcript. Turn
+      this off to save the extra transcription work.
+    </p>
+  </div>
+
+  <div class="field-group">
     <h3>Custom Dictionary</h3>
     <p class="hint">Provide a comma-separated list of words (e.g. names or jargon like "Waylin, Rufer, Enola, Kenz") that are hard to spell. The transcription process will correct these in the final text.</p>
     <textarea 

@@ -253,7 +253,8 @@ pub fn spawn_audio_coordinator(
                         .blocking_lock()
                         .iter()
                         .any(|t| t.delivery != voxctrl_routing::DeliveryType::Command);
-                    interim_enabled = cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
+                    interim_enabled = cfg.features.early_command_detection
+                        && cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
                         && !heavy_model
                         && has_command_targets;
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
@@ -402,7 +403,18 @@ pub fn spawn_text_delivery_worker(
 
             state.set_interim_in_flight(false);
             state.set_processing(false);
+
+            // A command announced from an interim pass stands only if the
+            // final transcript confirms it; otherwise take its overlay down.
+            let announced_early = announced.take().is_some_and(|(session, _)| session == output.session_id);
+            let withdraw_early_command = || {
+                if announced_early {
+                    voxctrl_routing::targets::notify_command_withdrawn();
+                }
+            };
+
             if let Some(ref err) = output.error {
+                withdraw_early_command();
                 // Always surface transcription failures — without this a
                 // fresh install with no Whisper model records audio and
                 // then silently drops it, which reads as "hotkeys broken".
@@ -411,6 +423,7 @@ pub fn spawn_text_delivery_worker(
                 continue;
             }
             if output.text.trim().is_empty() {
+                withdraw_early_command();
                 continue;
             }
 
@@ -451,6 +464,7 @@ pub fn spawn_text_delivery_worker(
                 };
                 (matched_id, cleaned_payload)
             } else {
+                withdraw_early_command();
                 let cleaned_text = if s1_mini_enabled && !output.text.trim().is_empty() {
                     voxctrl_inference::s1_mini::clean_dictation(&output.text, &s1_mini_styling, None)
                 } else {

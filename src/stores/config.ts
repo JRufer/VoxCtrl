@@ -78,6 +78,7 @@ export interface FeaturesConfig {
   spoken_punctuation: boolean;
   auto_format_lists: boolean;
   snippets: Record<string, string>;
+  early_command_detection: boolean;
 }
 
 export interface OpenAiConfig {
@@ -203,6 +204,7 @@ const defaultConfig: AppConfig = {
     spoken_punctuation: true,
     auto_format_lists: true,
     snippets: {},
+    early_command_detection: true,
   },
   openai: {
     enabled: false,

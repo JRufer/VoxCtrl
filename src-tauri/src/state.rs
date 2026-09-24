@@ -252,6 +252,11 @@ impl AppState {
         *self.command_overlay_until.lock().unwrap() = Some(std::time::Instant::now() + duration);
     }
 
+    /// Stop showing the command-executed overlay pill now.
+    pub fn clear_command_overlay(&self) {
+        *self.command_overlay_until.lock().unwrap() = None;
+    }
+
     /// Whether the command-executed overlay pill should still be showing.
     pub fn is_command_overlay_active(&self) -> bool {
         self.command_overlay_until

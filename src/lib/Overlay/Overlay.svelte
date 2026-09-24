@@ -37,6 +37,7 @@
   let commandOverlayText = $state("");
   let commandTimerId: any = null;
   let unlistenCommandExecuted: (() => void) | null = null;
+  let unlistenCommandWithdrawn: (() => void) | null = null;
   let unlistenOverlayStyleSelected: (() => void) | null = null;
 
   // Delay unmounting the visualizer when recording/speaking/command stops to allow CSS outro animation to finish
@@ -276,11 +277,20 @@
       unlistenCommandExecuted = unlisten;
     });
 
+    // A command recognised mid-speech that the final transcript didn't confirm.
+    listen("command-withdrawn", () => {
+      if (commandTimerId) clearTimeout(commandTimerId);
+      commandOverlayActive = false;
+    }).then((unlisten) => {
+      unlistenCommandWithdrawn = unlisten;
+    });
+
     return () => {
       document.documentElement.classList.remove("overlay-window");
       document.body.classList.remove("overlay-window");
       if (unlistenAudioLevel) unlistenAudioLevel();
       if (unlistenCommandExecuted) unlistenCommandExecuted();
+      if (unlistenCommandWithdrawn) unlistenCommandWithdrawn();
       if (unlistenOverlayStyleSelected) unlistenOverlayStyleSelected();
       if (commandTimerId) clearTimeout(commandTimerId);
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);

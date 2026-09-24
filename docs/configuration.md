@@ -70,7 +70,8 @@ Full schema with defaults:
     "custom_vocabulary": [],
     "spoken_punctuation": true,
     "auto_format_lists": true,
-    "snippets": {}
+    "snippets": {},
+    "early_command_detection": true
   },
   "openai": {
     "enabled": false,
@@ -237,6 +238,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `auto_format_lists` | bool | `true` | Detect "first/second/third" patterns and reformat as a numbered list |
 | `custom_vocabulary` | string[] | `[]` | Custom words; VoxCtrl uses fuzzy Levenshtein matching to correct near-matches post-transcription |
 | `snippets` | object | `{}` | Short code → expansion map |
+| `early_command_detection` | bool | `true` | Transcribe the first 6 seconds of a recording while it is still going, so a voice command shows its overlay and starts loading the TTS model before the hotkey is released. Routing is still decided by the final transcript. Skipped for the remote backend and CPU-only medium/large Whisper models |
 
 Example with snippets:
 ```json
