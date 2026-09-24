@@ -29,6 +29,21 @@ pub fn notify_command_trigger(command_name: &str, text_summary: &str) {
     }
 }
 
+pub type CommandWithdrawnCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+static COMMAND_WITHDRAWN_CALLBACK: OnceLock<CommandWithdrawnCallback> = OnceLock::new();
+
+pub fn set_command_withdrawn_callback(callback: CommandWithdrawnCallback) {
+    let _ = COMMAND_WITHDRAWN_CALLBACK.set(callback);
+}
+
+/// Take back a command announced early (from a partial transcript) that the
+/// final transcript did not confirm, so its overlay does not linger.
+pub fn notify_command_withdrawn() {
+    if let Some(cb) = COMMAND_WITHDRAWN_CALLBACK.get() {
+        cb();
+    }
+}
+
 // Shared HTTP client — built once, reused for connection pooling.
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();

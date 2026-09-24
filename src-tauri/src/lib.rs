@@ -350,6 +350,7 @@ pub fn run() {
         router: router.clone(),
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
+        interim_in_flight: Arc::new(AtomicBool::new(false)),
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),

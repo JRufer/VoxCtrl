@@ -286,6 +286,16 @@ pub struct FeaturesConfig {
     pub show_notification: Option<bool>,
     /// Map of trigger → expansion, e.g. {"addr" → "123 Main St"}
     pub snippets: std::collections::HashMap<String, String>,
+    /// Transcribe the opening seconds of a recording while it is still going,
+    /// so a spoken voice command shows its overlay and starts loading the TTS
+    /// model before the user releases the hotkey. Costs some extra
+    /// transcription work at the start of each recording.
+    #[serde(default = "default_early_command_detection")]
+    pub early_command_detection: bool,
+}
+
+fn default_early_command_detection() -> bool {
+    true
 }
 
 impl Default for FeaturesConfig {
@@ -297,6 +307,7 @@ impl Default for FeaturesConfig {
             auto_format_lists: true,
             show_notification: None,
             snippets: std::collections::HashMap::new(),
+            early_command_detection: true,
         }
     }
 }
@@ -1646,5 +1657,16 @@ mod tests {
         let with_leftover = serde_json::to_string(&value).unwrap();
 
         serde_json::from_str::<AppConfig>(&with_leftover).expect("older configs must still load");
+    }
+
+    #[test]
+    fn early_command_detection_defaults_on_for_older_configs() {
+        use super::FeaturesConfig;
+        let features: FeaturesConfig = serde_json::from_str(
+            r#"{"remove_fillers": true, "custom_vocabulary": [], "spoken_punctuation": true,
+                "auto_format_lists": true, "snippets": {}}"#,
+        )
+        .unwrap();
+        assert!(features.early_command_detection);
     }
 }

@@ -14,6 +14,8 @@ pub struct AppState {
     pub recording: Arc<AtomicBool>,
     /// True while speech transcription/OpenAI post-processing is running
     pub processing: Arc<AtomicBool>,
+    /// True while an interim (mid-recording) transcription pass is running
+    pub interim_in_flight: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// Live mirror of `ui.show_overlay` so the hot status-forwarding loops can
@@ -150,6 +152,14 @@ impl AppState {
         self.processing.store(v, Ordering::SeqCst);
     }
 
+    pub fn is_interim_in_flight(&self) -> bool {
+        self.interim_in_flight.load(Ordering::SeqCst)
+    }
+
+    pub fn set_interim_in_flight(&self, v: bool) {
+        self.interim_in_flight.store(v, Ordering::SeqCst);
+    }
+
     pub fn is_audio_ready(&self) -> bool {
         self.audio_ready.load(Ordering::SeqCst)
     }
@@ -240,6 +250,11 @@ impl AppState {
     /// Mark the command-executed overlay pill active for `duration` from now.
     pub fn activate_command_overlay(&self, duration: std::time::Duration) {
         *self.command_overlay_until.lock().unwrap() = Some(std::time::Instant::now() + duration);
+    }
+
+    /// Stop showing the command-executed overlay pill now.
+    pub fn clear_command_overlay(&self) {
+        *self.command_overlay_until.lock().unwrap() = None;
     }
 
     /// Whether the command-executed overlay pill should still be showing.
