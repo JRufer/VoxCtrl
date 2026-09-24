@@ -242,6 +242,17 @@ describe("Overlay.svelte (root layout)", () => {
     expect(container.textContent).not.toContain("SYSTEM RESPONDING");
   });
 
+  test("recording over a spoken reply shows the visualizer, not SYSTEM RESPONDING", async () => {
+    // begin_recording stops playback, but the speaking flag can lag behind it.
+    setStatus({ speaking: true, recording: true });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.querySelector(".scope")).not.toBeNull();
+    expect(container.textContent).not.toContain("SYSTEM RESPONDING");
+  });
+
   test("keeps the visualizer mounted while the overlay fades out after recording", async () => {
     setStatus({ recording: true });
     const { container } = render(Overlay);

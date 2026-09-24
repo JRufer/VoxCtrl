@@ -47,7 +47,12 @@
     (commandOverlayActive && $config.ui.show_command_overlay)
   );
 
-  let isSystemResponding = $derived($speaking && $config.tts.enabled && $config.tts.response_overlay);
+  // Recording wins: starting to dictate interrupts playback (begin_recording
+  // stops TTS), and until the speaking flag catches up the user must still
+  // see that they are being recorded rather than a stale SYSTEM RESPONDING.
+  let isSystemResponding = $derived(
+    $speaking && $config.tts.enabled && $config.tts.response_overlay && !$recording
+  );
   let renderOverlay = $state(false);
 
   // The target visualizer belongs to recording. It gives way to the SYSTEM
@@ -441,6 +446,13 @@
     align-items: center;
     justify-content: center;
     pointer-events: none;
+    /* Built-in visualizers are at most ~152px, leaving room in the 444px
+       window for two pills below. A custom overlay may be taller: let this
+       box give way (trimmed, not scaled) so the pills are never pushed out
+       of the window. */
+    min-height: 0;
+    flex-shrink: 1;
+    overflow: hidden;
   }
 
   .system-response-box {
