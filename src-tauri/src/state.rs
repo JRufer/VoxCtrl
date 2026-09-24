@@ -14,6 +14,8 @@ pub struct AppState {
     pub recording: Arc<AtomicBool>,
     /// True while speech transcription/OpenAI post-processing is running
     pub processing: Arc<AtomicBool>,
+    /// True while an interim (mid-recording) transcription pass is running
+    pub interim_in_flight: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// Live mirror of `ui.show_overlay` so the hot status-forwarding loops can
@@ -148,6 +150,14 @@ impl AppState {
 
     pub fn set_processing(&self, v: bool) {
         self.processing.store(v, Ordering::SeqCst);
+    }
+
+    pub fn is_interim_in_flight(&self) -> bool {
+        self.interim_in_flight.load(Ordering::SeqCst)
+    }
+
+    pub fn set_interim_in_flight(&self, v: bool) {
+        self.interim_in_flight.store(v, Ordering::SeqCst);
     }
 
     pub fn is_audio_ready(&self) -> bool {

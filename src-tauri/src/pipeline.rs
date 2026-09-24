@@ -36,6 +36,8 @@ async fn process_remote_transcription(
                 inference_ms: 0,
                 language: String::new(),
                 error: Some(format!("{e:#}")),
+                is_interim: false,
+                session_id: 0,
             });
             return;
         }
@@ -69,6 +71,8 @@ async fn process_remote_transcription(
             inference_ms: result.inference_ms,
             language: result.language,
             error: None,
+            is_interim: false,
+            session_id: 0,
         });
         return;
     }
@@ -188,8 +192,20 @@ async fn process_remote_transcription(
         inference_ms: result.inference_ms,
         language: result.language,
         error: None,
+        is_interim: false,
+        session_id: 0,
     });
 }
+
+/// Interim passes start once this much audio exists (0.5 s at 16 kHz)...
+const INTERIM_MIN_SAMPLES: usize = 8_000;
+/// ...and re-run after at least this much more (0.3 s).
+const INTERIM_STEP_SAMPLES: usize = 4_800;
+/// Only the opening of a recording is transcribed early: the trigger and the
+/// target name come first ("Hey Vox, add this to my notes"), and capping the
+/// window keeps each pass short, so the final transcription never waits long
+/// behind one and long dictations don't keep the model busy the whole time.
+const INTERIM_MAX_SAMPLES: usize = 6 * 16_000;
 
 pub fn spawn_audio_coordinator(
     state_for_audio: Arc<AppState>,
@@ -205,6 +221,10 @@ pub fn spawn_audio_coordinator(
         let mut binding_id = String::new();
         let mut remote_session: Option<voxctrl_inference::RemoteStreamingSession> = None;
         let mut is_remote_backend = false;
+        let mut interim_enabled = false;
+        let mut session_id: u64 = 0;
+        let mut last_interim_sample_count: usize = 0;
+        let mut last_interim_instant = std::time::Instant::now();
 
         while let Ok(chunk) = audio_rx.recv() {
             let is_recording = state_for_audio.is_recording();
@@ -215,8 +235,27 @@ pub fn spawn_audio_coordinator(
                     target_id = state_for_audio.active_target.blocking_lock().clone();
                     binding_id = state_for_audio.active_binding_id.blocking_lock().clone();
                     was_recording = true;
+                    session_id = session_id.wrapping_add(1);
+                    last_interim_sample_count = 0;
+                    last_interim_instant = std::time::Instant::now();
+                    state_for_audio.set_interim_in_flight(false);
 
                     let cfg = state_for_audio.config.blocking_lock().data.clone();
+                    // Early command detection only pays off when a command
+                    // could match (some non-router target exists) and the
+                    // local model is fast enough to transcribe mid-recording.
+                    let heavy_model = cfg.engine.backend == voxctrl_config::BackendChoice::WhisperCpp
+                        && voxctrl_inference::whisper_gpu_backend().is_none()
+                        && (cfg.engine.whisper_cpp.model_size.starts_with("medium")
+                            || cfg.engine.whisper_cpp.model_size.starts_with("large"));
+                    let has_command_targets = state_for_audio
+                        .targets
+                        .blocking_lock()
+                        .iter()
+                        .any(|t| t.delivery != voxctrl_routing::DeliveryType::Command);
+                    interim_enabled = cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
+                        && !heavy_model
+                        && has_command_targets;
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
                         is_remote_backend = true;
                         let mut merged_prompt = String::from(
@@ -248,6 +287,27 @@ pub fn spawn_audio_coordinator(
                     session.send_chunk(chunk.clone());
                 }
                 accumulated_audio.extend(chunk);
+
+                // Interim transcription of the opening of the recording, so a
+                // voice command is recognised while the user is still talking.
+                let window = accumulated_audio.len().min(INTERIM_MAX_SAMPLES);
+                if interim_enabled
+                    && window >= INTERIM_MIN_SAMPLES
+                    && window.saturating_sub(last_interim_sample_count) >= INTERIM_STEP_SAMPLES
+                    && last_interim_instant.elapsed() >= std::time::Duration::from_millis(400)
+                    && !state_for_audio.is_interim_in_flight()
+                {
+                    state_for_audio.set_interim_in_flight(true);
+                    last_interim_sample_count = window;
+                    last_interim_instant = std::time::Instant::now();
+                    let _ = inference_tx.send(voxctrl_inference::InferenceRequest {
+                        audio: accumulated_audio[..window].to_vec(),
+                        target_id: target_id.clone(),
+                        binding_id: Some(binding_id.clone()),
+                        is_interim: true,
+                        session_id,
+                    });
+                }
             } else {
                 if was_recording {
                     if is_remote_backend {
@@ -280,6 +340,8 @@ pub fn spawn_audio_coordinator(
                                 audio: std::mem::take(&mut accumulated_audio),
                                 target_id: target_id.clone(),
                                 binding_id: Some(binding_id.clone()),
+                                is_interim: false,
+                                session_id,
                             };
                             state_for_audio.set_processing(true);
                             let _ = inference_tx.send(req);
@@ -298,7 +360,47 @@ pub fn spawn_text_delivery_worker(
     rt_handle: tokio::runtime::Handle,
 ) {
     std::thread::spawn(move || {
+        // (session, target) already announced from an interim pass, so the
+        // overlay and TTS preload fire once per command, not once per pass.
+        let mut announced: Option<(u64, String)> = None;
+
         while let Ok(output) = text_rx.recv() {
+            if output.is_interim {
+                state.set_interim_in_flight(false);
+                if output.error.is_some() || output.text.trim().is_empty() {
+                    continue;
+                }
+                // Early command detection: surface the command overlay and
+                // start loading the TTS model while the user is still talking.
+                // This is only a head start — routing is decided solely by the
+                // final transcript below, which must carry the trigger itself.
+                let dir = voxctrl_routing::config_dir();
+                let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
+                if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
+                    let key = (output.session_id, parsed.matched_target_id);
+                    if announced.as_ref() != Some(&key) {
+                        let matched_target = targets.iter().find(|t| t.id == key.1);
+                        let matched_label = matched_target
+                            .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
+                            .unwrap_or_else(|| key.1.clone());
+                        tracing::info!("Early command detected during speech: '{matched_label}' (target: {})", key.1);
+                        voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
+
+                        let leads_to_speech = matched_target.is_some_and(|t| {
+                            t.delivery == voxctrl_routing::DeliveryType::Speak
+                                || t.response_pipe.as_deref().is_some_and(|p| !p.trim().is_empty())
+                        });
+                        if leads_to_speech {
+                            let state_c = state.clone();
+                            rt_handle.spawn(async move { state_c.preload_tts().await });
+                        }
+                        announced = Some(key);
+                    }
+                }
+                continue;
+            }
+
+            state.set_interim_in_flight(false);
             state.set_processing(false);
             if let Some(ref err) = output.error {
                 // Always surface transcription failures — without this a
