@@ -333,7 +333,7 @@ survives being idle:
 
 | Mode | Behaviour |
 |---|---|
-| `"always_loaded"` (default) | The model is loaded on first use and stays resident for the life of the TTS worker. Fastest, highest memory. |
+| `"always_loaded"` (default) | The model is loaded on first use (or at startup with `prewarm`) and stays resident for the life of the TTS worker. Fastest, highest memory. Recording against a speech target, or a spoken command to one, starts that first load early, as in `"on_demand"` mode. Switching into this mode with `prewarm` on loads the model right away. |
 | `"on_demand"` | The model is loaded when VoxCtrl knows it is needed, kept primed while it keeps being used, and dropped after `idle_unload_secs` (default 900 = 15 minutes) of inactivity. |
 
 In `"on_demand"` mode TTS itself stays enabled the whole time — only the weights come and go:
