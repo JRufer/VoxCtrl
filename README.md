@@ -1,6 +1,8 @@
 # VoxCtrl
 
-![VoxCtrl Banner](assets/banner.png)
+<p align="center">
+  <img src="assets/voxctrl-say-hello-to-vox.webp" alt="Vox, the VoxCtrl mascot, adds a to-do and laughs at a joke from Hermes" width="800">
+</p>
 
 A high-performance, private, on-device voice-to-text dictation application and programmable **voice input broker** built natively with **Rust**, **Tauri 2**, and **Svelte 5**.
 
