@@ -123,6 +123,38 @@ impl TtsEngineHandle {
     }
 }
 
+/// Whether the selected engine's `prewarm` setting asks for its model to be
+/// loaded up front.
+fn prewarm_enabled(config: &TtsConfig) -> bool {
+    match config.engine {
+        TtsEngine::PocketTts => config.pocket_tts.prewarm,
+        TtsEngine::InflectMicro => config.inflect_micro.prewarm,
+        TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
+        TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
+        _ => false,
+    }
+}
+
+/// Load the selected engine's model if it is not resident yet. `None` when
+/// there was nothing to do: already loaded, or an engine that holds no model.
+fn load_selected_engine(
+    config: &TtsConfig,
+    inflect_model: &mut InflectModelSlot,
+    audiocpp_session: &mut Option<AudioCppSession>,
+) -> Option<Result<()>> {
+    match config.engine {
+        TtsEngine::InflectMicro if inflect_model.is_none() => {
+            Some(ensure_inflect_micro_loaded(config, inflect_model))
+        }
+        TtsEngine::PocketTts if audiocpp_session.is_none() => Some(ensure_pocket_tts_loaded(config, audiocpp_session)),
+        TtsEngine::BreezeTts2 if audiocpp_session.is_none() => {
+            Some(ensure_breeze_tts_2_loaded(config, audiocpp_session))
+        }
+        TtsEngine::VoxCpm2 if audiocpp_session.is_none() => Some(ensure_vox_cpm_2_loaded(config, audiocpp_session)),
+        _ => None,
+    }
+}
+
 // ── TTS engine worker ─────────────────────────────────────────────────────────
 
 pub type PlaybackCallback = Arc<dyn Fn() + Send + Sync + 'static>;
@@ -158,13 +190,7 @@ impl TtsEngineWorker {
             model_loaded: model_loaded.clone(),
         };
 
-        let prewarm = match config.engine {
-            TtsEngine::PocketTts => config.pocket_tts.prewarm,
-            TtsEngine::InflectMicro => config.inflect_micro.prewarm,
-            TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
-            TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
-            _ => false,
-        };
+        let prewarm = prewarm_enabled(&config);
         // Pre-warming loads the model at startup and keeps it there, which is
         // exactly what the on-demand memory mode exists to avoid — so the two
         // settings do not fight: on-demand wins and the model waits for its
@@ -283,10 +309,25 @@ impl TtsEngineWorker {
                         "TTS worker config dynamically updated (engine={:?}, memory_mode={:?})",
                         new_cfg.engine, new_cfg.memory_mode
                     );
+                    let was_unloading = current_config.unloads_when_idle();
                     current_config = new_cfg;
                     // Switching to on-demand starts the clock now rather than
                     // dropping a model that may be about to be used again.
                     last_used = Instant::now();
+
+                    // Switching to always-loaded (e.g. from the tray) with
+                    // pre-warming on: load now, as a startup in this mode would.
+                    if was_unloading && !current_config.unloads_when_idle() && prewarm_enabled(&current_config) {
+                        if let Some(Err(e)) =
+                            load_selected_engine(&current_config, &mut inflect_model, &mut audiocpp_session)
+                        {
+                            warn!("TTS pre-warm after switching to always-loaded failed: {e:#}");
+                        }
+                        self.model_loaded.store(
+                            inflect_model.is_some() || audiocpp_session.is_some(),
+                            Ordering::SeqCst,
+                        );
+                    }
                 }
                 TtsCommand::Play { mut utterance, generation } => {
                     // Synthesis is about to touch the model; hold off the idle
@@ -427,22 +468,8 @@ impl TtsEngineWorker {
                     // Speculative: failures are logged, not surfaced. The same
                     // error is reported properly (with a toast) if an utterance
                     // actually arrives.
-                    let outcome = match current_config.engine {
-                        TtsEngine::InflectMicro if inflect_model.is_none() => {
-                            Some(ensure_inflect_micro_loaded(&current_config, &mut inflect_model))
-                        }
-                        TtsEngine::PocketTts if audiocpp_session.is_none() => {
-                            Some(ensure_pocket_tts_loaded(&current_config, &mut audiocpp_session))
-                        }
-                        TtsEngine::BreezeTts2 if audiocpp_session.is_none() => {
-                            Some(ensure_breeze_tts_2_loaded(&current_config, &mut audiocpp_session))
-                        }
-                        TtsEngine::VoxCpm2 if audiocpp_session.is_none() => {
-                            Some(ensure_vox_cpm_2_loaded(&current_config, &mut audiocpp_session))
-                        }
-                        // Already resident, or an engine that holds no model.
-                        _ => None,
-                    };
+                    let outcome =
+                        load_selected_engine(&current_config, &mut inflect_model, &mut audiocpp_session);
                     match outcome {
                         Some(Err(e)) => debug!("TTS preload skipped: {e:#}"),
                         Some(Ok(())) => debug!("TTS model pre-loaded and primed"),
