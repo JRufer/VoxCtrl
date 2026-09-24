@@ -220,7 +220,7 @@ pub fn spawn_audio_coordinator(
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
                         is_remote_backend = true;
                         let mut merged_prompt = String::from(
-                            "VoxCtrl is a voice control assistant application. VoxCtrl commands start with VoxCtrl. ",
+                            "VoxCtrl is a voice control assistant application. VoxCtrl commands start with Vox Control or Hey Vox. ",
                         );
                         if !cfg.features.custom_vocabulary.is_empty() {
                             merged_prompt.push_str("Vocabulary: ");
