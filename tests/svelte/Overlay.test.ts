@@ -1,18 +1,22 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
+import { get } from "svelte/store";
 import { render } from "@testing-library/svelte";
 
 // Mock tauri IPC used by the overlay components and the status store
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(async () => ({
-    recording: false,
-    processing: false,
-    speaking: false,
-    mcp_recording: false,
-    audio_ready: true,
-    word_count: 0,
-    active_target_id: "default",
-    active_target_label: "Focused Window",
-  })),
+  invoke: vi.fn(async (cmd: string) => {
+    // `get_config` has no backend here: failing it leaves the config store on
+    // its defaults.
+    if (cmd === "get_config") throw new Error("no backend in tests");
+    // The status store falls back to polling `get_status` every second when
+    // no status-tick events arrive, which in tests is always. Answer with
+    // whatever status the test has set, so a poll landing mid-test changes
+    // nothing — a fixed idle reply here reset `speaking`/`recording` under
+    // the tests whenever a run was slow enough for the poll to fire.
+    const { status } = await import("../../src/stores/status");
+    const { get } = await import("svelte/store");
+    return get(status);
+  }),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -29,6 +33,8 @@ vi.stubGlobal(
 vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
 
 import { status, type AppStatus } from "../../src/stores/status";
+import { config } from "../../src/stores/config";
+import Overlay from "../../src/lib/Overlay/Overlay.svelte";
 import Waveform from "../../src/lib/Overlay/Waveform.svelte";
 import Pulse from "../../src/lib/Overlay/Pulse.svelte";
 import BlueWave from "../../src/lib/Overlay/BlueWave.svelte";
@@ -187,5 +193,78 @@ describe("VoiceCard.svelte (membership card)", () => {
     const { container: procContainer } = render(VoiceCard, { recording: false, active: true });
     expect(procContainer.querySelector(".stamp")?.textContent).toContain("PROC");
     expect(procContainer.querySelector(".field-value")?.textContent).toContain("Reading the card…");
+  });
+});
+
+describe("Overlay.svelte (root layout)", () => {
+  // These tests reconfigure the shared config store; put it back afterwards
+  // so later suites see the defaults.
+  let savedConfig: ReturnType<typeof get<typeof config>>;
+  beforeEach(() => {
+    savedConfig = get(config);
+    config.update((c) => ({
+      ...c,
+      ui: { ...c.ui, show_overlay: true, overlay_style: "waveform" },
+      tts: { ...c.tts, enabled: true, response_overlay: true },
+    }));
+  });
+  afterEach(() => {
+    config.set(savedConfig);
+  });
+
+  // The overlay mounts its content after a 25ms repaint delay (see the
+  // overlay_style effect), so wait past that rather than a single tick.
+  const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+
+  test("hides target visualizer and displays SYSTEM RESPONDING when speaking", async () => {
+    setStatus({ speaking: true, recording: false, active_target_label: "Kitty Terminal" });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.textContent).toContain("SYSTEM RESPONDING");
+    expect(container.textContent).toContain("Kitty Terminal");
+    // The target visualizer (Waveform) must not be rendered alongside it
+    expect(container.querySelector(".scope")).toBeNull();
+    expect(container.textContent).not.toContain("WAVEFORM // OSC-01");
+  });
+
+  test("shows target visualizer when recording", async () => {
+    setStatus({ speaking: false, recording: true, active_target_label: "Code Editor" });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.querySelector(".scope")).not.toBeNull();
+    expect(container.textContent).toContain("WAVEFORM // OSC-01");
+    expect(container.textContent).not.toContain("SYSTEM RESPONDING");
+  });
+
+  test("recording over a spoken reply shows the visualizer, not SYSTEM RESPONDING", async () => {
+    // begin_recording stops playback, but the speaking flag can lag behind it.
+    setStatus({ speaking: true, recording: true });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.querySelector(".scope")).not.toBeNull();
+    expect(container.textContent).not.toContain("SYSTEM RESPONDING");
+  });
+
+  test("keeps the visualizer mounted while the overlay fades out after recording", async () => {
+    setStatus({ recording: true });
+    const { container } = render(Overlay);
+    await settle();
+    expect(container.querySelector(".scope")).not.toBeNull();
+
+    setStatus({ recording: false });
+    await settle();
+    // Still inside the 450ms outro window: the visualizer animates out rather
+    // than vanishing the instant recording stops...
+    expect(container.querySelector(".scope")).not.toBeNull();
+
+    // ...and is gone once the outro has finished.
+    await settle(500);
+    expect(container.querySelector(".scope")).toBeNull();
   });
 });
