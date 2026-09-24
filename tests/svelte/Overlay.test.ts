@@ -4,20 +4,18 @@ import { render } from "@testing-library/svelte";
 
 // Mock tauri IPC used by the overlay components and the status store
 vi.mock("@tauri-apps/api/core", () => ({
-  // `get_config` has no backend here: failing it leaves the config store on
-  // its defaults instead of overwriting it with this status-shaped reply.
   invoke: vi.fn(async (cmd: string) => {
+    // `get_config` has no backend here: failing it leaves the config store on
+    // its defaults.
     if (cmd === "get_config") throw new Error("no backend in tests");
-    return {
-    recording: false,
-    processing: false,
-    speaking: false,
-    mcp_recording: false,
-    audio_ready: true,
-    word_count: 0,
-    active_target_id: "default",
-    active_target_label: "Focused Window",
-    };
+    // The status store falls back to polling `get_status` every second when
+    // no status-tick events arrive, which in tests is always. Answer with
+    // whatever status the test has set, so a poll landing mid-test changes
+    // nothing — a fixed idle reply here reset `speaking`/`recording` under
+    // the tests whenever a run was slow enough for the poll to fire.
+    const { status } = await import("../../src/stores/status");
+    const { get } = await import("svelte/store");
+    return get(status);
   }),
 }));
 
