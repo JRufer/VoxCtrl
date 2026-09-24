@@ -37,6 +37,7 @@
   let commandOverlayText = $state("");
   let commandTimerId: any = null;
   let unlistenCommandExecuted: (() => void) | null = null;
+  let unlistenCommandWithdrawn: (() => void) | null = null;
   let unlistenOverlayStyleSelected: (() => void) | null = null;
 
   // Delay unmounting the visualizer when recording/speaking/command stops to allow CSS outro animation to finish
@@ -46,7 +47,32 @@
     ($mcpRecording && $config.mcp.visual_feedback) ||
     (commandOverlayActive && $config.ui.show_command_overlay)
   );
+
+  // Recording wins: starting to dictate interrupts playback (begin_recording
+  // stops TTS), and until the speaking flag catches up the user must still
+  // see that they are being recorded rather than a stale SYSTEM RESPONDING.
+  let isSystemResponding = $derived(
+    $speaking && $config.tts.enabled && $config.tts.response_overlay && !$recording
+  );
   let renderOverlay = $state(false);
+
+  // The target visualizer belongs to recording. It gives way to the SYSTEM
+  // RESPONDING pill so the two never overlap, and is dropped once recording
+  // ends if the overlay stays up only for a command/MCP pill. When the whole
+  // overlay is fading out it stays mounted, so its outro transition can play.
+  let primaryVisualizerOn = $state(false);
+  $effect(() => {
+    if (!renderOverlay || isSystemResponding) {
+      primaryVisualizerOn = false;
+    } else if ($recording || $status.processing) {
+      primaryVisualizerOn = true;
+    } else if (isRecordingOrSpeaking) {
+      primaryVisualizerOn = false;
+    }
+  });
+  let showPrimaryVisualizer = $derived(
+    $config.ui.overlay_style !== "none" && $config.ui.show_overlay && primaryVisualizerOn
+  );
   let animateActive = $state(false);
   let timeoutId: any;
   let animateTimeoutId: any;
@@ -276,11 +302,20 @@
       unlistenCommandExecuted = unlisten;
     });
 
+    // A command recognised mid-speech that the final transcript didn't confirm.
+    listen("command-withdrawn", () => {
+      if (commandTimerId) clearTimeout(commandTimerId);
+      commandOverlayActive = false;
+    }).then((unlisten) => {
+      unlistenCommandWithdrawn = unlisten;
+    });
+
     return () => {
       document.documentElement.classList.remove("overlay-window");
       document.body.classList.remove("overlay-window");
       if (unlistenAudioLevel) unlistenAudioLevel();
       if (unlistenCommandExecuted) unlistenCommandExecuted();
+      if (unlistenCommandWithdrawn) unlistenCommandWithdrawn();
       if (unlistenOverlayStyleSelected) unlistenOverlayStyleSelected();
       if (commandTimerId) clearTimeout(commandTimerId);
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
@@ -311,58 +346,68 @@
 
 <div class="overlay-root" data-recording={$recording} data-speaking={$speaking} data-processing={$status.processing}>
   {#if renderOverlay && visible}
-    {#if $config.ui.overlay_style === "waveform"}
-      <Waveform recording={$recording} active={animateActive} />
-    {:else if $config.ui.overlay_style === "pulse"}
-      <Pulse recording={$recording} active={animateActive} />
-    {:else if $config.ui.overlay_style === "blue_wave"}
-      <BlueWave recording={$recording} speaking={$speaking} active={animateActive} />
-    {:else if $config.ui.overlay_style === "mono_bars"}
-      <MonoBars recording={$recording} active={animateActive} />
-    {:else if $config.ui.overlay_style === "spectrum"}
-      <Spectrum recording={$recording} active={animateActive} />
-    {:else if $config.ui.overlay_style === "terminal"}
-      <Terminal recording={$recording} active={animateActive} />
-    {:else if $config.ui.overlay_style === "vinyl"}
-      <Vinyl recording={$recording} active={animateActive} />
-    {:else if activeCustomOverlay}
-      {@html `<style>${activeCustomOverlay.css}</style>`}
-      <div class="custom-overlay-content" class:active={animateActive} use:executeScripts>
-        {@html processedHtml}
-      </div>
-    {:else if $config.ui.overlay_style !== "none"}
-      <VoiceCard recording={$recording} speaking={$speaking} active={animateActive} />
-    {/if}
+    <div class="overlay-stack">
+      {#if showPrimaryVisualizer}
+        <div class="visualizer-container">
+          {#if $config.ui.overlay_style === "waveform"}
+            <Waveform recording={$recording} active={animateActive} />
+          {:else if $config.ui.overlay_style === "pulse"}
+            <Pulse recording={$recording} active={animateActive} />
+          {:else if $config.ui.overlay_style === "blue_wave"}
+            <BlueWave recording={$recording} speaking={$speaking} active={animateActive} />
+          {:else if $config.ui.overlay_style === "mono_bars"}
+            <MonoBars recording={$recording} active={animateActive} />
+          {:else if $config.ui.overlay_style === "spectrum"}
+            <Spectrum recording={$recording} active={animateActive} />
+          {:else if $config.ui.overlay_style === "terminal"}
+            <Terminal recording={$recording} active={animateActive} />
+          {:else if $config.ui.overlay_style === "vinyl"}
+            <Vinyl recording={$recording} active={animateActive} />
+          {:else if activeCustomOverlay}
+            {@html `<style>${activeCustomOverlay.css}</style>`}
+            <div class="custom-overlay-content" class:active={animateActive} use:executeScripts>
+              {@html processedHtml}
+            </div>
+          {:else if $config.ui.overlay_style !== "none"}
+            <VoiceCard recording={$recording} speaking={$speaking} active={animateActive} />
+          {/if}
+        </div>
+      {/if}
 
-    {#if $speaking}
-      <div class="system-response-box speaking" class:on={animateActive}>
-        <span class="mini-eq">
-          {#each [0, 1, 2, 3, 4] as i}
-            <span class="eq-bar" style="animation-delay: {i * 0.13}s"></span>
-          {/each}
-        </span>
-        <span class="pill-text">
-          <span class="pill-title">SYSTEM RESPONDING</span>
-          <span class="pill-target">▸ {targetLabel}</span>
-        </span>
-      </div>
-    {:else if commandOverlayActive}
-      <div class="system-response-box command" class:on={animateActive}>
-        <span class="cmd-icon">⚡</span>
-        <span class="pill-text">
-          <span class="pill-title">{commandOverlayName.toUpperCase()}</span>
-          <span class="pill-target">▸ {commandOverlayText}</span>
-        </span>
-      </div>
-    {:else if $mcpRecording}
-      <div class="system-response-box mcp" class:on={animateActive}>
-        <span class="pulse-dot"></span>
-        <span class="pill-text">
-          <span class="pill-title">RECORDING</span>
-          <span class="pill-target">▸ {targetLabel}</span>
-        </span>
-      </div>
-    {/if}
+      {#if commandOverlayActive && $config.ui.show_command_overlay && !isSystemResponding}
+        <div class="system-response-box command" class:on={animateActive}>
+          <span class="cmd-icon">⚡</span>
+          <span class="pill-text">
+            <span class="pill-title">{commandOverlayName.toUpperCase()}</span>
+            <span class="pill-target">▸ {commandOverlayText}</span>
+          </span>
+        </div>
+      {/if}
+
+      {#if isSystemResponding}
+        <div class="system-response-box speaking" class:on={animateActive}>
+          <span class="mini-eq">
+            {#each [0, 1, 2, 3, 4] as i}
+              <span class="eq-bar" style="animation-delay: {i * 0.13}s"></span>
+            {/each}
+          </span>
+          <span class="pill-text">
+            <span class="pill-title">SYSTEM RESPONDING</span>
+            <span class="pill-target">▸ {targetLabel}</span>
+          </span>
+        </div>
+      {/if}
+
+      {#if $mcpRecording && $config.mcp.visual_feedback}
+        <div class="system-response-box mcp" class:on={animateActive}>
+          <span class="pulse-dot"></span>
+          <span class="pill-text">
+            <span class="pill-title">RECORDING</span>
+            <span class="pill-target">▸ {targetLabel}</span>
+          </span>
+        </div>
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -395,8 +440,33 @@
     overflow: hidden !important;
   }
 
+  .overlay-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    max-width: 100%;
+    max-height: 100%;
+    pointer-events: none;
+  }
+
+  .visualizer-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    /* Built-in visualizers are at most ~152px, leaving room in the 444px
+       window for two pills below. A custom overlay may be taller: let this
+       box give way (trimmed, not scaled) so the pills are never pushed out
+       of the window. */
+    min-height: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+  }
+
   .system-response-box {
-    position: absolute;
+    position: relative;
     z-index: 10;
     display: flex;
     align-items: center;
@@ -406,10 +476,12 @@
     border-radius: 23px;
     font-family: 'Outfit', 'Inter', system-ui, sans-serif;
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(10px);
     transition:
       transform 0.34s cubic-bezier(0.175, 0.885, 0.32, 1.25),
       opacity 0.28s ease;
+    pointer-events: none;
+    flex-shrink: 0;
   }
 
   .system-response-box.on {

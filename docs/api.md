@@ -794,6 +794,7 @@ interface FeaturesConfig {
   spoken_punctuation: boolean;
   auto_format_lists: boolean;
   snippets: Record<string, string>;
+  early_command_detection: boolean;
 }
 
 interface OpenAiConfig {

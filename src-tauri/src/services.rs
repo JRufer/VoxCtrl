@@ -224,8 +224,14 @@ pub fn setup_tts_and_fifos(app_handle: &tauri::AppHandle, state: Arc<AppState>) 
 pub fn register_speak_target(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<Arc<AppState>>().inner().clone();
     voxctrl_routing::targets::set_speak_callback(std::sync::Arc::new(move |text| {
-        let state = state.clone();
         let text_str = text.to_string();
+        if let Ok(handle) = state.tts_handle.try_lock() {
+            if let Some(ref tts) = *handle {
+                tts.speak(text_str);
+                return;
+            }
+        }
+        let state = state.clone();
         tauri::async_runtime::spawn(async move {
             let handle = state.tts_handle.lock().await;
             if let Some(ref tts) = *handle {
@@ -240,6 +246,14 @@ pub fn register_speak_target(app_handle: &tauri::AppHandle) {
 pub fn register_command_trigger_target(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<Arc<AppState>>().inner().clone();
     let app_handle_clone = app_handle.clone();
+
+    let withdraw_state = state.clone();
+    let withdraw_handle = app_handle.clone();
+    voxctrl_routing::targets::set_command_withdrawn_callback(std::sync::Arc::new(move || {
+        withdraw_state.clear_command_overlay();
+        let _ = withdraw_handle.emit("command-withdrawn", ());
+    }));
+
     voxctrl_routing::targets::set_command_trigger_callback(std::sync::Arc::new(
         move |command_name, text_summary| {
             let (show_overlay, duration_secs) = if let Ok(cfg) = state.config.try_lock() {

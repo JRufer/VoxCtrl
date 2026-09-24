@@ -14,6 +14,8 @@ pub struct AppState {
     pub recording: Arc<AtomicBool>,
     /// True while speech transcription/OpenAI post-processing is running
     pub processing: Arc<AtomicBool>,
+    /// True while an interim (mid-recording) transcription pass is running
+    pub interim_in_flight: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// Live mirror of `ui.show_overlay` so the hot status-forwarding loops can
@@ -150,6 +152,14 @@ impl AppState {
         self.processing.store(v, Ordering::SeqCst);
     }
 
+    pub fn is_interim_in_flight(&self) -> bool {
+        self.interim_in_flight.load(Ordering::SeqCst)
+    }
+
+    pub fn set_interim_in_flight(&self, v: bool) {
+        self.interim_in_flight.store(v, Ordering::SeqCst);
+    }
+
     pub fn is_audio_ready(&self) -> bool {
         self.audio_ready.load(Ordering::SeqCst)
     }
@@ -242,6 +252,11 @@ impl AppState {
         *self.command_overlay_until.lock().unwrap() = Some(std::time::Instant::now() + duration);
     }
 
+    /// Stop showing the command-executed overlay pill now.
+    pub fn clear_command_overlay(&self) {
+        *self.command_overlay_until.lock().unwrap() = None;
+    }
+
     /// Whether the command-executed overlay pill should still be showing.
     pub fn is_command_overlay_active(&self) -> bool {
         self.command_overlay_until
@@ -285,17 +300,14 @@ impl AppState {
 
     /// Start loading the TTS model now, before anything asks it to speak.
     ///
-    /// Only meaningful in the on-demand memory mode, where the model is not
-    /// resident between uses: the load takes seconds, so kicking it off the
-    /// moment we know speech is coming (the user has just started dictating)
-    /// hides most of that behind the time they spend talking. In always-loaded
-    /// mode the model is already there and this is a no-op.
+    /// The load takes seconds, so kicking it off the moment we know speech is
+    /// coming (the user has just started dictating, or a spoken command was
+    /// recognised mid-speech) hides most of that behind the time they spend
+    /// talking. That holds in both memory modes: on-demand drops the model
+    /// when idle, and always-loaded without pre-warming loads it lazily. When
+    /// the model is already resident the worker treats this as a no-op.
     pub async fn preload_tts(&self) {
-        let unloads_when_idle = {
-            let cfg = self.config.lock().await;
-            cfg.data.tts.enabled && cfg.data.tts.unloads_when_idle()
-        };
-        if !unloads_when_idle {
+        if !self.config.lock().await.data.tts.enabled {
             return;
         }
         if let Some(tts) = self.tts_handle.lock().await.as_ref() {
