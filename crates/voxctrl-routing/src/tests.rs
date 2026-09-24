@@ -457,6 +457,11 @@ async fn test_clipboard_target_linux_cli() {
 #[tokio::test]
 async fn test_clipboard_target_failure_empty_text() {
     let _env = env_lock().lock().await;
+    // Without the mock this ran the machine's real `wl-copy`, which replaced
+    // the developer's clipboard and forked a background server that kept the
+    // test binary's stdout open, so a piped `cargo test` never exited.
+    #[cfg(target_os = "linux")]
+    let _mock = MockClipboardTool::install();
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::Clipboard;
     let target = build_target(config);
