@@ -225,6 +225,10 @@ pub struct InferenceRequest {
     pub target_id: String,
     /// Hotkey binding ID (if triggered by a hotkey)
     pub binding_id: Option<String>,
+    /// Whether this is an intermediate/live transcription during active speech
+    pub is_interim: bool,
+    /// Unique session identifier for the recording turn
+    pub session_id: u64,
 }
 
 /// Final output after transcription + post-processing.
@@ -239,6 +243,8 @@ pub struct InferenceOutput {
     /// Set when transcription failed (model missing, backend error, ...). The
     /// UI layer surfaces this to the user; `text` is empty in that case.
     pub error: Option<String>,
+    pub is_interim: bool,
+    pub session_id: u64,
 }
 
 // ── Engine ────────────────────────────────────────────────────────────────────
@@ -293,6 +299,9 @@ impl InferenceEngine {
 
     /// Transcribe and post-process. Returns the final text.
     pub fn process(&self, req: InferenceRequest) -> Result<InferenceOutput> {
+        let is_interim = req.is_interim;
+        let session_id = req.session_id;
+
         if req.audio.is_empty() {
             return Ok(InferenceOutput {
                 text: String::new(),
@@ -302,6 +311,8 @@ impl InferenceEngine {
                 inference_ms: 0,
                 language: "en".into(),
                 error: None,
+                is_interim,
+                session_id,
             });
         }
 
@@ -345,13 +356,15 @@ impl InferenceEngine {
                 inference_ms: 0,
                 language: "en".into(),
                 error: None,
+                is_interim,
+                session_id,
             });
         }
 
         let dir = voxctrl_routing::config_dir();
         let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
 
-        let mut merged_prompt = String::from("VoxCtrl is a voice control assistant application. VoxCtrl commands start with VoxCtrl. ");
+        let mut merged_prompt = String::from("VoxCtrl is a voice control assistant application. VoxCtrl commands start with Vox Control or Hey Vox. ");
 
         // Custom vocabulary words from features config
         if !app_config.features.custom_vocabulary.is_empty() {
@@ -477,6 +490,8 @@ impl InferenceEngine {
             inference_ms: result.inference_ms,
             language: result.language,
             error: None,
+            is_interim,
+            session_id,
         })
     }
 
@@ -616,10 +631,24 @@ pub fn run_worker_with_config(
             loop {
                 crossbeam_channel::select! {
                     recv(rx) -> req_res => {
-                        let req = match req_res {
+                        let mut req = match req_res {
                             Ok(r) => r,
                             Err(_) => break,
                         };
+
+                        // If an interim request arrived, drain any newer requests already in the queue
+                        // to prioritize fresher audio or the final release request.
+                        if req.is_interim {
+                            while let Ok(newer) = rx.try_recv() {
+                                req = newer;
+                                if !req.is_interim {
+                                    break;
+                                }
+                            }
+                        }
+
+                        let is_interim = req.is_interim;
+                        let session_id = req.session_id;
 
                         if !loaded {
                             match engine.load() {
@@ -637,6 +666,8 @@ pub fn run_worker_with_config(
                                         inference_ms: 0,
                                         language: String::new(),
                                         error: Some(format!("{e:#}")),
+                                        is_interim,
+                                        session_id,
                                     });
                                     continue;
                                 }
@@ -657,6 +688,8 @@ pub fn run_worker_with_config(
                                     inference_ms: 0,
                                     language: "".to_string(),
                                     error: Some(format!("{e:#}")),
+                                    is_interim,
+                                    session_id,
                                 });
                             }
                         }

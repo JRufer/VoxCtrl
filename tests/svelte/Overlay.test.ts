@@ -29,6 +29,8 @@ vi.stubGlobal(
 vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
 
 import { status, type AppStatus } from "../../src/stores/status";
+import { config } from "../../src/stores/config";
+import Overlay from "../../src/lib/Overlay/Overlay.svelte";
 import Waveform from "../../src/lib/Overlay/Waveform.svelte";
 import Pulse from "../../src/lib/Overlay/Pulse.svelte";
 import BlueWave from "../../src/lib/Overlay/BlueWave.svelte";
@@ -187,5 +189,48 @@ describe("VoiceCard.svelte (membership card)", () => {
     const { container: procContainer } = render(VoiceCard, { recording: false, active: true });
     expect(procContainer.querySelector(".stamp")?.textContent).toContain("PROC");
     expect(procContainer.querySelector(".field-value")?.textContent).toContain("Reading the card…");
+  });
+});
+
+describe("Overlay.svelte (root layout)", () => {
+  test("hides target visualizer and displays SYSTEM RESPONDING when speaking", async () => {
+    config.update((c) => ({
+      ...c,
+      ui: { ...c.ui, show_overlay: true, overlay_style: "waveform" },
+      tts: { ...c.tts, enabled: true, response_overlay: true },
+    }));
+
+    setStatus({ speaking: true, recording: false, active_target_label: "Kitty Terminal" });
+
+    const { container } = render(Overlay);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // SYSTEM RESPONDING pill should be present
+    expect(container.textContent).toContain("SYSTEM RESPONDING");
+    expect(container.textContent).toContain("Kitty Terminal");
+
+    // Target visualizer (e.g. Waveform) must NOT be present
+    expect(container.querySelector(".scope")).toBeNull();
+    expect(container.textContent).not.toContain("WAVEFORM // OSC-01");
+  });
+
+  test("shows target visualizer when recording", async () => {
+    config.update((c) => ({
+      ...c,
+      ui: { ...c.ui, show_overlay: true, overlay_style: "waveform" },
+      tts: { ...c.tts, enabled: true, response_overlay: true },
+    }));
+
+    setStatus({ speaking: false, recording: true, active_target_label: "Code Editor" });
+
+    const { container } = render(Overlay);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Target visualizer should be present
+    expect(container.querySelector(".scope")).not.toBeNull();
+    expect(container.textContent).toContain("WAVEFORM // OSC-01");
+
+    // SYSTEM RESPONDING should NOT be present
+    expect(container.textContent).not.toContain("SYSTEM RESPONDING");
   });
 });

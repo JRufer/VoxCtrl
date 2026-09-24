@@ -36,6 +36,8 @@ async fn process_remote_transcription(
                 inference_ms: 0,
                 language: String::new(),
                 error: Some(format!("{e:#}")),
+                is_interim: false,
+                session_id: 0,
             });
             return;
         }
@@ -69,6 +71,8 @@ async fn process_remote_transcription(
             inference_ms: result.inference_ms,
             language: result.language,
             error: None,
+            is_interim: false,
+            session_id: 0,
         });
         return;
     }
@@ -188,6 +192,8 @@ async fn process_remote_transcription(
         inference_ms: result.inference_ms,
         language: result.language,
         error: None,
+        is_interim: false,
+        session_id: 0,
     });
 }
 
@@ -205,6 +211,10 @@ pub fn spawn_audio_coordinator(
         let mut binding_id = String::new();
         let mut remote_session: Option<voxctrl_inference::RemoteStreamingSession> = None;
         let mut is_remote_backend = false;
+        let mut is_heavy_model = false;
+        let mut session_id: u64 = 0;
+        let mut last_interim_sample_count: usize = 0;
+        let mut last_interim_instant = std::time::Instant::now();
 
         while let Ok(chunk) = audio_rx.recv() {
             let is_recording = state_for_audio.is_recording();
@@ -215,12 +225,21 @@ pub fn spawn_audio_coordinator(
                     target_id = state_for_audio.active_target.blocking_lock().clone();
                     binding_id = state_for_audio.active_binding_id.blocking_lock().clone();
                     was_recording = true;
+                    session_id = session_id.wrapping_add(1);
+                    last_interim_sample_count = 0;
+                    last_interim_instant = std::time::Instant::now();
+                    state_for_audio.set_interim_in_flight(false);
 
                     let cfg = state_for_audio.config.blocking_lock().data.clone();
+                    is_heavy_model = cfg.engine.backend == voxctrl_config::BackendChoice::WhisperCpp
+                        && voxctrl_inference::whisper_gpu_backend().is_none()
+                        && (cfg.engine.whisper_cpp.model_size.starts_with("medium")
+                            || cfg.engine.whisper_cpp.model_size.starts_with("large"));
+
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
                         is_remote_backend = true;
                         let mut merged_prompt = String::from(
-                            "VoxCtrl is a voice control assistant application. VoxCtrl commands start with VoxCtrl. ",
+                            "VoxCtrl is a voice control assistant application. VoxCtrl commands start with Vox Control or Hey Vox. ",
                         );
                         if !cfg.features.custom_vocabulary.is_empty() {
                             merged_prompt.push_str("Vocabulary: ");
@@ -248,6 +267,30 @@ pub fn spawn_audio_coordinator(
                     session.send_chunk(chunk.clone());
                 }
                 accumulated_audio.extend(chunk);
+
+                // Live interim sliding-window transcription for fast local STT backends
+                if !is_remote_backend && !is_heavy_model {
+                    let total_samples = accumulated_audio.len();
+                    let new_samples = total_samples.saturating_sub(last_interim_sample_count);
+                    if total_samples >= 8000
+                        && new_samples >= 4800
+                        && last_interim_instant.elapsed() >= std::time::Duration::from_millis(400)
+                        && !state_for_audio.is_interim_in_flight()
+                    {
+                        state_for_audio.set_interim_in_flight(true);
+                        last_interim_sample_count = total_samples;
+                        last_interim_instant = std::time::Instant::now();
+
+                        let req = voxctrl_inference::InferenceRequest {
+                            audio: accumulated_audio.clone(),
+                            target_id: target_id.clone(),
+                            binding_id: Some(binding_id.clone()),
+                            is_interim: true,
+                            session_id,
+                        };
+                        let _ = inference_tx.send(req);
+                    }
+                }
             } else {
                 if was_recording {
                     if is_remote_backend {
@@ -280,6 +323,8 @@ pub fn spawn_audio_coordinator(
                                 audio: std::mem::take(&mut accumulated_audio),
                                 target_id: target_id.clone(),
                                 binding_id: Some(binding_id.clone()),
+                                is_interim: false,
+                                session_id,
                             };
                             state_for_audio.set_processing(true);
                             let _ = inference_tx.send(req);
@@ -298,8 +343,63 @@ pub fn spawn_text_delivery_worker(
     rt_handle: tokio::runtime::Handle,
 ) {
     std::thread::spawn(move || {
+        let mut last_detected_session: Option<u64> = None;
+        let mut session_command_detected: Option<(u64, String)> = None;
+
         while let Ok(output) = text_rx.recv() {
+            if output.is_interim {
+                state.set_interim_in_flight(false);
+                if output.text.trim().is_empty() {
+                    continue;
+                }
+
+                // Live early voice command detection: detect command word as soon as uttered
+                let dir = voxctrl_routing::config_dir();
+                let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
+                if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
+                    let matched_id = parsed.matched_target_id.clone();
+                    let matched_target = targets.iter().find(|t| t.id == matched_id);
+                    let matched_label = matched_target
+                        .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
+                        .unwrap_or_else(|| matched_id.clone());
+
+                    let already_notified = last_detected_session == Some(output.session_id)
+                        && session_command_detected.as_ref().map(|(_, id)| id) == Some(&matched_id);
+
+                    if !already_notified {
+                        last_detected_session = Some(output.session_id);
+                        session_command_detected = Some((output.session_id, matched_id.clone()));
+                        tracing::info!(
+                            "Early command detected during speech: '{}' (target: {})",
+                            matched_label,
+                            matched_id
+                        );
+                        voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
+
+                        let is_speak = matched_target
+                            .map(|t| t.delivery == voxctrl_routing::DeliveryType::Speak || t.response_pipe.is_some())
+                            .unwrap_or(false);
+                        if is_speak {
+                            let state_c = state.clone();
+                            rt_handle.spawn(async move {
+                                state_c.preload_tts().await;
+                            });
+                        }
+                    }
+                }
+                continue;
+            }
+
+            state.set_interim_in_flight(false);
             state.set_processing(false);
+
+            // Retrieve any command target identified earlier during speech for this session
+            let early_matched_id = session_command_detected
+                .take()
+                .filter(|(sess_id, _)| *sess_id == output.session_id)
+                .map(|(_, id)| id);
+            last_detected_session = None;
+
             if let Some(ref err) = output.error {
                 // Always surface transcription failures — without this a
                 // fresh install with no Whisper model records audio and
@@ -335,21 +435,71 @@ pub fn spawn_text_delivery_worker(
             let (target_id, text) = if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
                 let matched_id = parsed.matched_target_id.clone();
                 let payload = parsed.payload;
-                let matched_label = targets
-                    .iter()
-                    .find(|t| t.id == matched_id)
+                let matched_target = targets.iter().find(|t| t.id == matched_id);
+                let matched_label = matched_target
                     .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
                     .unwrap_or_else(|| matched_id.clone());
                 voxctrl_routing::targets::notify_command_trigger(&matched_label, &payload);
 
-                let cleaned_payload = if s1_mini_enabled && !payload.trim().is_empty() {
+                // For Speak targets (e.g. "Say" voice commands), do not run S1-mini LLM cleanup.
+                // Running S1-mini on spoken speech output adds hundreds of milliseconds
+                // to seconds of latency and can rewrite words the user intended to be spoken verbatim.
+                let is_speak_target = matched_target
+                    .map(|t| t.delivery == voxctrl_routing::DeliveryType::Speak)
+                    .unwrap_or(false);
+
+                let cleaned_payload = if !is_speak_target && s1_mini_enabled && !payload.trim().is_empty() {
                     voxctrl_inference::s1_mini::clean_dictation(&payload, &s1_mini_styling, None)
                 } else {
                     payload
                 };
                 (matched_id, cleaned_payload)
+            } else if let Some(early_id) = early_matched_id {
+                let matched_target = targets.iter().find(|t| t.id == early_id);
+                let has_target_in_text = matched_target.map_or(false, |tgt| {
+                    voxctrl_routing::targets::text_contains_target_name(&output.text, tgt)
+                });
+
+                if has_target_in_text {
+                    let matched_tgt = matched_target.unwrap();
+                    let matched_label = if matched_tgt.label.is_empty() {
+                        matched_tgt.id.clone()
+                    } else {
+                        matched_tgt.label.clone()
+                    };
+                    let payload = voxctrl_routing::targets::extract_payload_for_target(&output.text, matched_tgt);
+                    voxctrl_routing::targets::notify_command_trigger(&matched_label, &payload);
+
+                    let is_speak_target = matched_tgt.delivery == voxctrl_routing::DeliveryType::Speak;
+
+                    let cleaned_payload = if !is_speak_target && s1_mini_enabled && !payload.trim().is_empty() {
+                        voxctrl_inference::s1_mini::clean_dictation(&payload, &s1_mini_styling, None)
+                    } else {
+                        payload
+                    };
+                    (early_id, cleaned_payload)
+                } else {
+                    let is_speak_target = targets
+                        .iter()
+                        .find(|t| t.id == output.target_id)
+                        .map(|t| t.delivery == voxctrl_routing::DeliveryType::Speak)
+                        .unwrap_or(false);
+
+                    let cleaned_text = if !is_speak_target && s1_mini_enabled && !output.text.trim().is_empty() {
+                        voxctrl_inference::s1_mini::clean_dictation(&output.text, &s1_mini_styling, None)
+                    } else {
+                        output.text.clone()
+                    };
+                    (output.target_id.clone(), cleaned_text)
+                }
             } else {
-                let cleaned_text = if s1_mini_enabled && !output.text.trim().is_empty() {
+                let is_speak_target = targets
+                    .iter()
+                    .find(|t| t.id == output.target_id)
+                    .map(|t| t.delivery == voxctrl_routing::DeliveryType::Speak)
+                    .unwrap_or(false);
+
+                let cleaned_text = if !is_speak_target && s1_mini_enabled && !output.text.trim().is_empty() {
                     voxctrl_inference::s1_mini::clean_dictation(&output.text, &s1_mini_styling, None)
                 } else {
                     output.text.clone()

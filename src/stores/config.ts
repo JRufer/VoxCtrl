@@ -199,7 +199,7 @@ const defaultConfig: AppConfig = {
   },
   features: {
     remove_fillers: true,
-    custom_vocabulary: ["VoxCtrl"],
+    custom_vocabulary: ["VoxCtrl", "Hey Vox"],
     spoken_punctuation: true,
     auto_format_lists: true,
     snippets: {},

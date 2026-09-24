@@ -1768,6 +1768,12 @@ fn test_parse_voice_command_no_keyword() {
     ];
 
     assert!(parse_voice_command("hi there", &targets).is_none());
+    assert!(parse_voice_command("Hey folks, notes about meeting", &targets).is_none());
+    assert!(parse_voice_command("Hey boss, notes about meeting", &targets).is_none());
+    assert!(parse_voice_command("Hey guys, notes about meeting", &targets).is_none());
+    assert!(parse_voice_command("They voxelize notes and models", &targets).is_none());
+    assert!(parse_voice_command("heavy box notes something", &targets).is_none());
+    assert!(parse_voice_command("the box notes something", &targets).is_none());
 }
 
 #[test]
@@ -1854,6 +1860,60 @@ fn test_parse_voice_command_matched_target() {
     let res8 = parse_voice_command("Walks control speak how are you?", &speak_targets).expect("should match Walks control dynamic trigger pattern");
     assert_eq!(res8.matched_target_id, "speak");
     assert_eq!(res8.payload, "how are you?");
+
+    // Hey Vox commands
+    let res9 = parse_voice_command("Hey Vox, notes Hi there", &targets).expect("should match Hey Vox with comma");
+    assert_eq!(res9.matched_target_id, "notes");
+    assert_eq!(res9.payload, "Hi there");
+
+    let res10 = parse_voice_command("Hey Vox notes Hi there", &targets).expect("should match Hey Vox without comma");
+    assert_eq!(res10.matched_target_id, "notes");
+    assert_eq!(res10.payload, "Hi there");
+
+    let res11 = parse_voice_command("Hey, Vox, notes Hi there", &targets).expect("should match Hey, Vox, with internal comma");
+    assert_eq!(res11.matched_target_id, "notes");
+    assert_eq!(res11.payload, "Hi there");
+
+    let res12 = parse_voice_command("Hey Vox: Notes, please write this down", &targets).expect("should match Hey Vox with colon");
+    assert_eq!(res12.matched_target_id, "notes");
+    assert_eq!(res12.payload, "please write this down");
+
+    let res13 = parse_voice_command("Hey, Vox: Notes, please write this down", &targets).expect("should match Hey, Vox: with colon");
+    assert_eq!(res13.matched_target_id, "notes");
+    assert_eq!(res13.payload, "please write this down");
+
+    let res14 = parse_voice_command("hey vox add this to my notes. What are you doing here?", &targets).expect("should match conversational hey vox notes");
+    assert_eq!(res14.matched_target_id, "notes");
+    assert_eq!(res14.payload, "What are you doing here?");
+
+    let res15 = parse_voice_command("Hey Vox put this into my Notes: What are you doing here?", &targets).expect("should match conversational put into notes");
+    assert_eq!(res15.matched_target_id, "notes");
+    assert_eq!(res15.payload, "What are you doing here?");
+
+    let res16 = parse_voice_command("Hey, Vox, send us to my notes. I love you.", &targets).expect("should match conversational send us to my notes");
+    assert_eq!(res16.matched_target_id, "notes");
+    assert_eq!(res16.payload, "I love you.");
+
+    // Hey Vox homophones (Acoustic mis-recognitions within distance <= 1)
+    let res17 = parse_voice_command("Hey Box speak text", &speak_targets).expect("should match Hey Box homophone");
+    assert_eq!(res17.matched_target_id, "speak");
+    assert_eq!(res17.payload, "text");
+
+    let res18 = parse_voice_command("hay vox speak text", &speak_targets).expect("should match hay vox homophone");
+    assert_eq!(res18.matched_target_id, "speak");
+    assert_eq!(res18.payload, "text");
+
+    let res19 = parse_voice_command("hey fox speak text", &speak_targets).expect("should match hey fox homophone");
+    assert_eq!(res19.matched_target_id, "speak");
+    assert_eq!(res19.payload, "text");
+
+    let res20 = parse_voice_command("hey vax speak text", &speak_targets).expect("should match hey vax homophone");
+    assert_eq!(res20.matched_target_id, "speak");
+    assert_eq!(res20.payload, "text");
+
+    let res21 = parse_voice_command("Hey, Box, speak, eat my ass.", &speak_targets).expect("should match Hey, Box, homophone with punctuation");
+    assert_eq!(res21.matched_target_id, "speak");
+    assert_eq!(res21.payload, "eat my ass.");
 }
 
 #[test]
@@ -2218,3 +2278,81 @@ async fn command_targets_keep_newlines_when_not_stripping() {
     let text = delivered.expect("delivery produced no text");
     assert_eq!(text, "first line\nsecond line ");
 }
+
+#[test]
+fn test_parse_voice_command_requires_wake_word() {
+    use crate::targets::parse_voice_command;
+
+    let targets = vec![
+        OutputTarget {
+            id: "say_target".into(),
+            label: "Say".into(),
+            delivery: DeliveryType::Speak,
+            ..OutputTarget::default_inject()
+        },
+        OutputTarget {
+            id: "notes".into(),
+            label: "Notes".into(),
+            delivery: DeliveryType::File,
+            ..OutputTarget::default_inject()
+        },
+    ];
+
+    // Normal speech must NEVER trigger a command without wake words
+    assert!(parse_voice_command("say hello world", &targets).is_none());
+    assert!(parse_voice_command("notes: buy groceries", &targets).is_none());
+    assert!(parse_voice_command("what the hell is going on. And why is it happening?", &targets).is_none());
+    assert!(parse_voice_command("There have been several changes made in this branch.", &targets).is_none());
+    assert!(parse_voice_command("Do you hear me? Do you know what's happening?", &targets).is_none());
+
+    // Valid commands with Hey Vox or Vox Control trigger properly
+    let res1 = parse_voice_command("Hey Vox, say hello", &targets).expect("should match with hey vox trigger");
+    assert_eq!(res1.matched_target_id, "say_target");
+    assert_eq!(res1.payload, "hello");
+
+    let res2 = parse_voice_command("Vox Control, say hello world", &targets).expect("should match with vox control trigger");
+    assert_eq!(res2.matched_target_id, "say_target");
+    assert_eq!(res2.payload, "hello world");
+
+    let res3 = parse_voice_command("Hey Vox, add this to my notes: buy groceries", &targets).expect("should match notes with filler");
+    assert_eq!(res3.matched_target_id, "notes");
+    assert_eq!(res3.payload, "buy groceries");
+}
+
+#[test]
+fn test_text_contains_target_name() {
+    use crate::targets::text_contains_target_name;
+
+    let target = OutputTarget {
+        id: "say_target".into(),
+        label: "Say".into(),
+        delivery: DeliveryType::Speak,
+        ..OutputTarget::default_inject()
+    };
+
+    assert!(text_contains_target_name("Hey box, say hello", &target));
+    assert!(text_contains_target_name("Say, how are you", &target));
+    assert!(text_contains_target_name("please say testing", &target));
+    // Normal sentences without "say" do not match
+    assert!(!text_contains_target_name("what the hell is going on", &target));
+    assert!(!text_contains_target_name("There have been several changes made", &target));
+    assert!(!text_contains_target_name("essay writing", &target)); // substring inside another word
+}
+
+#[test]
+fn test_extract_payload_for_target() {
+    use crate::targets::extract_payload_for_target;
+
+    let target = OutputTarget {
+        id: "say_target".into(),
+        label: "Say".into(),
+        delivery: DeliveryType::Speak,
+        ..OutputTarget::default_inject()
+    };
+
+    assert_eq!(extract_payload_for_target("Say hello world", &target), "hello world");
+    assert_eq!(extract_payload_for_target("say, what is the weather?", &target), "what is the weather?");
+    assert_eq!(extract_payload_for_target("Hey folks, say how are you", &target), "how are you");
+    assert_eq!(extract_payload_for_target("hello there", &target), "hello there");
+}
+

@@ -1312,9 +1312,9 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
 /// Parse text for keyword "VoxCtrl" and target name/label matching.
 /// Supports both direct commands (e.g. "VoxCtrl notes Hi there") and natural,
-/// conversational phrasing (e.g. "VoxCtrl add this to my notes. What are you doing here?").
-/// Returns `Some(VoiceCommandParseResult)` if the trigger keyword was found AND a target matched;
-/// otherwise returns `None`.
+/// Parse text for keyword "VoxCtrl" / "Hey Vox" and target name/label matching.
+/// Requires an explicit wake-word trigger ("VoxCtrl", "Vox Control", "Hey Vox", etc.)
+/// to protect normal dictation from being misclassified as a command.
 pub fn parse_voice_command(
     text: &str,
     targets: &[OutputTarget],
@@ -1324,13 +1324,31 @@ pub fn parse_voice_command(
     let mut trigger_len = 0;
 
     // 1. Exact & standard triggers
-    let exact_triggers = ["voxctrl", "vox ctrl", "vox-ctrl", "vox control"];
+    let exact_triggers = [
+        "voxctrl", "vox ctrl", "vox-ctrl", "vox control",
+        "hey vox", "hey, vox", "hey-vox", "hey_vox",
+    ];
     for trigger in &exact_triggers {
-        if let Some(pos) = lower_text.find(trigger) {
-            if found_pos.map_or(true, |p| pos < p) {
-                found_pos = Some(pos);
-                trigger_len = trigger.len();
+        let mut search_start = 0;
+        while let Some(match_idx) = lower_text[search_start..].find(trigger) {
+            let pos = search_start + match_idx;
+            let end_idx = pos + trigger.len();
+            let is_boundary_start = pos == 0 || {
+                let prev = lower_text[..pos].chars().last().unwrap();
+                prev.is_whitespace() || prev.is_ascii_punctuation()
+            };
+            let is_boundary_end = end_idx == lower_text.len() || {
+                let next = lower_text[end_idx..].chars().next().unwrap();
+                next.is_whitespace() || next.is_ascii_punctuation()
+            };
+            if is_boundary_start && is_boundary_end {
+                if found_pos.map_or(true, |p| pos < p) {
+                    found_pos = Some(pos);
+                    trigger_len = trigger.len();
+                }
+                break;
             }
+            search_start = pos + 1;
         }
     }
 
@@ -1361,12 +1379,32 @@ pub fn parse_voice_command(
                 let clean_cand = candidate.trim_matches(|c: char| c.is_ascii_punctuation());
                 let dist1 = levenshtein_distance(clean_cand, "voxctrl");
                 let dist2 = levenshtein_distance(clean_cand, "vox control");
-                if dist1 <= 2 || dist2 <= 3 {
-                    if let Some(pos) = lower_text.find(clean_cand) {
-                        found_pos = Some(pos);
-                        trigger_len = clean_cand.len();
-                        break;
-                    }
+
+                // Check "hey vox" fuzzy match (distance <= 1) on normalized tokens
+                let clean_tokens: Vec<&str> = words[..len]
+                    .iter()
+                    .map(|w| w.trim_matches(|c: char| c.is_ascii_punctuation()))
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                let hey_vox_cand = clean_tokens.join(" ");
+                let dist_hey_vox = if !hey_vox_cand.is_empty() {
+                    levenshtein_distance(&hey_vox_cand, "hey vox")
+                } else {
+                    usize::MAX
+                };
+
+                if dist1 <= 2 || dist2 <= 3 || dist_hey_vox <= 1 {
+                    let first_word = words[0];
+                    let last_word = words[len - 1];
+                    let start_idx = lower_text.find(first_word).unwrap_or(0);
+                    let last_pos = lower_text[start_idx..]
+                        .find(last_word)
+                        .map(|p| start_idx + p)
+                        .unwrap_or(start_idx);
+                    let end_idx = last_pos + last_word.len();
+                    found_pos = Some(start_idx);
+                    trigger_len = end_idx - start_idx;
+                    break;
                 }
             }
         }
@@ -1430,4 +1468,94 @@ pub fn parse_voice_command(
     }
 
     None
+}
+
+/// Backwards compatibility alias
+pub fn parse_voice_command_or_direct(
+    text: &str,
+    targets: &[OutputTarget],
+    _allow_direct: bool,
+) -> Option<VoiceCommandParseResult> {
+    parse_voice_command(text, targets)
+}
+
+/// Check if text contains a target's label or ID on word boundaries.
+pub fn text_contains_target_name(text: &str, target: &OutputTarget) -> bool {
+    let lower_text = text.to_lowercase();
+    let mut candidates: Vec<&str> = Vec::new();
+    if !target.label.is_empty() {
+        candidates.push(&target.label);
+    }
+    if !target.id.is_empty() {
+        candidates.push(&target.id);
+    }
+    candidates.sort_by(|a, b| b.len().cmp(&a.len()));
+
+    for cand in candidates {
+        let cand_lower = cand.to_lowercase();
+        let mut search_start = 0;
+        while let Some(match_idx) = lower_text[search_start..].find(&cand_lower) {
+            let abs_match_start = search_start + match_idx;
+            let abs_match_end = abs_match_start + cand_lower.len();
+
+            let is_boundary_start = abs_match_start == 0 || {
+                let prev_char = text[..abs_match_start].chars().last().unwrap();
+                prev_char.is_whitespace() || prev_char.is_ascii_punctuation()
+            };
+            let is_boundary_end = abs_match_end == text.len() || {
+                let next_char = text[abs_match_end..].chars().next().unwrap();
+                next_char.is_whitespace() || next_char.is_ascii_punctuation()
+            };
+
+            if is_boundary_start && is_boundary_end {
+                return true;
+            }
+            search_start = abs_match_start + 1;
+        }
+    }
+    false
+}
+
+/// Extract payload for a known matched target from transcription text.
+/// Used when a session was already recognized as matching `target` (e.g. during interim speech),
+/// but the final transcription varied slightly in punctuation or phrasing.
+pub fn extract_payload_for_target(
+    text: &str,
+    target: &OutputTarget,
+) -> String {
+    let lower_text = text.to_lowercase();
+    let mut candidates: Vec<&str> = Vec::new();
+    if !target.label.is_empty() {
+        candidates.push(&target.label);
+    }
+    if !target.id.is_empty() {
+        candidates.push(&target.id);
+    }
+    candidates.sort_by(|a, b| b.len().cmp(&a.len()));
+
+    for cand in candidates {
+        let cand_lower = cand.to_lowercase();
+        let mut search_start = 0;
+        while let Some(match_idx) = lower_text[search_start..].find(&cand_lower) {
+            let abs_match_start = search_start + match_idx;
+            let abs_match_end = abs_match_start + cand_lower.len();
+
+            let is_boundary_start = abs_match_start == 0 || {
+                let prev_char = text[..abs_match_start].chars().last().unwrap();
+                prev_char.is_whitespace() || prev_char.is_ascii_punctuation()
+            };
+            let is_boundary_end = abs_match_end == text.len() || {
+                let next_char = text[abs_match_end..].chars().next().unwrap();
+                next_char.is_whitespace() || next_char.is_ascii_punctuation()
+            };
+
+            if is_boundary_start && is_boundary_end {
+                let post_target = &text[abs_match_end..];
+                return clean_payload(post_target);
+            }
+            search_start = abs_match_start + 1;
+        }
+    }
+
+    clean_payload(text)
 }

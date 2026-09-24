@@ -139,11 +139,11 @@
 
   <p class="usage-note">
     <strong>Saying a command by name.</strong> Start dictation and say
-    <em>“VoxCtrl”</em>, then the command's name, then what you want to send — for
-    example <em>“VoxCtrl notes, remember to call the plumber”</em> routes
+    <em>“Hey Vox,”</em> (or <em>“VoxCtrl”</em> / <em>“Vox Control”</em>), then the command's name, then what you want to send — for
+    example <em>“Hey Vox, notes, remember to call the plumber”</em> or <em>“VoxCtrl notes, remember to call the plumber”</em> routes
     <em>remember to call the plumber</em> to the command named <strong>notes</strong>.
     Everything after the name is the text. Natural phrasing works too
-    (<em>“VoxCtrl, add this to my notes: …”</em>). Say nothing of the sort and
+    (<em>“Hey Vox, add this to my notes: …”</em>). Say nothing of the sort and
     dictation goes wherever your hotkey already points.
   </p>
 
