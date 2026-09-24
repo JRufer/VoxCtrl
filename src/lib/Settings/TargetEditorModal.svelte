@@ -320,8 +320,8 @@
         </label>
         <p class="hint">
           Names this target in the app, and is what you say to send dictation here through a
-          Voice Command Router target: &ldquo;VoxCtrl, <em>{editingTarget.label || "Obsidian Notes"}</em>,
-          buy milk tomorrow&rdquo;. The Target ID works as a spoken name too, so pick something
+          Voice Command Router target: &ldquo;Hey Vox, <em>{editingTarget.label || "Obsidian Notes"}</em>,
+          buy milk tomorrow&rdquo; (or &ldquo;VoxCtrl, <em>{editingTarget.label || "Obsidian Notes"}</em>...&rdquo;). The Target ID works as a spoken name too, so pick something
           easy to say and easy for speech recognition to catch.
         </p>
 
@@ -330,7 +330,7 @@
           <CustomSelect
             bind:value={editingTarget.delivery}
             options={[
-              { value: "command", label: "Voice Command Router (VoxCtrl keyword)" },
+              { value: "command", label: "Voice Command Router (Hey Vox / Vox Control keyword)" },
               { value: "inject", label: "Inject Text Directly (Simulate keyboard)" },
               { value: "clipboard", label: "Save to Clipboard" },
               { value: "exec", label: "Execute Command" },
@@ -342,7 +342,7 @@
               { value: "webhook", label: "Send Webhook Event" },
               { value: "mcp", label: "Call MCP Server Tool" },
               { value: "speak", label: "Speak Text Aloud (TTS)" },
-              { value: "chat", label: "Chat with a Local LLM (Hermes / OpenAI-compatible)" }
+              { value: "chat", label: "Chat with a Local LLM (Hermes / OpenAI-compatible)" },
             ]}
           />
         </label>
@@ -352,7 +352,7 @@
           <div class="morph-section mcp-container">
             <h5>Voice Command Router Settings</h5>
             <p class="hint">
-              Types dictated text into your active application by default. If your dictation contains <code>VoxCtrl &lt;target_name&gt; &lt;text&gt;</code> (for example, <em>"VoxCtrl Notes Hello world"</em>), VoxCtrl dynamically reroutes the text to that target instead.
+              Types dictated text into your active application by default. If your dictation contains <code>Hey Vox &lt;target_name&gt; &lt;text&gt;</code> or <code>Vox Control &lt;target_name&gt; &lt;text&gt;</code> (for example, <em>"Hey Vox, Notes Hello world"</em> or <em>"Vox Control Notes Hello world"</em>), VoxCtrl dynamically reroutes the text to that target instead.
             </p>
           </div>
         {/if}

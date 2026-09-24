@@ -351,7 +351,7 @@ impl InferenceEngine {
         let dir = voxctrl_routing::config_dir();
         let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
 
-        let mut merged_prompt = String::from("VoxCtrl is a voice control assistant application. VoxCtrl commands start with VoxCtrl. ");
+        let mut merged_prompt = String::from("VoxCtrl is a voice control assistant application. VoxCtrl commands start with Vox Control or Hey Vox. ");
 
         // Custom vocabulary words from features config
         if !app_config.features.custom_vocabulary.is_empty() {

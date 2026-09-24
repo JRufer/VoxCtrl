@@ -1310,44 +1310,87 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     dp[len1][len2]
 }
 
-/// Parse text for keyword "VoxCtrl" and target name/label matching.
-/// Supports both direct commands (e.g. "VoxCtrl notes Hi there") and natural,
-/// conversational phrasing (e.g. "VoxCtrl add this to my notes. What are you doing here?").
-/// Returns `Some(VoiceCommandParseResult)` if the trigger keyword was found AND a target matched;
-/// otherwise returns `None`.
+/// Lowercase `s` without changing any character's byte length, so byte offsets
+/// found in the result are valid in `s` too. The few characters whose lowercase
+/// form is longer or shorter in UTF-8 (e.g. `İ`, `ẞ`) are left as they are,
+/// which only costs them case-insensitive matching.
+fn fold_case(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mut lower = c.to_lowercase();
+            match (lower.next(), lower.next()) {
+                (Some(l), None) if l.len_utf8() == c.len_utf8() => l,
+                _ => c,
+            }
+        })
+        .collect()
+}
+
+/// True when `word` sounds like "vox" as speech recognition tends to mishear it
+/// ("box", "fox", "walks", "locks"): short and ending in an x/ks sound.
+fn sounds_like_vox(word: &str) -> bool {
+    word.len() <= 6 && (word.ends_with('x') || word.ends_with("ks") || word.ends_with("cs"))
+}
+
+/// Parse text for a trigger keyword ("VoxCtrl", "Vox Control", "Hey Vox", ...)
+/// followed by a target name/label. Supports both direct commands
+/// (e.g. "Hey Vox notes Hi there") and natural, conversational phrasing
+/// (e.g. "Hey Vox, add this to my notes. What are you doing here?").
+/// Without an explicit trigger nothing matches, so normal dictation is never
+/// misclassified as a command. Returns `Some(VoiceCommandParseResult)` if the
+/// trigger was found AND a target matched; otherwise `None`.
 pub fn parse_voice_command(
     text: &str,
     targets: &[OutputTarget],
 ) -> Option<VoiceCommandParseResult> {
-    let lower_text = text.to_lowercase();
+    let lower_text = fold_case(text);
     let mut found_pos = None;
     let mut trigger_len = 0;
 
     // 1. Exact & standard triggers
-    let exact_triggers = ["voxctrl", "vox ctrl", "vox-ctrl", "vox control"];
+    let exact_triggers = [
+        "voxctrl", "vox ctrl", "vox-ctrl", "vox control",
+        "hey vox", "hey, vox", "hey-vox", "hey_vox",
+    ];
     for trigger in &exact_triggers {
-        if let Some(pos) = lower_text.find(trigger) {
-            if found_pos.map_or(true, |p| pos < p) {
-                found_pos = Some(pos);
-                trigger_len = trigger.len();
+        let mut search_start = 0;
+        while let Some(match_idx) = lower_text[search_start..].find(trigger) {
+            let pos = search_start + match_idx;
+            let end_idx = pos + trigger.len();
+            let is_boundary_start = pos == 0 || {
+                let prev = lower_text[..pos].chars().last().unwrap();
+                prev.is_whitespace() || prev.is_ascii_punctuation()
+            };
+            let is_boundary_end = end_idx == lower_text.len() || {
+                let next = lower_text[end_idx..].chars().next().unwrap();
+                next.is_whitespace() || next.is_ascii_punctuation()
+            };
+            if is_boundary_start && is_boundary_end {
+                if found_pos.map_or(true, |p| pos < p) {
+                    found_pos = Some(pos);
+                    trigger_len = trigger.len();
+                }
+                break;
             }
+            search_start = pos + 1;
         }
     }
 
-    // 2. Dynamic pattern trigger for any "<word> control" or "<word> ctrl" phrase
+    // 2. Misheard "vox control" at the very start ("box control", "walks control").
+    //    Only the leading two words count, and the first must sound like "vox":
+    //    "take control, say hello" or "I lost control" is ordinary dictation.
     if found_pos.is_none() {
         let words: Vec<&str> = lower_text.split_whitespace().collect();
-        for (i, word) in words.iter().enumerate() {
-            let clean_w = word.trim_matches(|c: char| c.is_ascii_punctuation());
-            if clean_w == "control" || clean_w == "ctrl" || clean_w == "ctl" || clean_w == "kontrol" {
-                if i > 0 {
-                    let start_idx = lower_text.find(words[0]).unwrap_or(0);
-                    let ctrl_pos = lower_text.find(word).unwrap_or(0);
-                    let end_pos = ctrl_pos + word.len();
-                    found_pos = Some(start_idx);
-                    trigger_len = end_pos - start_idx;
-                    break;
-                }
+        if words.len() >= 2 {
+            let first = words[0].trim_matches(|c: char| c.is_ascii_punctuation());
+            let second = words[1].trim_matches(|c: char| c.is_ascii_punctuation());
+            if sounds_like_vox(first) && matches!(second, "control" | "ctrl" | "ctl" | "kontrol") {
+                let start_idx = lower_text.find(words[0]).unwrap_or(0);
+                let first_end = start_idx + words[0].len();
+                let second_end =
+                    first_end + lower_text[first_end..].find(words[1]).unwrap_or(0) + words[1].len();
+                found_pos = Some(start_idx);
+                trigger_len = second_end - start_idx;
             }
         }
     }
@@ -1361,12 +1404,32 @@ pub fn parse_voice_command(
                 let clean_cand = candidate.trim_matches(|c: char| c.is_ascii_punctuation());
                 let dist1 = levenshtein_distance(clean_cand, "voxctrl");
                 let dist2 = levenshtein_distance(clean_cand, "vox control");
-                if dist1 <= 2 || dist2 <= 3 {
-                    if let Some(pos) = lower_text.find(clean_cand) {
-                        found_pos = Some(pos);
-                        trigger_len = clean_cand.len();
-                        break;
-                    }
+
+                // Check "hey vox" fuzzy match (distance <= 1) on normalized tokens
+                let clean_tokens: Vec<&str> = words[..len]
+                    .iter()
+                    .map(|w| w.trim_matches(|c: char| c.is_ascii_punctuation()))
+                    .filter(|w| !w.is_empty())
+                    .collect();
+                let hey_vox_cand = clean_tokens.join(" ");
+                let dist_hey_vox = if !hey_vox_cand.is_empty() {
+                    levenshtein_distance(&hey_vox_cand, "hey vox")
+                } else {
+                    usize::MAX
+                };
+
+                if dist1 <= 2 || dist2 <= 3 || dist_hey_vox <= 1 {
+                    let first_word = words[0];
+                    let last_word = words[len - 1];
+                    let start_idx = lower_text.find(first_word).unwrap_or(0);
+                    let last_pos = lower_text[start_idx..]
+                        .find(last_word)
+                        .map(|p| start_idx + p)
+                        .unwrap_or(start_idx);
+                    let end_idx = last_pos + last_word.len();
+                    found_pos = Some(start_idx);
+                    trigger_len = end_idx - start_idx;
+                    break;
                 }
             }
         }
@@ -1392,10 +1455,10 @@ pub fn parse_voice_command(
 
     candidate_entries.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-    let after_trigger_lower = after_trigger.to_lowercase();
+    let after_trigger_lower = fold_case(after_trigger);
 
     for (target_id, candidate) in candidate_entries {
-        let cand_lower = candidate.to_lowercase();
+        let cand_lower = fold_case(candidate);
 
         let mut search_start = 0;
         while let Some(match_idx) = after_trigger_lower[search_start..].find(&cand_lower) {
@@ -1425,9 +1488,12 @@ pub fn parse_voice_command(
                 }
             }
 
-            search_start = abs_match_start + 1;
+            // Step past the whole first character: target names need not be ASCII.
+            search_start = abs_match_start
+                + after_trigger_lower[abs_match_start..].chars().next().map_or(1, char::len_utf8);
         }
     }
 
     None
 }
+
