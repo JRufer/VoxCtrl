@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { mapBrowserKeyToEvdev } from "../keys";
   import type { OutputTarget, HotkeyBinding } from "./routing-types";
   import { config } from "../../stores/config";
   import TargetEditorModal from "./TargetEditorModal.svelte";
@@ -448,32 +449,6 @@
   }
 
   // --- Keyboard Event Capture / Recorder ---
-  function mapBrowserKeyToEvdev(key: string, code: string): string {
-    const codeUpper = code.toUpperCase();
-    if (key === "Control") return "KEY_LEFTCTRL";
-    if (key === "Alt") return "KEY_LEFTALT";
-    if (key === "Shift") return "KEY_LEFTSHIFT";
-    if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
-
-    if (codeUpper === "SPACE") return "KEY_SPACE";
-    if (codeUpper === "ENTER") return "KEY_ENTER";
-    if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
-    if (codeUpper === "TAB") return "KEY_TAB";
-    if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
-    if (codeUpper === "DELETE") return "KEY_DELETE";
-
-    if (/^KEY[A-Z]$/.test(codeUpper)) {
-      return `KEY_${codeUpper.slice(3)}`;
-    }
-    if (codeUpper.startsWith("KEY")) return codeUpper;
-    if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
-    if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
-    if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
-
-    if (key.length === 1) return `KEY_${key.toUpperCase()}`;
-    return `KEY_${codeUpper}`;
-  }
-
   let currentlyPressedKeys = $state<string[]>([]);
   // The keys the binding had when the edit modal was opened. Used to detect
   // a no-op re-record so we don't show stale rejection state when the user

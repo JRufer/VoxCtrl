@@ -796,6 +796,63 @@ fn migrate_hf_token(data: &mut AppConfig) -> bool {
     true
 }
 
+/// The evdev name for a key name an older settings UI saved, or `None` when
+/// `key` needs no change.
+///
+/// The key recorder used to name keys it had no rule for after the character
+/// they typed, so punctuation was saved as `KEY_.`, `KEY_;` and so on, and the
+/// TTS stop key recorder saved letters as `KEYV`. No hotkey backend reports
+/// those names, so a binding holding one could never fire. The character is
+/// read as the US-layout key that types it (shifted or not), which is what the
+/// recorder now names by position; on other layouts a few may land on a
+/// neighbouring key, which is still better than a binding that is dead.
+pub fn migrate_legacy_key_name(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "KEY_ESCAPE" => "KEY_ESC",
+        "KEY_." | "KEY_>" => "KEY_DOT",
+        "KEY_," | "KEY_<" => "KEY_COMMA",
+        "KEY_/" | "KEY_?" => "KEY_SLASH",
+        "KEY_;" | "KEY_:" => "KEY_SEMICOLON",
+        "KEY_'" | "KEY_\"" => "KEY_APOSTROPHE",
+        "KEY_`" | "KEY_~" => "KEY_GRAVE",
+        "KEY_-" | "KEY__" => "KEY_MINUS",
+        "KEY_=" | "KEY_+" => "KEY_EQUAL",
+        "KEY_[" | "KEY_{" => "KEY_LEFTBRACE",
+        "KEY_]" | "KEY_}" => "KEY_RIGHTBRACE",
+        "KEY_\\" | "KEY_|" => "KEY_BACKSLASH",
+        "KEY_*" => "KEY_KPASTERISK",
+        "KEY_NUMPADENTER" => "KEY_KPENTER",
+        "KEY_PRINTSCREEN" => "KEY_SYSRQ",
+        "KEY_CONTEXTMENU" => "KEY_COMPOSE",
+        _ => return legacy_letter(key),
+    })
+}
+
+/// `KEYA` … `KEYZ`, as the old stop key recorder wrote letters.
+fn legacy_letter(key: &str) -> Option<&'static str> {
+    const LETTERS: [&str; 26] = [
+        "KEY_A", "KEY_B", "KEY_C", "KEY_D", "KEY_E", "KEY_F", "KEY_G", "KEY_H", "KEY_I",
+        "KEY_J", "KEY_K", "KEY_L", "KEY_M", "KEY_N", "KEY_O", "KEY_P", "KEY_Q", "KEY_R",
+        "KEY_S", "KEY_T", "KEY_U", "KEY_V", "KEY_W", "KEY_X", "KEY_Y", "KEY_Z",
+    ];
+    match key.strip_prefix("KEY")?.as_bytes() {
+        [c @ b'A'..=b'Z'] => Some(LETTERS[usize::from(c - b'A')]),
+        _ => None,
+    }
+}
+
+/// Rewrite every legacy key name in `keys`. Returns whether anything changed.
+pub fn migrate_legacy_key_names(keys: &mut [String]) -> bool {
+    let mut changed = false;
+    for k in keys.iter_mut() {
+        if let Some(name) = migrate_legacy_key_name(k) {
+            *k = name.to_string();
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// Rename `<base>/voxctrl/pocket-tts-voices` to `<base>/voxctrl/cloned-tts-voices`,
 /// the shared clip folder's new name now that it is used by every
 /// voice-cloning TTS engine, not just Pocket-TTS. Returns whether a rename
@@ -917,14 +974,10 @@ impl Config {
             }
         }
 
-        // Migrate legacy "KEY_ESCAPE" → "KEY_ESC" (evdev crate uses KEY_ESC as the
-        // canonical debug name via stringify!(KEY_ESC)).
-        let needs_escape_fix = data.tts.stop_key.iter().any(|k| k == "KEY_ESCAPE");
-        if needs_escape_fix {
-            data.tts.stop_key = data.tts.stop_key
-                .into_iter()
-                .map(|k| if k == "KEY_ESCAPE" { "KEY_ESC".to_string() } else { k })
-                .collect();
+        // Migrate key names older builds saved that no backend reports:
+        // "KEY_ESCAPE" (the evdev crate's name is KEY_ESC), punctuation saved as
+        // the character it types ("KEY_."), and so on.
+        if migrate_legacy_key_names(&mut data.tts.stop_key) {
             let clean_config = Self { data: data.clone(), path: path.clone() };
             if let Err(e) = clean_config.save() {
                 tracing::error!("Failed to save migrated stop_key: {e}");
@@ -1099,6 +1152,32 @@ pub fn validate(cfg: &AppConfig) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_key_names_are_rewritten_to_evdev_names() {
+        use super::migrate_legacy_key_names;
+        let mut keys: Vec<String> = ["KEY_LEFTCTRL", "KEY_.", "KEY_;", "KEY_\\", "KEY_ESCAPE", "KEYV"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(migrate_legacy_key_names(&mut keys));
+        assert_eq!(
+            keys,
+            ["KEY_LEFTCTRL", "KEY_DOT", "KEY_SEMICOLON", "KEY_BACKSLASH", "KEY_ESC", "KEY_V"]
+        );
+    }
+
+    #[test]
+    fn current_key_names_are_left_alone() {
+        use super::migrate_legacy_key_names;
+        let mut keys: Vec<String> = ["KEY_LEFTMETA", "KEY_SPACE", "KEY_DOT", "KEY_KP1", "KEY_F5"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let before = keys.clone();
+        assert!(!migrate_legacy_key_names(&mut keys));
+        assert_eq!(keys, before);
+    }
+
     #[test]
     fn a_name_on_path_is_found() {
         let dir = tempfile::tempdir().unwrap();

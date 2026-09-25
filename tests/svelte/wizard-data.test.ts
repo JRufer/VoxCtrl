@@ -121,6 +121,27 @@ describe("key mapping", () => {
     expect(mapBrowserKeyToEvdev("ArrowUp", "ArrowUp")).toBe("KEY_UP");
   });
 
+  test("punctuation uses the evdev names the hotkey backend matches on", () => {
+    // These used to come out as KEY_., KEY_, … which no backend ever reports.
+    expect(mapBrowserKeyToEvdev(".", "Period")).toBe("KEY_DOT");
+    expect(mapBrowserKeyToEvdev(",", "Comma")).toBe("KEY_COMMA");
+    expect(mapBrowserKeyToEvdev("/", "Slash")).toBe("KEY_SLASH");
+    expect(mapBrowserKeyToEvdev(";", "Semicolon")).toBe("KEY_SEMICOLON");
+    expect(mapBrowserKeyToEvdev("'", "Quote")).toBe("KEY_APOSTROPHE");
+    expect(mapBrowserKeyToEvdev("`", "Backquote")).toBe("KEY_GRAVE");
+    expect(mapBrowserKeyToEvdev("-", "Minus")).toBe("KEY_MINUS");
+    expect(mapBrowserKeyToEvdev("=", "Equal")).toBe("KEY_EQUAL");
+    expect(mapBrowserKeyToEvdev("[", "BracketLeft")).toBe("KEY_LEFTBRACE");
+    expect(mapBrowserKeyToEvdev("]", "BracketRight")).toBe("KEY_RIGHTBRACE");
+    expect(mapBrowserKeyToEvdev("\\", "Backslash")).toBe("KEY_BACKSLASH");
+  });
+
+  test("right-hand modifiers and the keypad keep their own names", () => {
+    expect(mapBrowserKeyToEvdev("Control", "ControlRight")).toBe("KEY_RIGHTCTRL");
+    expect(mapBrowserKeyToEvdev("1", "Numpad1")).toBe("KEY_KP1");
+    expect(mapBrowserKeyToEvdev("Enter", "NumpadEnter")).toBe("KEY_KPENTER");
+  });
+
   test("Escape uses the canonical KEY_ESC spelling, not KEY_ESCAPE", () => {
     // The evdev crate's debug name is KEY_ESC; KEY_ESCAPE is the legacy
     // spelling the config loader migrates away from.

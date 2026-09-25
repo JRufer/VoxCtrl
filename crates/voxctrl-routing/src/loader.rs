@@ -324,7 +324,13 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
     }
 }
 
-fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
+fn raw_to_binding(mut r: RawBinding) -> HotkeyBinding {
+    // Older settings UIs saved some keys under names no backend reports
+    // (`KEY_.` for the period key). Repair them in memory; the next save of
+    // bindings.toml writes the corrected names back.
+    if voxctrl_config::migrate_legacy_key_names(&mut r.keys) {
+        tracing::info!(binding = %r.id, keys = ?r.keys, "Migrated legacy key names");
+    }
     let gesture = match r.gesture.as_str() {
         "toggle" => GestureType::Toggle,
         "double_tap" => GestureType::DoubleTap,
