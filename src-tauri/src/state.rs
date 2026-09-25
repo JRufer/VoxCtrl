@@ -66,8 +66,15 @@ pub struct AppState {
     /// Currently active hotkey binding ID
     pub active_binding_id: Arc<Mutex<String>>,
 
-    /// Currently configured target definitions (in-memory cache for fast lookups)
+    /// Currently configured target definitions (in-memory cache for fast lookups).
+    /// Replace it through [`AppState::set_targets`], which also bumps
+    /// `targets_version`.
     pub targets: Arc<Mutex<Vec<voxctrl_routing::OutputTarget>>>,
+
+    /// Incremented every time `targets` is replaced, so anything caching a
+    /// value derived from the targets (the tray's target label) can tell its
+    /// cache is stale without re-deriving it on every tick.
+    pub targets_version: Arc<std::sync::atomic::AtomicU64>,
 
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
@@ -288,6 +295,16 @@ impl AppState {
 
     pub fn set_mcp_recording(&self, v: bool) {
         self.mcp_recording.store(v, Ordering::SeqCst);
+    }
+
+    /// Replace the in-memory targets cache and mark it changed.
+    pub async fn set_targets(&self, targets: Vec<voxctrl_routing::OutputTarget>) {
+        *self.targets.lock().await = targets;
+        self.targets_version.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn targets_version(&self) -> u64 {
+        self.targets_version.load(Ordering::SeqCst)
     }
 
     pub fn increment_words(&self, n: u32) {

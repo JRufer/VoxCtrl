@@ -218,7 +218,7 @@ pub async fn save_targets(
     voxctrl_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
     
     // Update the in-memory targets cache
-    *state.targets.lock().await = targets.clone();
+    state.set_targets(targets.clone()).await;
 
     // Hot-reload the router
     state.router.reload(targets).await;

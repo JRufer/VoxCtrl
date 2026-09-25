@@ -85,6 +85,7 @@ fn make_test_state() -> AppState {
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(Vec::new())),
+        targets_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         audio_tx,
         audio_wake,
         inference_config_tx,
@@ -846,4 +847,24 @@ fn test_setup_flag_is_not_matched_by_lookalike_arguments() {
             "{flag} must not be mistaken for the setup flag"
         );
     }
+}
+
+/// The tray caches the target label and re-derives it only when its inputs
+/// change; a label renamed in Settings must count as a change.
+#[tokio::test]
+async fn replacing_targets_marks_them_changed() {
+    let state = make_test_state();
+    let before = state.targets_version();
+    let target: voxctrl_routing::OutputTarget = serde_json::from_value(serde_json::json!({
+        "id": "notes", "label": "Renamed", "delivery": "inject",
+    }))
+    .unwrap();
+
+    state.set_targets(vec![target]).await;
+
+    assert_ne!(state.targets_version(), before, "a targets save did not invalidate cached labels");
+    assert_eq!(
+        voxctrl_routing::targets_display_label("notes", &state.targets.lock().await),
+        "Renamed"
+    );
 }
