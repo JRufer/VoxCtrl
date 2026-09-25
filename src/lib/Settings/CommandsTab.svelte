@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { OutputTarget, HotkeyBinding } from "./routing-types";
+  import { newOutputTarget } from "./routing-types";
   import TargetEditorModal from "./TargetEditorModal.svelte";
 
   let targets = $state<OutputTarget[]>([]);
@@ -39,25 +40,7 @@
   // --- CRUD Output Commands ---
   function addNewTarget() {
     isEditingTargetNew = true;
-    editingTarget = {
-      id: "new_target_" + Math.random().toString(36).substring(2, 6),
-      label: "New Target",
-      delivery: "inject",
-      file_prefix: "- ",
-      file_timestamp: true,
-      file_timestamp_format: "%Y-%m-%dT%H:%M:%SZ",
-      file_mode: "append",
-      http_method: "POST",
-      http_json_template: { text: "{text}" },
-      webhook_json_template: { text: "{text}" },
-      mcp_tool: "speak_text",
-      mcp_args: { text: "{text}" },
-      chat_max_history: 20,
-      chat_timeout_secs: 120,
-      chat_reply_mode: "speak",
-      strip_newlines: false,
-      processing: {},
-    };
+    editingTarget = newOutputTarget();
   }
 
   function editTarget(tgt: OutputTarget) {

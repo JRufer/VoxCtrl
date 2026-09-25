@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import type { OutputTarget } from "./routing-types";
   import CustomSelect from "./CustomSelect.svelte";
+  import { autoResize } from "../actions";
 
   let {
     editingTarget = $bindable(),
@@ -170,27 +171,6 @@
       chatStatus = String(e);
       chatStatusOk = false;
     }
-  }
-
-  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
-  function autoResize(node: HTMLTextAreaElement) {
-    function resize() {
-      node.style.height = "auto";
-      node.style.height = `${node.scrollHeight}px`;
-    }
-    node.addEventListener("input", resize);
-    // Initial calculation on mount
-    const timer = setTimeout(resize, 0);
-
-    return {
-      update() {
-        resize();
-      },
-      destroy() {
-        clearTimeout(timer);
-        node.removeEventListener("input", resize);
-      }
-    };
   }
 
   // Load flat states from editingTarget

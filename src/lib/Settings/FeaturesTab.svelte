@@ -5,6 +5,8 @@
   import { onMount } from "svelte";
 
   import CustomSelect from "./CustomSelect.svelte";
+  import KeyValueListEditor from "./KeyValueListEditor.svelte";
+  import { autoResize } from "../actions";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   if (cfg.engine && !cfg.engine.s1_mini) {
@@ -84,50 +86,6 @@
     }
   });
 
-  // Snippets editing
-  let snippetList = $state<{key: string, val: string}[]>(
-    Object.entries(cfg.features.snippets).map(([k, v]) => ({ key: k, val: v as string }))
-  );
-
-  let isSnippetInitialized = false;
-  $effect(() => {
-    const list = snippetList;
-    const newSnippets: Record<string, string> = {};
-    for (const {key, val} of list) {
-      if (key.trim()) {
-        newSnippets[key.trim()] = val.trim();
-      }
-    }
-
-    const existing = cfg.features.snippets || {};
-    const existingKeys = Object.keys(existing);
-    const newKeys = Object.keys(newSnippets);
-    let changed = existingKeys.length !== newKeys.length;
-    if (!changed) {
-      for (const k of newKeys) {
-        if (existing[k] !== newSnippets[k]) {
-          changed = true;
-          break;
-        }
-      }
-    }
-
-    if (changed) {
-      cfg.features.snippets = newSnippets;
-      if (isSnippetInitialized) {
-        markDirty();
-      }
-    }
-    isSnippetInitialized = true;
-  });
-
-  function addEmptySnippetRow() {
-    snippetList = [...snippetList, { key: "", val: "" }];
-  }
-
-  function removeSnippetRow(index: number) {
-    snippetList = snippetList.filter((_, i) => i !== index);
-  }
 
   let customVocabString = $derived(
     cfg.features.custom_vocabulary ? cfg.features.custom_vocabulary.join(", ") : ""
@@ -142,26 +100,6 @@
     markDirty();
   }
 
-  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
-  function autoResize(node: HTMLTextAreaElement) {
-    function resize() {
-      node.style.height = "auto";
-      node.style.height = `${node.scrollHeight}px`;
-    }
-    node.addEventListener("input", resize);
-    // Initial calculation on mount or state update
-    const timer = setTimeout(resize, 0);
-
-    return {
-      update() {
-        resize();
-      },
-      destroy() {
-        clearTimeout(timer);
-        node.removeEventListener("input", resize);
-      }
-    };
-  }
 </script>
 
 <section>
@@ -285,43 +223,16 @@
     ></textarea>
   </div>
 
-  <div class="field-group">
-    <div class="field-label-row">
-      <div style="display: flex; flex-direction: column;">
-        <h3 style="margin-bottom: 0;">Snippets</h3>
-        <p class="hint" style="margin-top: 4px;">Type a trigger word → it expands to the replacement text.</p>
-      </div>
-      <button class="btn-add-inline" type="button" onclick={addEmptySnippetRow}>
-        ＋ Add Snippet
-      </button>
-    </div>
-
-    <div class="dynamic-list">
-      {#each snippetList as snippet, idx}
-        <div class="dynamic-list-row">
-          <input 
-            type="text" 
-            placeholder="Trigger word" 
-            bind:value={snippetList[idx].key} 
-            style="flex: 0.4;"
-          />
-          <span style="color: var(--text-muted);">→</span>
-          <input 
-            type="text" 
-            placeholder="Expansion text" 
-            bind:value={snippetList[idx].val} 
-            style="flex: 1;"
-          />
-          <button class="btn-remove-inline" type="button" onclick={() => removeSnippetRow(idx)}>✕</button>
-        </div>
-      {/each}
-      {#if snippetList.length === 0}
-        <div class="empty-state" style="padding: 20px; grid-column: 1 / -1;">
-          <p>No snippets defined.</p>
-        </div>
-      {/if}
-    </div>
-  </div>
+  <KeyValueListEditor
+    bind:value={cfg.features.snippets}
+    onchange={markDirty}
+    title="Snippets"
+    hint="Type a trigger word → it expands to the replacement text."
+    addLabel="Add Snippet"
+    keyPlaceholder="Trigger word"
+    valuePlaceholder="Expansion text"
+    emptyText="No snippets defined."
+  />
 </section>
 
 <style lang="postcss">

@@ -5,6 +5,8 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
   import CustomSelect from "./CustomSelect.svelte";
+  import KeyValueListEditor from "./KeyValueListEditor.svelte";
+  import StopKeyRecorder from "./StopKeyRecorder.svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() {
@@ -698,117 +700,6 @@
     if (unlistenTtsError) unlistenTtsError();
   });
 
-  // ── Stop Key Recorder ───────────────────────────────────────────────────────────
-
-  let isRecordingStopKey = $state(false);
-  let currentlyPressedStopKeys = $state<string[]>([]);
-
-  function mapBrowserKeyToEvdev(key: string, code: string): string {
-    const codeUpper = code.toUpperCase();
-    if (key === "Control") return "KEY_LEFTCTRL";
-    if (key === "Alt") return "KEY_LEFTALT";
-    if (key === "Shift") return "KEY_LEFTSHIFT";
-    if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
-    if (codeUpper === "SPACE") return "KEY_SPACE";
-    if (codeUpper === "ENTER") return "KEY_ENTER";
-    if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
-    if (codeUpper === "TAB") return "KEY_TAB";
-    if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
-    if (codeUpper === "DELETE") return "KEY_DELETE";
-    if (codeUpper.startsWith("KEY")) return codeUpper;
-    if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
-    if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
-    if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
-    if (key.length === 1) return `KEY_${key.toUpperCase()}`;
-    return `KEY_${codeUpper}`;
-  }
-
-  function handleStopKeyDown(e: KeyboardEvent) {
-    if (!isRecordingStopKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const evdevKey = mapBrowserKeyToEvdev(e.key, e.code);
-    if (!currentlyPressedStopKeys.includes(evdevKey)) {
-      currentlyPressedStopKeys = [...currentlyPressedStopKeys, evdevKey];
-    }
-    // Escape triggers browser blur before keyup fires, so commit immediately
-    // on keydown for single-key combos where Escape is the key pressed.
-    // For multi-key combos, keyup still handles commit as normal.
-    if (e.key === "Escape") {
-      cfg.tts.stop_key = [...currentlyPressedStopKeys];
-      markDirty();
-      currentlyPressedStopKeys = [];
-      isRecordingStopKey = false;
-    }
-  }
-
-  function handleStopKeyUp(e: KeyboardEvent) {
-    if (!isRecordingStopKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (currentlyPressedStopKeys.length > 0) {
-      cfg.tts.stop_key = [...currentlyPressedStopKeys];
-      markDirty();
-    }
-    currentlyPressedStopKeys = [];
-    isRecordingStopKey = false;
-  }
-
-  function handleStopKeyBlur() {
-    // Safety net: if blur fires while we have pending keys (e.g. Escape blur race),
-    // commit whatever was captured rather than discarding it silently.
-    if (currentlyPressedStopKeys.length > 0) {
-      cfg.tts.stop_key = [...currentlyPressedStopKeys];
-      markDirty();
-      currentlyPressedStopKeys = [];
-    }
-    isRecordingStopKey = false;
-  }
-
-  // TTS Snippets & Dictionary editing
-  let ttsSnippetList = $state<{key: string, val: string}[]>(
-    Object.entries(cfg.tts.snippets || {}).map(([k, v]) => ({ key: k, val: v as string }))
-  );
-
-  let isTtsSnippetInitialized = false;
-  $effect(() => {
-    const list = ttsSnippetList;
-    const newSnippets: Record<string, string> = {};
-    for (const {key, val} of list) {
-      if (key.trim()) {
-        newSnippets[key.trim()] = val.trim();
-      }
-    }
-
-    const existing = cfg.tts.snippets || {};
-    const existingKeys = Object.keys(existing);
-    const newKeys = Object.keys(newSnippets);
-    let changed = existingKeys.length !== newKeys.length;
-    if (!changed) {
-      for (const k of newKeys) {
-        if (existing[k] !== newSnippets[k]) {
-          changed = true;
-          break;
-        }
-      }
-    }
-
-    if (changed) {
-      cfg.tts.snippets = newSnippets;
-      if (isTtsSnippetInitialized) {
-        markDirty();
-      }
-    }
-    isTtsSnippetInitialized = true;
-  });
-
-  function addEmptyTtsSnippetRow() {
-    ttsSnippetList = [...ttsSnippetList, { key: "", val: "" }];
-  }
-
-  function removeTtsSnippetRow(index: number) {
-    ttsSnippetList = ttsSnippetList.filter((_, i) => i !== index);
-  }
 
 </script>
 
@@ -1332,86 +1223,21 @@
     <div class="border-t border-white/5 pt-[14px] flex flex-col gap-2">
       <h5 class="mb-1 text-[11px] font-bold uppercase text-accent-blue tracking-[0.06em]">Stop Key Bind</h5>
       <p class="hint" style="margin: 0 0 8px 0;">Press a key combo to immediately stop TTS playback — works even when this window is hidden.</p>
-      <div
-        class={[
-          "border-2 rounded-desktop p-6 text-center cursor-pointer outline-none transition-all duration-200 flex flex-col items-center justify-center min-h-[80px]",
-          isRecordingStopKey
-            ? "border-solid border-[#f43f5e] bg-[rgba(244,63,94,0.05)] animate-border-pulse"
-            : "border-dashed border-white/5 bg-black/25 hover:border-accent-blue hover:bg-black/35 focus:border-accent-blue focus:bg-black/35"
-        ].join(" ")}
-        tabindex="0"
-        role="button"
-        aria-label="Stop key recorder"
-        onclick={() => isRecordingStopKey = true}
-        onfocus={() => isRecordingStopKey = true}
-        onblur={handleStopKeyBlur}
-        onkeydown={handleStopKeyDown}
-        onkeyup={handleStopKeyUp}
-      >
-        {#if isRecordingStopKey}
-          <div class="flex items-center gap-[10px]">
-            <span class="w-2 h-2 bg-accent-blue rounded-full animate-flash"></span>
-            <span class="text-[13px] font-semibold text-accent-blue">
-              {currentlyPressedStopKeys.length > 0
-                ? currentlyPressedStopKeys.join(" + ").replace(/KEY_/g, "")
-                : "Press your physical shortcut combination now..."}
-            </span>
-          </div>
-        {:else}
-          <span class="text-[12px] text-obsidian-300 flex flex-col gap-2 items-center">
-            {#if cfg.tts.stop_key.length > 0}
-              <div class="flex gap-1.5">
-                {#each cfg.tts.stop_key as k}
-                  <kbd class="px-1.5! py-0.5! text-[12px] bg-accent-blue text-black border-0 font-extrabold rounded">{k.replace("KEY_", "")}</kbd>
-                {/each}
-              </div>
-              <span class="text-[10px] text-accent-blue opacity-80">(Click / Tab here to record a new stop key)</span>
-            {:else}
-              ⚠️ Click/Focus here to press a stop key!
-            {/if}
-          </span>
-        {/if}
-      </div>
+      <StopKeyRecorder bind:keys={cfg.tts.stop_key} onchange={markDirty} />
     </div>
   </div>
 
-  <div class="field-group mt-6">
-    <div class="field-label-row">
-      <div style="display: flex; flex-direction: column;">
-        <h3 style="margin-bottom: 0;">TTS Snippets (Pronunciation Guide)</h3>
-        <p class="hint" style="margin-top: 4px;">Type a word (e.g. "voxctrl") ➔ its spoken expansion/pronunciation (e.g. "vox control"). Only affects speech playback.</p>
-      </div>
-      <button class="btn-add-inline" type="button" onclick={addEmptyTtsSnippetRow}>
-        ＋ Add Pronunciation
-      </button>
-    </div>
-
-    <div class="dynamic-list">
-      {#each ttsSnippetList as snippet, idx}
-        <div class="dynamic-list-row">
-          <input 
-            type="text" 
-            placeholder="Word / Abbreviation" 
-            bind:value={ttsSnippetList[idx].key} 
-            style="flex: 0.4;"
-          />
-          <span style="color: var(--text-muted);">→</span>
-          <input 
-            type="text" 
-            placeholder="Spoken pronunciation" 
-            bind:value={ttsSnippetList[idx].val} 
-            style="flex: 1;"
-          />
-          <button class="btn-remove-inline" type="button" onclick={() => removeTtsSnippetRow(idx)}>✕</button>
-        </div>
-      {/each}
-      {#if ttsSnippetList.length === 0}
-        <div class="empty-state" style="padding: 20px; grid-column: 1 / -1;">
-          <p>No pronunciation snippets defined.</p>
-        </div>
-      {/if}
-    </div>
-  </div>
+  <KeyValueListEditor
+    class="mt-6"
+    bind:value={cfg.tts.snippets}
+    onchange={markDirty}
+    title="TTS Snippets (Pronunciation Guide)"
+    hint={'Type a word (e.g. "voxctrl") ➔ its spoken expansion/pronunciation (e.g. "vox control"). Only affects speech playback.'}
+    addLabel="Add Pronunciation"
+    keyPlaceholder="Word / Abbreviation"
+    valuePlaceholder="Spoken pronunciation"
+    emptyText="No pronunciation snippets defined."
+  />
 </section>
 
 <style lang="postcss">
@@ -1473,9 +1299,6 @@
   .range-input {
     @apply w-full accent-[var(--accent)];
   }
-  .number-input {
-    @apply w-20;
-  }
 
   .tts-test-row {
     @apply flex justify-between items-center w-full;
@@ -1521,35 +1344,6 @@
   }
   .warning-text {
     @apply text-[12px] text-amber-200/80 leading-relaxed m-0 max-w-none;
-  }
-
-  .field-input-textarea {
-    @apply w-full bg-[var(--bg)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-2 px-3 text-[13px] resize-y mt-1 outline-none box-border transition-all duration-200 ease-out;
-  }
-  .field-input-textarea:focus {
-    @apply border-[var(--accent2)] shadow-[0_0_0_2px_rgba(79,195,247,0.2)];
-  }
-
-  .engine-radio-group {
-    @apply flex flex-col gap-2 mt-1.5 w-full;
-  }
-  .engine-radio-option {
-    @apply flex flex-col gap-1 p-3 bg-[var(--bg)] border border-[var(--border)] rounded-[var(--radius)] cursor-pointer transition-all duration-200 ease-out;
-  }
-  .engine-radio-option:hover {
-    @apply border-[var(--accent2)] bg-[var(--surface2)];
-  }
-  .engine-radio-option.selected {
-    @apply border-[var(--accent)] bg-[var(--surface2)];
-  }
-  .engine-radio-header {
-    @apply flex items-center gap-2.5;
-  }
-  .engine-radio-name {
-    @apply font-medium text-sm text-[var(--text)];
-  }
-  .engine-radio-desc {
-    @apply text-xs text-[var(--text-muted)] ml-6 leading-normal;
   }
 
 </style>
