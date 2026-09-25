@@ -23,12 +23,12 @@ use voxctrl_inference::InferenceOutput;
 async fn process_remote_transcription(
     res: anyhow::Result<voxctrl_inference::backend::TranscriptionResult>,
     audio: Vec<f32>,
-    target_id: String,
-    binding_id: String,
+    ctx: RecordingContext,
     state: Arc<AppState>,
     text_tx: crossbeam_channel::Sender<InferenceOutput>,
 ) {
     use voxctrl_inference::finalize;
+    let RecordingContext { target_id, binding_id, processing, binding } = ctx;
 
     let result = match res {
         Ok(res) => res,
@@ -56,14 +56,11 @@ async fn process_remote_transcription(
         return;
     }
 
-    let targets = state.targets.lock().await.clone();
-    let mut processed = finalize::post_process(&result.text, rms, &target_id, &app_cfg, &targets);
+    let mut processed = finalize::post_process(&result.text, rms, &processing, &app_cfg);
 
     // ── Hotkey-Specific OpenAI Post-Processing ────────────────────────────
-    if !processed.is_empty() && !binding_id.is_empty() {
-        let bindings = voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default();
-        let binding = bindings.iter().find(|b| b.id == binding_id);
-        if let Some(openai_cfg) = finalize::binding_openai_config(binding, &app_cfg.openai) {
+    if !processed.is_empty() {
+        if let Some(openai_cfg) = finalize::binding_openai_config(binding.as_ref(), &app_cfg.openai) {
             processed = voxctrl_llm::OpenAiClient::new(openai_cfg).process(&processed).await;
         }
     }
@@ -79,6 +76,53 @@ async fn process_remote_transcription(
         is_interim: false,
         session_id: 0,
     });
+}
+
+/// Who a recording is for, captured once when it starts: where it goes, which
+/// hotkey started it, and the settings those imply for finishing it. Taken
+/// from the in-memory caches, so no config file is read per recording.
+#[derive(Clone, Default)]
+struct RecordingContext {
+    target_id: String,
+    binding_id: String,
+    /// The primary target's post-processing overrides.
+    processing: voxctrl_routing::TargetProcessingConfig,
+    /// The saved binding behind `binding_id`, if any.
+    binding: Option<voxctrl_routing::HotkeyBinding>,
+}
+
+impl RecordingContext {
+    /// Snapshot the active target and hotkey. Blocking: pipeline threads only.
+    fn capture(state: &AppState) -> Self {
+        let target_id = state.active_target.blocking_lock().clone();
+        let binding_id = state.active_binding_id.blocking_lock().clone();
+        Self {
+            processing: voxctrl_inference::finalize::target_processing(
+                &target_id,
+                &state.targets.blocking_lock(),
+            ),
+            binding: state.binding(&binding_id),
+            target_id,
+            binding_id,
+        }
+    }
+
+    fn request(
+        &self,
+        audio: Vec<f32>,
+        is_interim: bool,
+        session_id: u64,
+    ) -> voxctrl_inference::InferenceRequest {
+        voxctrl_inference::InferenceRequest {
+            audio,
+            target_id: self.target_id.clone(),
+            binding_id: Some(self.binding_id.clone()),
+            is_interim,
+            session_id,
+            processing: self.processing.clone(),
+            binding: self.binding.clone(),
+        }
+    }
 }
 
 /// Interim passes start once this much audio exists (0.5 s at 16 kHz)...
@@ -101,8 +145,7 @@ pub fn spawn_audio_coordinator(
     std::thread::spawn(move || {
         let mut accumulated_audio = Vec::<f32>::new();
         let mut was_recording = false;
-        let mut target_id = "default".to_string();
-        let mut binding_id = String::new();
+        let mut ctx = RecordingContext::default();
         let mut remote_session: Option<voxctrl_inference::RemoteStreamingSession> = None;
         let mut is_remote_backend = false;
         let mut interim_enabled = false;
@@ -116,8 +159,7 @@ pub fn spawn_audio_coordinator(
             if is_recording {
                 if !was_recording {
                     accumulated_audio.clear();
-                    target_id = state_for_audio.active_target.blocking_lock().clone();
-                    binding_id = state_for_audio.active_binding_id.blocking_lock().clone();
+                    ctx = RecordingContext::capture(&state_for_audio);
                     was_recording = true;
                     session_id = session_id.wrapping_add(1);
                     last_interim_sample_count = 0;
@@ -175,13 +217,11 @@ pub fn spawn_audio_coordinator(
                     state_for_audio.set_interim_in_flight(true);
                     last_interim_sample_count = window;
                     last_interim_instant = std::time::Instant::now();
-                    let _ = inference_tx.send(voxctrl_inference::InferenceRequest {
-                        audio: accumulated_audio[..window].to_vec(),
-                        target_id: target_id.clone(),
-                        binding_id: Some(binding_id.clone()),
-                        is_interim: true,
+                    let _ = inference_tx.send(ctx.request(
+                        accumulated_audio[..window].to_vec(),
+                        true,
                         session_id,
-                    });
+                    ));
                 }
             } else {
                 if was_recording {
@@ -192,16 +232,14 @@ pub fn spawn_audio_coordinator(
                                 state_for_audio.set_processing(true);
                                 let state_clone = state_for_audio.clone();
                                 let text_tx_clone = text_tx.clone();
-                                let target_id_clone = target_id.clone();
-                                let binding_id_clone = binding_id.clone();
+                                let ctx = ctx.clone();
 
                                 rt_handle.spawn(async move {
                                     let res = session.finish().await;
                                     process_remote_transcription(
                                         res,
                                         audio,
-                                        target_id_clone,
-                                        binding_id_clone,
+                                        ctx,
                                         state_clone,
                                         text_tx_clone,
                                     )
@@ -211,13 +249,11 @@ pub fn spawn_audio_coordinator(
                         }
                     } else {
                         if !accumulated_audio.is_empty() {
-                            let req = voxctrl_inference::InferenceRequest {
-                                audio: std::mem::take(&mut accumulated_audio),
-                                target_id: target_id.clone(),
-                                binding_id: Some(binding_id.clone()),
-                                is_interim: false,
+                            let req = ctx.request(
+                                std::mem::take(&mut accumulated_audio),
+                                false,
                                 session_id,
-                            };
+                            );
                             state_for_audio.set_processing(true);
                             let _ = inference_tx.send(req);
                         }
@@ -317,13 +353,7 @@ pub fn spawn_text_delivery_worker(
             let s1_mini_enabled = output
                 .binding_id
                 .as_deref()
-                .filter(|bid| !bid.is_empty())
-                .and_then(|bid| {
-                    voxctrl_routing::load_bindings(&voxctrl_routing::config_dir())
-                        .unwrap_or_default()
-                        .into_iter()
-                        .find(|b| b.id == bid)
-                })
+                .and_then(|bid| state.binding(bid))
                 .and_then(|b| b.s1_mini_enabled)
                 .unwrap_or(global_s1_mini_enabled);
 

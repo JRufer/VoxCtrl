@@ -229,6 +229,13 @@ pub struct InferenceRequest {
     pub is_interim: bool,
     /// Unique session identifier for the recording turn
     pub session_id: u64,
+    /// Post-processing overrides of the utterance's primary target (see
+    /// [`finalize::target_processing`]). Resolved by the caller, so this crate
+    /// never reads routing's config files itself.
+    pub processing: voxctrl_routing::TargetProcessingConfig,
+    /// The hotkey binding that started the recording, for its per-hotkey
+    /// OpenAI rewrite settings. `None` when no hotkey did.
+    pub binding: Option<voxctrl_routing::HotkeyBinding>,
 }
 
 /// Final output after transcription + post-processing.
@@ -371,23 +378,17 @@ impl InferenceEngine {
         };
         let result = self.backend.transcribe(&t_req)?;
 
-        // Targets and bindings are read per utterance so edits apply at once.
-        let dir = voxctrl_routing::config_dir();
-        let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
-        let mut processed =
-            finalize::post_process(&result.text, rms, &req.target_id, app_config, &targets);
+        let mut processed = finalize::post_process(&result.text, rms, &req.processing, app_config);
 
         // ── Hotkey-Specific OpenAI Post-Processing ────────────────────────────
         // Interim passes only feed the voice-command trigger check and are
         // thrown away; running the hotkey's (billed, slow) OpenAI rewrite on
         // every one of them would cost a request per pass for nothing.
         if !is_interim && !processed.is_empty() {
-            if let Some(bid) = req.binding_id.as_deref() {
-                let bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
-                let binding = bindings.iter().find(|b| b.id == bid);
-                if let Some(openai_cfg) = finalize::binding_openai_config(binding, &app_config.openai) {
-                    processed = run_llm_rewrite(voxctrl_llm::OpenAiClient::new(openai_cfg), processed);
-                }
+            if let Some(openai_cfg) =
+                finalize::binding_openai_config(req.binding.as_ref(), &app_config.openai)
+            {
+                processed = run_llm_rewrite(voxctrl_llm::OpenAiClient::new(openai_cfg), processed);
             }
         }
 
@@ -643,11 +644,12 @@ mod tests {
     fn request(audio: Vec<f32>) -> InferenceRequest {
         InferenceRequest {
             audio,
-            // An id no saved target has, so no per-target override applies.
-            target_id: "__inference_test_target__".into(),
+            target_id: "notes".into(),
             binding_id: None,
             is_interim: false,
             session_id: 7,
+            processing: Default::default(),
+            binding: None,
         }
     }
 
@@ -703,6 +705,20 @@ mod tests {
         assert!(!engine.update_config(Arc::new(cfg)), "a features change rebuilt the backend");
         let second = engine.process(request(speech())).unwrap();
         assert!(second.text.to_lowercase().contains("um"), "update ignored: {:?}", second.text);
+    }
+
+    /// The target's overrides arrive with the request and win over the
+    /// global settings — the engine never looks them up on disk.
+    #[test]
+    fn the_request_carries_the_target_overrides() {
+        let mut cfg = AppConfig::default();
+        cfg.features.remove_fillers = true;
+        let (engine, _) = recording_engine(cfg, "um hello world");
+
+        let mut req = request(speech());
+        req.processing.remove_fillers = Some(false);
+        let out = engine.process(req).unwrap();
+        assert!(out.text.to_lowercase().contains("um"), "override ignored: {:?}", out.text);
     }
 
     #[test]

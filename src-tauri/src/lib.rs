@@ -375,6 +375,7 @@ pub fn run() {
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(targets.clone())),
         targets_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        bindings: Arc::new(Mutex::new(bindings.clone())),
         audio_tx: audio_tx.clone(),
         audio_wake: audio_wake_tx,
         inference_config_tx: inference_cfg_tx,

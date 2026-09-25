@@ -7,7 +7,7 @@
 //! change or a fix lands in one place and the two cannot drift apart.
 
 use voxctrl_config::{AppConfig, OpenAiConfig, OpenAiMode};
-use voxctrl_routing::{HotkeyBinding, OutputTarget};
+use voxctrl_routing::{HotkeyBinding, OutputTarget, TargetProcessingConfig};
 
 use crate::postprocess::{is_silence_hallucination, run_pipeline, PostProcessConfig};
 
@@ -48,42 +48,43 @@ pub fn initial_prompt(custom_vocabulary: &[String]) -> String {
     }
 }
 
-/// The first id of a comma-separated target list, which decides the
-/// processing overrides for the whole utterance.
-fn primary_target_id(target_id: &str) -> &str {
-    target_id
+/// The processing overrides for an utterance bound for `target_id` (a
+/// comma-separated list): the first listed target decides for all of them.
+/// No overrides when that target does not exist.
+pub fn target_processing(target_id: &str, targets: &[OutputTarget]) -> TargetProcessingConfig {
+    let primary = target_id
         .split(',')
         .map(str::trim)
         .find(|s| !s.is_empty())
-        .unwrap_or("default")
+        .unwrap_or("default");
+    targets
+        .iter()
+        .find(|t| t.id == primary)
+        .map(|t| t.processing.clone())
+        .unwrap_or_default()
 }
 
-/// Post-processing settings for `target_id`: the target's own overrides where
-/// it has them, the global feature settings otherwise.
+/// Post-processing settings: the target's own overrides where it has them,
+/// the global feature settings otherwise.
 pub fn post_process_config<'a>(
-    target_id: &str,
+    processing: &TargetProcessingConfig,
     app: &'a AppConfig,
-    targets: &[OutputTarget],
 ) -> PostProcessConfig<'a> {
-    let primary = primary_target_id(target_id);
-    let processing = targets.iter().find(|t| t.id == primary).map(|t| &t.processing);
     let features = &app.features;
 
     PostProcessConfig {
-        remove_fillers: processing
-            .and_then(|p| p.remove_fillers)
-            .unwrap_or(features.remove_fillers),
+        remove_fillers: processing.remove_fillers.unwrap_or(features.remove_fillers),
         spoken_punctuation: processing
-            .and_then(|p| p.spoken_punctuation)
+            .spoken_punctuation
             .unwrap_or(features.spoken_punctuation),
         auto_format_lists: processing
-            .and_then(|p| p.auto_format_lists)
+            .auto_format_lists
             .unwrap_or(features.auto_format_lists),
         // Snippets always expand; the only thing that turns them off is having
         // none defined.
         apply_snippets: !features.snippets.is_empty(),
         snippets: &features.snippets,
-        code_mode: processing.and_then(|p| p.code_mode).unwrap_or(false),
+        code_mode: processing.code_mode.unwrap_or(false),
         custom_vocabulary: &features.custom_vocabulary,
     }
 }
@@ -93,11 +94,10 @@ pub fn post_process_config<'a>(
 pub fn post_process(
     raw_text: &str,
     rms: f32,
-    target_id: &str,
+    processing: &TargetProcessingConfig,
     app: &AppConfig,
-    targets: &[OutputTarget],
 ) -> String {
-    let processed = run_pipeline(raw_text, &post_process_config(target_id, app, targets));
+    let processed = run_pipeline(raw_text, &post_process_config(processing, app));
     if !processed.is_empty() && rms < SILENCE_RMS && is_silence_hallucination(&processed) {
         tracing::info!("Discarded silence hallucination '{processed}' (audio RMS: {rms:.5})");
         return String::new();
@@ -184,8 +184,13 @@ mod tests {
         target.processing.remove_fillers = Some(true);
         let targets = [target];
 
-        assert!(post_process_config(" notes , other", &app, &targets).remove_fillers);
-        assert!(!post_process_config("other,notes", &app, &targets).remove_fillers);
+        let first_listed = target_processing(" notes , other", &targets);
+        assert_eq!(first_listed.remove_fillers, Some(true));
+        assert!(post_process_config(&first_listed, &app).remove_fillers);
+
+        let other_first = target_processing("other,notes", &targets);
+        assert_eq!(other_first.remove_fillers, None, "a missing target has no overrides");
+        assert!(!post_process_config(&other_first, &app).remove_fillers);
     }
 
     #[test]

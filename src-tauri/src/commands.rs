@@ -245,6 +245,7 @@ pub async fn save_bindings(
 ) -> Result<(), String> {
     let dir = voxctrl_routing::config_dir();
     voxctrl_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
+    *state.bindings.lock().await = bindings.clone();
     info!("Bindings saved");
     
     // Hot reload the bindings in the active listener threads, re-injecting the

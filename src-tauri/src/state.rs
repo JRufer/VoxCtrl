@@ -76,6 +76,11 @@ pub struct AppState {
     /// cache is stale without re-deriving it on every tick.
     pub targets_version: Arc<std::sync::atomic::AtomicU64>,
 
+    /// The saved hotkey bindings (in-memory cache, kept current by the
+    /// `save_bindings` command), so the dictation path can look up a
+    /// binding's per-hotkey settings without re-reading `bindings.toml`.
+    pub bindings: Arc<Mutex<Vec<voxctrl_routing::HotkeyBinding>>>,
+
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
     /// Nudges the audio capture supervisor when a flag it watches changes, so
@@ -301,6 +306,17 @@ impl AppState {
     pub async fn set_targets(&self, targets: Vec<voxctrl_routing::OutputTarget>) {
         *self.targets.lock().await = targets;
         self.targets_version.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// The saved binding with this id, if there is one.
+    ///
+    /// Blocks on the lock, so it is for the pipeline's own threads; calling it
+    /// from async code would panic.
+    pub fn binding(&self, id: &str) -> Option<voxctrl_routing::HotkeyBinding> {
+        if id.is_empty() {
+            return None;
+        }
+        self.bindings.blocking_lock().iter().find(|b| b.id == id).cloned()
     }
 
     pub fn targets_version(&self) -> u64 {

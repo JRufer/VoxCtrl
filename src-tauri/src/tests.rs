@@ -86,6 +86,7 @@ fn make_test_state() -> AppState {
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(Vec::new())),
         targets_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        bindings: Arc::new(Mutex::new(Vec::new())),
         audio_tx,
         audio_wake,
         inference_config_tx,
@@ -867,4 +868,21 @@ async fn replacing_targets_marks_them_changed() {
         voxctrl_routing::targets_display_label("notes", &state.targets.lock().await),
         "Renamed"
     );
+}
+
+/// The dictation path resolves a hotkey's per-binding settings from the
+/// in-memory cache that `save_bindings` keeps, not from `bindings.toml`.
+#[test]
+fn bindings_resolve_from_the_cache() {
+    let state = make_test_state();
+    let binding: voxctrl_routing::HotkeyBinding = serde_json::from_value(serde_json::json!({
+        "id": "rewrite", "keys": ["KEY_F9"], "gesture": "hold", "target_id": "default",
+        "openai_enabled": true,
+    }))
+    .unwrap();
+    *state.bindings.blocking_lock() = vec![binding];
+
+    assert_eq!(state.binding("rewrite").and_then(|b| b.openai_enabled), Some(true));
+    assert!(state.binding("missing").is_none());
+    assert!(state.binding("").is_none(), "no hotkey must not match a binding");
 }
