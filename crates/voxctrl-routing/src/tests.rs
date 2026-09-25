@@ -2349,3 +2349,25 @@ fn test_parse_voice_command_non_ascii_text_and_targets() {
     // must be skipped without slicing mid-character.
     assert!(parse_voice_command("Hey Vox, xÜberblick hallo", &targets).is_none());
 }
+
+#[test]
+fn bindings_saved_with_legacy_key_names_load_with_evdev_names() {
+    use crate::loader::load_bindings;
+    let temp_dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp_dir.path().join("bindings.toml"),
+        r#"
+format_version = "1.1"
+
+[[binding]]
+id = "punct"
+label = "Punctuation"
+keys = ["KEY_LEFTCTRL", "KEY_."]
+gesture = "hold"
+target_id = "default"
+"#,
+    )
+    .unwrap();
+    let loaded = load_bindings(temp_dir.path()).unwrap();
+    assert_eq!(loaded[0].keys, vec!["KEY_LEFTCTRL", "KEY_DOT"]);
+}

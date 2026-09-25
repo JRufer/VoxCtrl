@@ -39,10 +39,13 @@ pub mod keymap {
     //! # Left and right
     //!
     //! Modifiers keep their side: right Ctrl is `KEY_RIGHTCTRL`, not `KEY_LEFTCTRL`.
-    //! That matches evdev and the X11 backend exactly. The settings UI collapses
-    //! both sides to the left name when recording, so a binding captured on right
-    //! Ctrl fires only from left Ctrl — surprising, but it is precisely what Linux
-    //! does today, and diverging here would make the platforms disagree.
+    //! That matches evdev and the X11 backend exactly, and the settings UI records
+    //! the side that was pressed (`src/lib/keys.ts`), so a binding captured on
+    //! right Ctrl fires from right Ctrl on every platform.
+    //!
+    //! `NAMES` is also the list the frontend's key recorder is tested against
+    //! (`tests/svelte/keys.test.ts` reads it from this file), so keep it a flat
+    //! array of string literals.
 
     /// Every key VoxCtrl can name, in a fixed order. The index into this table is
     /// the compact key id used by the hook's lock-free pressed/suppressed arrays.
