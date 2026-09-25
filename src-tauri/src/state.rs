@@ -336,19 +336,23 @@ impl AppState {
         }
     }
 
-    pub async fn spawn_fifo_responders(&self, tts: voxctrl_tts::TtsEngineHandle) {
+    /// Start a responder for every target response pipe not already watched.
+    ///
+    /// Responders look the TTS worker up per line (see
+    /// `voxctrl_tts::run_fifo_responder`), so one started while TTS is off
+    /// begins speaking as soon as it is turned on, and none needs restarting
+    /// when the worker is replaced.
+    pub async fn spawn_fifo_responders(&self) {
         let targets_guard = self.targets.lock().await;
         let mut active_fifos_guard = self.active_fifos.lock().await;
 
         for target in targets_guard.iter() {
             if let Some(ref pipe_path) = target.response_pipe {
-                if !pipe_path.trim().is_empty() && !active_fifos_guard.contains(pipe_path) {
-                    active_fifos_guard.insert(pipe_path.clone());
-                    let tts_clone = tts.clone();
-                    let pipe_path_clone = pipe_path.clone();
-                    tokio::spawn(async move {
-                        voxctrl_tts::run_fifo_responder(pipe_path_clone, tts_clone).await;
-                    });
+                if !pipe_path.trim().is_empty() && active_fifos_guard.insert(pipe_path.clone()) {
+                    tokio::spawn(voxctrl_tts::run_fifo_responder(
+                        pipe_path.clone(),
+                        self.tts_handle.clone(),
+                    ));
                 }
             }
         }

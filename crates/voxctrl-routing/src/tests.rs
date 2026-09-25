@@ -2349,3 +2349,23 @@ fn test_parse_voice_command_non_ascii_text_and_targets() {
     // must be skipped without slicing mid-character.
     assert!(parse_voice_command("Hey Vox, xÜberblick hallo", &targets).is_none());
 }
+
+#[cfg(test)]
+mod display_label_tests {
+    use crate::{targets_display_label, OutputTarget};
+
+    fn target(id: &str, label: &str) -> OutputTarget {
+        serde_json::from_value(serde_json::json!({ "id": id, "label": label, "delivery": "inject" }))
+            .unwrap()
+    }
+
+    #[test]
+    fn labels_fall_back_to_ids_and_the_default_name() {
+        let targets = [target("notes", "My Notes"), target("blank", ""), target("default", "")];
+        assert_eq!(targets_display_label("notes", &targets), "My Notes");
+        assert_eq!(targets_display_label("blank", &targets), "blank");
+        assert_eq!(targets_display_label("default", &targets), "Focused Window");
+        assert_eq!(targets_display_label("default", &[]), "Focused Window");
+        assert_eq!(targets_display_label(" notes, ,missing ", &targets), "My Notes + missing");
+    }
+}

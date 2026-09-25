@@ -177,48 +177,61 @@ async fn apply_dbus_binding(state: &Arc<AppState>, binding_id: &str) {
     *state.active_binding_label.lock().await = binding.label.clone();
 }
 
+/// Start a TTS worker wired to the app: its playback callbacks drive the
+/// `speaking` flag (and with it the stop-key arbiter and the overlay) and the
+/// frontend's playback events.
+///
+/// Every place that starts a worker goes through here, so none can start one
+/// that plays audio the rest of the app never hears about.
+pub fn start_tts_worker(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    cfg: &voxctrl_config::AppConfig,
+) -> voxctrl_tts::TtsEngineHandle {
+    let (app_start, app_end, app_err) = (app_handle.clone(), app_handle.clone(), app_handle.clone());
+    let (state_start, state_end) = (state.clone(), state.clone());
+    voxctrl_tts::TtsEngineWorker::start(
+        cfg.tts.clone(),
+        cfg.features.custom_vocabulary.clone(),
+        Some(Arc::new(move || {
+            state_start.set_speaking(true);
+            let _ = app_start.emit("tts-playback-start", ());
+        })),
+        Some(Arc::new(move || {
+            state_end.set_speaking(false);
+            let _ = app_end.emit("tts-playback-end", ());
+        })),
+        Some(Arc::new(move |msg: String| {
+            let _ = app_err.emit("tts-error", msg);
+        })),
+    )
+}
+
+/// Start the TTS worker (when enabled) and the response-pipe listeners.
+///
+/// This is the only place a worker is started at launch: it needs the app
+/// handle for its callbacks, which does not exist until Tauri's setup runs.
 pub fn setup_tts_and_fifos(app_handle: &tauri::AppHandle, state: Arc<AppState>) {
-    let cfg_opt = if let Ok(config_guard) = state.config.try_lock() {
-        Some(config_guard.data.clone())
-    } else {
-        None
+    let Some(cfg) = state.config.try_lock().ok().map(|g| g.data.clone()) else {
+        tracing::warn!("Config was locked during startup; TTS starts on the next settings save");
+        return;
     };
 
-    if let Some(cfg) = cfg_opt {
-        if cfg.tts.enabled {
-            if let Ok(mut handle) = state.tts_handle.try_lock() {
-                if let Some(ref tts) = *handle {
-                    tts.shutdown();
+    if cfg.tts.enabled {
+        match state.tts_handle.try_lock() {
+            Ok(mut handle) => {
+                if let Some(ref old) = *handle {
+                    old.shutdown();
                 }
-                let app_handle_clone = app_handle.clone();
-                let app_handle_clone_end = app_handle.clone();
-                let app_handle_clone_err = app_handle.clone();
-                let state_clone = state.clone();
-                let state_clone_end = state.clone();
-                let new_tts = voxctrl_tts::TtsEngineWorker::start(
-                    cfg.tts.clone(),
-                    cfg.features.custom_vocabulary.clone(),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone.set_speaking(true);
-                        let _ = app_handle_clone.emit("tts-playback-start", ());
-                    })),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone_end.set_speaking(false);
-                        let _ = app_handle_clone_end.emit("tts-playback-end", ());
-                    })),
-                    Some(std::sync::Arc::new(move |msg: String| {
-                        let _ = app_handle_clone_err.emit("tts-error", msg);
-                    })),
-                );
-                *handle = Some(new_tts.clone());
-                let state_for_fifos = state.clone();
-                let tts_for_fifos = new_tts.clone();
-                tauri::async_runtime::spawn(async move {
-                    state_for_fifos.spawn_fifo_responders(tts_for_fifos).await;
-                });
+                *handle = Some(start_tts_worker(app_handle, &state, &cfg));
             }
+            Err(_) => tracing::warn!("TTS handle was locked during startup; TTS not started"),
         }
     }
+
+    tauri::async_runtime::spawn(async move {
+        state.spawn_fifo_responders().await;
+    });
 }
 
 pub fn register_speak_target(app_handle: &tauri::AppHandle) {

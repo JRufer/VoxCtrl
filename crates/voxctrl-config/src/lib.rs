@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -108,24 +108,19 @@ impl Default for RemoteOpenAiConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendChoice {
     /// `alias = "auto"` migrates configs written when the backend could be
     /// left unset: auto-selection always resolved to whisper.cpp anyway, so
     /// those installs keep the backend they were already running.
     #[serde(alias = "auto")]
+    #[default]
     WhisperCpp,
     Moonshine,
     Parakeet,
     #[serde(rename = "remote-openai", alias = "remote-open-ai", alias = "remote_openai", alias = "openai-compatible", alias = "remote")]
     RemoteOpenAi,
-}
-
-impl Default for BackendChoice {
-    fn default() -> Self {
-        Self::WhisperCpp
-    }
 }
 
 fn default_s1_mini_styling() -> String {
@@ -314,9 +309,10 @@ impl Default for FeaturesConfig {
 
 // ── OpenAI API ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAiMode {
+    #[default]
     Clean,
     Formal,
     Casual,
@@ -325,9 +321,19 @@ pub enum OpenAiMode {
     Custom,
 }
 
-impl Default for OpenAiMode {
-    fn default() -> Self {
-        Self::Clean
+impl OpenAiMode {
+    /// Parse the snake_case name a mode is stored under (as in a hotkey
+    /// binding's `openai_mode`), or `None` for a name no mode has.
+    pub fn from_key(key: &str) -> Option<Self> {
+        Some(match key {
+            "clean" => Self::Clean,
+            "formal" => Self::Formal,
+            "casual" => Self::Casual,
+            "bullet" => Self::Bullet,
+            "concise" => Self::Concise,
+            "custom" => Self::Custom,
+            _ => return None,
+        })
     }
 }
 
@@ -385,9 +391,10 @@ impl Default for OpenAiConfig {
 
 // ── TTS ───────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TtsEngine {
+    #[default]
     Piper,
     Espeak,
     PocketTts,
@@ -396,12 +403,6 @@ pub enum TtsEngine {
     BreezeTts2,
     #[serde(rename = "vox_cpm_2", alias = "voxcpm2", alias = "vox_cpm2")]
     VoxCpm2,
-}
-
-impl Default for TtsEngine {
-    fn default() -> Self {
-        Self::Piper
-    }
 }
 
 /// How the TTS engine manages the memory of model-backed engines (currently
@@ -906,38 +907,27 @@ impl Config {
             AppConfig::default()
         };
 
+        // Every migration below rewrites the file so it runs only once; they
+        // share a single save at the end rather than each writing it again.
+        let mut migrated = false;
+
         // Migrate show_notification from legacy features to ui struct if present
-        if let Some(legacy_notif) = data.features.show_notification {
+        if let Some(legacy_notif) = data.features.show_notification.take() {
             data.ui.show_notification = legacy_notif;
-            data.features.show_notification = None;
-            // Instantly persist the migrated clean configuration to clean up the JSON
-            let clean_config = Self { data: data.clone(), path: path.clone() };
-            if let Err(e) = clean_config.save() {
-                tracing::error!("Failed to save clean migrated config: {e}");
-            }
+            migrated = true;
         }
 
         // Migrate legacy "KEY_ESCAPE" → "KEY_ESC" (evdev crate uses KEY_ESC as the
         // canonical debug name via stringify!(KEY_ESC)).
-        let needs_escape_fix = data.tts.stop_key.iter().any(|k| k == "KEY_ESCAPE");
-        if needs_escape_fix {
-            data.tts.stop_key = data.tts.stop_key
-                .into_iter()
-                .map(|k| if k == "KEY_ESCAPE" { "KEY_ESC".to_string() } else { k })
-                .collect();
-            let clean_config = Self { data: data.clone(), path: path.clone() };
-            if let Err(e) = clean_config.save() {
-                tracing::error!("Failed to save migrated stop_key: {e}");
-            }
+        for key in data.tts.stop_key.iter_mut().filter(|k| k.as_str() == "KEY_ESCAPE") {
+            *key = "KEY_ESC".to_string();
+            migrated = true;
         }
 
         // Migrate legacy default OpenAI timeout (8s) to the new default (30s) to prevent timeouts
         if data.openai.timeout_secs == 8 {
             data.openai.timeout_secs = 30;
-            let clean_config = Self { data: data.clone(), path: path.clone() };
-            if let Err(e) = clean_config.save() {
-                tracing::error!("Failed to save migrated OpenAI timeout: {e}");
-            }
+            migrated = true;
         }
 
         // Migrate the legacy single `custom_prompt` (used when mode == Custom) into the
@@ -949,18 +939,17 @@ impl Config {
                 // default grammar-fix system prompt to preserve the old behavior.
                 data.openai.system_prompt = String::new();
             }
-            let clean_config = Self { data: data.clone(), path: path.clone() };
-            if let Err(e) = clean_config.save() {
-                tracing::error!("Failed to save migrated OpenAI custom prompt: {e}");
-            }
+            migrated = true;
         }
 
         // One token now serves every gated model; older configs carry a copy
         // per engine. Rewrite the file so the duplicates go away for good.
-        if migrate_hf_token(&mut data) {
-            let migrated = Self { data: data.clone(), path: path.clone() };
-            if let Err(e) = migrated.save() {
-                tracing::error!("Failed to save migrated HuggingFace token: {e}");
+        migrated |= migrate_hf_token(&mut data);
+
+        let config = Self { data, path };
+        if migrated {
+            if let Err(e) = config.save() {
+                tracing::error!("Failed to save migrated config: {e}");
             }
         }
 
@@ -968,7 +957,7 @@ impl Config {
         // though every cloning engine uses it; rename it on disk once.
         migrate_cloned_voices_dir();
 
-        Self { data, path }
+        config
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
@@ -976,20 +965,7 @@ impl Config {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.data)?;
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut f = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&self.path)?;
-            f.write_all(json.as_bytes())?;
-        }
-        #[cfg(not(unix))]
-        std::fs::write(&self.path, json)?;
+        write_private(&self.path, &json)?;
         Ok(())
     }
 
@@ -1023,6 +999,36 @@ impl Default for Config {
 /// `.exe` and nothing else when searching, so a `.bat` or `.cmd` found by name
 /// alone could not be spawned anyway, and reporting it as reachable would trade
 /// one wrong answer for its mirror image.
+/// Replace `path` with `content`, readable only by the owner on Unix (the
+/// config holds API keys and tokens).
+///
+/// Written to a sibling temporary file and renamed into place, so a crash or a
+/// full disk mid-write leaves the previous file intact rather than a truncated
+/// one — which the tolerant loader would read back as "all defaults", silently
+/// discarding every setting.
+pub fn write_private(path: &Path, content: &str) -> std::io::Result<()> {
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp = path.with_file_name(tmp_name);
+    // A leftover from an interrupted write would keep its old permissions
+    // through the truncating open below.
+    let _ = std::fs::remove_file(&tmp);
+    {
+        use std::io::Write;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
+        f.write_all(content.as_bytes())?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)
+}
+
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
     // "If the file name does not contain an extension, .exe is appended."
     let search_name: std::borrow::Cow<str> = if cfg!(target_os = "windows") && !name.contains('.') {

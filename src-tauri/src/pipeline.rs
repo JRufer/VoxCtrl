@@ -17,178 +17,62 @@ use crate::window::{setup_blocker, show_setup_window, SETUP_NOTICE_INTERVAL};
 use crate::window::{BLIND_ALERT_INTERVAL, SETUP_POLL_INTERVAL};
 use voxctrl_inference::InferenceOutput;
 
+/// Finish a remote (streamed) transcription the way the local worker finishes
+/// its own — same noise gate, post-processing and per-hotkey rewrite, from the
+/// shared `voxctrl_inference::finalize` — and hand the result to delivery.
 async fn process_remote_transcription(
     res: anyhow::Result<voxctrl_inference::backend::TranscriptionResult>,
     audio: Vec<f32>,
     target_id: String,
     binding_id: String,
     state: Arc<AppState>,
-    text_tx: crossbeam_channel::Sender<voxctrl_inference::InferenceOutput>,
+    text_tx: crossbeam_channel::Sender<InferenceOutput>,
 ) {
+    use voxctrl_inference::finalize;
+
     let result = match res {
         Ok(res) => res,
         Err(e) => {
-            let _ = text_tx.send(InferenceOutput {
-                text: String::new(),
-                target_id,
-                binding_id: Some(binding_id),
-                raw_text: String::new(),
-                inference_ms: 0,
-                language: String::new(),
-                error: Some(format!("{e:#}")),
-                is_interim: false,
-                session_id: 0,
-            });
+            let _ = text_tx.send(InferenceOutput::failed(target_id, Some(binding_id), &e, false, 0));
             return;
         }
     };
 
-    // ── Noise Gate (VAD) ──────────────────────────────────────────────────
-    let sum_sq: f32 = audio.iter().map(|&s| s * s).sum();
-    let rms = if audio.is_empty() {
-        0.0
-    } else {
-        (sum_sq / audio.len() as f32).sqrt()
-    };
-    let vad_threshold = {
-        let guard = state.config.lock().await;
-        guard.data.audio.vad_threshold
-    };
-    let rms_threshold = (1.0 - vad_threshold) * 0.006;
+    let app_cfg = state.config.lock().await.data.clone();
 
+    // ── Noise Gate (VAD) ──────────────────────────────────────────────────
+    let rms = finalize::rms(&audio);
+    let rms_threshold = finalize::noise_gate_threshold(app_cfg.audio.vad_threshold);
     if rms < rms_threshold {
         tracing::info!(
-            "Remote audio skipped by noise gate: RMS is {:.5} (threshold is {:.5}, vad_threshold={:.2})",
-            rms,
-            rms_threshold,
-            vad_threshold
+            "Remote audio skipped by noise gate: RMS is {rms:.5} (threshold is {rms_threshold:.5}, vad_threshold={:.2})",
+            app_cfg.audio.vad_threshold
         );
         let _ = text_tx.send(InferenceOutput {
-            text: String::new(),
-            target_id,
-            binding_id: Some(binding_id),
-            raw_text: String::new(),
             inference_ms: result.inference_ms,
             language: result.language,
-            error: None,
-            is_interim: false,
-            session_id: 0,
+            ..InferenceOutput::empty(target_id, Some(binding_id), false, 0)
         });
         return;
     }
 
-    let dir = voxctrl_routing::config_dir();
-    let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
-    let target_ids: Vec<&str> = target_id
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-    let first_target_id = target_ids.first().copied().unwrap_or("default");
-    let target = targets.iter().find(|t| t.id == first_target_id);
-
-    let app_cfg = {
-        let guard = state.config.lock().await;
-        guard.data.clone()
-    };
-
-    let remove_fillers = target
-        .and_then(|t| t.processing.remove_fillers)
-        .unwrap_or(app_cfg.features.remove_fillers);
-
-    let spoken_punctuation = target
-        .and_then(|t| t.processing.spoken_punctuation)
-        .unwrap_or(app_cfg.features.spoken_punctuation);
-
-    let auto_format_lists = target
-        .and_then(|t| t.processing.auto_format_lists)
-        .unwrap_or(app_cfg.features.auto_format_lists);
-
-    let code_mode = target
-        .and_then(|t| t.processing.code_mode)
-        .unwrap_or(false);
-
-    let post_cfg = voxctrl_inference::postprocess::PostProcessConfig {
-        remove_fillers,
-        spoken_punctuation,
-        auto_format_lists,
-        apply_snippets: !app_cfg.features.snippets.is_empty(),
-        snippets: &app_cfg.features.snippets,
-        code_mode,
-        custom_vocabulary: &app_cfg.features.custom_vocabulary,
-    };
-
-    let mut processed = voxctrl_inference::postprocess::run_pipeline(&result.text, &post_cfg);
-    let raw_text = result.text.clone();
-
-    // ── Silence Hallucination Filter ──────────────────────────────────────
-    if !processed.is_empty()
-        && voxctrl_inference::postprocess::is_silence_hallucination(&processed)
-        && rms < 0.003
-    {
-        tracing::info!(
-            "Discarded silence hallucination '{}' (audio RMS: {:.5})",
-            processed,
-            rms
-        );
-        processed = String::new();
-    }
+    let targets = state.targets.lock().await.clone();
+    let mut processed = finalize::post_process(&result.text, rms, &target_id, &app_cfg, &targets);
 
     // ── Hotkey-Specific OpenAI Post-Processing ────────────────────────────
-    let bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
-    let binding = bindings.iter().find(|b| b.id == binding_id);
-
-    let binding_wants_openai = binding
-        .and_then(|b| b.openai_enabled)
-        .unwrap_or(false);
-
-    if binding_wants_openai && !processed.is_empty() {
-        let mut openai_cfg = voxctrl_config::Config::load().data.openai;
-        openai_cfg.enabled = true;
-
-        if let Some(b) = binding {
-            if let Some(ref model) = b.openai_model {
-                if !model.is_empty() {
-                    openai_cfg.model = model.clone();
-                }
-            }
-            if let Some(ref mode_str) = b.openai_mode {
-                let mode = match mode_str.as_str() {
-                    "clean" => voxctrl_config::OpenAiMode::Clean,
-                    "formal" => voxctrl_config::OpenAiMode::Formal,
-                    "casual" => voxctrl_config::OpenAiMode::Casual,
-                    "bullet" => voxctrl_config::OpenAiMode::Bullet,
-                    "concise" => voxctrl_config::OpenAiMode::Concise,
-                    "custom" => voxctrl_config::OpenAiMode::Custom,
-                    _ => voxctrl_config::OpenAiMode::Clean,
-                };
-                if mode != voxctrl_config::OpenAiMode::Custom {
-                    openai_cfg.mode = mode.clone();
-                    openai_cfg.system_prompt =
-                        voxctrl_llm::preset_system_prompt(&mode).to_string();
-                }
-            }
-            if let Some(ref system_prompt) = b.openai_system_prompt {
-                if !system_prompt.is_empty() {
-                    openai_cfg.system_prompt = system_prompt.clone();
-                }
-            }
-            if let Some(ref prompt) = b.openai_prompt {
-                if !prompt.is_empty() {
-                    openai_cfg.user_prompt = prompt.clone();
-                }
-            }
+    if !processed.is_empty() && !binding_id.is_empty() {
+        let bindings = voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default();
+        let binding = bindings.iter().find(|b| b.id == binding_id);
+        if let Some(openai_cfg) = finalize::binding_openai_config(binding, &app_cfg.openai) {
+            processed = voxctrl_llm::OpenAiClient::new(openai_cfg).process(&processed).await;
         }
-
-        let client = voxctrl_llm::OpenAiClient::new(openai_cfg);
-        processed = client.process(&processed).await;
     }
 
     let _ = text_tx.send(InferenceOutput {
         text: processed,
         target_id,
         binding_id: Some(binding_id),
-        raw_text,
+        raw_text: result.text,
         inference_ms: result.inference_ms,
         language: result.language,
         error: None,
@@ -259,19 +143,9 @@ pub fn spawn_audio_coordinator(
                         && has_command_targets;
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
                         is_remote_backend = true;
-                        let mut merged_prompt = String::from(
-                            "VoxCtrl is a voice control assistant application. VoxCtrl commands start with Vox Control or Hey Vox. ",
-                        );
-                        if !cfg.features.custom_vocabulary.is_empty() {
-                            merged_prompt.push_str("Vocabulary: ");
-                            merged_prompt.push_str(&cfg.features.custom_vocabulary.join(", "));
-                            merged_prompt.push_str(". ");
-                        }
-                        let prompt = {
-                            let end = merged_prompt.trim_end().len();
-                            merged_prompt.truncate(end);
-                            (!merged_prompt.is_empty()).then_some(merged_prompt)
-                        };
+                        let prompt = Some(voxctrl_inference::finalize::initial_prompt(
+                            &cfg.features.custom_vocabulary,
+                        ));
                         let session = voxctrl_inference::RemoteStreamingSession::start(
                             cfg.engine.remote_openai.clone(),
                             prompt,
@@ -375,15 +249,12 @@ pub fn spawn_text_delivery_worker(
                 // start loading the TTS model while the user is still talking.
                 // This is only a head start — routing is decided solely by the
                 // final transcript below, which must carry the trigger itself.
-                let dir = voxctrl_routing::config_dir();
-                let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
+                let targets = state.targets.blocking_lock().clone();
                 if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
                     let key = (output.session_id, parsed.matched_target_id);
                     if announced.as_ref() != Some(&key) {
                         let matched_target = targets.iter().find(|t| t.id == key.1);
-                        let matched_label = matched_target
-                            .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
-                            .unwrap_or_else(|| key.1.clone());
+                        let matched_label = voxctrl_routing::targets_display_label(&key.1, &targets);
                         tracing::info!("Early command detected during speech: '{matched_label}' (target: {})", key.1);
                         voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
 
@@ -434,29 +305,36 @@ pub fn spawn_text_delivery_worker(
             // If dictation starts with the trigger word but does not match a command
             // (e.g. "VoxCtrl is a great app."), the full sentence including the
             // trigger word is retained as the result text and cleaned by S1-mini.
-            let (global_s1_mini_enabled, s1_mini_styling) = {
+            let (global_s1_mini_enabled, s1_mini_styling, show_notif) = {
                 let cfg_lock = state.config.blocking_lock();
-                (cfg_lock.data.engine.s1_mini.enabled, cfg_lock.data.engine.s1_mini.styling.clone())
+                (
+                    cfg_lock.data.engine.s1_mini.enabled,
+                    cfg_lock.data.engine.s1_mini.styling.clone(),
+                    cfg_lock.data.ui.show_notification,
+                )
             };
 
-            let dir = voxctrl_routing::config_dir();
-            let bindings = voxctrl_routing::load_bindings(&dir).unwrap_or_default();
-            let binding = output.binding_id.as_ref().and_then(|bid| bindings.iter().find(|b| &b.id == bid));
-            let s1_mini_enabled = binding
+            let s1_mini_enabled = output
+                .binding_id
+                .as_deref()
+                .filter(|bid| !bid.is_empty())
+                .and_then(|bid| {
+                    voxctrl_routing::load_bindings(&voxctrl_routing::config_dir())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|b| b.id == bid)
+                })
                 .and_then(|b| b.s1_mini_enabled)
                 .unwrap_or(global_s1_mini_enabled);
 
-            let targets = voxctrl_routing::load_targets(&dir).unwrap_or_default();
+            // The in-memory cache `save_targets` keeps current — the same set
+            // the router delivers to, so a matched target is always deliverable.
+            let targets = state.targets.blocking_lock().clone();
             let (target_id, raw_text) = if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
-                let matched_id = parsed.matched_target_id.clone();
-                let payload = parsed.payload;
-                let matched_label = targets
-                    .iter()
-                    .find(|t| t.id == matched_id)
-                    .map(|t| if t.label.is_empty() { t.id.clone() } else { t.label.clone() })
-                    .unwrap_or_else(|| matched_id.clone());
-                voxctrl_routing::targets::notify_command_trigger(&matched_label, &payload);
-                (matched_id, payload)
+                let matched_label =
+                    voxctrl_routing::targets_display_label(&parsed.matched_target_id, &targets);
+                voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
+                (parsed.matched_target_id, parsed.payload)
             } else {
                 withdraw_early_command();
                 (output.target_id.clone(), output.text.clone())
@@ -514,10 +392,6 @@ pub fn spawn_text_delivery_worker(
                 }
             });
 
-            let show_notif = {
-                let cfg_lock = state.config.blocking_lock();
-                cfg_lock.data.ui.show_notification
-            };
             if show_notif {
                 voxctrl_inject::show_notification("VoxCtrl", &text);
             }

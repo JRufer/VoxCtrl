@@ -396,26 +396,10 @@ pub fn spawn_status_ticker(
                 cached_label = if use_binding_label {
                     binding_label
                 } else {
-                    let targets_guard = state_for_ticker.targets.lock().await;
-                    active_target_id
-                        .split(',')
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                        .map(|id| {
-                            targets_guard
-                                .iter()
-                                .find(|t| t.id == id)
-                                .map(|t| t.label.clone())
-                                .unwrap_or_else(|| {
-                                    if id == "default" {
-                                        "Focused Window".to_string()
-                                    } else {
-                                        id.to_string()
-                                    }
-                                })
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" + ")
+                    voxctrl_routing::targets_display_label(
+                        &active_target_id,
+                        &state_for_ticker.targets.lock().await,
+                    )
                 };
             }
 

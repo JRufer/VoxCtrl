@@ -12,19 +12,8 @@ use crate::state::AppState;
 #[tauri::command]
 pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload, String> {
     let active_target_id = state.active_target.lock().await.clone();
-    let target_label = {
-        let targets_guard = state.targets.lock().await;
-        targets_guard.iter()
-            .find(|t| t.id == active_target_id)
-            .map(|t| t.label.clone())
-            .unwrap_or_else(|| {
-                if active_target_id == "default" {
-                    "Focused Window".to_string()
-                } else {
-                    active_target_id.clone()
-                }
-            })
-    };
+    let target_label =
+        voxctrl_routing::targets_display_label(&active_target_id, &state.targets.lock().await);
 
     Ok(StatusPayload {
         recording: state.is_recording(),
@@ -102,43 +91,14 @@ pub async fn save_config(
     state.set_noise_suppression(new_config.audio.noise_suppression);
     state.set_overlay_enabled(new_config.ui.show_overlay);
 
-    // Dynamic TTS engine lifecycle management
+    // Dynamic TTS engine lifecycle management: a running worker takes the new
+    // settings live; one is started only when TTS was off until now.
     {
         let mut handle = state.tts_handle.lock().await;
-        let mut need_restart = true;
-
         if let Some(ref tts) = *handle {
             tts.update_config(new_config.tts.clone());
-            need_restart = false;
-        }
-
-        if need_restart {
-            if new_config.tts.enabled {
-                let app_handle = app.clone();
-                let app_handle_end = app.clone();
-                let app_handle_err = app.clone();
-                let state_clone = state.inner().clone();
-                let state_clone_end = state.inner().clone();
-                let new_tts = voxctrl_tts::TtsEngineWorker::start(
-                    new_config.tts.clone(),
-                    new_config.features.custom_vocabulary.clone(),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone.set_speaking(true);
-                        let _ = app_handle.emit("tts-playback-start", ());
-                    })),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone_end.set_speaking(false);
-                        let _ = app_handle_end.emit("tts-playback-end", ());
-                    })),
-                    Some(std::sync::Arc::new(move |msg: String| {
-                        let _ = app_handle_err.emit("tts-error", msg);
-                    })),
-                );
-                *handle = Some(new_tts.clone());
-                state.spawn_fifo_responders(new_tts).await;
-            } else {
-                *handle = None;
-            }
+        } else if new_config.tts.enabled {
+            *handle = Some(crate::services::start_tts_worker(&app, state.inner(), &new_config));
         }
     }
 
@@ -264,14 +224,8 @@ pub async fn save_targets(
     state.router.reload(targets).await;
     info!("Targets saved and router reloaded");
 
-    // Dynamically spawn new FIFO response pipe listeners if TTS is active
-    let tts_handle_opt = {
-        let guard = state.tts_handle.lock().await;
-        guard.clone()
-    };
-    if let Some(tts) = tts_handle_opt {
-        state.spawn_fifo_responders(tts).await;
-    }
+    // Start listeners for any response pipes the save added.
+    state.spawn_fifo_responders().await;
 
     Ok(())
 }

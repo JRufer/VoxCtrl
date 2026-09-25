@@ -116,6 +116,29 @@ pub enum DeliveryType {
     Command,
 }
 
+/// What the UI calls the built-in `default` target when it has no label.
+pub const DEFAULT_TARGET_LABEL: &str = "Focused Window";
+
+/// A human-readable name for a comma-separated list of target ids, as shown in
+/// the overlay, tray and command notices: each target's label (falling back to
+/// its id, or [`DEFAULT_TARGET_LABEL`] for `default`), joined with " + ".
+pub fn targets_display_label(target_ids: &str, targets: &[OutputTarget]) -> String {
+    target_ids
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(|id| {
+            targets
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.label.as_str())
+                .filter(|label| !label.is_empty())
+                .unwrap_or(if id == "default" { DEFAULT_TARGET_LABEL } else { id })
+        })
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
 // ── Per-target processing overrides ──────────────────────────────────────────
 
 /// None = inherit global config; Some(x) = override for this target.
