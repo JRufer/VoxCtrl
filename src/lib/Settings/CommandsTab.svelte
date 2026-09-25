@@ -268,24 +268,6 @@
     @apply text-[11px] text-[var(--text-muted)];
   }
 
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.small {
-    @apply p-1 px-2 text-[11px];
-  }
-
-  .btn-action.danger {
-    @apply text-red-400 border-red-400/20;
-  }
-  .btn-action.danger:hover {
-    @apply bg-red-400/10 border-red-400;
-  }
-
   .btn-add-wide {
     @apply w-full bg-[var(--accent2)] text-white border-none rounded-[var(--radius)] py-1.5 text-xs font-bold cursor-pointer transition-all duration-150 ease-out mb-4 flex justify-center items-center gap-2 shadow-[0_2px_6px_rgba(56,189,248,0.15)];
   }

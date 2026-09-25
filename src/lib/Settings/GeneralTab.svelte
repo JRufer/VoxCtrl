@@ -185,19 +185,8 @@
 <style lang="postcss">
   @reference "../../app.css";
 
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
   .hint.error {
     @apply text-red-400;
-  }
-
-  .btn-action:disabled {
-    @apply opacity-60 cursor-default;
   }
 
   .link {

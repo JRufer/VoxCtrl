@@ -959,31 +959,6 @@
     @apply text-xs text-[var(--text-muted)] m-0;
   }
 
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.primary {
-    @apply bg-[var(--accent)] text-white border-none;
-  }
-  .btn-action.primary:hover {
-    @apply opacity-90;
-  }
-
-  .btn-action.small {
-    @apply p-1 px-2 text-[11px];
-  }
-
-  .btn-action.danger {
-    @apply text-red-400 border-red-400/20;
-  }
-  .btn-action.danger:hover {
-    @apply bg-red-400/10 border-red-400;
-  }
-
   .btn-add-wide {
     @apply w-full bg-[var(--accent2)] text-white border-none rounded-[var(--radius)] py-1.5 text-xs font-bold cursor-pointer transition-all duration-150 ease-out mb-4 flex justify-center items-center gap-2 shadow-[0_2px_6px_rgba(56,189,248,0.15)];
   }
@@ -1086,7 +1061,6 @@
     @apply flex items-center gap-2 w-full;
   }
 
-
   .btn-remove-inline {
     @apply flex items-center justify-center box-border bg-red-500/8 border border-red-500/20 text-red-400 cursor-pointer text-xs font-bold px-3 py-1.5 rounded-[var(--radius)] transition-all duration-150 ease-out h-[34px];
   }
@@ -1135,7 +1109,6 @@
   p.hint code {
     @apply bg-[var(--color-obsidian-950)] text-[var(--color-accent-blue)] p-0.5 px-1 rounded font-mono text-[10px] border border-[var(--border)];
   }
-
 
   .validation-error-msg {
     @apply block mt-1 text-xs font-medium text-red-400 leading-normal;

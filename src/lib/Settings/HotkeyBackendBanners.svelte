@@ -186,18 +186,4 @@
   .manual-enable-actions {
     @apply mt-1;
   }
-
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.primary {
-    @apply bg-[var(--accent)] text-white border-none;
-  }
-  .btn-action.primary:hover {
-    @apply opacity-90;
-  }
 </style>
