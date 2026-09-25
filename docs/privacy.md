@@ -123,7 +123,7 @@ update check:
 | Trigger | Destination | Sends |
 |---|---|---|
 | Pressing "Check for updates" in Settings → General | `api.github.com/repos/JRufer/VoxCtrl/releases/latest` | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
-| Installing an offered update | `github.com` release download | Nothing beyond the request for the file |
+| Installing an offered update | `github.com` release download (the file and its `.minisig` signature) | Nothing beyond the request for the files |
 | Downloading a speech model | HuggingFace / the model host, on demand | Nothing beyond the request for the file |
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
 | Remote Speech Engine transcription (`backend = "remote-openai"`) | The speech-to-text endpoint you configured (LAN server or API) | 16 kHz mono WAV audio recorded during the gesture |
@@ -141,8 +141,11 @@ account, no install ID, and no way for it to carry one: GitHub is told which
 version of VoxCtrl is asking (because the API requires a `User-Agent`) and
 nothing more. What comes back is the release's tag, notes and file list, which
 is what the update window shows you. Nothing is downloaded or installed unless
-you press **Update and restart**, and a downloaded update is checked against the
-SHA-256 checksum GitHub publishes for it before it replaces anything.
+you press **Update and restart**. A downloaded update is then checked against the
+SHA-256 checksum GitHub publishes for it and — in a release build — against the
+release signature made by VoxCtrl's release workflow, before it replaces
+anything. A file that is not signed with VoxCtrl's key is never installed. See
+[release signing](release-signing.md).
 
 On a distro-packaged install (anything under `/usr`, `/opt` or `/nix/store`),
 "Update and restart" is unavailable — VoxCtrl detects that its files belong to
@@ -153,7 +156,8 @@ Once the app and its models are on disk, VoxCtrl runs fully air-gapped.
 
 **The code:** `crates/voxctrl-update/` is the whole of it — about 400 lines,
 with no dependency on the rest of the app. `release.rs` builds the one request,
-`apply.rs` downloads and verifies, `src-tauri/src/updater.rs` is the manual
+`apply.rs` downloads and checks the digest, `signature.rs` checks the release
+signature, `src-tauri/src/updater.rs` is the manual
 check command and what it shows.
 
 ---

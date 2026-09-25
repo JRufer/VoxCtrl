@@ -98,6 +98,8 @@ futures-util = "0.3"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# Release-signature verification for the self-updater (no dependencies of its own).
+minisign-verify = "0.3"
 base64 = "0.22"
 
 # Archive / download helpers

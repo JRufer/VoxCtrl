@@ -8,7 +8,8 @@
 //!    resolved — CPU or Vulkan AppImage, Windows installer — and returned as a
 //!    [`PendingUpdate`].
 //! 3. [`install`] downloads that asset beside the current one, verifies it
-//!    against GitHub's published checksum, and moves it into place.
+//!    against GitHub's published checksum and — in a release build — against
+//!    the release signature (see [`signature`]), and moves it into place.
 //! 4. The caller relaunches via [`apply::spawn_relaunch`] and exits.
 //!
 //! Nothing here decides *when* to check — VoxCtrl never checks on its own.
@@ -18,6 +19,7 @@
 pub mod apply;
 pub mod install;
 pub mod release;
+pub mod signature;
 pub mod version;
 
 use std::path::PathBuf;
@@ -62,6 +64,8 @@ pub struct UpdateInfo {
 pub struct PendingUpdate {
     pub info: UpdateInfo,
     pub asset: Option<ReleaseAsset>,
+    /// The `<asset>.minisig` published beside `asset`, when there is one.
+    pub signature: Option<ReleaseAsset>,
     pub kind: InstallKind,
 }
 
@@ -97,6 +101,17 @@ pub async fn check(current_version: &str, gpu_build: bool) -> Result<CheckOutcom
 /// The decision half of [`check`], with the network and the machine both passed
 /// in. Everything that can be got wrong lives here, and none of it needs either.
 pub fn evaluate(latest: &Release, current_version: &str, kind: InstallKind) -> CheckOutcome {
+    evaluate_with(latest, current_version, kind, signature::required())
+}
+
+/// [`evaluate`], with whether signatures are required passed in rather than
+/// taken from this build.
+pub fn evaluate_with(
+    latest: &Release,
+    current_version: &str,
+    kind: InstallKind,
+    signature_required: bool,
+) -> CheckOutcome {
     let up_to_date = CheckOutcome::UpToDate { current: current_version.to_string() };
 
     // A draft is an unfinished release the workflow has not published yet;
@@ -115,12 +130,26 @@ pub fn evaluate(latest: &Release, current_version: &str, kind: InstallKind) -> C
         .unwrap_or_else(|| latest.tag_name.clone());
 
     let asset = install::select_asset(&kind, &latest.assets).cloned();
+    let signature = asset
+        .as_ref()
+        .and_then(|a| signature::find(a, &latest.assets))
+        .cloned();
 
     // Self-updating needs both a supported installation *and* a file to
     // install. A release that shipped without this platform's artifact — a
     // build that failed in the matrix — is still worth telling the user about,
     // but "Update and restart" would have nothing to download.
     let (can_self_update, unsupported_reason) = match (kind.can_self_update(), asset.is_some()) {
+        // Said at check time, not after a 100 MB download: this build will not
+        // install an unsigned file, so the button must not pretend it can.
+        (true, true) if signature_required && signature.is_none() => (
+            false,
+            Some(format!(
+                "Release {} is not signed, so VoxCtrl will not install it automatically. \
+                 Download it from the release page only if you trust where it came from.",
+                latest.tag_name
+            )),
+        ),
         (true, true) => (true, None),
         (true, false) => (
             false,
@@ -152,8 +181,33 @@ pub fn evaluate(latest: &Release, current_version: &str, kind: InstallKind) -> C
             unsupported_reason,
         },
         asset,
+        signature,
         kind,
     }))
+}
+
+/// Check the downloaded file at `path` against its release signature, when
+/// this build requires one. Runs after the digest check, before anything is
+/// put in place.
+async fn verify_signature(
+    pending: &PendingUpdate,
+    asset: &ReleaseAsset,
+    client: &reqwest::Client,
+    path: &std::path::Path,
+) -> Result<()> {
+    let Some(public_key) = signature::public_key() else {
+        tracing::warn!("this build has no update-signing key; checking the digest only");
+        return Ok(());
+    };
+    let sig_asset = pending.signature.as_ref().ok_or_else(|| {
+        UpdateError::Other(format!(
+            "{} is not signed, so it was not installed.",
+            asset.name
+        ))
+    })?;
+    let text = signature::fetch(client, sig_asset).await?;
+    signature::verify_file_blocking(path, text, public_key, asset.name.clone(), pending.info.tag.clone())
+        .await
 }
 
 /// Download and install a pending update, returning the path to launch
@@ -184,6 +238,7 @@ pub async fn install(
             let result = async {
                 apply::download(&client, asset, &staged, &mut on_progress).await?;
                 apply::verify_digest_blocking(&staged, asset.digest.as_deref()).await?;
+                verify_signature(pending, asset, &client, &staged).await?;
                 apply::install_appimage(&staged, path)
             }
             .await;
@@ -207,7 +262,8 @@ pub async fn install(
 
             let result = async {
                 apply::download(&client, asset, &dest, &mut on_progress).await?;
-                apply::verify_digest_blocking(&dest, asset.digest.as_deref()).await
+                apply::verify_digest_blocking(&dest, asset.digest.as_deref()).await?;
+                verify_signature(pending, asset, &client, &dest).await
             }
             .await;
 
@@ -231,6 +287,12 @@ pub async fn install(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Shadows the crate's `evaluate`, so these tests describe the decision
+    /// itself and pass the same whether or not this build has a signing key.
+    fn evaluate(latest: &Release, current_version: &str, kind: InstallKind) -> CheckOutcome {
+        evaluate_with(latest, current_version, kind, false)
+    }
 
     fn release_with(tag: &str, assets: Vec<ReleaseAsset>) -> Release {
         Release {
@@ -346,9 +408,43 @@ mod tests {
         let pending = PendingUpdate {
             info: evaluate(&rel, "0.3.10", appimage_kind()).available().unwrap().info.clone(),
             asset: Some(appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")),
+            signature: None,
             kind: InstallKind::Unmanaged,
         };
         let err = install(&pending, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("build directory"), "{err}");
+    }
+
+    const SIGNED_ASSET: &str = "VoxCtrl_0.9.0_amd64-linux-x86_64.AppImage";
+
+    /// A build that requires signatures says so when the update is found —
+    /// before anyone downloads 100 MB — rather than failing at the end.
+    #[test]
+    fn an_unsigned_release_is_not_offered_for_install_when_signatures_are_required() {
+        let rel = release_with("v0.9.0", vec![appimage_asset(SIGNED_ASSET)]);
+        let outcome = evaluate_with(&rel, "0.3.10", appimage_kind(), true);
+        let pending = outcome.available().expect("still worth telling the user about");
+        assert!(!pending.info.can_self_update);
+        assert!(pending.info.unsupported_reason.as_ref().unwrap().contains("not signed"));
+    }
+
+    #[test]
+    fn a_signed_release_is_installable_and_carries_its_signature() {
+        let rel = release_with(
+            "v0.9.0",
+            vec![appimage_asset(SIGNED_ASSET), appimage_asset(&format!("{SIGNED_ASSET}.minisig"))],
+        );
+        let outcome = evaluate_with(&rel, "0.3.10", appimage_kind(), true);
+        let pending = outcome.available().unwrap();
+        assert!(pending.info.can_self_update, "{:?}", pending.info.unsupported_reason);
+        assert_eq!(pending.asset.as_ref().unwrap().name, SIGNED_ASSET, "the signature was picked as the update");
+        assert_eq!(pending.signature.as_ref().unwrap().name, format!("{SIGNED_ASSET}.minisig"));
+    }
+
+    /// Development builds carry no key and keep today's digest-only behavior.
+    #[test]
+    fn an_unsigned_release_stays_installable_where_signatures_are_not_required() {
+        let rel = release_with("v0.9.0", vec![appimage_asset(SIGNED_ASSET)]);
+        assert!(evaluate_with(&rel, "0.3.10", appimage_kind(), false).available().unwrap().info.can_self_update);
     }
 }
