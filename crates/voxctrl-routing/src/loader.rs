@@ -352,10 +352,15 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
     } else {
         vec![r.target_id.clone()]
     };
+    // A punctuation key saved by an older recorder as e.g. "KEY_." never
+    // matched anything a backend reports; the canonical name makes it fire.
+    // Rewritten on disk the next time the bindings are saved.
+    let mut keys = r.keys;
+    voxctrl_config::canonicalize_key_names(&mut keys);
     HotkeyBinding {
         id: r.id,
         label: r.label,
-        keys: r.keys,
+        keys,
         gesture,
         target_id: r.target_id,
         target_ids,

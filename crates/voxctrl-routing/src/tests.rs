@@ -2369,3 +2369,36 @@ mod display_label_tests {
         assert_eq!(targets_display_label(" notes, ,missing ", &targets), "My Notes + missing");
     }
 }
+
+/// Older recorders saved a punctuation key under the typed character ("KEY_."),
+/// a name no backend reports, so the shortcut never fired. Loading rewrites it
+/// to the evdev name, and leaves every canonical name alone.
+#[test]
+fn legacy_punctuation_key_names_load_as_evdev_names() {
+    use crate::loader::load_bindings;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("bindings.toml"),
+        r#"format_version = "1.1"
+
+[[binding]]
+id = "punct"
+label = "Punctuation"
+keys = ["KEY_LEFTCTRL", "KEY_.", "KEY_?"]
+gesture = "hold"
+target_id = "default"
+
+[[binding]]
+id = "plain"
+label = "Plain"
+keys = ["KEY_LEFTMETA", "KEY_SPACE"]
+gesture = "hold"
+target_id = "default"
+"#,
+    )
+    .unwrap();
+
+    let loaded = load_bindings(dir.path()).unwrap();
+    assert_eq!(loaded[0].keys, vec!["KEY_LEFTCTRL", "KEY_DOT", "KEY_SLASH"]);
+    assert_eq!(loaded[1].keys, vec!["KEY_LEFTMETA", "KEY_SPACE"]);
+}

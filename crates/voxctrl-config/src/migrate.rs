@@ -49,3 +49,45 @@ pub(crate) fn migrate_cloned_voices_dir() {
         migrate_cloned_voices_dir_at(&base);
     }
 }
+
+/// The canonical evdev name for a key name an older VoxCtrl may have saved, or
+/// `None` when `name` is already canonical (or not one we know to rewrite).
+///
+/// - `KEY_ESCAPE` → `KEY_ESC`: the evdev crate's name is `KEY_ESC`.
+/// - Punctuation: the recorders used to build a name from the typed character,
+///   so `.` was saved as `KEY_.` — a name no backend reports, so the shortcut
+///   could never fire. The unshifted and shifted characters of a US layout are
+///   both mapped, since Shift changes the character typed on the same key.
+///
+/// Numpad digits were saved as the top-row digit (`KEY_1`), which is a real
+/// key name, so those cannot be told apart and are left alone.
+pub fn canonical_key_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "KEY_ESCAPE" => "KEY_ESC",
+        "KEY_." | "KEY_>" => "KEY_DOT",
+        "KEY_," | "KEY_<" => "KEY_COMMA",
+        "KEY_/" | "KEY_?" => "KEY_SLASH",
+        "KEY_;" | "KEY_:" => "KEY_SEMICOLON",
+        "KEY_'" | "KEY_\"" => "KEY_APOSTROPHE",
+        "KEY_`" | "KEY_~" => "KEY_GRAVE",
+        "KEY_-" | "KEY__" => "KEY_MINUS",
+        "KEY_=" | "KEY_+" => "KEY_EQUAL",
+        "KEY_[" | "KEY_{" => "KEY_LEFTBRACE",
+        "KEY_]" | "KEY_}" => "KEY_RIGHTBRACE",
+        "KEY_\\" | "KEY_|" => "KEY_BACKSLASH",
+        _ => return None,
+    })
+}
+
+/// Rewrite every legacy key name in `keys` to its canonical spelling,
+/// returning whether anything changed.
+pub fn canonicalize_key_names(keys: &mut [String]) -> bool {
+    let mut changed = false;
+    for key in keys.iter_mut() {
+        if let Some(canonical) = canonical_key_name(key) {
+            *key = canonical.to_string();
+            changed = true;
+        }
+    }
+    changed
+}

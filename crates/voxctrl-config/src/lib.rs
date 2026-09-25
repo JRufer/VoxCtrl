@@ -32,6 +32,7 @@ pub use openai::*;
 pub use tts::*;
 pub use mcp::*;
 use migrate::*;
+pub use migrate::{canonical_key_name, canonicalize_key_names};
 pub use store::*;
 pub use paths::*;
 pub use validate::*;

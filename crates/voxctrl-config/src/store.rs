@@ -96,12 +96,9 @@ impl Config {
             migrated = true;
         }
 
-        // Migrate legacy "KEY_ESCAPE" → "KEY_ESC" (evdev crate uses KEY_ESC as the
-        // canonical debug name via stringify!(KEY_ESC)).
-        for key in data.tts.stop_key.iter_mut().filter(|k| k.as_str() == "KEY_ESCAPE") {
-            *key = "KEY_ESC".to_string();
-            migrated = true;
-        }
+        // Legacy key names in the stop key ("KEY_ESCAPE", or a punctuation key
+        // saved as e.g. "KEY_.") → the evdev names the backends report.
+        migrated |= canonicalize_key_names(&mut data.tts.stop_key);
 
         // Migrate legacy default OpenAI timeout (8s) to the new default (30s) to prevent timeouts
         if data.openai.timeout_secs == 8 {

@@ -567,3 +567,18 @@ fn early_command_detection_defaults_on_for_older_configs() {
     .unwrap();
     assert!(features.early_command_detection);
 }
+
+#[test]
+fn legacy_key_names_become_the_names_the_backends_report() {
+    assert_eq!(canonical_key_name("KEY_ESCAPE"), Some("KEY_ESC"));
+    assert_eq!(canonical_key_name("KEY_."), Some("KEY_DOT"));
+    assert_eq!(canonical_key_name("KEY_>"), Some("KEY_DOT"), "shifted period");
+    assert_eq!(canonical_key_name("KEY_\\"), Some("KEY_BACKSLASH"));
+    assert_eq!(canonical_key_name("KEY_DOT"), None, "already canonical");
+    assert_eq!(canonical_key_name("KEY_1"), None, "a real key is left alone");
+
+    let mut keys = vec!["KEY_LEFTCTRL".to_string(), "KEY_/".to_string()];
+    assert!(canonicalize_key_names(&mut keys));
+    assert_eq!(keys, vec!["KEY_LEFTCTRL", "KEY_SLASH"]);
+    assert!(!canonicalize_key_names(&mut keys), "a second pass changes nothing");
+}

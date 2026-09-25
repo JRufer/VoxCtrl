@@ -150,7 +150,19 @@ fn keysym_name(key: &str) -> Option<String> {
         "LEFTBRACE" => "bracketleft".to_string(),
         "RIGHTBRACE" => "bracketright".to_string(),
         "CAPSLOCK" => "Caps_Lock".to_string(),
+        "KPPLUS" => "KP_Add".to_string(),
+        "KPMINUS" => "KP_Subtract".to_string(),
+        "KPASTERISK" => "KP_Multiply".to_string(),
+        "KPSLASH" => "KP_Divide".to_string(),
+        "KPDOT" => "KP_Decimal".to_string(),
+        "KPEQUAL" => "KP_Equal".to_string(),
         _ => {
+            // Numpad digits: KEY_KP0..KEY_KP9 → KP_0..KP_9.
+            if let Some(d) = name.strip_prefix("KP") {
+                if d.len() == 1 && d.chars().all(|c| c.is_ascii_digit()) {
+                    return Some(format!("KP_{d}"));
+                }
+            }
             if let Some(n) = name.strip_prefix('F') {
                 if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
                     return Some(format!("F{n}"));
@@ -325,6 +337,27 @@ mod tests {
     #[test]
     fn an_empty_capture_is_rejected() {
         assert_eq!(accelerator(&[]), Err(TriggerProblem::Empty));
+    }
+
+    /// Every key the Settings recorder can produce for punctuation and the
+    /// numpad has to translate, or the portal refuses the shortcut outright.
+    #[test]
+    fn punctuation_and_numpad_keys_translate_to_keysyms() {
+        for (key, sym) in [
+            ("KEY_DOT", "period"),
+            ("KEY_COMMA", "comma"),
+            ("KEY_SLASH", "slash"),
+            ("KEY_KP0", "KP_0"),
+            ("KEY_KP9", "KP_9"),
+            ("KEY_KPPLUS", "KP_Add"),
+            ("KEY_KPSLASH", "KP_Divide"),
+        ] {
+            assert_eq!(
+                accelerator(&keys(&["KEY_LEFTCTRL", key])).unwrap(),
+                format!("CTRL+{sym}"),
+                "{key}"
+            );
+        }
     }
 
     #[test]

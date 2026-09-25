@@ -366,10 +366,30 @@ const KEYCAP_LABELS: Record<string, string> = {
   KEY_TAB: "Tab",
   KEY_BACKSPACE: "Backspace",
   KEY_DELETE: "Delete",
+  KEY_MINUS: "-",
+  KEY_EQUAL: "=",
+  KEY_LEFTBRACE: "[",
+  KEY_RIGHTBRACE: "]",
+  KEY_BACKSLASH: "\\",
+  KEY_SEMICOLON: ";",
+  KEY_APOSTROPHE: "'",
+  KEY_GRAVE: "`",
+  KEY_COMMA: ",",
+  KEY_DOT: ".",
+  KEY_SLASH: "/",
+  KEY_KPPLUS: "Num +",
+  KEY_KPMINUS: "Num -",
+  KEY_KPASTERISK: "Num *",
+  KEY_KPSLASH: "Num /",
+  KEY_KPDOT: "Num .",
+  KEY_KPENTER: "Num Enter",
+  KEY_KPEQUAL: "Num =",
 };
 
 /** Human label for an evdev key name, for keycaps and summaries. */
 export function keycapLabel(evdev: string): string {
+  const kpDigit = /^KEY_KP(\d)$/.exec(evdev);
+  if (kpDigit) return `Num ${kpDigit[1]}`;
   return KEYCAP_LABELS[evdev] ?? evdev.replace(/^KEY_/, "");
 }
 
