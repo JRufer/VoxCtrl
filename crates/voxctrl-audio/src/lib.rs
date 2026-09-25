@@ -10,7 +10,7 @@ use std::{
 use anyhow::{Context, Result};
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleRate, StreamConfig,
+    StreamConfig,
 };
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{info, warn};
@@ -245,6 +245,12 @@ struct CaptureProcessor {
     monitoring: Arc<AtomicBool>,
     noise_suppression: Arc<AtomicBool>,
     hw_rate: u32,
+    /// Interleaved channels per frame the device delivers. Everything after
+    /// the downmix works on mono.
+    channels: usize,
+    /// Reused mono buffer for devices that only capture in stereo (or more),
+    /// so the downmix never allocates on the audio thread.
+    mono: Vec<f32>,
     needs_resample: bool,
     /// Built on the first buffer that actually needs it, so a stream that runs
     /// with noise suppression off never pays for the model, and a mid-session
@@ -276,12 +282,14 @@ struct CaptureProcessor {
 }
 
 impl CaptureProcessor {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         gain: Arc<AtomicU32>,
         recording: Arc<AtomicBool>,
         monitoring: Arc<AtomicBool>,
         noise_suppression: Arc<AtomicBool>,
         hw_rate: u32,
+        channels: u16,
         needs_resample: bool,
         audio_ready: Option<Arc<AtomicBool>>,
     ) -> Self {
@@ -292,6 +300,8 @@ impl CaptureProcessor {
             monitoring,
             noise_suppression,
             hw_rate,
+            channels: channels.max(1) as usize,
+            mono: Vec::new(),
             needs_resample,
             denoiser: None,
             denoising: false,
@@ -303,7 +313,21 @@ impl CaptureProcessor {
         }
     }
 
+    /// Process one buffer of interleaved device samples.
     fn feed(&mut self, data: &[f32]) -> Captured {
+        if self.channels == 1 {
+            return self.feed_mono(data);
+        }
+        // Taken out and put back so the mono view can be borrowed while the
+        // rest of the chain mutates `self`.
+        let mut mono = std::mem::take(&mut self.mono);
+        downmix_into(data, self.channels, &mut mono);
+        let out = self.feed_mono(&mono);
+        self.mono = mono;
+        out
+    }
+
+    fn feed_mono(&mut self, data: &[f32]) -> Captured {
         // Relaxed is enough for every flag read here: each one is an
         // independent switch whose exact flip instant does not order any other
         // memory, and a buffer either side of the change is equally correct.
@@ -407,6 +431,7 @@ fn make_input_callback(
     tx: Sender<AudioChunk>,
     noise_suppression: Arc<AtomicBool>,
     hw_rate: u32,
+    channels: u16,
     needs_resample: bool,
     audio_ready: Option<Arc<AtomicBool>>,
 ) -> impl FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static {
@@ -416,6 +441,7 @@ fn make_input_callback(
         monitoring,
         noise_suppression,
         hw_rate,
+        channels,
         needs_resample,
         audio_ready,
     );
@@ -464,6 +490,7 @@ fn open_stream(
                 tx.clone(),
                 noise_suppression.clone(),
                 hw_rate,
+                hw_config.channels,
                 needs_resample,
                 audio_ready.clone(),
             ),
@@ -511,7 +538,7 @@ fn capture_loop(
 
     let mut hw_config = negotiate_config(&device)?;
     let mut hw_rate = hw_config.sample_rate.0;
-    info!("Hardware sample rate: {hw_rate} Hz");
+    info!("Hardware sample rate: {hw_rate} Hz, {} channel(s)", hw_config.channels);
 
     let mut needs_resample = hw_rate != TARGET_SAMPLE_RATE;
 
@@ -671,13 +698,41 @@ fn capture_loop(
     }
 }
 
+/// The stream format to open `device` with: its default sample rate, and mono
+/// when the device offers mono at that rate — otherwise its own channel count,
+/// downmixed in the capture callback.
+///
+/// Mono used to be requested unconditionally. Plenty of devices only capture
+/// in stereo — many USB microphones, and WASAPI's shared-mode mix format is
+/// often two channels — and those refuse a mono stream outright, so the
+/// microphone never opened.
 fn negotiate_config(device: &cpal::Device) -> Result<StreamConfig> {
-    let supported = device.default_input_config()?;
+    let default = device.default_input_config()?;
+    let rate = default.sample_rate();
+    let mono_supported = device
+        .supported_input_configs()
+        .map(|mut configs| {
+            configs.any(|c| {
+                c.channels() == 1 && c.min_sample_rate() <= rate && rate <= c.max_sample_rate()
+            })
+        })
+        .unwrap_or(false);
     Ok(StreamConfig {
-        channels: 1,
-        sample_rate: SampleRate(supported.sample_rate().0),
+        channels: if mono_supported { 1 } else { default.channels() },
+        sample_rate: rate,
         buffer_size: cpal::BufferSize::Default,
     })
+}
+
+/// Average interleaved `channels`-wide frames of `data` into mono, replacing
+/// the contents of `out`. A trailing partial frame is dropped.
+fn downmix_into(data: &[f32], channels: usize, out: &mut Vec<f32>) {
+    out.clear();
+    let scale = 1.0 / channels as f32;
+    out.extend(
+        data.chunks_exact(channels)
+            .map(|frame| frame.iter().sum::<f32>() * scale),
+    );
 }
 
 fn rms(samples: &[f32]) -> f32 {
@@ -763,6 +818,7 @@ mod capture_tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
             TARGET_SAMPLE_RATE,
+            1,
             false,
             None,
         )
@@ -873,6 +929,7 @@ mod capture_tests {
             monitoring.clone(),
             Arc::new(AtomicBool::new(false)),
             TARGET_SAMPLE_RATE,
+            1,
             false,
             None,
         );
@@ -915,6 +972,7 @@ mod capture_tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
             TARGET_SAMPLE_RATE,
+            1,
             false,
             Some(ready.clone()),
         );
@@ -930,5 +988,39 @@ mod capture_tests {
             ready.load(Ordering::SeqCst),
             "a later quiet buffer must not un-latch a confirmed stream"
         );
+    }
+
+    #[test]
+    fn stereo_frames_are_averaged_to_mono() {
+        let mut out = vec![9.0; 4];
+        downmix_into(&[1.0, 3.0, -1.0, 1.0, 0.5], 2, &mut out);
+        assert_eq!(out, vec![2.0, 0.0], "frames were not averaged, or the partial frame was kept");
+    }
+
+    /// A stereo-only microphone delivers interleaved frames; everything
+    /// downstream — pre-roll, gain, the level and the recording — must see
+    /// one sample per frame, not twice as many.
+    #[test]
+    fn a_stereo_stream_records_mono() {
+        let recording = Arc::new(AtomicBool::new(false));
+        let mut p = CaptureProcessor::new(
+            Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            recording.clone(),
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicBool::new(false)),
+            TARGET_SAMPLE_RATE,
+            2,
+            false,
+            None,
+        );
+
+        let idle = p.feed(&[0.2, 0.4, 0.2, 0.4]);
+        assert!((idle.level.unwrap() - 0.3).abs() < 1e-6, "level was not taken from the mono mix");
+        assert_eq!(p.preroll.len(), 2, "pre-roll held interleaved samples");
+
+        recording.store(true, Ordering::SeqCst);
+        let chunk = p.feed(&[1.0, 0.0, 0.0, 1.0, 0.5, 0.5]).chunk.unwrap();
+        assert_eq!(chunk.len(), 2 + 3);
+        assert!(chunk[2..].iter().all(|&s| (s - 0.5).abs() < 1e-6));
     }
 }
