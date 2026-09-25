@@ -1171,7 +1171,7 @@
   />
 {/if}
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
 
   .backend-banner {

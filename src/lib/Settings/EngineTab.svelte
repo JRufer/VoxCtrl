@@ -716,7 +716,7 @@
   {/if}
 </section>
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
 
   .model-status-container {
