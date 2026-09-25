@@ -592,37 +592,125 @@ pub fn run_worker_with_config(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_language_is_none_for_all_whisper_devices() {
-        // Fix regression: previously read moonshine.language when device != "auto".
-        // Now language is always None (Whisper auto-detects), regardless of device.
-        for device in &["auto", "cpu", "cuda", "vulkan"] {
-            let mut cfg = AppConfig::default();
-            cfg.engine.whisper_cpp.device = device.to_string();
-            cfg.engine.moonshine.language = "fr".to_string();
-            let engine = InferenceEngine::new(Arc::new(cfg));
-            // process() is not called (no model), but we can verify the field read
-            // via the build_post_config path — just confirm engine creation is fine.
-            assert_eq!(engine.config.engine.whisper_cpp.device, *device);
-            // The language used internally is always None; moonshine.language must
-            // not bleed into whisper inference even when device != "auto".
-            let _ = engine; // ensure engine is not optimised out
+    /// A backend that records every request it is given and answers with a
+    /// fixed transcript, so `process` can be driven end to end without a model.
+    struct RecordingBackend {
+        transcript: &'static str,
+        requests: Arc<std::sync::Mutex<Vec<TranscribeRequest>>>,
+    }
+
+    impl TranscriptionBackend for RecordingBackend {
+        fn name(&self) -> &str {
+            "recording"
+        }
+        fn load(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn transcribe(&self, req: &TranscribeRequest) -> Result<backend::TranscriptionResult> {
+            self.requests.lock().unwrap().push(req.clone());
+            Ok(backend::TranscriptionResult {
+                text: self.transcript.to_string(),
+                language: "en".into(),
+                language_probability: 1.0,
+                duration_ms: 0,
+                inference_ms: 1,
+                word_timestamps: None,
+            })
+        }
+        fn unload(&mut self) {}
+        fn is_loaded(&self) -> bool {
+            true
         }
     }
 
+    fn recording_engine(
+        cfg: AppConfig,
+        transcript: &'static str,
+    ) -> (InferenceEngine, Arc<std::sync::Mutex<Vec<TranscribeRequest>>>) {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let engine = InferenceEngine {
+            config: Arc::new(cfg),
+            backend: Box::new(RecordingBackend { transcript, requests: requests.clone() }),
+        };
+        (engine, requests)
+    }
+
+    /// Loud enough to pass the noise gate at any sensitivity.
+    fn speech() -> Vec<f32> {
+        vec![0.1; 1600]
+    }
+
+    fn request(audio: Vec<f32>) -> InferenceRequest {
+        InferenceRequest {
+            audio,
+            // An id no saved target has, so no per-target override applies.
+            target_id: "__inference_test_target__".into(),
+            binding_id: None,
+            is_interim: false,
+            session_id: 7,
+        }
+    }
+
+    /// Only whisper.cpp takes a language hint, and only from its own setting:
+    /// the Moonshine language (a regression once read it whenever the device
+    /// was not "auto") must never reach it, whatever the device.
     #[test]
-    fn test_process_uses_in_memory_config_not_disk() {
-        // Fix regression: process() must not re-read config.json from disk.
-        // Verify: modifying the config file on disk does NOT affect InferenceEngine
-        // behaviour (the engine uses the Arc<AppConfig> given at construction).
+    fn whisper_gets_only_its_own_language_setting() {
+        for device in ["auto", "cpu", "cuda", "vulkan"] {
+            let mut cfg = AppConfig::default();
+            cfg.engine.whisper_cpp.device = device.to_string();
+            cfg.engine.moonshine.language = "fr".to_string();
+
+            for (whisper_lang, expected) in [("auto", None), ("", None), (" de ", Some("de"))] {
+                cfg.engine.whisper_cpp.language = whisper_lang.to_string();
+                let (engine, requests) = recording_engine(cfg.clone(), "hello");
+                engine.process(request(speech())).unwrap();
+                assert_eq!(
+                    requests.lock().unwrap()[0].language.as_deref(),
+                    expected,
+                    "device {device}, whisper language {whisper_lang:?}"
+                );
+            }
+        }
+
+        // Other backends read their language from their own config.
+        let mut cfg = AppConfig::default();
+        cfg.engine.backend = BackendChoice::Moonshine;
+        cfg.engine.whisper_cpp.language = "de".to_string();
+        let (engine, requests) = recording_engine(cfg, "hello");
+        engine.process(request(speech())).unwrap();
+        assert_eq!(requests.lock().unwrap()[0].language, None);
+    }
+
+    /// `process` works from the engine's in-memory config — no config.json
+    /// read per utterance — and a config pushed through `update_config` (what
+    /// `save_config` does on every save) applies to the very next utterance.
+    #[test]
+    fn process_uses_the_engine_config_and_follows_updates() {
         let mut cfg = AppConfig::default();
         cfg.features.remove_fillers = true;
-        let engine = InferenceEngine::new(Arc::new(cfg.clone()));
-        // Engine should carry the config we gave it, not whatever is on disk.
-        assert!(engine.config.features.remove_fillers);
-        // If a fresh config with remove_fillers=false were on disk it should not
-        // override us (we simply verify the field is still true here).
-        assert!(engine.config.features.remove_fillers);
+        cfg.features.custom_vocabulary = vec!["Kubernetes".into()];
+        let (mut engine, requests) = recording_engine(cfg.clone(), "um hello world");
+
+        let first = engine.process(request(speech())).unwrap();
+        assert!(!first.text.to_lowercase().contains("um"), "fillers kept: {:?}", first.text);
+        assert_eq!(first.raw_text, "um hello world");
+        assert_eq!(first.session_id, 7);
+        let prompt = requests.lock().unwrap()[0].initial_prompt.clone().unwrap();
+        assert!(prompt.contains("Kubernetes"), "vocabulary missing from prompt: {prompt}");
+
+        cfg.features.remove_fillers = false;
+        assert!(!engine.update_config(Arc::new(cfg)), "a features change rebuilt the backend");
+        let second = engine.process(request(speech())).unwrap();
+        assert!(second.text.to_lowercase().contains("um"), "update ignored: {:?}", second.text);
+    }
+
+    #[test]
+    fn silence_is_gated_before_the_backend_runs() {
+        let (engine, requests) = recording_engine(AppConfig::default(), "Thank you.");
+        let out = engine.process(request(vec![0.0; 1600])).unwrap();
+        assert!(out.text.is_empty() && out.error.is_none());
+        assert!(requests.lock().unwrap().is_empty(), "silent audio reached the backend");
     }
 
     #[test]
