@@ -45,7 +45,7 @@ fn test_mcp_config_roundtrip() {
         response_pipe: None,
     };
 
-    save_targets(&[target.clone()], &temp_dir).unwrap();
+    save_targets(std::slice::from_ref(&target), &temp_dir).unwrap();
     let loaded = load_targets(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
@@ -197,11 +197,11 @@ fn test_hotkey_binding_multi_target_roundtrip() {
     assert_eq!(binding.resolved_target_ids(), vec!["target1", "target2"]);
     assert_eq!(binding.target_ids_string(), "target1,target2");
 
-    save_bindings(&[binding.clone()], &temp_dir).unwrap();
+    save_bindings(std::slice::from_ref(&binding), &temp_dir).unwrap();
     let loaded = load_bindings(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
-    save_bindings(&[binding.clone()], &temp_dir).unwrap();
+    save_bindings(std::slice::from_ref(&binding), &temp_dir).unwrap();
     let loaded = load_bindings(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
@@ -1341,7 +1341,7 @@ fn test_strip_newlines_config_roundtrip() {
         response_pipe: None,
     };
 
-    save_targets(&[target.clone()], &temp_dir).unwrap();
+    save_targets(std::slice::from_ref(&target), &temp_dir).unwrap();
     let loaded = load_targets(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);

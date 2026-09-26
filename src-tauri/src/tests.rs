@@ -636,6 +636,7 @@ fn hotkey_status_honours_the_kde_manual_enable_test_override() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_prefers_the_kde_module_when_available() {
     let _lock = crate::test_utils::get_env_lock().lock().unwrap();
     std::env::set_var("VOXCTRL_FAKE_COMMANDS", "kcmshell6,gnome-control-center");
@@ -649,6 +650,7 @@ async fn open_shortcut_settings_prefers_the_kde_module_when_available() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_falls_back_down_the_candidate_list() {
     // Only the last-resort GNOME panel is "installed" — the command must
     // still succeed by walking past every unavailable candidate first,
@@ -665,6 +667,7 @@ async fn open_shortcut_settings_falls_back_down_the_candidate_list() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_explains_itself_when_nothing_is_installed() {
     let _lock = crate::test_utils::get_env_lock().lock().unwrap();
     std::env::set_var("VOXCTRL_FAKE_COMMANDS", "");
@@ -784,7 +787,7 @@ async fn test_speak_target_delivery() {
 
     let spoken = Arc::new(Mutex::new(String::new()));
     let spoken_clone = spoken.clone();
-    let _ = voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
+    voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
         *spoken_clone.lock().unwrap() = text.to_string();
     }));
 

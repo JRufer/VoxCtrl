@@ -375,26 +375,21 @@ mod tests {
     }
 
     impl McpCallbacks for FakeApp {
-        fn transcribe_voice(
-            &self,
-            timeout_secs: f64,
-        ) -> impl std::future::Future<Output = Result<String>> + Send {
-            async move {
-                self.seen.store(timeout_secs.to_bits(), Ordering::SeqCst);
-                Ok("hello".to_string())
-            }
+        async fn transcribe_voice(&self, timeout_secs: f64) -> Result<String> {
+            self.seen.store(timeout_secs.to_bits(), Ordering::SeqCst);
+            Ok("hello".to_string())
         }
 
-        fn speak_text(&self, _text: String) -> impl std::future::Future<Output = Result<()>> + Send {
-            async move { Ok(()) }
+        async fn speak_text(&self, _text: String) -> Result<()> {
+            Ok(())
         }
 
-        fn get_status(&self) -> impl std::future::Future<Output = (bool, bool)> + Send {
-            async move { (false, false) }
+        async fn get_status(&self) -> (bool, bool) {
+            (false, false)
         }
 
-        fn default_record_timeout(&self) -> impl std::future::Future<Output = f64> + Send {
-            async move { self.configured_timeout }
+        async fn default_record_timeout(&self) -> f64 {
+            self.configured_timeout
         }
     }
 

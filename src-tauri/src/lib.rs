@@ -133,6 +133,13 @@ pub mod test_utils {
     use std::sync::{Mutex, OnceLock};
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+    /// Serializes tests that change process-wide environment variables.
+    ///
+    /// Async tests hold it across `.await` on purpose: the environment has to
+    /// stay set for the whole test. That is sound here because every
+    /// `#[tokio::test]` runs on its own thread and runtime, so a test waiting
+    /// for the lock blocks only itself; those tests allow
+    /// `clippy::await_holding_lock` for that reason.
     pub fn get_env_lock() -> &'static Mutex<()> {
         ENV_LOCK.get_or_init(|| Mutex::new(()))
     }
@@ -231,7 +238,7 @@ pub fn run() {
             ) {
             }
 
-            let domain = b"libayatana-appindicator\0".as_ptr() as *const std::os::raw::c_char;
+            let domain = c"libayatana-appindicator".as_ptr();
             g_log_set_handler(domain, 16, Some(dummy_log_handler), std::ptr::null_mut());
         }
     }
@@ -394,9 +401,7 @@ pub fn run() {
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
 
     {
-        let audio_cfg = cfg_data.audio.clone();
         let recorder = voxctrl_audio::AudioRecorder::new(
-            audio_cfg,
             app_state.recording.clone(),
             app_state.monitoring.clone(),
             app_state.dynamic_stream.clone(),
@@ -531,13 +536,13 @@ pub fn run() {
             }
 
             // Start the TTS worker and the response-pipe listeners
-            services::setup_tts_and_fifos(&app.handle(), app_state.clone());
+            services::setup_tts_and_fifos(app.handle(), app_state.clone());
 
             // Register Speak target callback
-            services::register_speak_target(&app.handle());
+            services::register_speak_target(app.handle());
 
             // Register Command trigger target callback
-            services::register_command_trigger_target(&app.handle());
+            services::register_command_trigger_target(app.handle());
 
             // Setup watcher for hotkey permissions
             #[cfg(target_os = "linux")]

@@ -147,13 +147,15 @@ fn tts_json(body: &str) -> TtsConfig {
 /// must hold that token exactly once.
 #[test]
 fn migrates_per_engine_hf_tokens_onto_one_key() {
-    let mut data = AppConfig::default();
-    data.tts = tts_json(
-        r#"{"enabled": true, "engine": "pocket_tts", "voice": "v",
-            "stop_key": ["KEY_ESC"], "response_overlay": true,
-            "pocket_tts": {"voice": "alba", "hf_token": "hf_from_pocket"},
-            "breeze_tts_2": {"hf_token": "hf_from_pocket"}}"#,
-    );
+    let mut data = AppConfig {
+        tts: tts_json(
+            r#"{"enabled": true, "engine": "pocket_tts", "voice": "v",
+                "stop_key": ["KEY_ESC"], "response_overlay": true,
+                "pocket_tts": {"voice": "alba", "hf_token": "hf_from_pocket"},
+                "breeze_tts_2": {"hf_token": "hf_from_pocket"}}"#,
+        ),
+        ..Default::default()
+    };
     assert_eq!(
         data.tts.pocket_tts.legacy_hf_token.as_deref(),
         Some("hf_from_pocket"),
@@ -177,11 +179,13 @@ fn migrates_per_engine_hf_tokens_onto_one_key() {
 /// A token set only on Breeze is lifted too — either copy will do.
 #[test]
 fn migrates_a_breeze_only_token() {
-    let mut data = AppConfig::default();
-    data.tts = tts_json(
-        r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
-            "response_overlay": true, "breeze_tts_2": {"hf_token": "hf_from_breeze"}}"#,
-    );
+    let mut data = AppConfig {
+        tts: tts_json(
+            r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
+                "response_overlay": true, "breeze_tts_2": {"hf_token": "hf_from_breeze"}}"#,
+        ),
+        ..Default::default()
+    };
 
     assert!(migrate_hf_token(&mut data));
     assert_eq!(data.tts.hf_token.as_deref(), Some("hf_from_breeze"));
@@ -190,11 +194,13 @@ fn migrates_a_breeze_only_token() {
 /// A config that already has the single key keeps it, and needs no rewrite.
 #[test]
 fn a_config_with_one_token_is_left_alone() {
-    let mut data = AppConfig::default();
-    data.tts = tts_json(
-        r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
-            "response_overlay": true, "hf_token": "hf_single"}"#,
-    );
+    let mut data = AppConfig {
+        tts: tts_json(
+            r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
+                "response_overlay": true, "hf_token": "hf_single"}"#,
+        ),
+        ..Default::default()
+    };
 
     assert!(!migrate_hf_token(&mut data), "nothing to migrate");
     assert_eq!(data.tts.hf_token.as_deref(), Some("hf_single"));
@@ -208,12 +214,14 @@ fn a_config_with_one_token_is_left_alone() {
 /// overwritten by it.
 #[test]
 fn the_single_token_wins_over_a_legacy_copy() {
-    let mut data = AppConfig::default();
-    data.tts = tts_json(
-        r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
-            "response_overlay": true, "hf_token": "hf_current",
-            "pocket_tts": {"hf_token": "hf_stale"}}"#,
-    );
+    let mut data = AppConfig {
+        tts: tts_json(
+            r#"{"enabled": false, "engine": "espeak", "voice": "v", "stop_key": [],
+                "response_overlay": true, "hf_token": "hf_current",
+                "pocket_tts": {"hf_token": "hf_stale"}}"#,
+        ),
+        ..Default::default()
+    };
 
     assert!(migrate_hf_token(&mut data));
     assert_eq!(data.tts.hf_token.as_deref(), Some("hf_current"));

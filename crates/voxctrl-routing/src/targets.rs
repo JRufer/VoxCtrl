@@ -1362,7 +1362,7 @@ pub fn parse_voice_command(
                 next.is_whitespace() || next.is_ascii_punctuation()
             };
             if is_boundary_start && is_boundary_end {
-                if found_pos.map_or(true, |p| pos < p) {
+                if found_pos.is_none_or(|p| pos < p) {
                     found_pos = Some(pos);
                     trigger_len = trigger.len();
                 }

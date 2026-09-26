@@ -14,7 +14,6 @@ use cpal::{
 };
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{info, warn};
-use voxctrl_config::AudioConfig;
 
 mod denoise;
 
@@ -50,8 +49,9 @@ pub const PREROLL_MS: u32 = 300;
 /// A chunk of mono f32 audio at TARGET_SAMPLE_RATE Hz.
 pub type AudioChunk = Vec<f32>;
 
+/// The capture supervisor. Every setting it follows is one of these live
+/// flags, shared with the app, so a change takes effect without a restart.
 pub struct AudioRecorder {
-    config: AudioConfig,
     /// Currently recording (pushed to inference queue)
     recording: Arc<AtomicBool>,
     /// Currently monitoring (active settings tab VU meter level feed)
@@ -71,7 +71,6 @@ pub struct AudioRecorder {
 
 impl AudioRecorder {
     pub fn new(
-        config: AudioConfig,
         recording: Arc<AtomicBool>,
         monitoring: Arc<AtomicBool>,
         dynamic_stream: Arc<AtomicBool>,
@@ -80,7 +79,6 @@ impl AudioRecorder {
         noise_suppression: Arc<AtomicBool>,
     ) -> Self {
         Self {
-            config,
             recording,
             monitoring,
             dynamic_stream,
@@ -128,19 +126,10 @@ impl AudioRecorder {
         level_tx: Option<Sender<f32>>,
         audio_ready: Option<Arc<AtomicBool>>,
     ) -> Result<RecorderHandle> {
-        let recording = self.recording.clone();
-        let monitoring = self.monitoring.clone();
-        let dynamic_stream = self.dynamic_stream.clone();
-        let input_device_index = self.input_device_index.clone();
-        let gain = self.gain.clone();
-        let noise_suppression = self.noise_suppression.clone();
-        let wake = self.wake.clone();
-        let cfg = self.config.clone();
-
         let handle = std::thread::Builder::new()
             .name("voxctrl-audio".into())
             .spawn(move || {
-                if let Err(e) = capture_loop(cfg, gain, noise_suppression, recording, monitoring, dynamic_stream, input_device_index, audio_ready, tx, level_tx, wake) {
+                if let Err(e) = capture_loop(self, audio_ready, tx, level_tx) {
                     warn!("Audio capture error: {e}");
                 }
             })
@@ -506,20 +495,21 @@ fn open_stream(
     Some(stream)
 }
 
-#[allow(unused_assignments, unused_variables)]
 fn capture_loop(
-    cfg: AudioConfig,
-    gain: Arc<AtomicU32>,
-    noise_suppression: Arc<AtomicBool>,
-    recording: Arc<AtomicBool>,
-    monitoring: Arc<AtomicBool>,
-    dynamic_stream: Arc<AtomicBool>,
-    input_device_index: Arc<AtomicU32>,
+    recorder: AudioRecorder,
     audio_ready: Option<Arc<AtomicBool>>,
     tx: Sender<AudioChunk>,
     level_tx: Option<Sender<f32>>,
-    wake: Option<Receiver<()>>,
 ) -> Result<()> {
+    let AudioRecorder {
+        recording,
+        monitoring,
+        dynamic_stream,
+        input_device_index,
+        gain,
+        noise_suppression,
+        wake,
+    } = recorder;
     let host = cpal::default_host();
 
     let mut current_idx = input_device_index.load(Ordering::SeqCst);

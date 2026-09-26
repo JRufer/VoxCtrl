@@ -6,91 +6,79 @@ use voxctrl_mcp::McpCallbacks;
 use crate::state::AppState;
 
 impl McpCallbacks for AppState {
-    fn transcribe_voice(
-        &self,
-        timeout_secs: f64,
-    ) -> impl std::future::Future<Output = anyhow::Result<String>> + Send {
-        async move {
-            use std::sync::atomic::Ordering;
-            use tokio::time::{sleep, Duration};
+    async fn transcribe_voice(&self, timeout_secs: f64) -> anyhow::Result<String> {
+        use std::sync::atomic::Ordering;
+        use tokio::time::{sleep, Duration};
 
-            // Snapshot the current version counter BEFORE starting. The delivery
-            // thread increments it each time a new result is written to last_text.
-            // Polling for version > baseline_version guarantees we only accept a
-            // result from THIS recording session, never a stale prior-session value.
-            let baseline_version = self.last_text_version.load(Ordering::SeqCst);
+        // Snapshot the current version counter BEFORE starting. The delivery
+        // thread increments it each time a new result is written to last_text.
+        // Polling for version > baseline_version guarantees we only accept a
+        // result from THIS recording session, never a stale prior-session value.
+        let baseline_version = self.last_text_version.load(Ordering::SeqCst);
 
-            self.set_mcp_recording(true);
+        self.set_mcp_recording(true);
 
-            // Start recording, interrupting any response being spoken.
-            self.begin_recording().await;
+        // Start recording, interrupting any response being spoken.
+        self.begin_recording().await;
 
-            // Spawn a timer to automatically stop recording after timeout_secs.
-            let recording = self.recording.clone();
-            let audio_tx = self.audio_tx.clone();
-            tokio::spawn(async move {
-                sleep(Duration::from_secs_f64(timeout_secs)).await;
-                recording.store(false, Ordering::SeqCst);
-                let _ = audio_tx.send(Vec::new());
-            });
+        // Spawn a timer to automatically stop recording after timeout_secs.
+        let recording = self.recording.clone();
+        let audio_tx = self.audio_tx.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_secs_f64(timeout_secs)).await;
+            recording.store(false, Ordering::SeqCst);
+            let _ = audio_tx.send(Vec::new());
+        });
 
-            // Wait until recording stops (timer or manual stop).
-            while self.is_recording() {
-                sleep(Duration::from_millis(50)).await;
+        // Wait until recording stops (timer or manual stop).
+        while self.is_recording() {
+            sleep(Duration::from_millis(50)).await;
+        }
+
+        self.set_mcp_recording(false);
+
+        // Wait for inference + delivery to produce a new last_text.
+        // last_text is now written BEFORE delivery targets run, so this poll
+        // completes as soon as inference finishes rather than waiting for slow
+        // delivery targets.  3 s budget is kept as a safety net.
+        let poll_limit = 60; // 60 × 50 ms = 3.0 s
+        let mut text = String::new();
+        for _ in 0..poll_limit {
+            sleep(Duration::from_millis(50)).await;
+            if self.last_text_version.load(Ordering::SeqCst) > baseline_version {
+                text = self.last_text.lock().await.clone();
+                break;
             }
+        }
 
-            self.set_mcp_recording(false);
-
-            // Wait for inference + delivery to produce a new last_text.
-            // last_text is now written BEFORE delivery targets run, so this poll
-            // completes as soon as inference finishes rather than waiting for slow
-            // delivery targets.  3 s budget is kept as a safety net.
-            let poll_limit = 60; // 60 × 50 ms = 3.0 s
-            let mut text = String::new();
-            for _ in 0..poll_limit {
-                sleep(Duration::from_millis(50)).await;
-                if self.last_text_version.load(Ordering::SeqCst) > baseline_version {
-                    text = self.last_text.lock().await.clone();
-                    break;
-                }
-            }
-
-            if text.is_empty() {
-                Ok("(no speech detected)".to_string())
-            } else {
-                Ok(text)
-            }
+        if text.is_empty() {
+            Ok("(no speech detected)".to_string())
+        } else {
+            Ok(text)
         }
     }
 
-    fn speak_text(
-        &self,
-        text: String,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
-        async move {
-            let handle = self.tts_handle.lock().await;
-            if let Some(ref tts) = *handle {
-                tts.speak(text);
-            }
-            Ok(())
+    async fn speak_text(&self, text: String) -> anyhow::Result<()> {
+        let handle = self.tts_handle.lock().await;
+        if let Some(ref tts) = *handle {
+            tts.speak(text);
         }
+        Ok(())
     }
 
-    fn get_status(&self) -> impl std::future::Future<Output = (bool, bool)> + Send {
-        async move { (self.is_recording(), self.is_speaking()) }
+    async fn get_status(&self) -> (bool, bool) {
+        (self.is_recording(), self.is_speaking())
     }
 
-    fn default_record_timeout(&self) -> impl std::future::Future<Output = f64> + Send {
-        async move {
-            let configured = self.config.lock().await.data.mcp.record_timeout;
-            // A zero or negative timeout would stop the recording before the
-            // user could say anything, so fall back to the config default
-            // rather than trusting a hand-edited config.json.
-            if configured.is_finite() && configured > 0.0 {
-                configured
-            } else {
-                voxctrl_config::McpConfig::default().record_timeout
-            }
+    async fn default_record_timeout(&self) -> f64 {
+        let configured = self.config.lock().await.data.mcp.record_timeout;
+        // A zero or negative timeout would stop the recording before the
+        // user could say anything, so fall back to the config default
+        // rather than trusting a hand-edited config.json.
+        if configured.is_finite() && configured > 0.0 {
+            configured
+        } else {
+            voxctrl_config::McpConfig::default().record_timeout
         }
     }
 }
@@ -314,15 +302,14 @@ pub fn auto_download_speech_model_if_needed(
     // fetch, whether to open Settings — is a step the wizard asks about, so
     // making them here first would download the wrong model and bury the
     // wizard behind a window the user did not ask for.
-    if !cfg_data.ui.setup_completed {
-        if app.get_webview_window(crate::window::WIZARD_WINDOW).is_some() {
-            if let Err(e) = crate::window::open_wizard_window(&app.handle().clone()) {
-                tracing::error!("Could not open the setup wizard: {e}");
-            }
-            return;
+    //
+    // Without a wizard window in this build, fall through to the old behaviour
+    // rather than leaving a new install with no visible setup at all.
+    if !cfg_data.ui.setup_completed && app.get_webview_window(crate::window::WIZARD_WINDOW).is_some() {
+        if let Err(e) = crate::window::open_wizard_window(app.handle()) {
+            tracing::error!("Could not open the setup wizard: {e}");
         }
-        // No wizard window in this build: fall through to the old behaviour
-        // rather than leaving a new install with no visible setup at all.
+        return;
     }
 
     let show_settings = cfg_data.ui.auto_show_settings;

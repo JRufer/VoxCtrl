@@ -7,8 +7,9 @@ use tracing::info;
 
 // ── Shared state ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum DictationStatus {
+    #[default]
     Idle,
     Recording,
     Transcribing,
@@ -28,12 +29,6 @@ impl std::fmt::Display for DictationStatus {
 pub struct AppState {
     pub status: DictationStatus,
     pub word_count: u32,
-}
-
-impl Default for DictationStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 // ── DBus service (Linux only) ────────────────────────────────────────────────

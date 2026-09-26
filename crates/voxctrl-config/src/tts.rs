@@ -26,19 +26,15 @@ pub enum TtsEngine {
 /// * `OnDemand` — the model is loaded the moment VoxCtrl knows it will be
 ///   needed, kept "primed" while it keeps getting used, and dropped again after
 ///   [`TtsConfig::idle_unload_secs`] of inactivity to give the memory back.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TtsMemoryMode {
+    /// The default: existing installs keep the behaviour they already had;
+    /// opting into the memory saving is a deliberate choice (it costs
+    /// first-word latency).
+    #[default]
     AlwaysLoaded,
     OnDemand,
-}
-
-impl Default for TtsMemoryMode {
-    fn default() -> Self {
-        // Existing installs keep the behaviour they already had; opting into
-        // the memory saving is a deliberate choice (it costs first-word latency).
-        Self::AlwaysLoaded
-    }
 }
 
 /// 15 minutes — long enough that a back-and-forth conversation never pays the

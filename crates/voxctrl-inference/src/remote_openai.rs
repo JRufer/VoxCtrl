@@ -24,8 +24,7 @@ pub fn normalize_transcription_url(endpoint: &str) -> String {
 /// Normalizes an endpoint into the `/v1/models` URL for probing available models.
 pub fn normalize_models_url(endpoint: &str) -> String {
     let trimmed = endpoint.trim().trim_end_matches('/');
-    if trimmed.ends_with("/audio/transcriptions") {
-        let base = &trimmed[..trimmed.len() - "/audio/transcriptions".len()];
+    if let Some(base) = trimmed.strip_suffix("/audio/transcriptions") {
         format!("{base}/models")
     } else if trimmed.ends_with("/v1") {
         format!("{trimmed}/models")
@@ -234,7 +233,6 @@ impl RemoteStreamingSession {
             let trailing_boundary = format!("\r\n--{boundary}--\r\n");
 
             // Stream construction
-            let initial_bytes = Some(Bytes::from(preamble));
             let trailing_bytes = Some(Bytes::from(trailing_boundary));
 
             enum StreamState {
@@ -244,7 +242,7 @@ impl RemoteStreamingSession {
                 Done,
             }
 
-            let mut state = StreamState::Preamble(initial_bytes.unwrap());
+            let mut state = StreamState::Preamble(Bytes::from(preamble));
 
             let body_stream = futures_util::stream::poll_fn(move |_cx| {
                 match &mut state {
