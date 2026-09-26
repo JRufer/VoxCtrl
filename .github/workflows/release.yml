@@ -47,6 +47,16 @@ env:
   # Set the VOXCTRL_BUGREPORT_ENDPOINT repository secret to switch it on; see
   # scripts/bug-report-relay/README.md.
   VOXCTRL_BUGREPORT_ENDPOINT: ${{ secrets.VOXCTRL_BUGREPORT_ENDPOINT }}
+  # Public half of the update-signing key, baked into every release build so
+  # its updater refuses any download not signed by the publish job below
+  # (crates/voxctrl-update/src/signature.rs). Not a secret: it is a repository
+  # *variable*. Its secret half is the VOXCTRL_UPDATE_SIGNING_KEY secret.
+  #
+  # One-time setup (docs/release-signing.md):
+  #   minisign -G -W -p voxctrl-update.pub -s voxctrl-update.key
+  #   variable VOXCTRL_UPDATE_PUBKEY    = second line of voxctrl-update.pub
+  #   secret   VOXCTRL_UPDATE_SIGNING_KEY = contents of voxctrl-update.key
+  VOXCTRL_UPDATE_PUBKEY: ${{ vars.VOXCTRL_UPDATE_PUBKEY }}
 
 # ── Version consistency gate ───────────────────────────────────────────────────
 # There is no single source of truth for the app version: it's declared
@@ -145,6 +155,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # A release build without the key would have an updater that installs
+      # anything carrying a matching digest — the gap signing exists to close —
+      # and nothing about the build would look wrong. Stop here instead.
+      - name: Require the update-signing public key
+        shell: bash
+        run: |
+          if [[ -z "${VOXCTRL_UPDATE_PUBKEY// }" ]]; then
+            echo "::error::The VOXCTRL_UPDATE_PUBKEY repository variable is not set. See docs/release-signing.md."
+            exit 1
+          fi
 
       # ── System deps (Linux) ─────────────────────────────────────────────────
       # squashfs-tools (unsquashfs) is required for APPIMAGE_EXTRACT_AND_RUN=1
@@ -477,6 +498,35 @@ jobs:
 
       - name: List release artifacts
         run: ls -lh release-artifacts/
+
+      # Sign every asset, then check each signature against the public key the
+      # builds baked in — a secret and variable from different key pairs would
+      # otherwise publish a release that no installed copy can update to.
+      #
+      # The trusted comment is covered by the signature and names the file and
+      # the tag; the updater rejects a signature whose comment is not exactly
+      # this, so a signed file cannot be replayed under another name or release.
+      - name: Sign release artifacts
+        env:
+          SIGNING_KEY: ${{ secrets.VOXCTRL_UPDATE_SIGNING_KEY }}
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo "::error::The VOXCTRL_UPDATE_SIGNING_KEY secret is not set. See docs/release-signing.md."
+            exit 1
+          fi
+          sudo apt-get install -y -q minisign
+          pubkey=$(grep -v '^untrusted comment:' <<< "$VOXCTRL_UPDATE_PUBKEY" | grep -m1 .)
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$keyfile"
+          for f in release-artifacts/*; do
+            [[ "$f" == *.minisig ]] && continue
+            name=$(basename "$f")
+            minisign -S -s "$keyfile" -m "$f" -t "voxctrl-update file:${name} tag:${TAG}"
+            minisign -V -P "$pubkey" -m "$f" -x "$f.minisig"
+          done
+          ls -l release-artifacts/*.minisig
 
       - name: Create / update draft release
         uses: softprops/action-gh-release@v2

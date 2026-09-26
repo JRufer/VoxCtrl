@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { OutputTarget, HotkeyBinding } from "./routing-types";
+  import { newOutputTarget } from "./routing-types";
   import TargetEditorModal from "./TargetEditorModal.svelte";
 
   let targets = $state<OutputTarget[]>([]);
@@ -39,25 +40,7 @@
   // --- CRUD Output Commands ---
   function addNewTarget() {
     isEditingTargetNew = true;
-    editingTarget = {
-      id: "new_target_" + Math.random().toString(36).substring(2, 6),
-      label: "New Target",
-      delivery: "inject",
-      file_prefix: "- ",
-      file_timestamp: true,
-      file_timestamp_format: "%Y-%m-%dT%H:%M:%SZ",
-      file_mode: "append",
-      http_method: "POST",
-      http_json_template: { text: "{text}" },
-      webhook_json_template: { text: "{text}" },
-      mcp_tool: "speak_text",
-      mcp_args: { text: "{text}" },
-      chat_max_history: 20,
-      chat_timeout_secs: 120,
-      chat_reply_mode: "speak",
-      strip_newlines: false,
-      processing: {},
-    };
+    editingTarget = newOutputTarget();
   }
 
   function editTarget(tgt: OutputTarget) {
@@ -217,7 +200,7 @@
   />
 {/if}
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
 
   .targets-section {
@@ -283,24 +266,6 @@
 
   .confirm-label {
     @apply text-[11px] text-[var(--text-muted)];
-  }
-
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.small {
-    @apply p-1 px-2 text-[11px];
-  }
-
-  .btn-action.danger {
-    @apply text-red-400 border-red-400/20;
-  }
-  .btn-action.danger:hover {
-    @apply bg-red-400/10 border-red-400;
   }
 
   .btn-add-wide {

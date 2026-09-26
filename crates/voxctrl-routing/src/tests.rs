@@ -45,7 +45,7 @@ fn test_mcp_config_roundtrip() {
         response_pipe: None,
     };
 
-    save_targets(&[target.clone()], &temp_dir).unwrap();
+    save_targets(std::slice::from_ref(&target), &temp_dir).unwrap();
     let loaded = load_targets(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
@@ -197,11 +197,11 @@ fn test_hotkey_binding_multi_target_roundtrip() {
     assert_eq!(binding.resolved_target_ids(), vec!["target1", "target2"]);
     assert_eq!(binding.target_ids_string(), "target1,target2");
 
-    save_bindings(&[binding.clone()], &temp_dir).unwrap();
+    save_bindings(std::slice::from_ref(&binding), &temp_dir).unwrap();
     let loaded = load_bindings(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
-    save_bindings(&[binding.clone()], &temp_dir).unwrap();
+    save_bindings(std::slice::from_ref(&binding), &temp_dir).unwrap();
     let loaded = load_bindings(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
@@ -1341,7 +1341,7 @@ fn test_strip_newlines_config_roundtrip() {
         response_pipe: None,
     };
 
-    save_targets(&[target.clone()], &temp_dir).unwrap();
+    save_targets(std::slice::from_ref(&target), &temp_dir).unwrap();
     let loaded = load_targets(&temp_dir).unwrap();
 
     assert_eq!(loaded.len(), 1);
@@ -2348,4 +2348,57 @@ fn test_parse_voice_command_non_ascii_text_and_targets() {
     // A non-boundary occurrence of a label starting with a multibyte char
     // must be skipped without slicing mid-character.
     assert!(parse_voice_command("Hey Vox, xÜberblick hallo", &targets).is_none());
+}
+
+#[cfg(test)]
+mod display_label_tests {
+    use crate::{targets_display_label, OutputTarget};
+
+    fn target(id: &str, label: &str) -> OutputTarget {
+        serde_json::from_value(serde_json::json!({ "id": id, "label": label, "delivery": "inject" }))
+            .unwrap()
+    }
+
+    #[test]
+    fn labels_fall_back_to_ids_and_the_default_name() {
+        let targets = [target("notes", "My Notes"), target("blank", ""), target("default", "")];
+        assert_eq!(targets_display_label("notes", &targets), "My Notes");
+        assert_eq!(targets_display_label("blank", &targets), "blank");
+        assert_eq!(targets_display_label("default", &targets), "Focused Window");
+        assert_eq!(targets_display_label("default", &[]), "Focused Window");
+        assert_eq!(targets_display_label(" notes, ,missing ", &targets), "My Notes + missing");
+    }
+}
+
+/// Older recorders saved a punctuation key under the typed character ("KEY_."),
+/// a name no backend reports, so the shortcut never fired. Loading rewrites it
+/// to the evdev name, and leaves every canonical name alone.
+#[test]
+fn legacy_punctuation_key_names_load_as_evdev_names() {
+    use crate::loader::load_bindings;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("bindings.toml"),
+        r#"format_version = "1.1"
+
+[[binding]]
+id = "punct"
+label = "Punctuation"
+keys = ["KEY_LEFTCTRL", "KEY_.", "KEY_?"]
+gesture = "hold"
+target_id = "default"
+
+[[binding]]
+id = "plain"
+label = "Plain"
+keys = ["KEY_LEFTMETA", "KEY_SPACE"]
+gesture = "hold"
+target_id = "default"
+"#,
+    )
+    .unwrap();
+
+    let loaded = load_bindings(dir.path()).unwrap();
+    assert_eq!(loaded[0].keys, vec!["KEY_LEFTCTRL", "KEY_DOT", "KEY_SLASH"]);
+    assert_eq!(loaded[1].keys, vec!["KEY_LEFTMETA", "KEY_SPACE"]);
 }

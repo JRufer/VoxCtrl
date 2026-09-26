@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import type { OutputTarget } from "./routing-types";
   import CustomSelect from "./CustomSelect.svelte";
+  import { autoResize } from "../actions";
 
   let {
     editingTarget = $bindable(),
@@ -170,27 +171,6 @@
       chatStatus = String(e);
       chatStatusOk = false;
     }
-  }
-
-  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
-  function autoResize(node: HTMLTextAreaElement) {
-    function resize() {
-      node.style.height = "auto";
-      node.style.height = `${node.scrollHeight}px`;
-    }
-    node.addEventListener("input", resize);
-    // Initial calculation on mount
-    const timer = setTimeout(resize, 0);
-
-    return {
-      update() {
-        resize();
-      },
-      destroy() {
-        clearTimeout(timer);
-        node.removeEventListener("input", resize);
-      }
-    };
   }
 
   // Load flat states from editingTarget
@@ -804,7 +784,7 @@
   </div>
 {/if}
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
 
   .modal-backdrop {
@@ -866,20 +846,6 @@
     @apply text-[var(--text)];
   }
 
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.small {
-    @apply p-1 px-2 text-[10px];
-  }
-  .btn-action:disabled {
-    @apply opacity-50 cursor-not-allowed;
-  }
-
   .chat-actions {
     @apply flex gap-2 items-center;
   }
@@ -892,13 +858,6 @@
   }
   .chat-status.bad {
     @apply text-red-400;
-  }
-
-  .btn-action.primary {
-    @apply bg-[var(--accent)] text-white border-none;
-  }
-  .btn-action.primary:hover {
-    @apply opacity-90;
   }
 
   .full-width-input {
@@ -942,7 +901,6 @@
   p.hint code {
     @apply bg-[var(--color-obsidian-950)] text-[var(--color-accent-blue)] p-0.5 px-1 rounded font-mono text-[10px] border border-[var(--border)];
   }
-
 
   .validation-error-msg {
     @apply block mt-1 text-xs font-medium text-red-400 leading-normal;

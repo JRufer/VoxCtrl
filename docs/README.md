@@ -12,6 +12,7 @@ Global shortcuts are registered with your desktop through the XDG `GlobalShortcu
 |---|---|
 | [Overview](./overview.md) | What VoxCtrl does, key features, and design principles |
 | [Privacy & Security](./privacy.md) | What VoxCtrl can see, what the installer touches, and how to verify both |
+| [Release signing](./release-signing.md) | How releases are signed, how the updater verifies them, and the one-time key setup |
 | [Architecture](./architecture.md) | System design, crate layout, data flow, concurrency model |
 | [Audio Pipeline](./audio.md) | Audio capture, device management, VAD, resampling |
 | [Speech Recognition](./speech-recognition.md) | Whisper engine, models, inference pipeline, post-processing |

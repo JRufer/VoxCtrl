@@ -14,6 +14,7 @@ reqwest = { workspace = true }
 futures-util = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+minisign-verify = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

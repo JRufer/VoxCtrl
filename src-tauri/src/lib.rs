@@ -133,6 +133,13 @@ pub mod test_utils {
     use std::sync::{Mutex, OnceLock};
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+    /// Serializes tests that change process-wide environment variables.
+    ///
+    /// Async tests hold it across `.await` on purpose: the environment has to
+    /// stay set for the whole test. That is sound here because every
+    /// `#[tokio::test]` runs on its own thread and runtime, so a test waiting
+    /// for the lock blocks only itself; those tests allow
+    /// `clippy::await_holding_lock` for that reason.
     pub fn get_env_lock() -> &'static Mutex<()> {
         ENV_LOCK.get_or_init(|| Mutex::new(()))
     }
@@ -231,7 +238,7 @@ pub fn run() {
             ) {
             }
 
-            let domain = b"libayatana-appindicator\0".as_ptr() as *const std::os::raw::c_char;
+            let domain = c"libayatana-appindicator".as_ptr();
             g_log_set_handler(domain, 16, Some(dummy_log_handler), std::ptr::null_mut());
         }
     }
@@ -345,19 +352,9 @@ pub fn run() {
 
     let hotkey_health = Arc::new(voxctrl_hotkeys::ListenerHealth::default());
 
-    // TTS initial worker
-    let initial_tts_handle = if cfg_data.tts.enabled {
-        Some(voxctrl_tts::TtsEngineWorker::start(
-            cfg_data.tts.clone(),
-            cfg_data.features.custom_vocabulary.clone(),
-            None,
-            None,
-            None,
-        ))
-    } else {
-        None
-    };
-
+    // The TTS worker is started in Tauri's setup (`services::setup_tts_and_fifos`),
+    // once the app handle its playback callbacks need exists. Starting one here
+    // as well would load a model only to shut it down a moment later.
     let app_state = Arc::new(AppState {
         config: config.clone(),
         router: router.clone(),
@@ -384,10 +381,12 @@ pub fn run() {
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(targets.clone())),
+        targets_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        bindings: Arc::new(Mutex::new(bindings.clone())),
         audio_tx: audio_tx.clone(),
         audio_wake: audio_wake_tx,
         inference_config_tx: inference_cfg_tx,
-        tts_handle: Arc::new(Mutex::new(initial_tts_handle.clone())),
+        tts_handle: Arc::new(Mutex::new(None)),
         active_fifos: Arc::new(Mutex::new(std::collections::HashSet::new())),
         stop_key_held: Arc::new(AtomicBool::new(false)),
         speaking_tx: Arc::new(std::sync::OnceLock::new()),
@@ -402,9 +401,7 @@ pub fn run() {
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
 
     {
-        let audio_cfg = cfg_data.audio.clone();
         let recorder = voxctrl_audio::AudioRecorder::new(
-            audio_cfg,
             app_state.recording.clone(),
             app_state.monitoring.clone(),
             app_state.dynamic_stream.clone(),
@@ -437,14 +434,6 @@ pub fn run() {
         text_tx.clone(),
         inference_cfg_rx,
     );
-
-    let state_for_tts = app_state.clone();
-    let tts_handle_clone = initial_tts_handle.clone();
-    tokio::spawn(async move {
-        if let Some(tts) = tts_handle_clone {
-            state_for_tts.spawn_fifo_responders(tts).await;
-        }
-    });
 
     // Setup desktop integration (launcher and icon) before initializing hotkey listeners,
     // so xdg-desktop-portal can resolve the `ai.voxctrl.app` AppID against an installed .desktop file.
@@ -536,7 +525,8 @@ pub fn run() {
             // Set window icon programmatically on Linux/Wayland
             #[cfg(target_os = "linux")]
             {
-                let _ = crate::installer::setup_desktop_integration();
+                // Desktop integration already ran before the hotkey listeners
+                // started (it has to precede them); only the icon is left.
                 let icon_bytes = include_bytes!("../icons/128x128.png");
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     for window in app.webview_windows().values() {
@@ -545,14 +535,14 @@ pub fn run() {
                 }
             }
 
-            // Re-initialize TTS worker with event emitter callbacks
-            services::setup_tts_and_fifos(&app.handle(), app_state.clone());
+            // Start the TTS worker and the response-pipe listeners
+            services::setup_tts_and_fifos(app.handle(), app_state.clone());
 
             // Register Speak target callback
-            services::register_speak_target(&app.handle());
+            services::register_speak_target(app.handle());
 
             // Register Command trigger target callback
-            services::register_command_trigger_target(&app.handle());
+            services::register_command_trigger_target(app.handle());
 
             // Setup watcher for hotkey permissions
             #[cfg(target_os = "linux")]

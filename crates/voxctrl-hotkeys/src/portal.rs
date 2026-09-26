@@ -431,19 +431,9 @@ async fn update_kglobalshortcutsrc(
                 if let Some(&(expected_desc, trigger_opt)) = group_details.get(key) {
                     let default_key = trigger_opt.unwrap_or("none");
                     let parts: Vec<&str> = val.split(',').collect();
-                    if parts.len() >= 3 {
-                        let cur_key = if parts[0] == "none" || parts[0].is_empty() {
-                            default_key
-                        } else {
-                            parts[0]
-                        };
-                        let def_key = if parts[1] == "none" || parts[1].is_empty() {
-                            default_key
-                        } else {
-                            parts[1]
-                        };
-                        new_lines.push(format!("{key}={cur_key},{def_key},{expected_desc}"));
-                    } else if parts.len() == 2 {
+                    // "current,default[,description]": keep both keys (filling
+                    // an unset one with ours) and rewrite the description.
+                    if parts.len() >= 2 {
                         let cur_key = if parts[0] == "none" || parts[0].is_empty() {
                             default_key
                         } else {

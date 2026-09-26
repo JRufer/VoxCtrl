@@ -190,7 +190,7 @@
   {/if}
 </div>
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
 
   .custom-select-wrapper {

@@ -350,36 +350,6 @@ export function waveBars(count: number): { d: string; dl: string }[] {
 
 // ── Key naming ───────────────────────────────────────────────────────────────
 
-/**
- * Map a browser key event onto the evdev name VoxCtrl stores in bindings.toml.
- *
- * Kept identical to the recorder in Settings → Hotkeys: a combination captured
- * in the wizard has to be the same combination when the user later opens that
- * tab, or the binding they made here would appear to have changed by itself.
- */
-export function mapBrowserKeyToEvdev(key: string, code: string): string {
-  const codeUpper = code.toUpperCase();
-  if (key === "Control") return "KEY_LEFTCTRL";
-  if (key === "Alt") return "KEY_LEFTALT";
-  if (key === "Shift") return "KEY_LEFTSHIFT";
-  if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
-
-  if (codeUpper === "SPACE") return "KEY_SPACE";
-  if (codeUpper === "ENTER") return "KEY_ENTER";
-  if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
-  if (codeUpper === "TAB") return "KEY_TAB";
-  if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
-  if (codeUpper === "DELETE") return "KEY_DELETE";
-
-  if (/^KEY[A-Z]$/.test(codeUpper)) return `KEY_${codeUpper.slice(3)}`;
-  if (codeUpper.startsWith("KEY")) return codeUpper;
-  if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
-  if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
-  if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
-
-  if (key.length === 1) return `KEY_${key.toUpperCase()}`;
-  return `KEY_${codeUpper}`;
-}
 
 const KEYCAP_LABELS: Record<string, string> = {
   KEY_LEFTCTRL: "Ctrl",
@@ -396,24 +366,32 @@ const KEYCAP_LABELS: Record<string, string> = {
   KEY_TAB: "Tab",
   KEY_BACKSPACE: "Backspace",
   KEY_DELETE: "Delete",
+  KEY_MINUS: "-",
+  KEY_EQUAL: "=",
+  KEY_LEFTBRACE: "[",
+  KEY_RIGHTBRACE: "]",
+  KEY_BACKSLASH: "\\",
+  KEY_SEMICOLON: ";",
+  KEY_APOSTROPHE: "'",
+  KEY_GRAVE: "`",
+  KEY_COMMA: ",",
+  KEY_DOT: ".",
+  KEY_SLASH: "/",
+  KEY_KPPLUS: "Num +",
+  KEY_KPMINUS: "Num -",
+  KEY_KPASTERISK: "Num *",
+  KEY_KPSLASH: "Num /",
+  KEY_KPDOT: "Num .",
+  KEY_KPENTER: "Num Enter",
+  KEY_KPEQUAL: "Num =",
 };
 
 /** Human label for an evdev key name, for keycaps and summaries. */
 export function keycapLabel(evdev: string): string {
+  const kpDigit = /^KEY_KP(\d)$/.exec(evdev);
+  if (kpDigit) return `Num ${kpDigit[1]}`;
   return KEYCAP_LABELS[evdev] ?? evdev.replace(/^KEY_/, "");
 }
 
-export const MODIFIER_KEYS = new Set([
-  "KEY_LEFTCTRL",
-  "KEY_RIGHTCTRL",
-  "KEY_LEFTALT",
-  "KEY_RIGHTALT",
-  "KEY_LEFTSHIFT",
-  "KEY_RIGHTSHIFT",
-  "KEY_LEFTMETA",
-  "KEY_RIGHTMETA",
-]);
-
-export function isModifiersOnly(keys: string[]): boolean {
-  return keys.length > 0 && keys.every((k) => MODIFIER_KEYS.has(k));
-}
+// Shared with the Settings recorders; see src/lib/keys.ts.
+export { MODIFIER_KEYS, isModifiersOnly, mapBrowserKeyToEvdev } from "../keys";

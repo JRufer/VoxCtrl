@@ -20,7 +20,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -98,6 +98,8 @@ futures-util = "0.3"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# Release-signature verification for the self-updater (no dependencies of its own).
+minisign-verify = "0.3"
 base64 = "0.22"
 
 # Archive / download helpers
