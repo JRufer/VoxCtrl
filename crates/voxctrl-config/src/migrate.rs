@@ -59,8 +59,13 @@ pub(crate) fn migrate_cloned_voices_dir() {
 ///   could never fire. The unshifted and shifted characters of a US layout are
 ///   both mapped, since Shift changes the character typed on the same key.
 ///
+/// - Keys whose DOM name differs from evdev's were saved under the DOM name
+///   (`KEY_PRINTSCREEN`, `KEY_AUDIOVOLUMEMUTE`, `KEY_NUMPADENTER`).
+/// - The TTS stop key recorder saved letters without the underscore (`KEYV`).
+///
 /// Numpad digits were saved as the top-row digit (`KEY_1`), which is a real
-/// key name, so those cannot be told apart and are left alone.
+/// key name, so those cannot be told apart and are left alone. So is `KEY_*`,
+/// which could be the keypad `*` or Shift+8.
 pub fn canonical_key_name(name: &str) -> Option<&'static str> {
     Some(match name {
         "KEY_ESCAPE" => "KEY_ESC",
@@ -75,8 +80,31 @@ pub fn canonical_key_name(name: &str) -> Option<&'static str> {
         "KEY_[" | "KEY_{" => "KEY_LEFTBRACE",
         "KEY_]" | "KEY_}" => "KEY_RIGHTBRACE",
         "KEY_\\" | "KEY_|" => "KEY_BACKSLASH",
-        _ => return None,
+        "KEY_PRINTSCREEN" => "KEY_SYSRQ",
+        "KEY_CONTEXTMENU" => "KEY_COMPOSE",
+        "KEY_NUMPADENTER" => "KEY_KPENTER",
+        "KEY_AUDIOVOLUMEMUTE" => "KEY_MUTE",
+        "KEY_AUDIOVOLUMEDOWN" => "KEY_VOLUMEDOWN",
+        "KEY_AUDIOVOLUMEUP" => "KEY_VOLUMEUP",
+        "KEY_MEDIATRACKNEXT" => "KEY_NEXTSONG",
+        "KEY_MEDIATRACKPREVIOUS" => "KEY_PREVIOUSSONG",
+        "KEY_MEDIASTOP" => "KEY_STOPCD",
+        "KEY_MEDIAPLAYPAUSE" => "KEY_PLAYPAUSE",
+        _ => return legacy_letter(name),
     })
+}
+
+/// `KEYA` … `KEYZ`, as the old TTS stop key recorder wrote letters.
+fn legacy_letter(name: &str) -> Option<&'static str> {
+    const LETTERS: [&str; 26] = [
+        "KEY_A", "KEY_B", "KEY_C", "KEY_D", "KEY_E", "KEY_F", "KEY_G", "KEY_H", "KEY_I", "KEY_J",
+        "KEY_K", "KEY_L", "KEY_M", "KEY_N", "KEY_O", "KEY_P", "KEY_Q", "KEY_R", "KEY_S", "KEY_T",
+        "KEY_U", "KEY_V", "KEY_W", "KEY_X", "KEY_Y", "KEY_Z",
+    ];
+    match name.strip_prefix("KEY")?.as_bytes() {
+        [c @ b'A'..=b'Z'] => Some(LETTERS[usize::from(c - b'A')]),
+        _ => None,
+    }
 }
 
 /// Rewrite every legacy key name in `keys` to its canonical spelling,
