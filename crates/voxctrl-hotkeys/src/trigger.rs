@@ -150,6 +150,20 @@ fn keysym_name(key: &str) -> Option<String> {
         "LEFTBRACE" => "bracketleft".to_string(),
         "RIGHTBRACE" => "bracketright".to_string(),
         "CAPSLOCK" => "Caps_Lock".to_string(),
+        "NUMLOCK" => "Num_Lock".to_string(),
+        "SCROLLLOCK" => "Scroll_Lock".to_string(),
+        "PAUSE" => "Pause".to_string(),
+        "SYSRQ" => "Print".to_string(),
+        "COMPOSE" => "Menu".to_string(),
+        // The extra ISO key beside left Shift; `less` on a US-based layout.
+        "102ND" => "less".to_string(),
+        "MUTE" => "XF86AudioMute".to_string(),
+        "VOLUMEDOWN" => "XF86AudioLowerVolume".to_string(),
+        "VOLUMEUP" => "XF86AudioRaiseVolume".to_string(),
+        "NEXTSONG" => "XF86AudioNext".to_string(),
+        "PREVIOUSSONG" => "XF86AudioPrev".to_string(),
+        "STOPCD" => "XF86AudioStop".to_string(),
+        "PLAYPAUSE" => "XF86AudioPlay".to_string(),
         "KPPLUS" => "KP_Add".to_string(),
         "KPMINUS" => "KP_Subtract".to_string(),
         "KPASTERISK" => "KP_Multiply".to_string(),
@@ -357,6 +371,29 @@ mod tests {
                 format!("CTRL+{sym}"),
                 "{key}"
             );
+        }
+    }
+
+    /// Every key the other backends can match must register through the portal
+    /// too, or a shortcut that works under evdev is refused in portal mode.
+    /// `keymap::NAMES` is also the vocabulary the Settings recorder is checked
+    /// against (`tests/svelte/keys.test.ts`), so this covers every key a user
+    /// can record.
+    #[test]
+    fn every_backend_key_translates_to_a_keysym() {
+        let untranslated: Vec<&str> = crate::win_keys::keymap::NAMES
+            .iter()
+            .copied()
+            .filter(|k| modifier_name(k).is_none() && keysym_name(k).is_none())
+            .collect();
+        assert_eq!(untranslated, Vec::<&str>::new());
+        for (key, sym) in [
+            ("KEY_SYSRQ", "Print"),
+            ("KEY_COMPOSE", "Menu"),
+            ("KEY_MUTE", "XF86AudioMute"),
+            ("KEY_PLAYPAUSE", "XF86AudioPlay"),
+        ] {
+            assert_eq!(keysym_name(key).as_deref(), Some(sym), "{key}");
         }
     }
 

@@ -96,8 +96,9 @@ impl Config {
             migrated = true;
         }
 
-        // Legacy key names in the stop key ("KEY_ESCAPE", or a punctuation key
-        // saved as e.g. "KEY_.") → the evdev names the backends report.
+        // Legacy key names in the stop key ("KEY_ESCAPE", a punctuation key
+        // saved as e.g. "KEY_.", a letter saved as "KEYV") → the evdev names
+        // the backends report. See `canonical_key_name`.
         migrated |= canonicalize_key_names(&mut data.tts.stop_key);
 
         // Migrate legacy default OpenAI timeout (8s) to the new default (30s) to prevent timeouts

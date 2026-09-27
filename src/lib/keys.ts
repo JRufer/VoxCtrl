@@ -55,7 +55,23 @@ const CODE_TO_EVDEV: Record<string, string> = {
   NumpadDecimal: "KEY_KPDOT",
   NumpadEnter: "KEY_KPENTER",
   NumpadEqual: "KEY_KPEQUAL",
+
+  // Keys whose DOM name is not evdev's.
+  PrintScreen: "KEY_SYSRQ",
+  ContextMenu: "KEY_COMPOSE",
+
+  // Media keys, when the webview delivers them at all.
+  AudioVolumeMute: "KEY_MUTE",
+  AudioVolumeDown: "KEY_VOLUMEDOWN",
+  AudioVolumeUp: "KEY_VOLUMEUP",
+  MediaTrackNext: "KEY_NEXTSONG",
+  MediaTrackPrevious: "KEY_PREVIOUSSONG",
+  MediaStop: "KEY_STOPCD",
+  MediaPlayPause: "KEY_PLAYPAUSE",
 };
+
+/** The `code` values mapped through the table above, for tests. */
+export const MAPPED_CODES: readonly string[] = Object.keys(CODE_TO_EVDEV);
 
 /**
  * Map a browser key event onto the evdev name VoxCtrl stores in bindings.toml.

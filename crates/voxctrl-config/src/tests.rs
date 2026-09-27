@@ -590,3 +590,21 @@ fn legacy_key_names_become_the_names_the_backends_report() {
     assert_eq!(keys, vec!["KEY_LEFTCTRL", "KEY_SLASH"]);
     assert!(!canonicalize_key_names(&mut keys), "a second pass changes nothing");
 }
+
+#[test]
+fn legacy_dom_names_and_underscoreless_letters_are_repaired() {
+    assert_eq!(canonical_key_name("KEYV"), Some("KEY_V"), "old TTS stop key letter");
+    assert_eq!(canonical_key_name("KEYA"), Some("KEY_A"));
+    assert_eq!(canonical_key_name("KEYZ"), Some("KEY_Z"));
+    assert_eq!(canonical_key_name("KEY_PRINTSCREEN"), Some("KEY_SYSRQ"));
+    assert_eq!(canonical_key_name("KEY_CONTEXTMENU"), Some("KEY_COMPOSE"));
+    assert_eq!(canonical_key_name("KEY_NUMPADENTER"), Some("KEY_KPENTER"));
+    assert_eq!(canonical_key_name("KEY_AUDIOVOLUMEMUTE"), Some("KEY_MUTE"));
+    assert_eq!(canonical_key_name("KEY_MEDIAPLAYPAUSE"), Some("KEY_PLAYPAUSE"));
+
+    // Real names that happen to start with KEY and one letter are untouched.
+    for name in ["KEY_A", "KEY_KP1", "KEY_F5", "KEYBOARD", "KEY"] {
+        assert_eq!(canonical_key_name(name), None, "{name}");
+    }
+    assert_eq!(canonical_key_name("KEY_*"), None, "keypad * or Shift+8: ambiguous");
+}

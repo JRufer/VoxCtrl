@@ -384,6 +384,16 @@ const KEYCAP_LABELS: Record<string, string> = {
   KEY_KPDOT: "Num .",
   KEY_KPENTER: "Num Enter",
   KEY_KPEQUAL: "Num =",
+  KEY_102ND: "<",
+  KEY_SYSRQ: "PrtSc",
+  KEY_COMPOSE: "Menu",
+  KEY_MUTE: "Mute",
+  KEY_VOLUMEDOWN: "Vol -",
+  KEY_VOLUMEUP: "Vol +",
+  KEY_NEXTSONG: "Next",
+  KEY_PREVIOUSSONG: "Prev",
+  KEY_STOPCD: "Stop",
+  KEY_PLAYPAUSE: "Play/Pause",
 };
 
 /** Human label for an evdev key name, for keycaps and summaries. */
