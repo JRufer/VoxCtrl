@@ -132,7 +132,7 @@
     {:else if info}
       {#if info.notes}
         <section class="notes-block">
-          <h2>What's new</h2>
+          <h2>What's new since {info.current_version}</h2>
           <pre class="notes">{info.notes}</pre>
         </section>
       {/if}
@@ -186,7 +186,7 @@
         <button class="btn-primary" onclick={notNow}>Close</button>
       {:else if info}
         <div class="left-actions">
-          <button class="link" onclick={openReleasePage}>Full release notes</button>
+          <button class="link" onclick={openReleasePage}>View on GitHub</button>
         </div>
         <div class="right-actions">
           <button class="btn-secondary" onclick={notNow}>Not now</button>
@@ -237,7 +237,7 @@
     @apply rounded-lg bg-white/[0.03] border border-[var(--border)] p-3;
   }
   .notes {
-    @apply text-[12px] leading-relaxed text-[var(--color-obsidian-200)] whitespace-pre-wrap break-words m-0 max-h-[240px] overflow-y-auto font-sans;
+    @apply text-[12px] leading-relaxed text-[var(--color-obsidian-200)] whitespace-pre-wrap break-words m-0 max-h-[320px] overflow-y-auto font-sans;
   }
   .warn {
     @apply text-[12.5px] leading-relaxed text-amber-300/90 rounded bg-amber-500/10 border border-amber-500/20 p-2.5;
