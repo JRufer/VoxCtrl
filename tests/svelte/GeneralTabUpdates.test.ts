@@ -43,7 +43,7 @@ describe("General tab update check", () => {
     answer({ current_version: "0.3.10", update: null });
     render(GeneralTab, { cfg: get(config) });
     await fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-    expect(await screen.findByText(/0\.3\.10 is the latest release/)).toBeTruthy();
+    expect(await screen.findByText(/Up to date/)).toBeTruthy();
     expect(invoke).not.toHaveBeenCalledWith("open_update_window", undefined);
   });
 

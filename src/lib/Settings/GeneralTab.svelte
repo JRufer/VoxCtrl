@@ -124,7 +124,12 @@
 
 
   <div class="field-group">
-    <h3>Updates</h3>
+    <div class="field-label-row">
+      <h3>Updates</h3>
+      {#if checkResult && !checkResult.update}
+        <span class="status-pill success" title="VoxCtrl {checkResult.current_version} is the latest release">✔ Up to date</span>
+      {/if}
+    </div>
     <p class="hint">
       VoxCtrl never checks for updates on its own. Press "Check for updates" to ask GitHub whether a
       newer release has been published — that request carries nothing about you or your machine. If
@@ -136,9 +141,6 @@
         {checking ? "Checking…" : "Check for updates"}
       </button>
     </div>
-    {#if checkResult && !checkResult.update}
-      <p class="hint">VoxCtrl {checkResult.current_version} is the latest release.</p>
-    {/if}
     {#if checkError}
       <p class="hint error">Could not check for updates: {checkError}</p>
     {/if}
@@ -174,6 +176,13 @@
 
 <style>
   @reference "../../app.css";
+
+  .status-pill {
+    @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;
+  }
+  .status-pill.success {
+    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
+  }
 
   .btn-action {
     @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;

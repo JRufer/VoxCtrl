@@ -193,9 +193,6 @@
       {:else if phase === "up-to-date"}
         <button class="btn-primary" onclick={notNow}>Close</button>
       {:else if info}
-        <div class="left-actions">
-          <button class="link" onclick={openReleasePage}>Download from GitHub</button>
-        </div>
         <div class="right-actions">
           <button class="btn-secondary" onclick={notNow}>Not now</button>
           {#if info.can_self_update}
@@ -271,9 +268,6 @@
   }
   footer {
     @apply flex flex-wrap items-center justify-between gap-3 mt-1;
-  }
-  .left-actions {
-    @apply flex flex-col items-start gap-1;
   }
   .right-actions {
     @apply flex items-center gap-2 ml-auto;
