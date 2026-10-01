@@ -199,7 +199,7 @@ user triggered it from Settings → General or the update window.
 
 #### `check_for_update() → UpdateCheckPayload`
 Asks GitHub for the latest published release and compares it with the running
-version. Also resolves which release file matches this installation, so
+version, and gathers the release notes of every release in between into `notes`. Also resolves which release file matches this installation, so
 `install_update` does not have to fetch anything twice.
 
 ```typescript
@@ -207,7 +207,7 @@ interface UpdateInfo {
   version: string;              // "0.4.0"
   tag: string;                  // "v0.4.0"
   current_version: string;      // the version running now
-  notes: string;                // release notes, trimmed for a dialog
+  notes: string;                // notes for each release newer than yours, up to the latest, newest first
   release_url: string;
   asset_name: string | null;    // the file that would be installed
   download_size: number;        // bytes
