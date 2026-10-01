@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
+  import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
 
   let { recording = false, active = true } = $props();
@@ -11,28 +11,16 @@
   const H = 78;
 
   let tracePath = $state("");
-  let unlistenAudioLevel: (() => void) | null = null;
-  let animationFrameId: number;
-  let targetVolume = 0;
-  let currentVolume = 0;
 
   const isReady = $derived($status.audio_ready !== false);
   const targetLabel = $derived($status.active_target_label || "Focused Window");
 
   onMount(() => {
-    listen<number>("audio-level", (event) => {
-      targetVolume = Math.min(1.0, event.payload * 100.0);
-    }).then((unlisten) => {
-      unlistenAudioLevel = unlisten;
-    });
-
     const history = new Float32Array(POINTS);
     let phase = 0;
 
-    function update() {
+    return onLevelFrame((currentVolume) => {
       phase += 0.016;
-      currentVolume += (targetVolume - currentVolume) * 0.35;
-      targetVolume *= 0.86;
 
       let sample = 0;
       if ($status.processing) {
@@ -54,15 +42,7 @@
         d += i === 0 ? `M ${x.toFixed(0)} ${y.toFixed(1)}` : ` L ${x.toFixed(0)} ${y.toFixed(1)}`;
       }
       tracePath = d;
-
-      animationFrameId = requestAnimationFrame(update);
-    }
-    animationFrameId = requestAnimationFrame(update);
-
-    return () => {
-      if (unlistenAudioLevel) unlistenAudioLevel();
-      cancelAnimationFrame(animationFrameId);
-    };
+    });
   });
 </script>
 

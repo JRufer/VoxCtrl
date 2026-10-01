@@ -352,10 +352,15 @@ fn raw_to_binding(r: RawBinding) -> HotkeyBinding {
     } else {
         vec![r.target_id.clone()]
     };
+    // A punctuation key saved by an older recorder as e.g. "KEY_." never
+    // matched anything a backend reports; the canonical name makes it fire.
+    // Rewritten on disk the next time the bindings are saved.
+    let mut keys = r.keys;
+    voxctrl_config::canonicalize_key_names(&mut keys);
     HotkeyBinding {
         id: r.id,
         label: r.label,
-        keys: r.keys,
+        keys,
         gesture,
         target_id: r.target_id,
         target_ids,
@@ -490,26 +495,6 @@ fn prune_backups(filename: &str, config_dir: &Path) {
 
 // ── Private file write ────────────────────────────────────────────────────────
 
-fn write_private(path: impl AsRef<std::path::Path>, content: &str) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        f.write_all(content.as_bytes())?;
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, content)?;
-    }
-    Ok(())
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 pub fn load_targets(config_dir: &Path) -> Result<Vec<OutputTarget>, LoaderError> {
@@ -550,7 +535,7 @@ pub fn save_targets(targets: &[OutputTarget], config_dir: &Path) -> Result<(), L
         targets: targets.iter().map(target_to_raw).collect(),
     };
     let text = toml::to_string_pretty(&file)?;
-    write_private(config_dir.join("targets.toml"), &text)?;
+    voxctrl_config::write_private(&config_dir.join("targets.toml"), &text)?;
     Ok(())
 }
 
@@ -562,6 +547,6 @@ pub fn save_bindings(bindings: &[HotkeyBinding], config_dir: &Path) -> Result<()
         bindings: bindings.iter().map(binding_to_raw).collect(),
     };
     let text = toml::to_string_pretty(&file)?;
-    write_private(config_dir.join("bindings.toml"), &text)?;
+    voxctrl_config::write_private(&config_dir.join("bindings.toml"), &text)?;
     Ok(())
 }

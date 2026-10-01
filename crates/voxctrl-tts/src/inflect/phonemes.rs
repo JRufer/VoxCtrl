@@ -280,6 +280,10 @@ impl PhonemeVocab {
         self.map.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     fn id(&self, symbol: &str) -> Option<i64> {
         self.map.get(symbol).copied()
     }

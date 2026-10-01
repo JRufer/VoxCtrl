@@ -1,6 +1,7 @@
 //! Reference copies of the pre-optimization implementations, kept only for the
 //! differential test below. Verbatim from 6195ee0.
-#![allow(dead_code)]
+// Verbatim, so they are exempt from lints as well as from use.
+#![allow(dead_code, clippy::all)]
 use std::collections::HashMap;
 use regex::Regex;
 

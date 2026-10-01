@@ -85,6 +85,8 @@ fn make_test_state() -> AppState {
         active_binding_label: Arc::new(Mutex::new("Focused Window".to_string())),
         active_binding_id: Arc::new(Mutex::new(String::new())),
         targets: Arc::new(Mutex::new(Vec::new())),
+        targets_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        bindings: Arc::new(Mutex::new(Vec::new())),
         audio_tx,
         audio_wake,
         inference_config_tx,
@@ -634,6 +636,7 @@ fn hotkey_status_honours_the_kde_manual_enable_test_override() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_prefers_the_kde_module_when_available() {
     let _lock = crate::test_utils::get_env_lock().lock().unwrap();
     std::env::set_var("VOXCTRL_FAKE_COMMANDS", "kcmshell6,gnome-control-center");
@@ -647,6 +650,7 @@ async fn open_shortcut_settings_prefers_the_kde_module_when_available() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_falls_back_down_the_candidate_list() {
     // Only the last-resort GNOME panel is "installed" — the command must
     // still succeed by walking past every unavailable candidate first,
@@ -663,6 +667,7 @@ async fn open_shortcut_settings_falls_back_down_the_candidate_list() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // see get_env_lock
 async fn open_shortcut_settings_explains_itself_when_nothing_is_installed() {
     let _lock = crate::test_utils::get_env_lock().lock().unwrap();
     std::env::set_var("VOXCTRL_FAKE_COMMANDS", "");
@@ -782,7 +787,7 @@ async fn test_speak_target_delivery() {
 
     let spoken = Arc::new(Mutex::new(String::new()));
     let spoken_clone = spoken.clone();
-    let _ = voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
+    voxctrl_routing::targets::set_speak_callback(Arc::new(move |text| {
         *spoken_clone.lock().unwrap() = text.to_string();
     }));
 
@@ -846,4 +851,41 @@ fn test_setup_flag_is_not_matched_by_lookalike_arguments() {
             "{flag} must not be mistaken for the setup flag"
         );
     }
+}
+
+/// The tray caches the target label and re-derives it only when its inputs
+/// change; a label renamed in Settings must count as a change.
+#[tokio::test]
+async fn replacing_targets_marks_them_changed() {
+    let state = make_test_state();
+    let before = state.targets_version();
+    let target: voxctrl_routing::OutputTarget = serde_json::from_value(serde_json::json!({
+        "id": "notes", "label": "Renamed", "delivery": "inject",
+    }))
+    .unwrap();
+
+    state.set_targets(vec![target]).await;
+
+    assert_ne!(state.targets_version(), before, "a targets save did not invalidate cached labels");
+    assert_eq!(
+        voxctrl_routing::targets_display_label("notes", &state.targets.lock().await),
+        "Renamed"
+    );
+}
+
+/// The dictation path resolves a hotkey's per-binding settings from the
+/// in-memory cache that `save_bindings` keeps, not from `bindings.toml`.
+#[test]
+fn bindings_resolve_from_the_cache() {
+    let state = make_test_state();
+    let binding: voxctrl_routing::HotkeyBinding = serde_json::from_value(serde_json::json!({
+        "id": "rewrite", "keys": ["KEY_F9"], "gesture": "hold", "target_id": "default",
+        "openai_enabled": true,
+    }))
+    .unwrap();
+    *state.bindings.blocking_lock() = vec![binding];
+
+    assert_eq!(state.binding("rewrite").and_then(|b| b.openai_enabled), Some(true));
+    assert!(state.binding("missing").is_none());
+    assert!(state.binding("").is_none(), "no hotkey must not match a binding");
 }

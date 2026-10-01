@@ -50,7 +50,9 @@ pub enum TtsCommand {
     /// Live config swap — also how the memory policy reaches a running worker,
     /// so the tray toggle never has to tear down the engine (and its audio
     /// device) just to change it.
-    UpdateConfig(TtsConfig),
+    /// Boxed: the config is by far the largest payload, and unboxed it would
+    /// make every command on the queue that size.
+    UpdateConfig(Box<TtsConfig>),
     /// Load the model now (and restart the idle countdown) without speaking.
     /// Sent as soon as VoxCtrl knows speech is likely — e.g. the moment a
     /// recording starts — so the load overlaps with the user still talking.
@@ -63,7 +65,7 @@ static ACTIVE_SINK: std::sync::Mutex<Option<std::sync::Arc<rodio::Sink>>> = std:
 pub fn stop_current_playback() {
     let mut guard = ACTIVE_SINK.lock().unwrap();
     if let Some(ref sink) = *guard {
-        let _ = sink.stop();
+        sink.stop();
     }
     *guard = None;
 }
@@ -115,7 +117,7 @@ impl TtsEngineHandle {
     }
 
     pub fn update_config(&self, config: TtsConfig) {
-        let _ = self.tx.send(TtsCommand::UpdateConfig(config));
+        let _ = self.tx.send(TtsCommand::UpdateConfig(Box::new(config)));
     }
 
     pub fn shutdown(&self) {
@@ -310,7 +312,7 @@ impl TtsEngineWorker {
                         new_cfg.engine, new_cfg.memory_mode
                     );
                     let was_unloading = current_config.unloads_when_idle();
-                    current_config = new_cfg;
+                    current_config = *new_cfg;
                     // Switching to on-demand starts the clock now rather than
                     // dropping a model that may be about to be used again.
                     last_used = Instant::now();

@@ -5,6 +5,23 @@
   import { config } from "../../stores/config";
   import TargetEditorModal from "./TargetEditorModal.svelte";
   import CustomSelect from "./CustomSelect.svelte";
+  import HotkeyBackendBanners from "./HotkeyBackendBanners.svelte";
+  import { newOutputTarget } from "./routing-types";
+  import {
+    GESTURE_LABELS,
+    GESTURE_ORDER,
+    bindingSignature,
+    bindingTargetsLabel,
+    duplicateSignatures,
+    sameKeys,
+    targetOptionLabel,
+    type BoundShortcut,
+    type GestureType,
+    type HotkeyStatus,
+    type KeysCheck,
+  } from "./hotkeys";
+  import { isModifiersOnly, mapBrowserKeyToEvdev } from "../keys";
+  import { autoResize } from "../actions";
 
   let targets = $state<OutputTarget[]>([]);
   let bindings = $state<HotkeyBinding[]>([]);
@@ -32,54 +49,9 @@
   let editOpenaiPrompt = $state("");
   let editOpenaiSystemPrompt = $state("");
 
-  // Helper to construct a canonical signature for a binding's key combination and gesture type
-  function getBindingSignature(keys: string[], gesture: string): string {
-    const sortedKeys = [...keys].sort().join(",");
-    return `${gesture}:${sortedKeys}`;
-  }
-
-  // Keys alone, ignoring the gesture. double_tap and double_tap_hold on the
-  // same keys are a supported pairing rather than a conflict, and on the portal
-  // backend they are registered as a single system shortcut.
-  function getTriggerSignature(keys: string[]): string {
-    return [...keys].sort().join(",");
-  }
-
-  // Derived set of signatures that are shared by two or more bindings (regardless of disabled state)
-  let conflictingSignatures = $derived.by(() => {
-    const sigCounts = new Map<string, number>();
-    for (const b of bindings) {
-      if (b.keys && b.keys.length > 0) {
-        const sig = getBindingSignature(b.keys, b.gesture);
-        sigCounts.set(sig, (sigCounts.get(sig) || 0) + 1);
-      }
-    }
-    const dups = new Set<string>();
-    for (const [sig, count] of sigCounts.entries()) {
-      if (count > 1) {
-        dups.add(sig);
-      }
-    }
-    return dups;
-  });
-
-  // Derived set of signatures that are shared by two or more active/enabled bindings
-  let activeConflictingSignatures = $derived.by(() => {
-    const activeSigCounts = new Map<string, number>();
-    for (const b of bindings) {
-      if (!b.disabled && b.keys && b.keys.length > 0) {
-        const sig = getBindingSignature(b.keys, b.gesture);
-        activeSigCounts.set(sig, (activeSigCounts.get(sig) || 0) + 1);
-      }
-    }
-    const dups = new Set<string>();
-    for (const [sig, count] of activeSigCounts.entries()) {
-      if (count > 1) {
-        dups.add(sig);
-      }
-    }
-    return dups;
-  });
+  // Signatures shared by two or more bindings, and by two or more enabled ones.
+  let conflictingSignatures = $derived(duplicateSignatures(bindings));
+  let activeConflictingSignatures = $derived(duplicateSignatures(bindings, true));
 
   // Derived check: does the current edited binding in the modal conflict with another existing binding?
   // Excludes self-conflict: comparing a binding against the same binding ID never counts.
@@ -87,114 +59,17 @@
   // that a binding already had is not a conflict with itself.
   let editingBindingConflict = $derived.by(() => {
     if (!editingBinding || !editingBinding.keys || editingBinding.keys.length === 0) return false;
-    const editSig = getBindingSignature(editingBinding.keys, editingBinding.gesture);
+    const editSig = bindingSignature(editingBinding.keys, editingBinding.gesture);
     // Only flag as a conflict if another *different* binding (different ID) uses the same signature
-    return bindings.some(b => b.id !== editingBinding!.id && getBindingSignature(b.keys, b.gesture) === editSig);
+    return bindings.some(b => b.id !== editingBinding!.id && bindingSignature(b.keys, b.gesture) === editSig);
   });
 
-  // Reusable Svelte action to auto-resize textareas dynamically to fit their contents
-  function autoResize(node: HTMLTextAreaElement) {
-    function resize() {
-      node.style.height = "auto";
-      node.style.height = `${node.scrollHeight}px`;
-    }
-    node.addEventListener("input", resize);
-    const timer = setTimeout(resize, 0);
-
-    return {
-      update() {
-        resize();
-      },
-      destroy() {
-        clearTimeout(timer);
-        node.removeEventListener("input", resize);
-      }
-    };
-  }
-
-  // How shortcuts are actually reaching the app. Shown in the UI because the
-  // answer decides what VoxCtrl can see: on the portal it is told only that its
-  // own shortcut fired, and the keys are chosen and owned by the desktop.
-  type BoundShortcut = {
-    binding_ids: string[];
-    requested: string | null;
-    trigger_description: string;
-    bound: boolean;
-  };
-  type GestureType = "hold" | "toggle" | "double_tap" | "double_tap_hold";
-
-  const GESTURE_LABELS: Record<GestureType, string> = {
-    hold: "Hold keys to dictate (Release to transcribe)",
-    toggle: "Tap once to start recording, tap again to finish",
-    double_tap: "Double-tap hotkey to trigger recording",
-    double_tap_hold: "Double-tap & hold keys to dictate (Release to transcribe)",
-  };
-
-  const GESTURE_ORDER: GestureType[] = ["hold", "toggle", "double_tap", "double_tap_hold"];
-
-  type HotkeyStatus = {
-    is_active: boolean;
-    backend: string;
-    is_private: boolean;
-    portal_error: string | null;
-    portal_refused: boolean;
-    shortcuts: BoundShortcut[];
-    // Gesture styles the running backend can actually deliver. A backend that
-    // only learns about key presses (a Cinnamon/MATE native shortcut) cannot
-    // end a hold or tell a tap from a hold, so it reports "toggle" alone.
-    supported_gestures: GestureType[];
-    x11_error: string | null;
-    session_type: string;
-    devices_total: number;
-    devices_readable: number;
-    needs_attention: boolean;
-    detail: string;
-    // KDE registers portal shortcuts disabled and gives no way to check that
-    // over D-Bus, so this is a standing warning on KDE rather than a detected
-    // fact about any one shortcut. See docs/hotkeys.md.
-    needs_manual_enable: boolean;
-    manual_enable_hint: string | null;
-  };
-
   let hotkeyStatus = $state<HotkeyStatus | null>(null);
-  let openingShortcutSettings = $state(false);
-  let openShortcutSettingsError = $state<string | null>(null);
-  let retryingShortcuts = $state(false);
-  let retryShortcutsError = $state<string | null>(null);
-  let backendBannerExpanded = $state(false);
-  let manualEnableExpanded = $state(false);
-
   async function refreshHotkeyStatus() {
     try {
       hotkeyStatus = await invoke<HotkeyStatus>("check_hotkey_status");
     } catch (e) {
       console.error("Failed to read hotkey status:", e);
-    }
-  }
-
-  async function openShortcutSettings() {
-    openingShortcutSettings = true;
-    openShortcutSettingsError = null;
-    try {
-      await invoke("open_shortcut_settings");
-    } catch (e: any) {
-      openShortcutSettingsError = e?.toString() ?? "Could not open shortcut settings.";
-    } finally {
-      openingShortcutSettings = false;
-    }
-  }
-
-  async function handleRetryShortcuts() {
-    retryingShortcuts = true;
-    retryShortcutsError = null;
-    try {
-      await invoke("retry_portal_shortcuts");
-      await refreshHotkeyStatus();
-    } catch (e: any) {
-      retryShortcutsError = e?.toString() ?? "Failed to request shortcut approval from desktop.";
-      await refreshHotkeyStatus();
-    } finally {
-      retryingShortcuts = false;
     }
   }
 
@@ -260,18 +135,8 @@
     }
   }
 
-  function formatBindingTargets(b: HotkeyBinding) {
-    const ids = b.target_ids && b.target_ids.length > 0 ? b.target_ids : [b.target_id];
-    return ids.map(id => {
-      const t = targets.find(target => target.id === id);
-      return t ? t.label : (id === "default" ? "Focused Window" : id);
-    }).join(", ");
-  }
-
-  function getTargetLabel(id: string): string {
-    const t = targets.find(target => target.id === id);
-    return t ? `${t.label} (${t.delivery})` : (id === "default" ? "Focused Window" : id);
-  }
+  const formatBindingTargets = (b: HotkeyBinding) => bindingTargetsLabel(b, targets);
+  const getTargetLabel = (id: string) => targetOptionLabel(id, targets);
 
   // --- CRUD Hotkey Bindings ---
   function addNewBinding() {
@@ -377,9 +242,7 @@
     // skip the structural check. The binding was already saved with these keys,
     // so rejecting them here would be a false error — especially when the user
     // is only editing the label or output target.
-    const finalKeysSorted = [...editingBinding.keys].sort().join(",");
-    const origKeysSorted = [...originalBindingKeys].sort().join(",");
-    const keysUnchanged = !isEditingBindingNew && finalKeysSorted === origKeysSorted;
+    const keysUnchanged = !isEditingBindingNew && sameKeys(editingBinding.keys, originalBindingKeys);
 
     if (!keysUnchanged) {
       try {
@@ -448,32 +311,6 @@
   }
 
   // --- Keyboard Event Capture / Recorder ---
-  function mapBrowserKeyToEvdev(key: string, code: string): string {
-    const codeUpper = code.toUpperCase();
-    if (key === "Control") return "KEY_LEFTCTRL";
-    if (key === "Alt") return "KEY_LEFTALT";
-    if (key === "Shift") return "KEY_LEFTSHIFT";
-    if (key === "Meta" || key === "OS" || key === "Super") return "KEY_LEFTMETA";
-
-    if (codeUpper === "SPACE") return "KEY_SPACE";
-    if (codeUpper === "ENTER") return "KEY_ENTER";
-    if (codeUpper === "ESCAPE" || codeUpper === "ESC") return "KEY_ESC";
-    if (codeUpper === "TAB") return "KEY_TAB";
-    if (codeUpper === "BACKSPACE") return "KEY_BACKSPACE";
-    if (codeUpper === "DELETE") return "KEY_DELETE";
-
-    if (/^KEY[A-Z]$/.test(codeUpper)) {
-      return `KEY_${codeUpper.slice(3)}`;
-    }
-    if (codeUpper.startsWith("KEY")) return codeUpper;
-    if (codeUpper.startsWith("DIGIT")) return `KEY_${codeUpper.replace("DIGIT", "")}`;
-    if (codeUpper.startsWith("ARROW")) return `KEY_${codeUpper.replace("ARROW", "")}`;
-    if (codeUpper.startsWith("F") && codeUpper.length > 1) return `KEY_${codeUpper}`;
-
-    if (key.length === 1) return `KEY_${key.toUpperCase()}`;
-    return `KEY_${codeUpper}`;
-  }
-
   let currentlyPressedKeys = $state<string[]>([]);
   // The keys the binding had when the edit modal was opened. Used to detect
   // a no-op re-record so we don't show stale rejection state when the user
@@ -488,32 +325,13 @@
     );
   });
 
-  // Result of validating the last captured combination. The rules live in Rust
-  // (`voxctrl_hotkeys::accelerator`) and are reached over IPC, so the recorder
-  // and the portal registration cannot disagree about what is bindable.
-  type KeysCheck = {
-    accepted: boolean;
-    enforced: boolean;
-    accelerator: string | null;
-    problem: string | null;
-    message: string | null;
-  };
+  // Result of validating the last captured combination (see `KeysCheck`).
   let keysCheck = $state<KeysCheck | null>(null);
 
-  // Presentational only — used for the live "keep going" hint while keys are
-  // still held, and for the badge on saved bindings. The authoritative verdict
-  // always comes from the backend, so drift here cannot let an invalid
-  // combination through.
-  const MODIFIER_KEYS = new Set([
-    "KEY_LEFTCTRL", "KEY_RIGHTCTRL",
-    "KEY_LEFTALT", "KEY_RIGHTALT",
-    "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT",
-    "KEY_LEFTMETA", "KEY_RIGHTMETA",
-  ]);
-
-  function isModifiersOnly(keys: string[]): boolean {
-    return keys.length > 0 && keys.every(k => MODIFIER_KEYS.has(k));
-  }
+  // `isModifiersOnly` is presentational only — used for the live "keep going"
+  // hint while keys are still held, and for the badge on saved bindings. The
+  // authoritative verdict always comes from the backend, so drift here cannot
+  // let an invalid combination through.
 
   // Whether a bare-modifier binding is actually broken on this machine, as
   // opposed to merely fragile. Only the portal cannot deliver them.
@@ -539,9 +357,7 @@
     // If the user re-recorded the exact same combination the binding already
     // had, treat it as a no-op: clear any stale rejection from a previous
     // capture in this session and keep the current keys unchanged.
-    const sortedNew = [...keys].sort().join(",");
-    const sortedOrig = [...originalBindingKeys].sort().join(",");
-    if (sortedNew === sortedOrig) {
+    if (sameKeys(keys, originalBindingKeys)) {
       keysCheck = null;
       editingBinding.keys = [...keys];
       return;
@@ -614,25 +430,7 @@
     targetIndexTriggeredNew = idx;
     isEditingTargetNew = true;
 
-    editingTarget = {
-      id: "new_target_" + Math.random().toString(36).substring(2, 6),
-      label: "New Target",
-      delivery: "inject",
-      file_prefix: "- ",
-      file_timestamp: true,
-      file_timestamp_format: "%Y-%m-%dT%H:%M:%SZ",
-      file_mode: "append",
-      http_method: "POST",
-      http_json_template: { text: "{text}" },
-      webhook_json_template: { text: "{text}" },
-      mcp_tool: "speak_text",
-      mcp_args: { text: "{text}" },
-      chat_max_history: 20,
-      chat_timeout_secs: 120,
-      chat_reply_mode: "speak",
-      strip_newlines: false,
-      processing: {},
-    };
+    editingTarget = newOutputTarget();
   }
 
   function cancelTargetModal() {
@@ -670,107 +468,7 @@
     </div>
   </div>
 
-  {#if hotkeyStatus}
-    <div
-      class="backend-banner"
-      class:private={hotkeyStatus.is_private}
-      class:warn={!hotkeyStatus.is_private && hotkeyStatus.is_active}
-      class:broken={!hotkeyStatus.is_active}
-    >
-      <button
-        type="button"
-        class="banner-toggle"
-        onclick={() => backendBannerExpanded = !backendBannerExpanded}
-        aria-expanded={backendBannerExpanded}
-        aria-label="Toggle shortcut backend details"
-      >
-        <span class="backend-icon">
-          {hotkeyStatus.is_private ? "🔒" : hotkeyStatus.is_active ? "⚠️" : "⛔"}
-        </span>
-        <strong class="banner-title">
-          {#if hotkeyStatus.backend === "portal"}
-            Your desktop is handling these shortcuts
-          {:else if hotkeyStatus.backend === "windows_hook"}
-            Reading keystrokes with a keyboard hook
-          {:else if hotkeyStatus.backend === "evdev"}
-            Reading input devices directly
-          {:else if hotkeyStatus.backend === "starting"}
-            Starting up…
-          {:else}
-            Global shortcuts are not available
-          {/if}
-        </strong>
-        <svg
-          class="banner-chevron"
-          class:expanded={backendBannerExpanded}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
-      {#if backendBannerExpanded}
-        <div class="banner-content">
-          <span class="backend-detail">{hotkeyStatus.detail}</span>
-          {#if hotkeyStatus.backend === "portal"}
-            <span class="backend-detail">
-              Your desktop decides which keys VoxCtrl may claim, and may ask you to confirm them.
-              If a shortcut below shows different keys than you chose, that is your desktop's
-              choice and it wins.
-            </span>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  {/if}
-
-  {#if hotkeyStatus?.needs_manual_enable}
-    <div class="manual-enable-banner">
-      <button
-        type="button"
-        class="banner-toggle"
-        onclick={() => manualEnableExpanded = !manualEnableExpanded}
-        aria-expanded={manualEnableExpanded}
-        aria-label="Toggle manual shortcut enable details"
-      >
-        <span class="backend-icon">🔧</span>
-        <strong class="banner-title">One more step on KDE: enable these shortcuts yourself</strong>
-        <svg
-          class="banner-chevron"
-          class:expanded={manualEnableExpanded}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
-      {#if manualEnableExpanded}
-        <div class="banner-content">
-          <span class="backend-detail">{hotkeyStatus.manual_enable_hint}</span>
-          <div class="manual-enable-actions">
-            <button
-              class="btn-action primary"
-              onclick={openShortcutSettings}
-              disabled={openingShortcutSettings}
-            >
-              {openingShortcutSettings ? "Opening…" : "Open Shortcut Settings"}
-            </button>
-          </div>
-          {#if openShortcutSettingsError}
-            <span class="backend-detail error">{openShortcutSettingsError}</span>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  {/if}
+  <HotkeyBackendBanners status={hotkeyStatus} />
 
   <button class="btn-add-wide" onclick={addNewBinding}>
     ＋ Add New Hotkey Binding
@@ -790,17 +488,17 @@
       <div
         class="binding-item glass"
         class:disabled={b.disabled}
-        class:has-conflict={b.keys && b.keys.length > 0 && conflictingSignatures.has(getBindingSignature(b.keys, b.gesture))}
-        class:active-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture))}
+        class:has-conflict={b.keys && b.keys.length > 0 && conflictingSignatures.has(bindingSignature(b.keys, b.gesture))}
+        class:active-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(bindingSignature(b.keys, b.gesture))}
       >
-        {#if !b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture))}
+        {#if !b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(bindingSignature(b.keys, b.gesture))}
           <span class="conflict-marker">CONFLICT</span>
         {/if}
         <div class="binding-content">
           <div class="binding-header-row">
             <div
               class="binding-title"
-              class:has-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(getBindingSignature(b.keys, b.gesture))}
+              class:has-conflict={!b.disabled && b.keys && b.keys.length > 0 && activeConflictingSignatures.has(bindingSignature(b.keys, b.gesture))}
             >
               {b.label || b.id}
             </div>
@@ -1171,64 +869,8 @@
   />
 {/if}
 
-<style>
+<style lang="postcss">
   @reference "../../app.css";
-
-  .backend-banner {
-    @apply flex flex-col rounded-[var(--radius)] p-2.5 px-3.5 mb-1 border bg-white/[0.03] border-[var(--border)] transition-colors duration-150;
-  }
-
-  .backend-banner.private {
-    @apply bg-emerald-500/6 border-emerald-500/25;
-  }
-
-  .backend-banner.warn {
-    @apply bg-amber-500/6 border-amber-500/25;
-  }
-
-  .backend-banner.broken {
-    @apply bg-red-500/6 border-red-500/25;
-  }
-
-  .manual-enable-banner {
-    @apply flex flex-col rounded-[var(--radius)] p-2.5 px-3.5 mb-1 border bg-amber-500/6 border-amber-500/25 transition-colors duration-150;
-  }
-
-  .banner-toggle {
-    @apply flex items-center gap-2.5 w-full bg-transparent border-none p-0 text-left cursor-pointer select-none text-[var(--text)];
-  }
-
-  .banner-title {
-    @apply flex-1 text-[12.5px] font-semibold leading-normal;
-  }
-
-  .banner-chevron {
-    @apply w-4 h-4 text-[var(--text-muted)] shrink-0 transition-transform duration-200 ease-in-out;
-  }
-
-  .banner-chevron.expanded {
-    @apply rotate-180 text-[var(--text)];
-  }
-
-  .banner-content {
-    @apply flex flex-col gap-1 min-w-0 w-full text-[12.5px] mt-2 pt-2 border-t border-white/5 pl-6.5;
-  }
-
-  .backend-icon {
-    @apply text-base leading-none shrink-0;
-  }
-
-  .backend-detail {
-    @apply text-[var(--text-muted)] leading-relaxed;
-  }
-
-  .backend-detail.error {
-    @apply text-red-400;
-  }
-
-  .manual-enable-actions {
-    @apply mt-1;
-  }
 
   .keys-rejected {
     @apply flex items-start gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/25 text-[12px] leading-relaxed text-red-300;
@@ -1315,31 +957,6 @@
 
   .empty-state p {
     @apply text-xs text-[var(--text-muted)] m-0;
-  }
-
-  .btn-action {
-    @apply bg-[var(--surface2)] text-[var(--text)] border border-[var(--border)] rounded-[var(--radius)] p-1.5 px-3.5 text-xs font-semibold cursor-pointer transition-all duration-150 ease-out;
-  }
-  .btn-action:hover {
-    @apply bg-[var(--border)] border-[var(--text-muted)];
-  }
-
-  .btn-action.primary {
-    @apply bg-[var(--accent)] text-white border-none;
-  }
-  .btn-action.primary:hover {
-    @apply opacity-90;
-  }
-
-  .btn-action.small {
-    @apply p-1 px-2 text-[11px];
-  }
-
-  .btn-action.danger {
-    @apply text-red-400 border-red-400/20;
-  }
-  .btn-action.danger:hover {
-    @apply bg-red-400/10 border-red-400;
   }
 
   .btn-add-wide {
@@ -1444,7 +1061,6 @@
     @apply flex items-center gap-2 w-full;
   }
 
-
   .btn-remove-inline {
     @apply flex items-center justify-center box-border bg-red-500/8 border border-red-500/20 text-red-400 cursor-pointer text-xs font-bold px-3 py-1.5 rounded-[var(--radius)] transition-all duration-150 ease-out h-[34px];
   }
@@ -1493,7 +1109,6 @@
   p.hint code {
     @apply bg-[var(--color-obsidian-950)] text-[var(--color-accent-blue)] p-0.5 px-1 rounded font-mono text-[10px] border border-[var(--border)];
   }
-
 
   .validation-error-msg {
     @apply block mt-1 text-xs font-medium text-red-400 leading-normal;

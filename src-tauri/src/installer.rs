@@ -450,6 +450,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // see get_env_lock
     async fn test_run_gui_installer_success() {
         let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
@@ -469,6 +470,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // see get_env_lock
     async fn test_run_gui_installer_failure() {
         let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
@@ -488,6 +490,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // see get_env_lock
     async fn test_run_gui_installer_without_pkexec_explains_itself() {
         // Without polkit the one-click setup cannot run at all. Failing with a
         // bare "setup failed" leaves the user with no way forward, so the error

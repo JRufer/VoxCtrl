@@ -202,7 +202,7 @@ pub fn correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> String 
     }
 
     // 1. Process multi-word phrases first (longest first)
-    multi_word.sort_by(|a, b| b.len().cmp(&a.len()));
+    multi_word.sort_by_key(|w| std::cmp::Reverse(w.len()));
 
     if !multi_word.is_empty() {
         let re_word = word_re();
@@ -390,7 +390,9 @@ mod tests {
     }
 
     /// The textbook full-table implementation, kept here as the reference the
-    /// rolling-row version with its early exit has to agree with.
+    /// rolling-row version with its early exit has to agree with — written
+    /// the textbook way on purpose, indices and all.
+    #[allow(clippy::needless_range_loop)]
     fn naive_distance(s1: &str, s2: &str) -> usize {
         let a: Vec<char> = s1.chars().collect();
         let b: Vec<char> = s2.chars().collect();

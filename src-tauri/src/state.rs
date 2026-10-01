@@ -66,8 +66,20 @@ pub struct AppState {
     /// Currently active hotkey binding ID
     pub active_binding_id: Arc<Mutex<String>>,
 
-    /// Currently configured target definitions (in-memory cache for fast lookups)
+    /// Currently configured target definitions (in-memory cache for fast lookups).
+    /// Replace it through [`AppState::set_targets`], which also bumps
+    /// `targets_version`.
     pub targets: Arc<Mutex<Vec<voxctrl_routing::OutputTarget>>>,
+
+    /// Incremented every time `targets` is replaced, so anything caching a
+    /// value derived from the targets (the tray's target label) can tell its
+    /// cache is stale without re-deriving it on every tick.
+    pub targets_version: Arc<std::sync::atomic::AtomicU64>,
+
+    /// The saved hotkey bindings (in-memory cache, kept current by the
+    /// `save_bindings` command), so the dictation path can look up a
+    /// binding's per-hotkey settings without re-reading `bindings.toml`.
+    pub bindings: Arc<Mutex<Vec<voxctrl_routing::HotkeyBinding>>>,
 
     /// Channel sender to send empty audio chunks as sentinels to unblock the coordinator thread
     pub audio_tx: crossbeam_channel::Sender<Vec<f32>>,
@@ -290,6 +302,27 @@ impl AppState {
         self.mcp_recording.store(v, Ordering::SeqCst);
     }
 
+    /// Replace the in-memory targets cache and mark it changed.
+    pub async fn set_targets(&self, targets: Vec<voxctrl_routing::OutputTarget>) {
+        *self.targets.lock().await = targets;
+        self.targets_version.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// The saved binding with this id, if there is one.
+    ///
+    /// Blocks on the lock, so it is for the pipeline's own threads; calling it
+    /// from async code would panic.
+    pub fn binding(&self, id: &str) -> Option<voxctrl_routing::HotkeyBinding> {
+        if id.is_empty() {
+            return None;
+        }
+        self.bindings.blocking_lock().iter().find(|b| b.id == id).cloned()
+    }
+
+    pub fn targets_version(&self) -> u64 {
+        self.targets_version.load(Ordering::SeqCst)
+    }
+
     pub fn increment_words(&self, n: u32) {
         self.word_count.fetch_add(n, Ordering::SeqCst);
     }
@@ -336,19 +369,23 @@ impl AppState {
         }
     }
 
-    pub async fn spawn_fifo_responders(&self, tts: voxctrl_tts::TtsEngineHandle) {
+    /// Start a responder for every target response pipe not already watched.
+    ///
+    /// Responders look the TTS worker up per line (see
+    /// `voxctrl_tts::run_fifo_responder`), so one started while TTS is off
+    /// begins speaking as soon as it is turned on, and none needs restarting
+    /// when the worker is replaced.
+    pub async fn spawn_fifo_responders(&self) {
         let targets_guard = self.targets.lock().await;
         let mut active_fifos_guard = self.active_fifos.lock().await;
 
         for target in targets_guard.iter() {
             if let Some(ref pipe_path) = target.response_pipe {
-                if !pipe_path.trim().is_empty() && !active_fifos_guard.contains(pipe_path) {
-                    active_fifos_guard.insert(pipe_path.clone());
-                    let tts_clone = tts.clone();
-                    let pipe_path_clone = pipe_path.clone();
-                    tokio::spawn(async move {
-                        voxctrl_tts::run_fifo_responder(pipe_path_clone, tts_clone).await;
-                    });
+                if !pipe_path.trim().is_empty() && active_fifos_guard.insert(pipe_path.clone()) {
+                    tokio::spawn(voxctrl_tts::run_fifo_responder(
+                        pipe_path.clone(),
+                        self.tts_handle.clone(),
+                    ));
                 }
             }
         }

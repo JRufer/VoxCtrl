@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
+  import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
 
   let { recording = false, active = true } = $props();
@@ -14,10 +14,6 @@
   const DT = 0.016;
 
   let needlePath = $state(vuNeedlePath(VU_ANGLE_MIN));
-  let unlistenAudioLevel: (() => void) | null = null;
-  let animationFrameId: number;
-  let targetVolume = 0;
-  let currentVolume = 0;
 
   const isReady = $derived($status.audio_ready !== false);
   const targetLabel = $derived($status.active_target_label || "Focused Window");
@@ -46,19 +42,11 @@
   }
 
   onMount(() => {
-    listen<number>("audio-level", (event) => {
-      targetVolume = Math.min(1.0, event.payload * 100.0);
-    }).then((unlisten) => {
-      unlistenAudioLevel = unlisten;
-    });
-
     let phase = 0;
     const needle = { x: VU_ANGLE_MIN, v: 0 };
 
-    function update() {
+    return onLevelFrame((currentVolume) => {
       phase += DT;
-      currentVolume += (targetVolume - currentVolume) * 0.35;
-      targetVolume *= 0.86;
 
       const ready = $status.audio_ready !== false;
       let target: number;
@@ -71,15 +59,7 @@
       }
       spring(needle, target, DT);
       needlePath = vuNeedlePath(needle.x);
-
-      animationFrameId = requestAnimationFrame(update);
-    }
-    animationFrameId = requestAnimationFrame(update);
-
-    return () => {
-      if (unlistenAudioLevel) unlistenAudioLevel();
-      cancelAnimationFrame(animationFrameId);
-    };
+    });
   });
 </script>
 

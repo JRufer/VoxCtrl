@@ -1,39 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
+  import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
 
   let { recording = false, active = true } = $props();
 
   let level = $state(0);
-  let unlistenAudioLevel: (() => void) | null = null;
-  let animationFrameId: number;
-  let targetVolume = 0;
-  let currentVolume = 0;
 
   const isReady = $derived($status.audio_ready !== false);
   const targetLabel = $derived($status.active_target_label || "Focused Window");
 
-  onMount(() => {
-    listen<number>("audio-level", (event) => {
-      targetVolume = Math.min(1.0, event.payload * 100.0);
-    }).then((unlisten) => {
-      unlistenAudioLevel = unlisten;
-    });
-
-    function update() {
-      currentVolume += (targetVolume - currentVolume) * 0.35;
-      targetVolume *= 0.86;
-      level = currentVolume;
-      animationFrameId = requestAnimationFrame(update);
-    }
-    animationFrameId = requestAnimationFrame(update);
-
-    return () => {
-      if (unlistenAudioLevel) unlistenAudioLevel();
-      cancelAnimationFrame(animationFrameId);
-    };
-  });
+  onMount(() => onLevelFrame((smoothed) => (level = smoothed)));
 </script>
 
 <div

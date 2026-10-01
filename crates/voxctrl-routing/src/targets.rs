@@ -8,6 +8,7 @@ use crate::models::{DeliveryResult, DeliveryType, OutputTarget, TestResult};
 
 use std::sync::Arc;
 use std::sync::OnceLock;
+use voxctrl_text::levenshtein_distance;
 
 pub type SpeakCallback = Arc<dyn Fn(&str) + Send + Sync + 'static>;
 static SPEAK_CALLBACK: OnceLock<SpeakCallback> = OnceLock::new();
@@ -1305,26 +1306,6 @@ fn clean_payload(post: &str) -> String {
     text_without_punct.to_string()
 }
 
-fn levenshtein_distance(s1: &str, s2: &str) -> usize {
-    let s1_chars: Vec<char> = s1.chars().collect();
-    let s2_chars: Vec<char> = s2.chars().collect();
-    let len1 = s1_chars.len();
-    let len2 = s2_chars.len();
-    let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
-    for i in 0..=len1 { dp[i][0] = i; }
-    for j in 0..=len2 { dp[0][j] = j; }
-    for i in 1..=len1 {
-        for j in 1..=len2 {
-            if s1_chars[i - 1] == s2_chars[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1];
-            } else {
-                dp[i][j] = 1 + std::cmp::min(dp[i - 1][j - 1], std::cmp::min(dp[i - 1][j], dp[i][j - 1]));
-            }
-        }
-    }
-    dp[len1][len2]
-}
-
 /// Lowercase `s` without changing any character's byte length, so byte offsets
 /// found in the result are valid in `s` too. The few characters whose lowercase
 /// form is longer or shorter in UTF-8 (e.g. `İ`, `ẞ`) are left as they are,
@@ -1381,7 +1362,7 @@ pub fn parse_voice_command(
                 next.is_whitespace() || next.is_ascii_punctuation()
             };
             if is_boundary_start && is_boundary_end {
-                if found_pos.map_or(true, |p| pos < p) {
+                if found_pos.is_none_or(|p| pos < p) {
                     found_pos = Some(pos);
                     trigger_len = trigger.len();
                 }

@@ -195,3 +195,43 @@ describe("wizard tables", () => {
     expect(STEP_LABELS[STEP_LABELS.length - 1]).toBe("Done");
   });
 });
+
+describe("key mapping for keys whose name is not their character", () => {
+  // The backends report evdev names, and the key matcher compares names
+  // exactly: a recorder that saved "KEY_." or the left Ctrl for the right one
+  // saved a shortcut that never fired.
+  test("punctuation maps by physical key, whatever Shift or the layout typed", () => {
+    expect(mapBrowserKeyToEvdev(".", "Period")).toBe("KEY_DOT");
+    expect(mapBrowserKeyToEvdev(">", "Period")).toBe("KEY_DOT");
+    expect(mapBrowserKeyToEvdev(",", "Comma")).toBe("KEY_COMMA");
+    expect(mapBrowserKeyToEvdev("/", "Slash")).toBe("KEY_SLASH");
+    expect(mapBrowserKeyToEvdev(";", "Semicolon")).toBe("KEY_SEMICOLON");
+    expect(mapBrowserKeyToEvdev("'", "Quote")).toBe("KEY_APOSTROPHE");
+    expect(mapBrowserKeyToEvdev("`", "Backquote")).toBe("KEY_GRAVE");
+    expect(mapBrowserKeyToEvdev("-", "Minus")).toBe("KEY_MINUS");
+    expect(mapBrowserKeyToEvdev("=", "Equal")).toBe("KEY_EQUAL");
+    expect(mapBrowserKeyToEvdev("[", "BracketLeft")).toBe("KEY_LEFTBRACE");
+    expect(mapBrowserKeyToEvdev("]", "BracketRight")).toBe("KEY_RIGHTBRACE");
+    expect(mapBrowserKeyToEvdev("\\", "Backslash")).toBe("KEY_BACKSLASH");
+  });
+
+  test("the numpad is not the top row", () => {
+    expect(mapBrowserKeyToEvdev("1", "Numpad1")).toBe("KEY_KP1");
+    expect(mapBrowserKeyToEvdev("+", "NumpadAdd")).toBe("KEY_KPPLUS");
+    expect(mapBrowserKeyToEvdev("Enter", "NumpadEnter")).toBe("KEY_KPENTER");
+    expect(mapBrowserKeyToEvdev("1", "Digit1")).toBe("KEY_1");
+  });
+
+  test("right-hand modifiers keep their side", () => {
+    expect(mapBrowserKeyToEvdev("Control", "ControlRight")).toBe("KEY_RIGHTCTRL");
+    expect(mapBrowserKeyToEvdev("Alt", "AltRight")).toBe("KEY_RIGHTALT");
+    expect(mapBrowserKeyToEvdev("Shift", "ShiftRight")).toBe("KEY_RIGHTSHIFT");
+    expect(mapBrowserKeyToEvdev("Meta", "MetaRight")).toBe("KEY_RIGHTMETA");
+  });
+
+  test("keycaps read naturally", () => {
+    expect(keycapLabel("KEY_DOT")).toBe(".");
+    expect(keycapLabel("KEY_KP7")).toBe("Num 7");
+    expect(keycapLabel("KEY_RIGHTCTRL")).toBe("Ctrl");
+  });
+});

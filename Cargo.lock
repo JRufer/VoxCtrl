@@ -3238,6 +3238,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "minisign-verify"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "871285dc19d8d0ebe0eef3d0e99a205f2a71363b122632cbbfa4a6c370a960ce"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6689,7 +6695,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6728,7 +6734,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "cpal",
@@ -6738,12 +6744,11 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "voxctrl-config",
 ]
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -6761,7 +6766,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -6774,7 +6779,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -6786,7 +6791,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -6808,7 +6813,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -6839,7 +6844,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6853,7 +6858,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -6867,7 +6872,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm-sidecar"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "encoding_rs",
  "llama-cpp-2",
@@ -6879,7 +6884,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -6891,7 +6896,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-routing"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6910,20 +6915,21 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "voxctrl-config",
+ "voxctrl-text",
  "voxctrl-winput",
  "zbus 4.4.0",
 ]
 
 [[package]]
 name = "voxctrl-text"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "cc",
@@ -6947,11 +6953,12 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-update"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "futures-util",
  "hex",
+ "minisign-verify",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -6964,7 +6971,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "arboard",

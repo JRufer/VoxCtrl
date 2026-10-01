@@ -6,91 +6,79 @@ use voxctrl_mcp::McpCallbacks;
 use crate::state::AppState;
 
 impl McpCallbacks for AppState {
-    fn transcribe_voice(
-        &self,
-        timeout_secs: f64,
-    ) -> impl std::future::Future<Output = anyhow::Result<String>> + Send {
-        async move {
-            use std::sync::atomic::Ordering;
-            use tokio::time::{sleep, Duration};
+    async fn transcribe_voice(&self, timeout_secs: f64) -> anyhow::Result<String> {
+        use std::sync::atomic::Ordering;
+        use tokio::time::{sleep, Duration};
 
-            // Snapshot the current version counter BEFORE starting. The delivery
-            // thread increments it each time a new result is written to last_text.
-            // Polling for version > baseline_version guarantees we only accept a
-            // result from THIS recording session, never a stale prior-session value.
-            let baseline_version = self.last_text_version.load(Ordering::SeqCst);
+        // Snapshot the current version counter BEFORE starting. The delivery
+        // thread increments it each time a new result is written to last_text.
+        // Polling for version > baseline_version guarantees we only accept a
+        // result from THIS recording session, never a stale prior-session value.
+        let baseline_version = self.last_text_version.load(Ordering::SeqCst);
 
-            self.set_mcp_recording(true);
+        self.set_mcp_recording(true);
 
-            // Start recording, interrupting any response being spoken.
-            self.begin_recording().await;
+        // Start recording, interrupting any response being spoken.
+        self.begin_recording().await;
 
-            // Spawn a timer to automatically stop recording after timeout_secs.
-            let recording = self.recording.clone();
-            let audio_tx = self.audio_tx.clone();
-            tokio::spawn(async move {
-                sleep(Duration::from_secs_f64(timeout_secs)).await;
-                recording.store(false, Ordering::SeqCst);
-                let _ = audio_tx.send(Vec::new());
-            });
+        // Spawn a timer to automatically stop recording after timeout_secs.
+        let recording = self.recording.clone();
+        let audio_tx = self.audio_tx.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_secs_f64(timeout_secs)).await;
+            recording.store(false, Ordering::SeqCst);
+            let _ = audio_tx.send(Vec::new());
+        });
 
-            // Wait until recording stops (timer or manual stop).
-            while self.is_recording() {
-                sleep(Duration::from_millis(50)).await;
+        // Wait until recording stops (timer or manual stop).
+        while self.is_recording() {
+            sleep(Duration::from_millis(50)).await;
+        }
+
+        self.set_mcp_recording(false);
+
+        // Wait for inference + delivery to produce a new last_text.
+        // last_text is now written BEFORE delivery targets run, so this poll
+        // completes as soon as inference finishes rather than waiting for slow
+        // delivery targets.  3 s budget is kept as a safety net.
+        let poll_limit = 60; // 60 × 50 ms = 3.0 s
+        let mut text = String::new();
+        for _ in 0..poll_limit {
+            sleep(Duration::from_millis(50)).await;
+            if self.last_text_version.load(Ordering::SeqCst) > baseline_version {
+                text = self.last_text.lock().await.clone();
+                break;
             }
+        }
 
-            self.set_mcp_recording(false);
-
-            // Wait for inference + delivery to produce a new last_text.
-            // last_text is now written BEFORE delivery targets run, so this poll
-            // completes as soon as inference finishes rather than waiting for slow
-            // delivery targets.  3 s budget is kept as a safety net.
-            let poll_limit = 60; // 60 × 50 ms = 3.0 s
-            let mut text = String::new();
-            for _ in 0..poll_limit {
-                sleep(Duration::from_millis(50)).await;
-                if self.last_text_version.load(Ordering::SeqCst) > baseline_version {
-                    text = self.last_text.lock().await.clone();
-                    break;
-                }
-            }
-
-            if text.is_empty() {
-                Ok("(no speech detected)".to_string())
-            } else {
-                Ok(text)
-            }
+        if text.is_empty() {
+            Ok("(no speech detected)".to_string())
+        } else {
+            Ok(text)
         }
     }
 
-    fn speak_text(
-        &self,
-        text: String,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send {
-        async move {
-            let handle = self.tts_handle.lock().await;
-            if let Some(ref tts) = *handle {
-                tts.speak(text);
-            }
-            Ok(())
+    async fn speak_text(&self, text: String) -> anyhow::Result<()> {
+        let handle = self.tts_handle.lock().await;
+        if let Some(ref tts) = *handle {
+            tts.speak(text);
         }
+        Ok(())
     }
 
-    fn get_status(&self) -> impl std::future::Future<Output = (bool, bool)> + Send {
-        async move { (self.is_recording(), self.is_speaking()) }
+    async fn get_status(&self) -> (bool, bool) {
+        (self.is_recording(), self.is_speaking())
     }
 
-    fn default_record_timeout(&self) -> impl std::future::Future<Output = f64> + Send {
-        async move {
-            let configured = self.config.lock().await.data.mcp.record_timeout;
-            // A zero or negative timeout would stop the recording before the
-            // user could say anything, so fall back to the config default
-            // rather than trusting a hand-edited config.json.
-            if configured.is_finite() && configured > 0.0 {
-                configured
-            } else {
-                voxctrl_config::McpConfig::default().record_timeout
-            }
+    async fn default_record_timeout(&self) -> f64 {
+        let configured = self.config.lock().await.data.mcp.record_timeout;
+        // A zero or negative timeout would stop the recording before the
+        // user could say anything, so fall back to the config default
+        // rather than trusting a hand-edited config.json.
+        if configured.is_finite() && configured > 0.0 {
+            configured
+        } else {
+            voxctrl_config::McpConfig::default().record_timeout
         }
     }
 }
@@ -177,48 +165,61 @@ async fn apply_dbus_binding(state: &Arc<AppState>, binding_id: &str) {
     *state.active_binding_label.lock().await = binding.label.clone();
 }
 
+/// Start a TTS worker wired to the app: its playback callbacks drive the
+/// `speaking` flag (and with it the stop-key arbiter and the overlay) and the
+/// frontend's playback events.
+///
+/// Every place that starts a worker goes through here, so none can start one
+/// that plays audio the rest of the app never hears about.
+pub fn start_tts_worker(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    cfg: &voxctrl_config::AppConfig,
+) -> voxctrl_tts::TtsEngineHandle {
+    let (app_start, app_end, app_err) = (app_handle.clone(), app_handle.clone(), app_handle.clone());
+    let (state_start, state_end) = (state.clone(), state.clone());
+    voxctrl_tts::TtsEngineWorker::start(
+        cfg.tts.clone(),
+        cfg.features.custom_vocabulary.clone(),
+        Some(Arc::new(move || {
+            state_start.set_speaking(true);
+            let _ = app_start.emit("tts-playback-start", ());
+        })),
+        Some(Arc::new(move || {
+            state_end.set_speaking(false);
+            let _ = app_end.emit("tts-playback-end", ());
+        })),
+        Some(Arc::new(move |msg: String| {
+            let _ = app_err.emit("tts-error", msg);
+        })),
+    )
+}
+
+/// Start the TTS worker (when enabled) and the response-pipe listeners.
+///
+/// This is the only place a worker is started at launch: it needs the app
+/// handle for its callbacks, which does not exist until Tauri's setup runs.
 pub fn setup_tts_and_fifos(app_handle: &tauri::AppHandle, state: Arc<AppState>) {
-    let cfg_opt = if let Ok(config_guard) = state.config.try_lock() {
-        Some(config_guard.data.clone())
-    } else {
-        None
+    let Some(cfg) = state.config.try_lock().ok().map(|g| g.data.clone()) else {
+        tracing::warn!("Config was locked during startup; TTS starts on the next settings save");
+        return;
     };
 
-    if let Some(cfg) = cfg_opt {
-        if cfg.tts.enabled {
-            if let Ok(mut handle) = state.tts_handle.try_lock() {
-                if let Some(ref tts) = *handle {
-                    tts.shutdown();
+    if cfg.tts.enabled {
+        match state.tts_handle.try_lock() {
+            Ok(mut handle) => {
+                if let Some(ref old) = *handle {
+                    old.shutdown();
                 }
-                let app_handle_clone = app_handle.clone();
-                let app_handle_clone_end = app_handle.clone();
-                let app_handle_clone_err = app_handle.clone();
-                let state_clone = state.clone();
-                let state_clone_end = state.clone();
-                let new_tts = voxctrl_tts::TtsEngineWorker::start(
-                    cfg.tts.clone(),
-                    cfg.features.custom_vocabulary.clone(),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone.set_speaking(true);
-                        let _ = app_handle_clone.emit("tts-playback-start", ());
-                    })),
-                    Some(std::sync::Arc::new(move || {
-                        state_clone_end.set_speaking(false);
-                        let _ = app_handle_clone_end.emit("tts-playback-end", ());
-                    })),
-                    Some(std::sync::Arc::new(move |msg: String| {
-                        let _ = app_handle_clone_err.emit("tts-error", msg);
-                    })),
-                );
-                *handle = Some(new_tts.clone());
-                let state_for_fifos = state.clone();
-                let tts_for_fifos = new_tts.clone();
-                tauri::async_runtime::spawn(async move {
-                    state_for_fifos.spawn_fifo_responders(tts_for_fifos).await;
-                });
+                *handle = Some(start_tts_worker(app_handle, &state, &cfg));
             }
+            Err(_) => tracing::warn!("TTS handle was locked during startup; TTS not started"),
         }
     }
+
+    tauri::async_runtime::spawn(async move {
+        state.spawn_fifo_responders().await;
+    });
 }
 
 pub fn register_speak_target(app_handle: &tauri::AppHandle) {
@@ -301,15 +302,14 @@ pub fn auto_download_speech_model_if_needed(
     // fetch, whether to open Settings — is a step the wizard asks about, so
     // making them here first would download the wrong model and bury the
     // wizard behind a window the user did not ask for.
-    if !cfg_data.ui.setup_completed {
-        if app.get_webview_window(crate::window::WIZARD_WINDOW).is_some() {
-            if let Err(e) = crate::window::open_wizard_window(&app.handle().clone()) {
-                tracing::error!("Could not open the setup wizard: {e}");
-            }
-            return;
+    //
+    // Without a wizard window in this build, fall through to the old behaviour
+    // rather than leaving a new install with no visible setup at all.
+    if !cfg_data.ui.setup_completed && app.get_webview_window(crate::window::WIZARD_WINDOW).is_some() {
+        if let Err(e) = crate::window::open_wizard_window(app.handle()) {
+            tracing::error!("Could not open the setup wizard: {e}");
         }
-        // No wizard window in this build: fall through to the old behaviour
-        // rather than leaving a new install with no visible setup at all.
+        return;
     }
 
     let show_settings = cfg_data.ui.auto_show_settings;

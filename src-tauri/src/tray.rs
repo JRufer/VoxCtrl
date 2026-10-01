@@ -246,9 +246,10 @@ pub fn spawn_status_ticker(
         // encodes, a webview event and a message to the overlay process.
         let mut last_flags: Option<(bool, bool, bool, bool, bool, u32)> = None;
         let mut last_emit = tokio::time::Instant::now() - HEARTBEAT;
-        // The label is derived from three rarely-changing strings; caching it
-        // keeps the common tick from rebuilding and re-joining it.
-        let mut label_inputs: Option<(String, String, bool)> = None;
+        // The label is derived from three rarely-changing strings and the
+        // targets (tracked by their version, so a renamed label shows at once);
+        // caching it keeps the common tick from rebuilding and re-joining it.
+        let mut label_inputs: Option<(String, String, bool, u64)> = None;
         let mut cached_label = String::new();
 
         loop {
@@ -379,11 +380,13 @@ pub fn spawn_status_ticker(
             let active_target_id = state_for_ticker.active_target.lock().await.clone();
             let binding_label = state_for_ticker.active_binding_label.lock().await.clone();
             let use_binding_label = (is_recording || is_processing) && !binding_label.is_empty();
+            let targets_version = state_for_ticker.targets_version();
             let label_changed = match &label_inputs {
-                Some((target, binding, from_binding)) => {
+                Some((target, binding, from_binding, version)) => {
                     target != &active_target_id
                         || binding != &binding_label
                         || *from_binding != use_binding_label
+                        || *version != targets_version
                 }
                 None => true,
             };
@@ -392,30 +395,15 @@ pub fn spawn_status_ticker(
                     active_target_id.clone(),
                     binding_label.clone(),
                     use_binding_label,
+                    targets_version,
                 ));
                 cached_label = if use_binding_label {
                     binding_label
                 } else {
-                    let targets_guard = state_for_ticker.targets.lock().await;
-                    active_target_id
-                        .split(',')
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                        .map(|id| {
-                            targets_guard
-                                .iter()
-                                .find(|t| t.id == id)
-                                .map(|t| t.label.clone())
-                                .unwrap_or_else(|| {
-                                    if id == "default" {
-                                        "Focused Window".to_string()
-                                    } else {
-                                        id.to_string()
-                                    }
-                                })
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" + ")
+                    voxctrl_routing::targets_display_label(
+                        &active_target_id,
+                        &state_for_ticker.targets.lock().await,
+                    )
                 };
             }
 
