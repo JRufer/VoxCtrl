@@ -194,7 +194,7 @@
         <button class="btn-primary" onclick={notNow}>Close</button>
       {:else if info}
         <div class="left-actions">
-          <button class="link" onclick={openReleasePage}>View on GitHub</button>
+          <button class="link" onclick={openReleasePage}>Download from GitHub</button>
         </div>
         <div class="right-actions">
           <button class="btn-secondary" onclick={notNow}>Not now</button>

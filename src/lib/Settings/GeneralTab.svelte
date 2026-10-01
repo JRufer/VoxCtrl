@@ -131,7 +131,7 @@
       there is one, you'll see what changed since your version and can download it.
     </p>
     <div class="field">
-      <span>Check GitHub for a newer release</span>
+      <span>Look for a newer VoxCtrl release</span>
       <button class="btn-action" onclick={checkForUpdate} disabled={checking}>
         {checking ? "Checking…" : "Check for updates"}
       </button>
