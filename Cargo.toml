@@ -8,6 +8,7 @@ members = [
     "crates/voxctrl-tts",
     "crates/voxctrl-inject",
     "crates/voxctrl-winput",
+    "crates/voxctrl-clipboard",
     "crates/voxctrl-dbus",
     "crates/voxctrl-mcp",
     "crates/voxctrl-llm",
@@ -126,6 +127,7 @@ voxctrl-inference = { path = "crates/voxctrl-inference" }
 voxctrl-tts      = { path = "crates/voxctrl-tts" }
 voxctrl-inject   = { path = "crates/voxctrl-inject" }
 voxctrl-winput   = { path = "crates/voxctrl-winput" }
+voxctrl-clipboard = { path = "crates/voxctrl-clipboard" }
 voxctrl-dbus     = { path = "crates/voxctrl-dbus" }
 voxctrl-mcp      = { path = "crates/voxctrl-mcp" }
 voxctrl-llm      = { path = "crates/voxctrl-llm" }

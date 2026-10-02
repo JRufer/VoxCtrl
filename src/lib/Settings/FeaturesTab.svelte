@@ -212,6 +212,36 @@
   </div>
 
   <div class="field-group">
+    <h3>Text Delivery</h3>
+    <label class="field">
+      <span>Paste text instead of typing it</span>
+      <input type="checkbox" bind:checked={cfg.features.paste_instead_of_typing} onchange={markDirty} />
+    </label>
+    <p class="hint">
+      Sends each transcription as one paste instead of a key press per character, so
+      nothing is typed into an app that has no text field focused. Your whole clipboard
+      (text, images, files, rich text — every format) is backed up first and put back
+      afterwards, unless you copy something else in the meantime. If a paste cannot be
+      sent, VoxCtrl types the text instead. Turn this off to always type.
+    </p>
+    <label class="field">
+      <span>Paste shortcut</span>
+      <select bind:value={cfg.features.paste_shortcut} onchange={markDirty} disabled={!cfg.features.paste_instead_of_typing}>
+        <option value="auto">Automatic (recommended)</option>
+        <option value="ctrl+v">Ctrl+V</option>
+        <option value="ctrl+shift+v">Ctrl+Shift+V</option>
+        <option value="shift+insert">Shift+Insert</option>
+      </select>
+    </label>
+    <p class="hint">
+      Automatic uses Ctrl+V, switching to Ctrl+Shift+V in terminal windows and
+      Shift+Insert in Windows consoles. Pick one explicitly only if automatic fails
+      for a window VoxCtrl cannot identify — for example a native Wayland terminal on
+      GNOME.
+    </p>
+  </div>
+
+  <div class="field-group">
     <h3>Custom Dictionary</h3>
     <p class="hint">Provide a comma-separated list of words (e.g. names or jargon like "Waylin, Rufer, Enola, Kenz") that are hard to spell. The transcription process will correct these in the final text.</p>
     <textarea 

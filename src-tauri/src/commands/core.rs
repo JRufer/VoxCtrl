@@ -85,6 +85,8 @@ pub async fn save_config(
     state.set_gain(new_config.audio.gain);
     state.set_noise_suppression(new_config.audio.noise_suppression);
     state.set_overlay_enabled(new_config.ui.show_overlay);
+    voxctrl_inject::set_paste_mode(new_config.features.paste_instead_of_typing);
+    voxctrl_inject::set_paste_shortcut(&new_config.features.paste_shortcut);
 
     // Dynamic TTS engine lifecycle management: a running worker takes the new
     // settings live; one is started only when TTS was off until now.

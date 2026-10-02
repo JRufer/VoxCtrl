@@ -285,6 +285,8 @@ pub fn run() {
     custom_overlays::refresh_bundled_example();
 
     let config = Config::load();
+    voxctrl_inject::set_paste_mode(config.data.features.paste_instead_of_typing);
+    voxctrl_inject::set_paste_shortcut(&config.data.features.paste_shortcut);
 
     // Log the sanitized configuration parameters at startup
     tracing::info!("=== System Startup Config ===");
@@ -361,6 +363,9 @@ pub fn run() {
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
         interim_in_flight: Arc::new(AtomicBool::new(false)),
+        live_text_wanted: Arc::new(AtomicBool::new(false)),
+        interim_for_commands: Arc::new(AtomicBool::new(false)),
+        interim_from_start: Arc::new(AtomicBool::new(true)),
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),

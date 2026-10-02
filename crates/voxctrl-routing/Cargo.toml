@@ -24,13 +24,11 @@ hex = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
 
+# Text delivery for the `inject` target: paste-or-type, shared with the app.
+voxctrl-inject = { workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-# Keystroke synthesis for the `inject` target. Shared with voxctrl-inject and
-# read by voxctrl-hotkeys, so it lives in a crate none of them depends on.
-voxctrl-winput = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -577,6 +577,18 @@ fn early_command_detection_defaults_on_for_older_configs() {
 }
 
 #[test]
+fn paste_instead_of_typing_defaults_on_for_older_configs() {
+    use super::FeaturesConfig;
+    let features: FeaturesConfig = serde_json::from_str(
+        r#"{"remove_fillers": true, "custom_vocabulary": [], "spoken_punctuation": true,
+            "auto_format_lists": true, "snippets": {}}"#,
+    )
+    .unwrap();
+    assert!(features.paste_instead_of_typing);
+    assert_eq!(features.paste_shortcut, "auto");
+}
+
+#[test]
 fn legacy_key_names_become_the_names_the_backends_report() {
     assert_eq!(canonical_key_name("KEY_ESCAPE"), Some("KEY_ESC"));
     assert_eq!(canonical_key_name("KEY_."), Some("KEY_DOT"));

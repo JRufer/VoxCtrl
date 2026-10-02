@@ -9,8 +9,10 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-arboard = { workspace = true }
 notify-rust = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
 voxctrl-winput = { workspace = true }
+voxctrl-clipboard = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["xtest"] }
