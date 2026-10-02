@@ -174,3 +174,84 @@ async fn a_terminal_gets_the_terminal_shortcut() {
     // Nothing was on the clipboard before, so nothing is afterwards.
     assert_eq!(clipboard_text_now(), None);
 }
+
+#[tokio::test]
+async fn repeated_dictations_keep_pasting() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(_x) = Xvfb::start() else {
+        eprintln!("Xvfb not available; skipping");
+        return;
+    };
+    voxctrl_inject::set_paste_shortcut("auto");
+    let _user = voxctrl_clipboard::set_text("what the user had copied").unwrap();
+    let app = spawn_app("firefox");
+    for i in 0..6 {
+        *app.pasted.lock().unwrap() = None;
+        let t0 = Instant::now();
+        voxctrl_inject::inject_text_with(&format!("dictation number {i}"), true).await.unwrap();
+        let (text, _) = wait_for(&app).unwrap_or_else(|| panic!("dictation {i} never pasted"));
+        assert_eq!(text, format!("dictation number {i}"));
+        eprintln!("dictation {i}: {:?}", t0.elapsed());
+        assert_eq!(clipboard_text_now().as_deref(), Some("what the user had copied"), "after {i}");
+    }
+}
+
+/// An application that owns the clipboard and never answers requests for it
+/// (frozen, or stuck rendering a large item).
+fn spawn_unresponsive_owner() -> std::sync::mpsc::Sender<()> {
+    let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (conn, screen) = RustConnection::connect(None).unwrap();
+        let root = conn.setup().roots[screen].root;
+        let win = conn.generate_id().unwrap();
+        conn.create_window(COPY_DEPTH_FROM_PARENT, win, root, 0, 0, 1, 1, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new()).unwrap();
+        let clip = intern(&conn, "CLIPBOARD");
+        conn.set_selection_owner(win, clip, CURRENT_TIME).unwrap();
+        conn.get_input_focus().unwrap().reply().unwrap();
+        ready_tx.send(()).unwrap();
+        let _ = stop_rx.recv(); // never reads an event
+    });
+    ready_rx.recv().unwrap();
+    stop_tx
+}
+
+#[tokio::test]
+async fn a_frozen_clipboard_owner_does_not_stop_dictation() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(_x) = Xvfb::start() else {
+        eprintln!("Xvfb not available; skipping");
+        return;
+    };
+    voxctrl_inject::set_paste_shortcut("auto");
+    let _frozen = spawn_unresponsive_owner();
+    let app = spawn_app("firefox");
+
+    let t0 = Instant::now();
+    voxctrl_inject::inject_text_with("still gets through", true).await.unwrap();
+    let (text, _) = wait_for(&app).expect("the dictation never pasted");
+    assert_eq!(text, "still gets through");
+    eprintln!("took {:?}", t0.elapsed());
+    assert!(t0.elapsed() < Duration::from_secs(8));
+}
+
+#[tokio::test]
+async fn two_dictations_at_once_do_not_corrupt_each_other() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(_x) = Xvfb::start() else {
+        eprintln!("Xvfb not available; skipping");
+        return;
+    };
+    voxctrl_inject::set_paste_shortcut("auto");
+    let _user = voxctrl_clipboard::set_text("what the user had copied").unwrap();
+    let app = spawn_app("firefox");
+    let (a, b) = tokio::join!(
+        voxctrl_inject::inject_text_with("first", true),
+        voxctrl_inject::inject_text_with("second", true)
+    );
+    a.unwrap();
+    b.unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(clipboard_text_now().as_deref(), Some("what the user had copied"));
+    drop(app);
+}

@@ -76,6 +76,7 @@ pub async fn inject_text_with(text: &str, paste: bool) -> Result<()> {
     // target process one message per character.
     let paste = paste || voxctrl_winput::prefers_paste(text);
 
+    let _one_at_a_time = INJECT_LOCK.lock().await;
     if paste {
         match paste_text(text).await {
             Ok(()) => return Ok(()),
@@ -87,9 +88,41 @@ pub async fn inject_text_with(text: &str, paste: bool) -> Result<()> {
 
 // ── Paste ─────────────────────────────────────────────────────────────────────
 
+/// How long each clipboard step may take before it is given up on.
+///
+/// A clipboard operation can block on another program: the application that
+/// owns the clipboard may be frozen, slow to render a large item, or a remote
+/// session. Without a limit one such application would hang every dictation
+/// that follows, with nothing typed or pasted and no error. A step that times
+/// out is abandoned (its thread finishes in the background) and the dictation
+/// carries on, or falls back to typing.
+const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(4);
+const SET_TIMEOUT: Duration = Duration::from_secs(4);
+const RESTORE_TIMEOUT: Duration = Duration::from_secs(5);
+const SEND_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// One injection at a time. Two dictations in quick succession would
+/// otherwise share the clipboard: the second would back up the first one's
+/// text as "the user's clipboard" and restore it afterwards.
+static INJECT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn blocking_with_timeout<T, F>(what: &str, limit: Duration, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    match tokio::time::timeout(limit, tokio::task::spawn_blocking(f)).await {
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => anyhow::bail!("{what} task failed: {e}"),
+        Err(_) => anyhow::bail!("{what} timed out after {limit:?}"),
+    }
+}
+
 /// Back up the clipboard, put the text on it, press the paste shortcut, wait
 /// for the application to take it, and put the clipboard back.
 async fn paste_text(text: &str) -> Result<()> {
+    let started = std::time::Instant::now();
+
     // Chosen before the text goes on the clipboard, while the window that will
     // receive the paste is certain to be the one that has focus.
     let shortcut = match configured_shortcut() {
@@ -97,24 +130,39 @@ async fn paste_text(text: &str) -> Result<()> {
         None => auto_shortcut().await,
     };
 
+    // 1. Back up. Failing to is not fatal: dropping the dictation is worse
+    //    than losing what was copied, but it is logged.
+    let saved = match blocking_with_timeout("clipboard backup", SNAPSHOT_TIMEOUT, voxctrl_clipboard::snapshot).await {
+        Ok(Ok(s)) => {
+            debug!(formats = s.format_count(), elapsed = ?started.elapsed(), "clipboard backed up");
+            Some(s)
+        }
+        Ok(Err(e)) => {
+            warn!("could not back up the clipboard ({e:#}); it will not be restored");
+            None
+        }
+        Err(e) => {
+            warn!("{e:#}; the clipboard will not be restored");
+            None
+        }
+    };
+
+    // 2. Put the text on the clipboard. If that fails there is nothing to
+    //    paste, and the caller types instead.
     let t = text.to_string();
-    let (saved, held) = tokio::task::spawn_blocking(move || {
-        let saved = match voxctrl_clipboard::snapshot() {
-            Ok(s) => Some(s),
-            Err(e) => {
-                // Pasting without a backup would swallow whatever the user had
-                // copied, but dropping the dictation is worse; say so.
-                warn!("could not back up the clipboard ({e:#}); it will not be restored");
-                None
-            }
-        };
-        voxctrl_clipboard::set_text(&t).map(|held| (saved, held))
-    })
-    .await??;
+    let held = blocking_with_timeout("setting the clipboard", SET_TIMEOUT, move || voxctrl_clipboard::set_text(&t))
+        .await??;
+    debug!(elapsed = ?started.elapsed(), "text on the clipboard");
 
+    // 3. Paste.
     let mark = held.mark();
-    let sent = send_paste(shortcut).await;
+    let sent = match tokio::time::timeout(SEND_TIMEOUT, send_paste(shortcut)).await {
+        Ok(r) => r,
+        Err(_) => Err(anyhow::anyhow!("sending the paste shortcut timed out")),
+    };
+    tracing::info!(?shortcut, ok = sent.is_ok(), elapsed = ?started.elapsed(), "paste shortcut sent");
 
+    // 4. Give the application time to read the text.
     tokio::time::sleep(PASTE_SETTLE).await;
     let held = std::sync::Arc::new(held);
     if sent.is_ok() && held.tracks_reads() {
@@ -129,28 +177,29 @@ async fn paste_text(text: &str) -> Result<()> {
         }
     }
 
-    let h = held.clone();
-    let restored = tokio::task::spawn_blocking(move || {
-        match saved {
-            // Only if the clipboard still holds the text we put there: if the
-            // user copied something in the meantime, that is theirs.
-            Some(saved) if h.still_current() => {
+    // 5. Put the clipboard back — only if it still holds our text: if the
+    //    user copied something in the meantime, that is theirs.
+    if let Some(saved) = saved {
+        let h = held.clone();
+        let restored = blocking_with_timeout("clipboard restore", RESTORE_TIMEOUT, move || {
+            if h.still_current() {
                 let formats = saved.format_count();
-                voxctrl_clipboard::restore(saved).map(|()| formats)
+                voxctrl_clipboard::restore(saved).map(|()| Some(formats))
+            } else {
+                Ok(None)
             }
-            _ => Ok(usize::MAX),
+        })
+        .await;
+        match restored {
+            Ok(Ok(Some(n))) => debug!(formats = n, elapsed = ?started.elapsed(), "clipboard restored"),
+            Ok(Ok(None)) => debug!("clipboard changed during the paste; left alone"),
+            Ok(Err(e)) => warn!("could not restore the clipboard: {e:#}"),
+            Err(e) => warn!("{e:#}"),
         }
-    })
-    .await;
-    match restored {
-        Ok(Ok(n)) if n != usize::MAX => debug!("restored the clipboard ({n} formats)"),
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) => warn!("could not restore the clipboard: {e:#}"),
-        Err(e) => warn!("clipboard restore task failed: {e}"),
     }
 
     sent?;
-    debug!(?shortcut, "Injected via paste");
+    tracing::info!(?shortcut, elapsed = ?started.elapsed(), "Injected via paste");
     Ok(())
 }
 

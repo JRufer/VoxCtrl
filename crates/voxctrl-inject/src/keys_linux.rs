@@ -66,12 +66,18 @@ async fn run(bin: &str, args: &[&str]) -> bool {
 }
 
 async fn run_capture(bin: &str, args: &[&str]) -> Option<String> {
-    let out = tokio::process::Command::new(bin)
-        .args(args)
-        .stderr(std::process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
+    // A compositor query that hangs must not hold up the paste.
+    let out = tokio::time::timeout(
+        Duration::from_millis(800),
+        tokio::process::Command::new(bin)
+            .args(args)
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

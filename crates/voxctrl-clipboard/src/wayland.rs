@@ -19,6 +19,8 @@ use wl_clipboard_rs::paste::{self, ClipboardType, Seat};
 
 /// A clipboard larger than this is not worth round-tripping.
 const MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
+/// How long one format may take to arrive.
+const READ_TIMEOUT: Duration = Duration::from_millis(1500);
 
 pub struct Snapshot {
     items: Vec<(String, Vec<u8>)>,
@@ -42,8 +44,19 @@ pub fn snapshot() -> Result<Snapshot> {
     for mime in types {
         match paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Specific(&mime)) {
             Ok((mut reader, _)) => {
-                let mut data = Vec::new();
-                reader.read_to_end(&mut data)?;
+                // The owner writes into a pipe; one that never finishes would
+                // block this forever, so each read gets a deadline.
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let mut data = Vec::new();
+                    let r = reader.read_to_end(&mut data).map(|_| data);
+                    let _ = tx.send(r);
+                });
+                let data = match rx.recv_timeout(READ_TIMEOUT) {
+                    Ok(Ok(d)) => d,
+                    Ok(Err(e)) => bail!("reading {mime} failed: {e}"),
+                    Err(_) => bail!("the clipboard owner did not finish sending {mime}"),
+                };
                 total += data.len();
                 if total > MAX_TOTAL_BYTES {
                     bail!("clipboard too large to back up");
