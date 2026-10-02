@@ -407,9 +407,8 @@ pub fn restore(s: Snapshot) -> Result<()> {
 mod tests {
     use super::*;
     use std::process::{Child, Command, Stdio};
-    use std::sync::Mutex;
 
-    static LOCK: Mutex<()> = Mutex::new(());
+    use crate::ENV_LOCK as LOCK;
 
     /// A private X server, so the tests neither need a desktop nor touch one.
     struct Xvfb(Child);

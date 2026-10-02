@@ -82,7 +82,7 @@ impl Held {
 /// Serve `sources` from a background thread until another client takes the
 /// clipboard. Returns once the compositor has accepted the selection, or the
 /// error that stopped it.
-fn serve(sources: Vec<MimeSource>, sensitive: bool) -> Result<Held> {
+fn serve(sources: Vec<MimeSource>, sensitive: bool, exact: bool) -> Result<Held> {
     let owned = Arc::new(AtomicBool::new(false));
     let owned_t = owned.clone();
     let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
@@ -91,7 +91,16 @@ fn serve(sources: Vec<MimeSource>, sensitive: bool) -> Result<Held> {
         .name("voxctrl-clipboard-owner".into())
         .spawn(move || {
             let mut opts = Options::new();
+            // Required by `prepare_copy_multi` (it asserts it): serve from
+            // this thread rather than forking a background process.
+            opts.foreground(true);
             opts.sensitive(sensitive);
+            // wl-clipboard-rs offers extra plain-text types whenever a text
+            // type is present. For a restore that would invent formats the
+            // user never had — an HTML-only clipboard would gain a
+            // `text/plain` holding the markup — so a restore offers exactly
+            // what was saved.
+            opts.omit_additional_text_mime_types(exact);
             let prepared = match opts.prepare_copy_multi(sources) {
                 Ok(p) => p,
                 Err(e) => {
@@ -117,6 +126,7 @@ pub fn set_text(text: &str) -> Result<Held> {
             mime_type: copy::MimeType::Text,
         }],
         true,
+        false,
     )
 }
 
@@ -133,5 +143,100 @@ pub fn restore(s: Snapshot) -> Result<()> {
             mime_type: copy::MimeType::Specific(mime),
         })
         .collect();
-    serve(sources, false).map(|_| ())
+    serve(sources, false, true).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ENV_LOCK;
+    use std::process::{Child, Command, Stdio};
+
+    /// A headless sway, which implements the data-control protocol this
+    /// backend uses. Skipped (the tests return early) where sway is missing.
+    struct Sway(Child, std::path::PathBuf);
+
+    impl Sway {
+        fn start() -> Option<Self> {
+            let dir = std::env::temp_dir().join(format!("voxctrl-wl-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).ok()?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok()?;
+            }
+            let child = Command::new("sway")
+                .env("XDG_RUNTIME_DIR", &dir)
+                .env("WLR_BACKENDS", "headless")
+                .env("WLR_LIBINPUT_NO_DEVICES", "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()?;
+            std::env::set_var("XDG_RUNTIME_DIR", &dir);
+            std::env::set_var("WAYLAND_DISPLAY", "wayland-1");
+            std::env::remove_var("DISPLAY");
+            for _ in 0..100 {
+                if dir.join("wayland-1").exists() {
+                    std::thread::sleep(Duration::from_millis(300));
+                    return Some(Sway(child, dir));
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            None
+        }
+    }
+
+    impl Drop for Sway {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+            let _ = std::fs::remove_dir_all(&self.1);
+        }
+    }
+
+    fn sorted(s: &Snapshot) -> Vec<(String, Vec<u8>)> {
+        let mut v = s.items.clone();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn a_restore_offers_exactly_what_was_saved_and_a_dictation_pastes() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(_s) = Sway::start() else {
+            eprintln!("sway not available; skipping");
+            return;
+        };
+
+        // A browser-style clipboard: HTML and plain text with *different*
+        // contents, and an image. Nothing here is offered as UTF8_STRING, and
+        // a restore must not invent it (from whichever text format came
+        // first, which is how the HTML ended up being pasted as plain text).
+        let original = Snapshot {
+            items: vec![
+                ("text/html".into(), b"<b>rich</b>".to_vec()),
+                ("text/plain".into(), b"plain version".to_vec()),
+                ("image/png".into(), (0..5000u32).map(|i| (i % 251) as u8).collect()),
+            ],
+        };
+        restore(Snapshot { items: original.items.clone() }).unwrap();
+        let saved = snapshot().unwrap();
+        assert_eq!(sorted(&saved), sorted(&original), "restore changed the formats offered");
+
+        // Borrow for a dictation.
+        let held = set_text("dictated words").unwrap();
+        assert!(held.still_current());
+        let during = snapshot().unwrap();
+        assert!(
+            during.items.iter().any(|(m, d)| m.starts_with("text/plain") && d == b"dictated words"),
+            "the dictation was not on the clipboard"
+        );
+
+        // And back.
+        assert!(held.still_current());
+        restore(saved).unwrap();
+        let after = snapshot().unwrap();
+        assert_eq!(sorted(&after), sorted(&original));
+    }
 }

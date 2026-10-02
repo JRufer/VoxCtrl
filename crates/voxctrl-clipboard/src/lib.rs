@@ -30,6 +30,11 @@ use std::time::Duration;
 
 use anyhow::Result;
 
+/// The backend tests point the process at a private display server through
+/// environment variables, so they cannot run side by side.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
