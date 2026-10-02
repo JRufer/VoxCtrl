@@ -29,8 +29,50 @@ pub fn set_paste_mode(on: bool) {
     PASTE_MODE.store(on, Ordering::Relaxed);
 }
 
+/// Whether pasting is switched on *and* allowed on this system. Where it is
+/// not allowed (see [`paste_unsupported_reason`]) the setting has no effect:
+/// text is always typed.
 pub fn paste_mode() -> bool {
-    PASTE_MODE.load(Ordering::Relaxed)
+    PASTE_MODE.load(Ordering::Relaxed) && paste_unsupported_reason().is_none()
+}
+
+/// Why pasting is disabled on this system, or `None` when it is available.
+///
+/// Linux Mint is excluded: pasting does not work reliably there, so the
+/// setting is turned off rather than left to fail. Set
+/// `VOXCTRL_FORCE_PASTE=1` to override this when testing.
+pub fn paste_unsupported_reason() -> Option<&'static str> {
+    static REASON: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    *REASON.get_or_init(|| {
+        if std::env::var_os("VOXCTRL_FORCE_PASTE").is_some() {
+            return None;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let os_release = std::fs::read_to_string("/etc/os-release")
+                .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+                .unwrap_or_default();
+            if is_linux_mint(&os_release) {
+                return Some("Pasting is not supported on Linux Mint, so VoxCtrl types the text instead.");
+            }
+        }
+        None
+    })
+}
+
+/// Whether an `os-release` file describes Linux Mint (including LMDE, which
+/// reports the same ID).
+#[cfg(any(target_os = "linux", test))]
+fn is_linux_mint(os_release: &str) -> bool {
+    os_release.lines().any(|line| {
+        let Some((key, value)) = line.split_once('=') else { return false };
+        let value = value.trim().trim_matches('"').to_ascii_lowercase();
+        match key.trim() {
+            "ID" => value == "linuxmint",
+            "NAME" => value.contains("linux mint"),
+            _ => false,
+        }
+    })
 }
 
 /// Set the paste shortcut by name (`"auto"`, `"ctrl+v"`, `"ctrl+shift+v"`,
@@ -74,7 +116,8 @@ pub async fn inject_text_with(text: &str, paste: bool) -> Result<()> {
     }
     // Very long text is pasted whichever mode is chosen: typing it makes the
     // target process one message per character.
-    let paste = paste || voxctrl_winput::prefers_paste(text);
+    // Where pasting is disabled, that includes the long-text case.
+    let paste = (paste || voxctrl_winput::prefers_paste(text)) && paste_unsupported_reason().is_none();
 
     let _one_at_a_time = INJECT_LOCK.lock().await;
     if paste {
@@ -328,6 +371,18 @@ mod tests {
         assert!(!paste_mode());
         set_paste_mode(true);
         assert!(paste_mode());
+    }
+
+    #[test]
+    fn linux_mint_is_recognised_from_os_release() {
+        let mint = "NAME=\"Linux Mint\"\nVERSION=\"22 (Wilma)\"\nID=linuxmint\nID_LIKE=\"ubuntu debian\"\n";
+        assert!(is_linux_mint(mint));
+        let lmde = "PRETTY_NAME=\"LMDE 6 (faye)\"\nNAME=\"LMDE\"\nID=linuxmint\nID_LIKE=debian\n";
+        assert!(is_linux_mint(lmde));
+        let ubuntu = "NAME=\"Ubuntu\"\nID=ubuntu\nID_LIKE=debian\n";
+        assert!(!is_linux_mint(ubuntu));
+        // Ubuntu-derived but not Mint.
+        assert!(!is_linux_mint("NAME=\"Pop!_OS\"\nID=pop\nID_LIKE=\"ubuntu debian\"\n"));
     }
 
     #[test]

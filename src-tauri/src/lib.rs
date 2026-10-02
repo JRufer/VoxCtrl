@@ -714,6 +714,7 @@ pub fn run() {
             test_remote_stt,
             cuda_enabled,
             accelerator_support,
+            paste_support,
             check_hotkey_status,
             check_hotkey_keys,
             retry_portal_shortcuts,

@@ -184,6 +184,20 @@ pub struct AcceleratorSupport {
     pub s1_mini_gpu: Option<String>,
 }
 
+/// Whether pasting dictations is available on this system, and if not, why.
+/// The Features tab disables the setting and shows the reason.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PasteSupport {
+    pub supported: bool,
+    pub reason: Option<String>,
+}
+
+#[tauri::command]
+pub fn paste_support() -> PasteSupport {
+    let reason = voxctrl_inject::paste_unsupported_reason().map(str::to_string);
+    PasteSupport { supported: reason.is_none(), reason }
+}
+
 #[tauri::command]
 pub fn accelerator_support() -> AcceleratorSupport {
     AcceleratorSupport {
