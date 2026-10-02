@@ -95,7 +95,45 @@ impl CheckOutcome {
 pub async fn check(current_version: &str, gpu_build: bool) -> Result<CheckOutcome> {
     let client = release::client()?;
     let latest = release::fetch_latest(&client).await?;
-    Ok(evaluate(&latest, current_version, install::detect(gpu_build)))
+    let mut outcome = evaluate(&latest, current_version, install::detect(gpu_build));
+    if let CheckOutcome::Available(pending) = &mut outcome {
+        // Best effort: if the list cannot be fetched, the latest release's own
+        // notes (already in place) are still shown.
+        if let Ok(all) = release::fetch_recent(&client).await {
+            if let Some(notes) = combined_notes(&all, current_version, &latest.tag_name) {
+                pending.info.notes = notes;
+            }
+        }
+    }
+    Ok(outcome)
+}
+
+/// The notes of every published release newer than `current_version` up to and
+/// including `latest_tag`, newest first, each under its tag.
+pub fn combined_notes(releases: &[Release], current_version: &str, latest_tag: &str) -> Option<String> {
+    let mut between: Vec<&Release> = releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .filter(|r| version::is_newer(&r.tag_name, current_version))
+        .filter(|r| !version::is_newer(&r.tag_name, latest_tag))
+        .collect();
+    if between.is_empty() {
+        return None;
+    }
+    between.sort_by(|a, b| Version::parse(&b.tag_name).cmp(&Version::parse(&a.tag_name)));
+
+    let sections: Vec<String> = between
+        .iter()
+        .map(|r| {
+            let body = release::summarize_notes(r.body.as_deref().unwrap_or_default(), NOTES_BUDGET);
+            if body.is_empty() {
+                format!("## {}", r.tag_name)
+            } else {
+                format!("## {}\n{}", r.tag_name, body)
+            }
+        })
+        .collect();
+    Some(sections.join("\n\n"))
 }
 
 /// The decision half of [`check`], with the network and the machine both passed
@@ -338,6 +376,18 @@ mod tests {
             Some("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")
         );
         assert_eq!(pending.info.download_size, 98_000_000);
+    }
+
+    #[test]
+    fn notes_cover_every_release_between_current_and_latest() {
+        let mut older = release_with("v0.3.9", vec![]);
+        older.body = Some("old".into());
+        let mut mid = release_with("v0.3.11", vec![]);
+        mid.body = Some("mid".into());
+        let mut newest = release_with("v0.4.0", vec![]);
+        newest.body = Some("new".into());
+        let notes = combined_notes(&[newest, mid, older], "0.3.10", "v0.4.0").unwrap();
+        assert_eq!(notes, "## v0.4.0\nnew\n\n## v0.3.11\nmid");
     }
 
     #[test]

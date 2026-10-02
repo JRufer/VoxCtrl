@@ -132,8 +132,16 @@
     {:else if info}
       {#if info.notes}
         <section class="notes-block">
-          <h2>What's new</h2>
-          <pre class="notes">{info.notes}</pre>
+          <h2>What's new since {info.current_version}</h2>
+          <div class="notes">
+            {#each info.notes.split("\n") as line}
+              {#if line.startsWith("## ")}
+                <h3 class="note-version">{line.slice(3)}</h3>
+              {:else}
+                <div>{line || "\u00a0"}</div>
+              {/if}
+            {/each}
+          </div>
         </section>
       {/if}
 
@@ -185,9 +193,6 @@
       {:else if phase === "up-to-date"}
         <button class="btn-primary" onclick={notNow}>Close</button>
       {:else if info}
-        <div class="left-actions">
-          <button class="link" onclick={openReleasePage}>Full release notes</button>
-        </div>
         <div class="right-actions">
           <button class="btn-secondary" onclick={notNow}>Not now</button>
           {#if info.can_self_update}
@@ -237,7 +242,10 @@
     @apply rounded-lg bg-white/[0.03] border border-[var(--border)] p-3;
   }
   .notes {
-    @apply text-[12px] leading-relaxed text-[var(--color-obsidian-200)] whitespace-pre-wrap break-words m-0 max-h-[240px] overflow-y-auto font-sans;
+    @apply text-[12px] leading-relaxed text-[var(--color-obsidian-200)] whitespace-pre-wrap break-words m-0 max-h-[320px] overflow-y-auto font-sans;
+  }
+  .note-version {
+    @apply text-[12.5px] font-bold text-white mt-2 first:mt-0;
   }
   .warn {
     @apply text-[12.5px] leading-relaxed text-amber-300/90 rounded bg-amber-500/10 border border-amber-500/20 p-2.5;
@@ -260,9 +268,6 @@
   }
   footer {
     @apply flex flex-wrap items-center justify-between gap-3 mt-1;
-  }
-  .left-actions {
-    @apply flex flex-col items-start gap-1;
   }
   .right-actions {
     @apply flex items-center gap-2 ml-auto;

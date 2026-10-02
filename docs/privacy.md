@@ -122,7 +122,7 @@ update check:
 
 | Trigger | Destination | Sends |
 |---|---|---|
-| Pressing "Check for updates" in Settings → General | `api.github.com/repos/JRufer/VoxCtrl/releases/latest` | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
+| Pressing "Check for updates" in Settings → General | `api.github.com/repos/JRufer/VoxCtrl/releases/latest`, plus `.../releases?per_page=30` when a newer version exists (for the change log) | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
 | Installing an offered update | `github.com` release download (the file and its `.minisig` signature) | Nothing beyond the request for the files |
 | Downloading a speech model | HuggingFace / the model host, on demand | Nothing beyond the request for the file |
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
@@ -136,7 +136,9 @@ update check:
 VoxCtrl never checks for updates on its own — there is no launch-time check
 and nothing to turn off. Pressing "Check for updates" in Settings → General
 sends a plain unauthenticated `GET` for the public release listing — the same
-URL anyone can open in a browser. There is no request body, no cookie, no
+URL anyone can open in a browser. When a newer version exists, one more `GET`
+for the recent release list fetches the change log for every version between
+yours and the latest. There is no request body, no cookie, no
 account, no install ID, and no way for it to carry one: GitHub is told which
 version of VoxCtrl is asking (because the API requires a `User-Agent`) and
 nothing more. What comes back is the release's tag, notes and file list, which
@@ -155,7 +157,7 @@ a package manager and points you at it instead of overwriting them. See
 Once the app and its models are on disk, VoxCtrl runs fully air-gapped.
 
 **The code:** `crates/voxctrl-update/` is the whole of it — about 400 lines,
-with no dependency on the rest of the app. `release.rs` builds the one request,
+with no dependency on the rest of the app. `release.rs` builds the (at most two) requests,
 `apply.rs` downloads and checks the digest, `signature.rs` checks the release
 signature, `src-tauri/src/updater.rs` is the manual
 check command and what it shows.

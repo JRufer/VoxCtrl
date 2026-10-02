@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 pub const RELEASES_API_URL: &str =
     "https://api.github.com/repos/JRufer/VoxCtrl/releases/latest";
 
+/// The most recent releases, for assembling a change log across versions.
+pub const RELEASES_LIST_URL: &str =
+    "https://api.github.com/repos/JRufer/VoxCtrl/releases?per_page=30";
+
 /// Where a user is sent when VoxCtrl cannot update itself.
 pub const RELEASES_PAGE_URL: &str = "https://github.com/JRufer/VoxCtrl/releases/latest";
 
@@ -114,6 +118,26 @@ pub async fn fetch_latest_from(client: &reqwest::Client, url: &str) -> Result<Re
         .map_err(|e| UpdateError::Network(e.to_string()))?;
 
     parse_release(&body)
+}
+
+/// Recent published releases, newest first, so the notes for every version
+/// between the running one and the latest can be shown together.
+pub async fn fetch_recent(client: &reqwest::Client) -> Result<Vec<Release>> {
+    let response = client
+        .get(RELEASES_LIST_URL)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    if !response.status().is_success() {
+        return Err(UpdateError::Response(format!("HTTP {}", response.status())));
+    }
+    let body = response
+        .text()
+        .await
+        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    serde_json::from_str::<Vec<Release>>(&body).map_err(|e| UpdateError::Response(e.to_string()))
 }
 
 /// Parse a release payload, kept separate from the transport so the shape of

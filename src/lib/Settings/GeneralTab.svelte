@@ -52,18 +52,13 @@
     checkResult = null;
     try {
       checkResult = await invoke<UpdateCheckPayload>("check_for_update");
+      // A newer release opens the update window straight away: change log from
+      // the user's version to the latest, plus the download.
+      if (checkResult.update) await invoke("open_update_window");
     } catch (e) {
       checkError = `${e}`;
     } finally {
       checking = false;
-    }
-  }
-
-  async function showUpdateWindow() {
-    try {
-      await invoke("open_update_window");
-    } catch (e) {
-      checkError = `${e}`;
     }
   }
 
@@ -129,26 +124,23 @@
 
 
   <div class="field-group">
-    <h3>Updates</h3>
+    <div class="field-label-row">
+      <h3>Updates</h3>
+      {#if checkResult && !checkResult.update}
+        <span class="status-pill success" title="VoxCtrl {checkResult.current_version} is the latest release">✔ Up to date</span>
+      {/if}
+    </div>
     <p class="hint">
-      VoxCtrl never checks for updates on its own. Press "Check now" to ask GitHub whether a newer
-      release has been published — that request carries nothing about you or your machine.
+      VoxCtrl never checks for updates on its own. Press "Check for updates" to ask GitHub whether a
+      newer release has been published — that request carries nothing about you or your machine. If
+      there is one, you'll see what changed since your version and can download it.
     </p>
     <div class="field">
-      <span>Check now</span>
+      <span>Look for a newer VoxCtrl release</span>
       <button class="btn-action" onclick={checkForUpdate} disabled={checking}>
         {checking ? "Checking…" : "Check for updates"}
       </button>
     </div>
-    {#if checkResult && !checkResult.update}
-      <p class="hint">VoxCtrl {checkResult.current_version} is the latest release.</p>
-    {:else if checkResult?.update}
-      <p class="hint">
-        Version {checkResult.update.version} is available (you have
-        {checkResult.update.current_version}).
-        <button class="link" onclick={showUpdateWindow}>See what's new</button>
-      </p>
-    {/if}
     {#if checkError}
       <p class="hint error">Could not check for updates: {checkError}</p>
     {/if}
@@ -184,6 +176,13 @@
 
 <style lang="postcss">
   @reference "../../app.css";
+
+  .status-pill {
+    @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;
+  }
+  .status-pill.success {
+    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
+  }
 
   .hint.error {
     @apply text-red-400;
