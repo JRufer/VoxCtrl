@@ -7,6 +7,16 @@ pub use voxctrl_winput::Shortcut;
 
 #[cfg(target_os = "linux")]
 mod keys_linux;
+#[cfg(target_os = "linux")]
+mod portal_keys;
+
+/// Send the paste shortcut through the RemoteDesktop portal. Exposed so the
+/// portal flow can be exercised against a stand-in portal in tests.
+#[cfg(target_os = "linux")]
+#[doc(hidden)]
+pub async fn portal_send_paste(shortcut: Shortcut) -> Result<()> {
+    portal_keys::send_paste(shortcut).await
+}
 
 /// The least time the target gets to read the clipboard before it is handed
 /// back. Restoring immediately races the paste: the application reads the
@@ -142,7 +152,9 @@ pub async fn inject_text_with(text: &str, paste: bool) -> Result<()> {
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(4);
 const SET_TIMEOUT: Duration = Duration::from_secs(4);
 const RESTORE_TIMEOUT: Duration = Duration::from_secs(5);
-const SEND_TIMEOUT: Duration = Duration::from_secs(3);
+// Individual steps carry their own limits; this only stops a hang. It is long
+// because the first use of the RemoteDesktop portal waits for a person.
+const SEND_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// One injection at a time. Two dictations in quick succession would
 /// otherwise share the clipboard: the second would back up the first one's
@@ -165,6 +177,11 @@ where
 /// for the application to take it, and put the clipboard back.
 async fn paste_text(text: &str) -> Result<()> {
     let started = std::time::Instant::now();
+
+    // Anything that needs the user (a permission dialog) comes before the
+    // clipboard is borrowed.
+    #[cfg(target_os = "linux")]
+    keys_linux::prepare().await;
 
     // Chosen before the text goes on the clipboard, while the window that will
     // receive the paste is certain to be the one that has focus.

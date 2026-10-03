@@ -137,6 +137,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.2",
  "serde",
+ "serde_repr",
  "zbus 5.15.0",
 ]
 
@@ -6910,6 +6911,9 @@ name = "voxctrl-inject"
 version = "0.7.1"
 dependencies = [
  "anyhow",
+ "ashpd",
+ "dirs 5.0.1",
+ "enumflags2",
  "notify-rust",
  "serde_json",
  "thiserror 2.0.18",
@@ -6919,6 +6923,7 @@ dependencies = [
  "voxctrl-config",
  "voxctrl-winput",
  "x11rb",
+ "zbus 5.15.0",
 ]
 
 [[package]]

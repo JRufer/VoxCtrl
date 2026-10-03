@@ -55,14 +55,20 @@ fn have(bin: &str) -> bool {
 }
 
 async fn run(bin: &str, args: &[&str]) -> bool {
-    tokio::process::Command::new(bin)
-        .args(args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        tokio::process::Command::new(bin)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .status(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .map(|s| s.success())
+    .unwrap_or(false)
 }
 
 async fn run_capture(bin: &str, args: &[&str]) -> Option<String> {
@@ -79,6 +85,26 @@ async fn run_capture(bin: &str, args: &[&str]) -> Option<String> {
     .ok()?
     .ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Do anything that needs the user before the clipboard is borrowed.
+///
+/// On a Wayland desktop with no usable key tool, the RemoteDesktop portal is
+/// how the paste shortcut gets sent, and the first use asks the user for
+/// permission. That dialog should be answered before the clipboard is taken,
+/// not while it is held.
+pub async fn prepare() {
+    if !wayland_session() {
+        return;
+    }
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
+    // GNOME and KDE do not implement the virtual-keyboard protocol wtype uses,
+    // so having wtype installed there proves nothing.
+    let wtype_works = have("wtype") && !(desktop.contains("gnome") || desktop.contains("kde"));
+    if wtype_works || have("ydotool") {
+        return;
+    }
+    let _ = crate::portal_keys::prepare().await;
 }
 
 // ── Choosing the shortcut ─────────────────────────────────────────────────────
@@ -176,9 +202,15 @@ pub async fn send_paste(shortcut: Shortcut) -> Result<()> {
             }
             debug!("ydotool could not send the paste shortcut");
         }
+        // The desktop's own mechanism: works on GNOME and KDE, and reaches
+        // native Wayland windows.
+        match crate::portal_keys::send_paste(shortcut).await {
+            Ok(()) => return Ok(()),
+            Err(e) => debug!("RemoteDesktop portal could not send the paste shortcut: {e:#}"),
+        }
         warn!(
-            "no Wayland tool (wtype, ydotool) could send the paste shortcut; trying X11, \
-             which only reaches applications running under XWayland"
+            "nothing could send the paste shortcut to native Wayland windows (tried wtype, ydotool and \
+             the RemoteDesktop portal); trying X11, which only reaches applications running under XWayland"
         );
     }
 
