@@ -255,3 +255,39 @@ async fn two_dictations_at_once_do_not_corrupt_each_other() {
     assert_eq!(clipboard_text_now().as_deref(), Some("what the user had copied"));
     drop(app);
 }
+
+#[tokio::test]
+async fn a_clipboard_manager_taking_over_the_text_does_not_stop_the_restore() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(_x) = Xvfb::start() else {
+        eprintln!("Xvfb not available; skipping");
+        return;
+    };
+    voxctrl_inject::set_paste_shortcut("auto");
+    let _user = voxctrl_clipboard::set_text("what the user had copied").unwrap();
+    let app = spawn_app("firefox");
+
+    // A clipboard manager: it notices the dictation, then takes the clipboard
+    // over with an identical copy, so VoxCtrl no longer owns it.
+    let manager = std::thread::spawn(|| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if voxctrl_clipboard::current_text().as_deref() == Some("dictated words") {
+                return voxctrl_clipboard::set_text("dictated words").ok();
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        None
+    });
+
+    voxctrl_inject::inject_text_with("dictated words", true).await.unwrap();
+    let (text, _) = wait_for(&app).expect("never pasted");
+    assert_eq!(text, "dictated words");
+    let _manager_copy = manager.join().unwrap().expect("the manager never saw the dictation");
+
+    assert_eq!(
+        clipboard_text_now().as_deref(),
+        Some("what the user had copied"),
+        "the clipboard was left holding the dictation"
+    );
+}

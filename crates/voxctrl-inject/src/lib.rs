@@ -224,8 +224,17 @@ async fn paste_text(text: &str) -> Result<()> {
     //    user copied something in the meantime, that is theirs.
     if let Some(saved) = saved {
         let h = held.clone();
+        let ours = text.to_string();
         let restored = blocking_with_timeout("clipboard restore", RESTORE_TIMEOUT, move || {
-            if h.still_current() {
+            // Ownership alone is not the test. A clipboard manager, or the
+            // compositor bridging Wayland and X11, takes the clipboard over
+            // without changing what it holds — and refusing to restore then
+            // leaves the dictation on the clipboard for good. So the clipboard
+            // is ours to restore if we still own it *or* it still holds our
+            // text. If the user copied something else, it holds neither.
+            let owned = h.still_current();
+            let holds_our_text = owned || voxctrl_clipboard::current_text().as_deref() == Some(ours.as_str());
+            if holds_our_text {
                 let formats = saved.format_count();
                 voxctrl_clipboard::restore(saved).map(|()| Some(formats))
             } else {
@@ -234,8 +243,8 @@ async fn paste_text(text: &str) -> Result<()> {
         })
         .await;
         match restored {
-            Ok(Ok(Some(n))) => debug!(formats = n, elapsed = ?started.elapsed(), "clipboard restored"),
-            Ok(Ok(None)) => debug!("clipboard changed during the paste; left alone"),
+            Ok(Ok(Some(n))) => tracing::info!(formats = n, elapsed = ?started.elapsed(), "clipboard restored"),
+            Ok(Ok(None)) => tracing::info!("the clipboard changed during the paste and no longer holds the dictation; left alone"),
             Ok(Err(e)) => warn!("could not restore the clipboard: {e:#}"),
             Err(e) => warn!("{e:#}"),
         }

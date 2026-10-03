@@ -170,6 +170,20 @@ pub fn snapshot() -> Result<Snapshot> {
     Ok(Snapshot { items })
 }
 
+/// The clipboard's Unicode text, if it holds any.
+pub fn current_text() -> Option<String> {
+    let owner = Owner::new().ok()?;
+    let _open = Open::new(owner.0).ok()?;
+    let h = unsafe { GetClipboardData(CF_UNICODETEXT) };
+    let bytes = read_global(h)?;
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|u| *u != 0)
+        .collect();
+    Some(String::from_utf16_lossy(&units))
+}
+
 pub struct Held {
     seq: u32,
 }

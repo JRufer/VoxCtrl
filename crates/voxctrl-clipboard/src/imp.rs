@@ -76,6 +76,19 @@ pub fn set_text(text: &str) -> Result<Held> {
     Err(last)
 }
 
+pub fn current_text() -> Option<String> {
+    for b in order() {
+        let t = match b {
+            Backend::Wayland => wayland::current_text(),
+            Backend::X11 => x11::current_text(),
+        };
+        if t.is_some() {
+            return t;
+        }
+    }
+    None
+}
+
 pub fn restore(s: Snapshot) -> Result<()> {
     match s {
         Snapshot::Wayland(s) => wayland::restore(s),

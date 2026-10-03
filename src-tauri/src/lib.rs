@@ -260,7 +260,7 @@ pub fn run() {
     };
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "voxctrl=info".parse().unwrap());
+        .unwrap_or_else(|_| "voxctrl=info,voxctrl_inject=info,voxctrl_clipboard=info".parse().unwrap());
 
     let registry = tracing_subscriber::registry()
         .with(filter)

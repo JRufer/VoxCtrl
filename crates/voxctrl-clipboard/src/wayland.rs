@@ -69,6 +69,20 @@ pub fn snapshot() -> Result<Snapshot> {
     Ok(Snapshot { items })
 }
 
+/// The clipboard's text, if it holds any.
+pub fn current_text() -> Option<String> {
+    let (mut reader, _) =
+        paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Text).ok()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut data = Vec::new();
+        let r = reader.read_to_end(&mut data).map(|_| data);
+        let _ = tx.send(r);
+    });
+    let data = rx.recv_timeout(READ_TIMEOUT).ok()?.ok()?;
+    Some(String::from_utf8_lossy(&data).into_owned())
+}
+
 pub struct Held {
     owned: Arc<AtomicBool>,
 }

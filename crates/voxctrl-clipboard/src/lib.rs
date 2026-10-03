@@ -54,6 +54,7 @@ mod imp {
     pub fn snapshot() -> Result<Snapshot> { anyhow::bail!("clipboard not supported on this platform") }
     pub fn set_text(_: &str) -> Result<Held> { anyhow::bail!("clipboard not supported on this platform") }
     pub fn restore(_: Snapshot) -> Result<()> { Ok(()) }
+    pub fn current_text() -> Option<String> { None }
     impl Snapshot { pub fn format_count(&self) -> usize { 0 } }
     impl Held {
         pub fn still_current(&self) -> bool { false }
@@ -81,6 +82,16 @@ pub fn snapshot() -> Result<Snapshot> {
 /// not to record it (dictation can be sensitive).
 pub fn set_text(text: &str) -> Result<Held> {
     imp::set_text(text).map(Held)
+}
+
+/// The text currently on the clipboard, if it holds text.
+///
+/// Used to tell whether the clipboard still holds what we put there even after
+/// something else has taken it over (a clipboard manager, or the compositor
+/// bridging between Wayland and X11, re-owns the clipboard without changing
+/// what is on it).
+pub fn current_text() -> Option<String> {
+    imp::current_text()
 }
 
 /// Put a snapshot back, replacing whatever is on the clipboard now. Callers

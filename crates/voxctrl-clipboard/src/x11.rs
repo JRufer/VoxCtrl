@@ -241,6 +241,21 @@ pub fn snapshot() -> Result<Snapshot> {
     result
 }
 
+/// The clipboard's text, if the owner offers it.
+pub fn current_text() -> Option<String> {
+    let (conn, win, a) = connect().ok()?;
+    let utf8 = atom(&conn, "UTF8_STRING").ok()?;
+    let out = (|| -> Result<Option<String>> {
+        if conn.get_selection_owner(a.clipboard)?.reply()?.owner == NONE {
+            return Ok(None);
+        }
+        Ok(fetch(&conn, win, &a, utf8)?.map(|(_, _, d)| String::from_utf8_lossy(&d).into_owned()))
+    })();
+    let _ = conn.destroy_window(win);
+    let _ = conn.flush();
+    out.ok().flatten()
+}
+
 // ── Serving ───────────────────────────────────────────────────────────────────
 
 pub struct Held {
