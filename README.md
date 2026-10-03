@@ -53,7 +53,7 @@ VoxCtrl turns your voice into a programmable router via `targets.toml`:
 
 | Delivery Type | Mechanism | Primary Use Case |
 | :--- | :--- | :--- |
-| **`inject`** | Keystroke simulation via native `wtype` (Wayland), `xdotool` (X11), or `SendInput` (Windows). | Standard dictation directly into any active editor, browser, or terminal. |
+| **`inject`** | Pastes the text (one Ctrl+V; your whole clipboard is backed up and restored), falling back to typing it via `wtype`/`ydotool` (Wayland), `xdotool` (X11) or `SendInput` (Windows). See [Pasting Dictation](docs/paste.md). | Standard dictation directly into any active editor, browser, or terminal. |
 | **`clipboard`** | System clipboard population via `arboard`. | Quiet copying of notes, code snippets, or templates without modifying cursor focus. |
 | **`exec`** | Spawns shell command with `{TEXT}` substitution (`shell=False` safety). | CLI automation (`git commit -m "{TEXT}"`, piping into local tools, web searches). |
 | **`pipe`** | Writes transcription bytes to a local named FIFO pipe. | Interfacing with shell scripts, terminal agents, and background listeners. |
@@ -86,8 +86,9 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | **`voxctrl-routing`** | 11-way delivery router, voice command prefix matcher, and multi-target dispatch. |
 | **`voxctrl-hotkeys`** | XDG Desktop Portal `GlobalShortcuts` integration and gesture state machine. |
 | **`voxctrl-tts`** | Neural TTS orchestration (Breeze-TTS-2, VoxCPM2, Pocket-TTS, Piper, Inflect, eSpeak) and idle memory unloading. |
-| **`voxctrl-inject`** | Wayland (`wtype`) and X11 (`xdotool`) simulated keyboard typing. |
-| **`voxctrl-winput`** | Windows native typing via `SendInput` (`KEYEVENTF_UNICODE`) with clipboard fallback. |
+| **`voxctrl-inject`** | Text delivery: paste (with clipboard restore) or typing; shortcut choice per focused window; key sending via XTEST, `wtype`, `ydotool`, the RemoteDesktop portal, `xdotool`. |
+| **`voxctrl-clipboard`** | Full-format clipboard backup/restore on Windows, X11 and Wayland. |
+| **`voxctrl-winput`** | Windows `SendInput`: Unicode typing, paste shortcuts, focused-window class. |
 | **`voxctrl-mcp`** | Native Model Context Protocol (MCP) JSON-RPC server and client. |
 | **`voxctrl-config`** | Hot-reloadable TOML and JSON configuration management and validation. |
 | **`voxctrl-text`** | Text normalization, filler-word sanitization, and regex replacement filters. |
@@ -135,8 +136,10 @@ Install required system packages:
   ```bash
   sudo apt install -y build-essential cmake pkg-config libasound2-dev libvulkan-dev shaderc \
                       libssl-dev libglib2.0-dev libwebkit2gtk-4.1-dev libgtk-3-dev squashfs-tools
-  # Runtime injection helpers (install at least one):
-  sudo apt install -y wtype    # For Wayland
+  # Runtime injection helpers (typing fallback; install at least one).
+  # Pasting itself needs none of them on X11; on Wayland it uses wtype, ydotool
+  # or the desktop's RemoteDesktop portal (permission dialog on first use).
+  sudo apt install -y wtype    # For Wayland (wlroots compositors)
   sudo apt install -y xdotool  # For X11
   ```
 * **Arch / CachyOS**:

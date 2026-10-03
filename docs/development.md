@@ -71,8 +71,9 @@ VoxCtrl/
 │   ├── voxctrl-hotkeys/
 │   ├── voxctrl-inference/
 │   ├── voxctrl-routing/
-│   ├── voxctrl-inject/
-│   ├── voxctrl-winput/     # Windows native synthesised Unicode keyboard input
+│   ├── voxctrl-inject/     # Paste-or-type delivery; key sending per platform
+│   ├── voxctrl-clipboard/  # Full-format clipboard backup/restore
+│   ├── voxctrl-winput/     # Windows SendInput (typing, paste shortcuts, window class)
 │   ├── voxctrl-tts/
 │   ├── voxctrl-mcp/
 │   ├── voxctrl-dbus/

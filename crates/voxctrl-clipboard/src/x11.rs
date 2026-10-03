@@ -82,6 +82,9 @@ impl Snapshot {
     }
 }
 
+/// A target, the property type it is delivered as, its format, and its bytes.
+type ServedItem = (Atom, Atom, u8, Vec<u8>);
+
 struct Atoms {
     clipboard: Atom,
     targets: Atom,
@@ -324,7 +327,7 @@ fn serve(items: Vec<Item>) -> Result<Held> {
     std::thread::Builder::new()
         .name("voxctrl-clipboard-owner".into())
         .spawn(move || {
-            let setup = (|| -> Result<(RustConnection, Window, Atoms, Vec<(Atom, Atom, u8, Vec<u8>)>)> {
+            let setup = (|| -> Result<(RustConnection, Window, Atoms, Vec<ServedItem>)> {
                 let (conn, win, a) = connect()?;
                 let mut table = Vec::new();
                 for it in &items {
@@ -392,7 +395,7 @@ enum Answer {
 fn answer(
     conn: &RustConnection,
     a: &Atoms,
-    table: &[(Atom, Atom, u8, Vec<u8>)],
+    table: &[ServedItem],
     max_bytes: usize,
     requestor: Window,
     property: Atom,

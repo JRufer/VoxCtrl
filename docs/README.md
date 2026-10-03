@@ -17,6 +17,7 @@ Global shortcuts are registered with your desktop through the XDG `GlobalShortcu
 | [Audio Pipeline](./audio.md) | Audio capture, device management, VAD, resampling |
 | [Speech Recognition](./speech-recognition.md) | Whisper engine, models, inference pipeline, post-processing |
 | [Routing](./routing.md) | Output targets, hotkey bindings, delivery types |
+| [Pasting Dictation](./paste.md) | How dictation is pasted, clipboard backup/restore, per-platform key sending, troubleshooting |
 | [Hotkeys](./hotkeys.md) | Global shortcuts via the desktop portal, gestures, platform support |
 | [Text-to-Speech](./tts.md) | TTS engines, voice packs, playback |
 | [Integrations](./integrations.md) | MCP server, DBus service, OpenAI-compatible LLM API, webhooks |

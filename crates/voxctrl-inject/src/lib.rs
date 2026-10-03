@@ -1,3 +1,17 @@
+//! Delivering dictated text to the focused window.
+//!
+//! By default the text is **pasted**: the whole clipboard is backed up
+//! (`voxctrl-clipboard`), the text is put on it, the paste shortcut is sent, and
+//! the clipboard is restored. If a paste cannot be done — or pasting is switched
+//! off, or unsupported on this system — the text is **typed** instead. See
+//! `docs/paste.md` for the design, the per-platform key senders and
+//! troubleshooting.
+//!
+//! * [`inject_text`] delivers text according to the current settings
+//!   ([`set_paste_mode`], [`set_paste_shortcut`]).
+//! * [`paste_unsupported_reason`] says where pasting is disabled.
+//! * [`show_notification`] raises a desktop notification.
+
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 

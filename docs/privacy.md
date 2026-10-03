@@ -86,6 +86,32 @@ VoxCtrl does not hide this. The Hotkeys tab and the setup window both say so in 
 
 If you would rather it never happened at all, a desktop that implements the portal avoids it entirely — as does the native Cinnamon/MATE shortcut route, where the desktop holds the grab and VoxCtrl reads nothing. See [Hotkeys](hotkeys.md#linux--x11-raw-key-events-xinput2).
 
+### Sending keys: the paste shortcut
+
+Receiving keys and *sending* them are different things, and this section is
+about sending. To paste a dictation VoxCtrl presses a shortcut (Ctrl+V) in the
+focused window, and while doing so it handles your clipboard:
+
+- **The clipboard backup** holds everything you had copied — passwords from a
+  password manager included — in memory, for about a second, so it can be put back.
+  It is never written to disk, logged, or sent anywhere. The dictation itself is
+  marked so clipboard managers and cloud clipboard history skip it
+  (`x-kde-passwordManagerHint`, `ExcludeClipboardContentFromMonitorProcessing`,
+  `CanIncludeInClipboardHistory`).
+- **Wayland (GNOME, KDE)** has no way for a program to press keys on its own. VoxCtrl
+  uses the desktop's `RemoteDesktop` portal, which shows **your desktop's own
+  permission dialog** on first use. The grant lets VoxCtrl *send* key events; it
+  does **not** let it read your keyboard (the portal has no such call — VoxCtrl
+  never receives key events from it). The grant is remembered in
+  `~/.config/voxctrl/portal-keyboard-token` and can be revoked in your desktop's
+  settings. Declining it costs only the ability to paste into native Wayland windows.
+- **Live transcript text** (an optional feature of some custom overlays) puts
+  the words you are saying on screen while you speak, which is visible in screen
+  shares and recordings. It runs only when the active overlay opts in; see
+  [Overlay UI](./overlays.md#live-transcript-text).
+
+See [Pasting Dictation](./paste.md).
+
 ### Windows
 
 Windows offers no portal equivalent; a low-level keyboard hook (`WH_KEYBOARD_LL`) is the only mechanism for application-defined global shortcuts. That hook sees all keystrokes. The same handling applies: nothing logged, nothing stored, nothing transmitted.

@@ -15,7 +15,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME};
 
-static LOCK: Mutex<()> = Mutex::new(());
+static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Xvfb(Child);
 
@@ -137,7 +137,7 @@ fn clipboard_text_now() -> Option<String> {
 
 #[tokio::test]
 async fn a_dictation_is_pasted_and_the_clipboard_is_put_back() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;
@@ -159,7 +159,7 @@ async fn a_dictation_is_pasted_and_the_clipboard_is_put_back() {
 
 #[tokio::test]
 async fn a_terminal_gets_the_terminal_shortcut() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;
@@ -177,7 +177,7 @@ async fn a_terminal_gets_the_terminal_shortcut() {
 
 #[tokio::test]
 async fn repeated_dictations_keep_pasting() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;
@@ -218,7 +218,7 @@ fn spawn_unresponsive_owner() -> std::sync::mpsc::Sender<()> {
 
 #[tokio::test]
 async fn a_frozen_clipboard_owner_does_not_stop_dictation() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;
@@ -237,7 +237,7 @@ async fn a_frozen_clipboard_owner_does_not_stop_dictation() {
 
 #[tokio::test]
 async fn two_dictations_at_once_do_not_corrupt_each_other() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;
@@ -258,7 +258,7 @@ async fn two_dictations_at_once_do_not_corrupt_each_other() {
 
 #[tokio::test]
 async fn a_clipboard_manager_taking_over_the_text_does_not_stop_the_restore() {
-    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().await;
     let Some(_x) = Xvfb::start() else {
         eprintln!("Xvfb not available; skipping");
         return;

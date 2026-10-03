@@ -250,7 +250,7 @@ pub fn x11_active_class() -> Option<String> {
     // EWMH first: the window manager says which client is active.
     let mut win: Option<Window> = None;
     if let Some(active) = intern("_NET_ACTIVE_WINDOW") {
-        if let Some(r) = conn.get_property(false, root, active, AtomEnum::WINDOW, 0, 1).ok()?.reply().ok() {
+        if let Ok(r) = conn.get_property(false, root, active, AtomEnum::WINDOW, 0, 1).ok()?.reply() {
             if r.value.len() >= 4 {
                 let w = u32::from_ne_bytes([r.value[0], r.value[1], r.value[2], r.value[3]]);
                 if w != 0 {
