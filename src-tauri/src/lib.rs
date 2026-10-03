@@ -260,7 +260,7 @@ pub fn run() {
     };
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "voxctrl=info".parse().unwrap());
+        .unwrap_or_else(|_| "voxctrl=info,voxctrl_inject=info,voxctrl_clipboard=info".parse().unwrap());
 
     let registry = tracing_subscriber::registry()
         .with(filter)
@@ -285,6 +285,8 @@ pub fn run() {
     custom_overlays::refresh_bundled_example();
 
     let config = Config::load();
+    voxctrl_inject::set_paste_mode(config.data.features.paste_instead_of_typing);
+    voxctrl_inject::set_paste_shortcut(&config.data.features.paste_shortcut);
 
     // Log the sanitized configuration parameters at startup
     tracing::info!("=== System Startup Config ===");
@@ -361,6 +363,9 @@ pub fn run() {
         recording: Arc::new(AtomicBool::new(false)),
         processing: Arc::new(AtomicBool::new(false)),
         interim_in_flight: Arc::new(AtomicBool::new(false)),
+        live_text_wanted: Arc::new(AtomicBool::new(false)),
+        interim_for_commands: Arc::new(AtomicBool::new(false)),
+        interim_from_start: Arc::new(AtomicBool::new(true)),
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),
@@ -709,6 +714,7 @@ pub fn run() {
             test_remote_stt,
             cuda_enabled,
             accelerator_support,
+            paste_support,
             check_hotkey_status,
             check_hotkey_keys,
             retry_portal_shortcuts,

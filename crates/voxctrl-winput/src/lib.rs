@@ -77,6 +77,44 @@ fn chunk_boundaries(units: &[u16], max: usize) -> Vec<std::ops::Range<usize>> {
     ranges
 }
 
+/// The keyboard shortcut that pastes, which differs by application.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shortcut {
+    /// Ctrl+V — nearly everything.
+    CtrlV,
+    /// Ctrl+Shift+V — Linux terminal emulators, where Ctrl+V is a control
+    /// character.
+    CtrlShiftV,
+    /// Shift+Insert — Windows consoles, mintty and PuTTY, which predate
+    /// Ctrl+V (and still honour it where Ctrl+V is off).
+    ShiftInsert,
+}
+
+impl Shortcut {
+    /// Parse a configured name. `None` for "auto" and anything unrecognised,
+    /// which means "pick one for the focused application".
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().replace(' ', "").as_str() {
+            "ctrl+v" => Some(Self::CtrlV),
+            "ctrl+shift+v" => Some(Self::CtrlShiftV),
+            "shift+insert" => Some(Self::ShiftInsert),
+            _ => None,
+        }
+    }
+}
+
+/// Window classes (Windows) whose paste shortcut is Shift+Insert.
+///
+/// `ConsoleWindowClass` is the classic console host, where Ctrl+V works only
+/// if the user has not turned the "Ctrl key shortcuts" option off; mintty
+/// (Git Bash, Cygwin) and PuTTY never bind plain Ctrl+V to paste.
+pub fn windows_class_wants_shift_insert(class: &str) -> bool {
+    matches!(
+        class,
+        "ConsoleWindowClass" | "mintty" | "PuTTY" | "VirtualConsoleClass" | "Console_2_Main"
+    )
+}
+
 /// Whether `text` is long enough to be worth pasting rather than typing.
 pub fn prefers_paste(text: &str) -> bool {
     text.chars().count() > PASTE_THRESHOLD_CHARS
@@ -88,11 +126,13 @@ mod imp {
     use tracing::debug;
 
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, VK_CONTROL, VK_V,
+        GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+        KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VK_CONTROL, VK_INSERT, VK_LWIN,
+        VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
     };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow};
 
-    use super::{chunk_boundaries, INJECTED_TAG, CHUNK_UNITS};
+    use super::{chunk_boundaries, windows_class_wants_shift_insert, Shortcut, CHUNK_UNITS, INJECTED_TAG};
 
     /// Type `text` into whatever currently has focus, character by character.
     pub fn type_text(text: &str) -> Result<()> {
@@ -158,56 +198,78 @@ mod imp {
         Ok(())
     }
 
-    /// Put `text` on the clipboard and press Ctrl+V.
-    ///
-    /// The previous clipboard contents are restored afterwards: taking the
-    /// user's clipboard permanently as a side effect of dictating is its own
-    /// bug.
-    pub fn paste_text(text: &str) -> Result<()> {
-        let previous = {
-            let mut cb = arboard::Clipboard::new()?;
-            let previous = cb.get_text().ok();
-            cb.set_text(text)?;
-            previous
-        };
-
-        let result = press_ctrl_v();
-
-        // Give the target a moment to read the clipboard before it is handed
-        // back. Restoring immediately races the paste, and losing the
-        // transcription is worse than briefly holding the clipboard.
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        if let Some(previous) = previous {
-            if let Ok(mut cb) = arboard::Clipboard::new() {
-                let _ = cb.set_text(previous);
+    /// The class name of the window that has keyboard focus, if any.
+    pub fn foreground_class() -> Option<String> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return None;
             }
+            let mut buf = [0u16; 256];
+            let n = GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+            if n <= 0 {
+                return None;
+            }
+            Some(String::from_utf16_lossy(&buf[..n as usize]))
         }
-
-        result
     }
 
-    fn press_ctrl_v() -> Result<()> {
-        let inputs = [
-            key_event(VK_CONTROL, 0, 0),
-            key_event(VK_V, 0, 0),
-            key_event(VK_V, 0, KEYEVENTF_KEYUP),
-            key_event(VK_CONTROL, 0, KEYEVENTF_KEYUP),
-        ];
+    /// Pick the paste shortcut for the focused window.
+    pub fn auto_shortcut() -> Shortcut {
+        match foreground_class() {
+            Some(c) if windows_class_wants_shift_insert(&c) => Shortcut::ShiftInsert,
+            _ => Shortcut::CtrlV,
+        }
+    }
+
+    /// Modifier keys the user is physically still holding (typically the
+    /// dictation hotkey) would turn the paste into a different shortcut, so
+    /// they are released first — the equivalent of `xdotool --clearmodifiers`.
+    fn release_held_modifiers() -> Result<()> {
+        let held: Vec<INPUT> = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN]
+            .into_iter()
+            .filter(|vk| unsafe { GetAsyncKeyState(*vk as i32) } < 0)
+            .map(|vk| key_event(vk, 0, KEYEVENTF_KEYUP))
+            .collect();
+        submit(&held)
+    }
+
+    /// Press the paste shortcut in the focused window.
+    ///
+    /// The clipboard handling around it (backup, restore) lives in
+    /// `voxctrl-inject`, which is shared with Linux.
+    pub fn press_paste(shortcut: Shortcut) -> Result<()> {
+        release_held_modifiers()?;
+        let inputs: Vec<INPUT> = match shortcut {
+            Shortcut::CtrlV => vec![
+                key_event(VK_CONTROL, 0, 0),
+                key_event(VK_V, 0, 0),
+                key_event(VK_V, 0, KEYEVENTF_KEYUP),
+                key_event(VK_CONTROL, 0, KEYEVENTF_KEYUP),
+            ],
+            Shortcut::CtrlShiftV => vec![
+                key_event(VK_CONTROL, 0, 0),
+                key_event(VK_SHIFT, 0, 0),
+                key_event(VK_V, 0, 0),
+                key_event(VK_V, 0, KEYEVENTF_KEYUP),
+                key_event(VK_SHIFT, 0, KEYEVENTF_KEYUP),
+                key_event(VK_CONTROL, 0, KEYEVENTF_KEYUP),
+            ],
+            // VK_INSERT is an extended key; without the flag the numpad's
+            // Insert (NumLock-dependent) is sent instead.
+            Shortcut::ShiftInsert => vec![
+                key_event(VK_SHIFT, 0, 0),
+                key_event(VK_INSERT, 0, KEYEVENTF_EXTENDEDKEY),
+                key_event(VK_INSERT, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                key_event(VK_SHIFT, 0, KEYEVENTF_KEYUP),
+            ],
+        };
         submit(&inputs)
-    }
-
-    /// Deliver `text` by whichever route suits its length.
-    pub fn deliver(text: &str) -> Result<()> {
-        if super::prefers_paste(text) {
-            paste_text(text)
-        } else {
-            type_text(text)
-        }
     }
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{deliver, paste_text, type_text};
+pub use imp::{auto_shortcut, foreground_class, press_paste, type_text};
 
 #[cfg(test)]
 mod tests {
@@ -291,5 +353,22 @@ mod tests {
         assert!(prefers_paste(&"a".repeat(PASTE_THRESHOLD_CHARS + 1)));
         assert!(!prefers_paste(&"a".repeat(PASTE_THRESHOLD_CHARS)));
         assert!(!prefers_paste("hello"));
+    }
+
+    #[test]
+    fn shortcut_names_parse_and_auto_means_pick_for_me() {
+        assert_eq!(Shortcut::parse("Ctrl+V"), Some(Shortcut::CtrlV));
+        assert_eq!(Shortcut::parse("ctrl + shift + v"), Some(Shortcut::CtrlShiftV));
+        assert_eq!(Shortcut::parse("Shift+Insert"), Some(Shortcut::ShiftInsert));
+        assert_eq!(Shortcut::parse("auto"), None);
+        assert_eq!(Shortcut::parse(""), None);
+    }
+
+    #[test]
+    fn consoles_get_shift_insert_and_ordinary_windows_do_not() {
+        assert!(windows_class_wants_shift_insert("ConsoleWindowClass"));
+        assert!(windows_class_wants_shift_insert("mintty"));
+        assert!(!windows_class_wants_shift_insert("Chrome_WidgetWin_1"));
+        assert!(!windows_class_wants_shift_insert("CASCADIA_HOSTING_WINDOW_CLASS"));
     }
 }

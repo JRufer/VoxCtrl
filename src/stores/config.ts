@@ -79,6 +79,8 @@ export interface FeaturesConfig {
   auto_format_lists: boolean;
   snippets: Record<string, string>;
   early_command_detection: boolean;
+  paste_instead_of_typing: boolean;
+  paste_shortcut: string;
 }
 
 export interface OpenAiConfig {
@@ -205,6 +207,8 @@ const defaultConfig: AppConfig = {
     auto_format_lists: true,
     snippets: {},
     early_command_detection: true,
+    paste_instead_of_typing: true,
+    paste_shortcut: "auto",
   },
   openai: {
     enabled: false,

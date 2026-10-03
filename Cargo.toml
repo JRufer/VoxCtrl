@@ -8,6 +8,7 @@ members = [
     "crates/voxctrl-tts",
     "crates/voxctrl-inject",
     "crates/voxctrl-winput",
+    "crates/voxctrl-clipboard",
     "crates/voxctrl-dbus",
     "crates/voxctrl-mcp",
     "crates/voxctrl-llm",
@@ -20,7 +21,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.7.1"
+version = "0.7.3"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -73,8 +74,10 @@ notify-rust = "4"
 # xdg-desktop-portal bindings (Linux). 0.13+ is required for
 # `register_host_app`: since xdg-desktop-portal 1.21 the GlobalShortcuts portal
 # refuses a session from a host app that has not declared an application id.
-# Only the shortcuts portal is compiled in; 0.13 gates each portal behind a
-# feature, and pulling the rest in would add code VoxCtrl never calls.
+# Only the portals VoxCtrl uses are compiled in (0.13 gates each behind a
+# feature): global shortcuts, and remote desktop (which ashpd 0.13 cannot
+# build without its screencast module) for sending the paste
+# shortcut on Wayland compositors that have no virtual-keyboard protocol.
 #
 # Deliberately NOT requesting ashpd's "tokio" feature. That feature exists only
 # to pick zbus's reactor (`zbus/tokio`) — neither `global_shortcuts` nor
@@ -91,7 +94,7 @@ notify-rust = "4"
 # problem: it runs its own background poller thread independent of whatever
 # executor polls the outer future, so it mixes safely with our Tokio-driven
 # code and never touches the plugin at all.
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts"] }
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts", "remote_desktop", "screencast"] }
 futures-util = "0.3"
 
 # Crypto (webhook HMAC)
@@ -126,6 +129,7 @@ voxctrl-inference = { path = "crates/voxctrl-inference" }
 voxctrl-tts      = { path = "crates/voxctrl-tts" }
 voxctrl-inject   = { path = "crates/voxctrl-inject" }
 voxctrl-winput   = { path = "crates/voxctrl-winput" }
+voxctrl-clipboard = { path = "crates/voxctrl-clipboard" }
 voxctrl-dbus     = { path = "crates/voxctrl-dbus" }
 voxctrl-mcp      = { path = "crates/voxctrl-mcp" }
 voxctrl-llm      = { path = "crates/voxctrl-llm" }

@@ -80,6 +80,35 @@ pub async fn get_custom_overlays() -> Result<Vec<CustomOverlayInfo>, String> {
 /// name (a built-in style, or a deleted/renamed custom one).
 #[tauri::command]
 pub async fn get_custom_overlay(name: String) -> Result<Option<CustomOverlayInfo>, String> {
+    Ok(find_custom_overlay(&name))
+}
+
+/// Marker attribute a custom overlay puts on an element to receive the
+/// in-progress transcript.
+pub const LIVE_TEXT_MARKER: &str = "data-voxctrl-live-text";
+
+/// Whether the overlay style `name` is a custom one that shows live text.
+pub fn overlay_has_live_text(name: &str) -> bool {
+    find_custom_overlay(name).is_some_and(|o| strip_html_comments(&o.html).contains(LIVE_TEXT_MARKER))
+}
+
+/// An overlay's explanatory comments may name the marker without using it.
+fn strip_html_comments(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find("<!--") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find("-->") {
+            Some(end) => rest = &rest[start + end + 3..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn find_custom_overlay(name: &str) -> Option<CustomOverlayInfo> {
+    let name = name.to_string();
     let overlays_dir = crate::custom_overlays::overlays_dir();
 
     if let Ok(entries) = std::fs::read_dir(&overlays_dir) {
@@ -88,19 +117,27 @@ pub async fn get_custom_overlay(name: String) -> Result<Option<CustomOverlayInfo
                 if file_type.is_dir() {
                     let folder_name = entry.file_name().to_string_lossy().to_string();
                     if custom_overlay_display_name(&folder_name) == name {
-                        return Ok(Some(read_custom_overlay_folder(&entry.path(), name)));
+                        return Some(read_custom_overlay_folder(&entry.path(), name));
                     }
                 }
             }
         }
     }
 
-    Ok(None)
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_comment_that_names_the_marker_does_not_enable_live_text() {
+        let commented = "<!-- put data-voxctrl-live-text on an element -->\n<div></div>";
+        assert!(!strip_html_comments(commented).contains(LIVE_TEXT_MARKER));
+        let used = "<!-- note -->\n<div data-voxctrl-live-text></div>";
+        assert!(strip_html_comments(used).contains(LIVE_TEXT_MARKER));
+    }
 
     #[tokio::test]
     async fn test_get_custom_overlays_returns_list() {

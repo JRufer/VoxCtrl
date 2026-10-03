@@ -42,8 +42,9 @@ VoxCtrl/
     ├── voxctrl-hotkeys/    # Global shortcuts (XDG portal / evdev / Windows hook / D-Bus)
     ├── voxctrl-inference/  # whisper.cpp/Moonshine/Parakeet/Remote STT + post-processing
     ├── voxctrl-routing/    # OutputTarget + HotkeyBinding data models, 11-target router
-    ├── voxctrl-inject/     # Text injection orchestrator (Wayland/X11/Windows)
-    ├── voxctrl-winput/     # Windows native synthesised Unicode keyboard input
+    ├── voxctrl-inject/     # Text delivery: paste (with clipboard restore) or type; key sending per platform
+    ├── voxctrl-clipboard/  # Full-format clipboard backup/restore (Windows / X11 / Wayland)
+    ├── voxctrl-winput/     # Windows SendInput: Unicode typing, paste shortcuts, window class
     ├── voxctrl-tts/        # Neural & local TTS (Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak)
     ├── voxctrl-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
     ├── voxctrl-dbus/       # DBus service (Linux session bus)
@@ -99,7 +100,7 @@ voxctrl-hotkeys ──gesture_tx──► lib.rs coordinator
                          ▼
                   OutputTargetRouter.route()
                   (voxctrl-routing)
-                    ├── inject → voxctrl-inject / voxctrl-winput
+                    ├── inject → voxctrl-inject (paste: voxctrl-clipboard; Windows keys: voxctrl-winput)
                     ├── clipboard → arboard
                     ├── file → tokio::fs
                     ├── http/webhook → reqwest

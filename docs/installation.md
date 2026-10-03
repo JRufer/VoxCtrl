@@ -84,9 +84,12 @@ time, so the application menu does not end up with two VoxCtrls.
 
 ### The one thing that may need a package manager
 
-Typing a transcription into another window uses `wtype` (Wayland) or `xdotool`
-(X11). Those are host packages, so installing them needs administrator rights —
-the one part VoxCtrl cannot do for itself.
+Delivering a transcription into another window uses `wtype` (Wayland) or
+`xdotool` (X11) to type it, and — by default — a paste, which on X11 needs no
+helper and on Wayland uses `wtype`, `ydotool` or the desktop's RemoteDesktop
+portal (see [Pasting Dictation](./paste.md)). The typing helpers are host
+packages, so installing them needs administrator rights — the one part VoxCtrl
+cannot do for itself.
 
 You do not need `--install` for it. Launch the AppImage; if a helper is missing,
 the setup window says so and offers **Install it** (via `pkexec`), or **Install
@@ -163,6 +166,14 @@ sudo pacman -S wtype
 # Fedora
 sudo dnf install wtype
 ```
+
+### Wayland: pasting into native windows
+
+Pasting needs a way to send Ctrl+V. On GNOME and KDE, `wtype` does not work;
+the first dictation instead shows your desktop's **"control the keyboard"**
+permission dialog (RemoteDesktop portal) — allow it once and it is remembered.
+Alternatively install `ydotool` (and run its `ydotoold` service). Details and
+troubleshooting: [Pasting Dictation](./paste.md).
 
 ### X11 Text Injection
 For X11 sessions, install `xdotool`:

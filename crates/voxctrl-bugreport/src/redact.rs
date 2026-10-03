@@ -65,6 +65,7 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("ui.overlay_style", Safe),
     ("ui.overlay_position", Safe),
     ("ui.overlay_monitor", Safe),
+    ("features.paste_shortcut", Safe),
     ("features.custom_vocabulary", FreeText),
     ("features.snippets", FreeText),
     ("openai.mode", Safe),

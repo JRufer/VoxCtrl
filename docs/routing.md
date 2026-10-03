@@ -63,14 +63,18 @@ not run their last and first words together; text that already ends in
 whitespace is left alone. The clipboard target does the same. Nothing appends a
 newline.
 
-Linux injection priority:
-1. `wtype` (Wayland)
-2. `xdotool type --clearmodifiers` (X11)
-3. Clipboard + Ctrl+V fallback
+By default the text is delivered as **one paste** (see [Pasting Dictation](./paste.md)):
+VoxCtrl backs up your whole clipboard, puts the text on it, sends the paste
+shortcut, and restores the clipboard. If the paste cannot be done — or
+`features.paste_instead_of_typing` is off — the text is typed instead:
 
-Windows injection:
-- Native synthesised keystrokes via `SendInput` (`KEYEVENTF_UNICODE`) implemented in `voxctrl-winput`.
-- Automatically falls back to an atomic clipboard paste (safely restoring prior clipboard contents) for long dictations exceeding 2,000 characters.
+1. `wtype` (Wayland)
+2. `xdotool type --clearmodifiers` (X11 / XWayland)
+3. `SendInput` with `KEYEVENTF_UNICODE` (Windows, implemented in `voxctrl-winput`)
+
+The paste shortcut is chosen for the focused window (Ctrl+V; Ctrl+Shift+V in
+Linux terminals; Shift+Insert in Windows consoles) and can be forced with
+`features.paste_shortcut`. Pasting is switched off on Linux Mint.
 
 ---
 

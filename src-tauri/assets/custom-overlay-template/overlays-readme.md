@@ -77,3 +77,26 @@ needs to (a status label that changes text, not just color) the trick
 `Custom/` uses is to pre-render every possible label stacked on top of
 each other and toggle each one's `opacity` with the formula that should
 show it — see `.vc-custom-stamp-text` in `Custom/style.css`.
+
+**Live transcript text** (optional, opt-in): put the attribute
+`data-voxctrl-live-text` on any element and VoxCtrl fills it with the words
+being transcribed while the user is still speaking (it is a plain text
+node, updated a few times a second, newest words last):
+
+```html
+<div class="my-live-text" data-voxctrl-live-text></div>
+```
+
+- The element has a `data-empty` attribute while there is no text yet, and
+  the page root carries `--voxctrl-has-live-text` (`0` or `1`), so CSS can
+  show a "Listening…" placeholder and hide it once words arrive.
+- Style it for one or two lines: fix its height, `overflow: hidden`, and
+  bottom-align the content (e.g. a flex column with `justify-content:
+  flex-end`) so the newest words stay visible as the text grows.
+- **It costs transcription work.** VoxCtrl only runs the extra
+  mid-recording passes that feed this when the active overlay's HTML
+  contains the attribute (comments don't count), and only with a local
+  speech engine that isn't a heavy model without a GPU. Overlays without it
+  are unaffected. If no text arrives, the element simply stays empty.
+- The text is what is on screen in screen shares and recordings, so only
+  add it to overlays where that is wanted.

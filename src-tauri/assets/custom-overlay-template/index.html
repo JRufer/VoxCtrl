@@ -40,6 +40,18 @@
   ({{trigger}} is also available and carries the same value, kept for
   symmetry with the placeholder VoxCtrl substitutes elsewhere.)
 
+  LIVE TRANSCRIPT TEXT (optional)
+  ────────────────────────────────
+  This template doesn't use it, but any overlay can show the words being
+  transcribed while you speak: put the attribute
+  `data-voxctrl-live-text` on an empty element, and VoxCtrl fills it with
+  the transcript so far. Its presence in the HTML (not in a comment, like
+  this one) is also what makes VoxCtrl run the extra transcription that
+  produces the text, so overlays without it pay nothing. The page root
+  gets --voxctrl-has-live-text (0 or 1), and the element a `data-empty`
+  attribute while it has no text, for styling a "Listening…" state. See
+  the overlays README for a two-line layout recipe.
+
   WHY THIS TEMPLATE HAS NO <script> TAG
   ───────────────────────────────────────
   VoxCtrl's window content-security-policy is `script-src 'self'` — no

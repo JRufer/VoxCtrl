@@ -125,62 +125,13 @@ impl DeliveryTarget for InjectTarget {
         // and first words together.
         append_trailing_space(&mut payload);
 
-        #[cfg(target_os = "linux")]
-        {
-            let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
-            if wayland && which("wtype") {
-                let ok = tokio::process::Command::new("wtype")
-                    .arg("--")
-                    .arg(&payload)
-                    .status()
-                    .await
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if ok {
-                    return DeliveryResult::ok(payload);
-                }
-            }
-            if which("xdotool") {
-                let ok = tokio::process::Command::new("xdotool")
-                    .args(["type", "--clearmodifiers", "--delay", "12", "--"])
-                    .arg(&payload)
-                    .status()
-                    .await
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if ok {
-                    return DeliveryResult::ok(payload);
-                }
-            }
-            return DeliveryResult::err("No injection method available (wtype / xdotool)");
+        // Pasting or typing, per the "paste instead of typing" setting, with
+        // typing as the fallback when a paste cannot be sent. One
+        // implementation for every platform lives in `voxctrl-inject`.
+        match voxctrl_inject::inject_text(&payload).await {
+            Ok(()) => DeliveryResult::ok(payload),
+            Err(e) => DeliveryResult::err(e.to_string()),
         }
-
-        #[cfg(target_os = "windows")]
-        {
-            // `SendInput` with KEYEVENTF_UNICODE, via voxctrl-winput.
-            //
-            // This used to shell out to PowerShell and call
-            // `SendKeys::SendWait`. The payload was base64-encoded so no shell
-            // metacharacter could escape the string — a real defence, and it
-            // worked — but SendKeys then applied *its own* escaping to the
-            // decoded text, in which `+ ^ % ~ ( ) { } [ ]` are syntax. So
-            // "50% (a+b)" was typed as "50" plus two stray chords and
-            // "array[0]" as "array0": every dictation containing ordinary
-            // punctuation came out wrong. SendInput carries the character
-            // itself, so there is no escaping layer left to misread it.
-            let sent = tokio::task::spawn_blocking(move || {
-                voxctrl_winput::deliver(&payload).map(|()| payload)
-            })
-            .await;
-            return match sent {
-                Ok(Ok(payload)) => DeliveryResult::ok(payload),
-                Ok(Err(e)) => DeliveryResult::err(e.to_string()),
-                Err(e) => DeliveryResult::err(format!("Injection task failed: {e}")),
-            };
-        }
-
-        #[allow(unreachable_code)]
-        DeliveryResult::err("Text injection not supported on this platform")
     }
 
     async fn test(&self) -> TestResult {

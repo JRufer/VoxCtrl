@@ -16,6 +16,19 @@ pub struct AppState {
     pub processing: Arc<AtomicBool>,
     /// True while an interim (mid-recording) transcription pass is running
     pub interim_in_flight: Arc<AtomicBool>,
+    /// True for a recording whose overlay shows live transcript text (its
+    /// HTML has a `data-voxctrl-live-text` element), which is what turns on
+    /// the extra mid-recording transcription passes that feed it. Decided
+    /// when the recording starts.
+    pub live_text_wanted: Arc<AtomicBool>,
+    /// True when the current recording's interim passes are also used for
+    /// early voice-command detection (`features.early_command_detection`).
+    pub interim_for_commands: Arc<AtomicBool>,
+    /// True when the audio in the interim pass in flight starts at the
+    /// beginning of the recording. Live-text passes transcribe a rolling
+    /// window of the most recent audio, which must not be mistaken for the
+    /// opening of the utterance, where a command trigger is spoken.
+    pub interim_from_start: Arc<AtomicBool>,
     /// True while TTS is playing back
     pub speaking: Arc<AtomicBool>,
     /// Live mirror of `ui.show_overlay` so the hot status-forwarding loops can

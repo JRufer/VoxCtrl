@@ -116,6 +116,42 @@
       .replace(/\{\{target\}\}/g, targetLabel);
   });
 
+  // ── Live transcript ──────────────────────────────────────────────────────
+  // A custom overlay opts in by putting `data-voxctrl-live-text` on an
+  // element. Overlays cannot run script (the CSP blocks it), so the text is
+  // written into those elements from here. The backend only runs the extra
+  // mid-recording transcription when the active overlay has such an element.
+  let liveText = $state("");
+  let liveSession = 0;
+  let customContentEl = $state<HTMLElement | undefined>(undefined);
+  let unlistenLiveTranscript: (() => void) | null = null;
+
+  function onLiveTranscript(payload: { session_id: number; text: string }) {
+    // A pass from an earlier recording can land after the next one starts.
+    if (payload.session_id < liveSession) return;
+    liveSession = payload.session_id;
+    liveText = payload.text;
+  }
+
+  $effect(() => {
+    // A new recording starts with a clean slate.
+    if ($recording) liveText = "";
+  });
+
+  $effect(() => {
+    // Re-applied after every render of the overlay's HTML, which replaces
+    // the elements and would otherwise drop the text.
+    const text = liveText;
+    void processedHtml;
+    const root = document.documentElement;
+    root.style.setProperty("--voxctrl-has-live-text", text ? "1" : "0");
+    if (!customContentEl) return;
+    customContentEl.querySelectorAll("[data-voxctrl-live-text]").forEach((el) => {
+      el.textContent = text;
+      el.toggleAttribute("data-empty", !text);
+    });
+  });
+
   let targetVolume = 0;
   let currentVolume = $state(0);
   let unlistenAudioLevel: (() => void) | null = null;
@@ -288,6 +324,12 @@
       unlistenAudioLevel = unlisten;
     });
 
+    listen<{ session_id: number; text: string }>("live-transcript", (event) => {
+      onLiveTranscript(event.payload);
+    }).then((unlisten) => {
+      unlistenLiveTranscript = unlisten;
+    });
+
     listen<{ command: string; summary: string; duration_secs: number }>("command-executed", (event) => {
       if (!$config.ui.show_command_overlay) return;
       commandOverlayName = event.payload.command;
@@ -314,6 +356,7 @@
       document.documentElement.classList.remove("overlay-window");
       document.body.classList.remove("overlay-window");
       if (unlistenAudioLevel) unlistenAudioLevel();
+      if (unlistenLiveTranscript) unlistenLiveTranscript();
       if (unlistenCommandExecuted) unlistenCommandExecuted();
       if (unlistenCommandWithdrawn) unlistenCommandWithdrawn();
       if (unlistenOverlayStyleSelected) unlistenOverlayStyleSelected();
@@ -365,7 +408,7 @@
             <Vinyl recording={$recording} active={animateActive} />
           {:else if activeCustomOverlay}
             {@html `<style>${activeCustomOverlay.css}</style>`}
-            <div class="custom-overlay-content" class:active={animateActive} use:executeScripts>
+            <div class="custom-overlay-content" class:active={animateActive} bind:this={customContentEl} use:executeScripts>
               {@html processedHtml}
             </div>
           {:else if $config.ui.overlay_style !== "none"}

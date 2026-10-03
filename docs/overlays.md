@@ -213,6 +213,43 @@ and `style.css` for a fully commented, working example (the on/off flip,
 the status-stamp text swap, and the audio-reactive LED matrix are all
 driven this way, with no script).
 
+### Live transcript text
+
+A custom overlay can show the words being transcribed **while the user is still
+speaking**. It opts in by putting the attribute `data-voxctrl-live-text` on an
+element:
+
+```html
+<div class="live" data-voxctrl-live-text></div>
+```
+
+Because overlays cannot run script, `Overlay.svelte` writes into the element: it
+listens for the `live-transcript` event ([API](./api.md#live-transcript)) and
+sets the element's `textContent`, re-applying it after every render of the
+overlay HTML. It also sets `--voxctrl-has-live-text` (`0`/`1`) on the page root
+and a `data-empty` attribute on the element while there is no text, so CSS can
+show a "Listening…" line until words arrive.
+
+The attribute is also the **opt-in that turns the feature on**. At the start of
+each recording the backend (`pipeline::spawn_audio_coordinator`) reads the active
+overlay's `index.html` (`commands::overlay_has_live_text`; HTML comments are
+ignored, so documenting the attribute in a comment does not enable it) and, if
+it is present and the overlay is shown, runs extra mid-recording transcription
+passes over the most recent ~10 s of audio (`LIVE_TEXT_MAX_SAMPLES`) and emits
+each result. Overlays without the attribute pay nothing. The passes are skipped
+for the remote backend and CPU-only medium/large Whisper models, so an overlay
+must look intentional when no text ever arrives.
+
+What is shown is the interim transcript after the normal text clean-up. It is
+not processed by S1-mini or the hotkey's OpenAI rewrite, and a spoken voice
+command's trigger words are still in it, so it can differ from the delivered
+text. It is also visible in screen shares.
+
+`Overlays/Dark Pill` in the
+[overlays repository](https://github.com/JRufer/VoxCtrl-Scripts-and-Overlays) is a
+complete example (Dark Minimal at twice the height, with a three-line text area
+at 9 px), and that repository's overlay-designer skills know the contract.
+
 This is CSS-only because it has to be: the window's `script-src 'self'`
 content-security-policy (`src-tauri/tauri.conf.json`) blocks inline
 `<script>` execution everywhere in the app, custom overlays included, with

@@ -85,6 +85,8 @@ pub async fn save_config(
     state.set_gain(new_config.audio.gain);
     state.set_noise_suppression(new_config.audio.noise_suppression);
     state.set_overlay_enabled(new_config.ui.show_overlay);
+    voxctrl_inject::set_paste_mode(new_config.features.paste_instead_of_typing);
+    voxctrl_inject::set_paste_shortcut(&new_config.features.paste_shortcut);
 
     // Dynamic TTS engine lifecycle management: a running worker takes the new
     // settings live; one is started only when TTS was off until now.
@@ -180,6 +182,20 @@ pub struct AcceleratorSupport {
     pub parakeet_gpu: Option<String>,
     /// `"vulkan"` or `None`.
     pub s1_mini_gpu: Option<String>,
+}
+
+/// Whether pasting dictations is available on this system, and if not, why.
+/// The Features tab disables the setting and shows the reason.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PasteSupport {
+    pub supported: bool,
+    pub reason: Option<String>,
+}
+
+#[tauri::command]
+pub fn paste_support() -> PasteSupport {
+    let reason = voxctrl_inject::paste_unsupported_reason().map(str::to_string);
+    PasteSupport { supported: reason.is_none(), reason }
 }
 
 #[tauri::command]
