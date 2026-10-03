@@ -623,6 +623,11 @@ const dir = await invoke<string>('get_custom_overlays_dir');
 
 ### Window & Setup Management
 
+#### `paste_support() → { supported: boolean, reason: string | null }`
+Whether pasting dictation is available on this system. `supported: false` (Linux
+Mint) means text is always typed; `reason` is the sentence Settings shows next to
+the disabled toggle. See [Pasting Dictation](./paste.md).
+
 #### `get_setup_status() → SetupStatusPayload`
 Returns comprehensive first-run readiness: shortcut health, active speech model status, missing injection tools (`wtype`/`xdotool`), and polkit privileges.
 
@@ -695,6 +700,24 @@ await listen<number>('audio-level', (event) => {
   updateVuMeter(event.payload);
 });
 ```
+
+### `live-transcript`
+Emitted a few times a second while recording, **only when the active custom
+overlay contains a `data-voxctrl-live-text` element** (see
+[Live transcript text](./overlays.md#live-transcript-text)). `session_id`
+increases with each recording; a payload from an earlier recording than the one
+already shown is ignored.
+
+```typescript
+await listen<{ session_id: number; text: string }>('live-transcript', (event) => {
+  liveText = event.payload.text;
+});
+```
+
+The text is the interim transcript after VoxCtrl's normal clean-up (fillers,
+spoken punctuation, snippets, lists). It is **not** processed by S1-mini or the
+hotkey's OpenAI rewrite, and a spoken voice-command trigger is still in it, so
+it can differ from what is finally delivered.
 
 ### `update-progress`
 Emitted while an update downloads, at most once per megabyte.

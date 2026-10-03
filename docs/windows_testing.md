@@ -97,8 +97,16 @@ In **Settings → Hotkeys**, you can configure shortcuts to:
 - **Double-tap** (double-tap to start, press again to stop)
 - **Double-tap & hold** (double-tap and hold second tap)
 
-### h. Long Dictation & Clipboard Fallback
-Say a paragraph or two without stopping. Above roughly 2,000 characters, VoxCtrl switches from per-character typing to an atomic clipboard paste, safely restoring your prior clipboard contents afterwards.
+### h. Pasting & Clipboard Restore
+By default VoxCtrl **pastes** dictation (Settings → Features → *Paste text instead of typing it*) and restores your clipboard afterwards. Check:
+- Copy some text, dictate into Notepad, then press **Ctrl+V** — you should get the text you **copied**, not the dictation.
+- Copy an image (Win+Shift+S), dictate, then paste into Paint — the image should be intact.
+- Copy files in Explorer, dictate, then paste into Explorer — the files.
+- Dictate into **Windows Terminal**, **cmd.exe** (console) and **Git Bash** (mintty) — all should receive the text.
+- With Win+V clipboard history on, the dictation should **not** appear in the history.
+- Turn the setting off and dictate: the text is typed instead. Text above roughly 2,000 characters is pasted even then.
+
+See [Pasting Dictation](./paste.md) for how it works and what the log lines mean.
 
 ### i. Text-to-Speech (TTS) & Memory Modes
 In **Settings → TTS**, test voice playback:

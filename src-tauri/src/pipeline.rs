@@ -134,6 +134,25 @@ const INTERIM_STEP_SAMPLES: usize = 4_800;
 /// window keeps each pass short, so the final transcription never waits long
 /// behind one and long dictations don't keep the model busy the whole time.
 const INTERIM_MAX_SAMPLES: usize = 6 * 16_000;
+/// Live-text passes transcribe the most recent audio instead, so the overlay
+/// keeps following the speaker past the opening seconds. Capped for the same
+/// reason as above: each pass must stay short.
+const LIVE_TEXT_MAX_SAMPLES: usize = 10 * 16_000;
+
+/// The window of `total` samples an interim pass should transcribe, as
+/// `(start, end)`, and whether it begins at the start of the recording.
+///
+/// Command detection needs the opening (the trigger is spoken first); live
+/// text needs the tail. While the recording is shorter than the opening cap
+/// they are the same window.
+fn interim_window(total: usize, live_text: bool) -> (usize, usize, bool) {
+    if live_text && total > INTERIM_MAX_SAMPLES {
+        let start = total.saturating_sub(LIVE_TEXT_MAX_SAMPLES);
+        (start, total, start == 0)
+    } else {
+        (0, total.min(INTERIM_MAX_SAMPLES), true)
+    }
+}
 
 pub fn spawn_audio_coordinator(
     state_for_audio: Arc<AppState>,
@@ -149,6 +168,7 @@ pub fn spawn_audio_coordinator(
         let mut remote_session: Option<voxctrl_inference::RemoteStreamingSession> = None;
         let mut is_remote_backend = false;
         let mut interim_enabled = false;
+        let mut live_text_enabled = false;
         let mut session_id: u64 = 0;
         let mut last_interim_sample_count: usize = 0;
         let mut last_interim_instant = std::time::Instant::now();
@@ -179,10 +199,22 @@ pub fn spawn_audio_coordinator(
                         .blocking_lock()
                         .iter()
                         .any(|t| t.delivery != voxctrl_routing::DeliveryType::Command);
-                    interim_enabled = cfg.features.early_command_detection
-                        && cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
-                        && !heavy_model
-                        && has_command_targets;
+                    let local_and_light = cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi
+                        && !heavy_model;
+                    let commands_enabled =
+                        cfg.features.early_command_detection && local_and_light && has_command_targets;
+                    // Live text is only worth its transcription cost while an
+                    // overlay that shows it is on screen.
+                    live_text_enabled = cfg.ui.show_overlay
+                        && local_and_light
+                        && crate::commands::overlay_has_live_text(&cfg.ui.overlay_style);
+                    state_for_audio
+                        .live_text_wanted
+                        .store(live_text_enabled, std::sync::atomic::Ordering::SeqCst);
+                    interim_enabled = commands_enabled || live_text_enabled;
+                    state_for_audio
+                        .interim_for_commands
+                        .store(commands_enabled, std::sync::atomic::Ordering::SeqCst);
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
                         is_remote_backend = true;
                         let prompt = Some(voxctrl_inference::finalize::initial_prompt(
@@ -207,7 +239,9 @@ pub fn spawn_audio_coordinator(
 
                 // Interim transcription of the opening of the recording, so a
                 // voice command is recognised while the user is still talking.
-                let window = accumulated_audio.len().min(INTERIM_MAX_SAMPLES);
+                let (win_start, win_end, from_start) =
+                    interim_window(accumulated_audio.len(), live_text_enabled);
+                let window = win_end - win_start;
                 if interim_enabled
                     && window >= INTERIM_MIN_SAMPLES
                     && window.saturating_sub(last_interim_sample_count) >= INTERIM_STEP_SAMPLES
@@ -217,8 +251,11 @@ pub fn spawn_audio_coordinator(
                     state_for_audio.set_interim_in_flight(true);
                     last_interim_sample_count = window;
                     last_interim_instant = std::time::Instant::now();
+                    state_for_audio
+                        .interim_from_start
+                        .store(from_start, std::sync::atomic::Ordering::SeqCst);
                     let _ = inference_tx.send(ctx.request(
-                        accumulated_audio[..window].to_vec(),
+                        accumulated_audio[win_start..win_end].to_vec(),
                         true,
                         session_id,
                     ));
@@ -265,6 +302,18 @@ pub fn spawn_audio_coordinator(
     });
 }
 
+fn live_text_wanted_now(state: &AppState) -> bool {
+    state.live_text_wanted.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Push the in-progress transcript to the overlay, which shows it in any
+/// element marked `data-voxctrl-live-text`.
+fn emit_live_transcript(session_id: u64, text: &str) {
+    if let Some(app) = crate::window::get_app_handle() {
+        let _ = app.emit("live-transcript", serde_json::json!({ "session_id": session_id, "text": text }));
+    }
+}
+
 pub fn spawn_text_delivery_worker(
     state: Arc<AppState>,
     text_rx: crossbeam_channel::Receiver<voxctrl_inference::InferenceOutput>,
@@ -285,6 +334,14 @@ pub fn spawn_text_delivery_worker(
                 // start loading the TTS model while the user is still talking.
                 // This is only a head start — routing is decided solely by the
                 // final transcript below, which must carry the trigger itself.
+                if live_text_wanted_now(&state) {
+                    emit_live_transcript(output.session_id, output.text.trim());
+                }
+                let commands = state.interim_for_commands.load(std::sync::atomic::Ordering::SeqCst)
+                    && state.interim_from_start.load(std::sync::atomic::Ordering::SeqCst);
+                if !commands {
+                    continue;
+                }
                 let targets = state.targets.blocking_lock().clone();
                 if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
                     let key = (output.session_id, parsed.matched_target_id);
@@ -701,4 +758,30 @@ pub fn spawn_audio_level_forwarder(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod interim_window_tests {
+    use super::*;
+
+    #[test]
+    fn command_detection_always_reads_the_opening() {
+        let (s, e, from_start) = interim_window(20 * 16_000, false);
+        assert_eq!((s, e, from_start), (0, INTERIM_MAX_SAMPLES, true));
+    }
+
+    #[test]
+    fn live_text_matches_the_opening_while_the_recording_is_short() {
+        assert_eq!(interim_window(3 * 16_000, true), (0, 3 * 16_000, true));
+        assert_eq!(interim_window(INTERIM_MAX_SAMPLES, true), (0, INTERIM_MAX_SAMPLES, true));
+    }
+
+    #[test]
+    fn live_text_follows_the_most_recent_audio_once_it_runs_long() {
+        let total = 30 * 16_000;
+        let (s, e, from_start) = interim_window(total, true);
+        assert_eq!(e, total);
+        assert_eq!(e - s, LIVE_TEXT_MAX_SAMPLES);
+        assert!(!from_start);
+    }
 }

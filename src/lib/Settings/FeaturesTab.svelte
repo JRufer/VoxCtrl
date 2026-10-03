@@ -65,6 +65,13 @@
     }
   }
 
+  // Pasting is unavailable on some systems (Linux Mint); the toggle is then
+  // disabled and the reason shown.
+  let pasteSupport = $state<{ supported: boolean; reason: string | null }>({ supported: true, reason: null });
+  invoke<{ supported: boolean; reason: string | null }>("paste_support")
+    .then((s) => (pasteSupport = s))
+    .catch(() => {});
+
   async function onS1MiniToggle() {
     ensureS1MiniConfig();
     markDirty();
@@ -208,6 +215,43 @@
       “Hey Vox, say …” shows its overlay and starts loading the voice before you let go
       of the hotkey. Where the text goes is still decided by the full transcript. Turn
       this off to save the extra transcription work.
+    </p>
+  </div>
+
+  <div class="field-group">
+    <h3>Text Delivery</h3>
+    <label class="field">
+      <span>Paste text instead of typing it</span>
+      {#if pasteSupport.supported}
+        <input type="checkbox" bind:checked={cfg.features.paste_instead_of_typing} onchange={markDirty} />
+      {:else}
+        <input type="checkbox" checked={false} disabled />
+      {/if}
+    </label>
+    {#if !pasteSupport.supported}
+      <p class="hint">{pasteSupport.reason}</p>
+    {/if}
+    <p class="hint">
+      Sends each transcription as one paste instead of a key press per character, so
+      nothing is typed into an app that has no text field focused. Your whole clipboard
+      (text, images, files, rich text — every format) is backed up first and put back
+      afterwards, unless you copy something else in the meantime. If a paste cannot be
+      sent, VoxCtrl types the text instead. Turn this off to always type.
+    </p>
+    <label class="field">
+      <span>Paste shortcut</span>
+      <select bind:value={cfg.features.paste_shortcut} onchange={markDirty} disabled={!pasteSupport.supported || !cfg.features.paste_instead_of_typing}>
+        <option value="auto">Automatic (recommended)</option>
+        <option value="ctrl+v">Ctrl+V</option>
+        <option value="ctrl+shift+v">Ctrl+Shift+V</option>
+        <option value="shift+insert">Shift+Insert</option>
+      </select>
+    </label>
+    <p class="hint">
+      Automatic uses Ctrl+V, switching to Ctrl+Shift+V in terminal windows and
+      Shift+Insert in Windows consoles. Pick one explicitly only if automatic fails
+      for a window VoxCtrl cannot identify — for example a native Wayland terminal on
+      GNOME.
     </p>
   </div>
 

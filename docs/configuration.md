@@ -71,7 +71,9 @@ Full schema with defaults:
     "spoken_punctuation": true,
     "auto_format_lists": true,
     "snippets": {},
-    "early_command_detection": true
+    "early_command_detection": true,
+    "paste_instead_of_typing": true,
+    "paste_shortcut": "auto"
   },
   "openai": {
     "enabled": false,
@@ -239,6 +241,8 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `custom_vocabulary` | string[] | `[]` | Custom words; VoxCtrl uses fuzzy Levenshtein matching to correct near-matches post-transcription |
 | `snippets` | object | `{}` | Short code → expansion map |
 | `early_command_detection` | bool | `true` | Transcribe the first 6 seconds of a recording while it is still going, so a voice command shows its overlay and starts loading the TTS model before the hotkey is released. Routing is still decided by the final transcript. Skipped for the remote backend and CPU-only medium/large Whisper models |
+| `paste_instead_of_typing` | bool | `true` | Deliver dictation to the focused window as one paste (your whole clipboard is backed up and restored) instead of typing it key by key. Falls back to typing if a paste cannot be sent. Has no effect on Linux Mint, where text is always typed. See [Pasting Dictation](paste.md) |
+| `paste_shortcut` | string | `"auto"` | `auto` (Ctrl+V, or what the focused window needs), `ctrl+v`, `ctrl+shift+v` or `shift+insert`. Force one only for a window automatic detection cannot identify, such as a native Wayland terminal on GNOME |
 
 Example with snippets:
 ```json
