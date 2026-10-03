@@ -56,6 +56,30 @@ impl Snapshot {
     pub fn format_count(&self) -> usize {
         self.items.len()
     }
+
+    /// The formats as (name, bytes), for restoring through another backend.
+    /// Only byte-valued (8-bit) formats carry across.
+    pub fn into_generic(self) -> Vec<(String, Vec<u8>)> {
+        self.items.into_iter().filter(|i| i.format == 8).map(|i| (i.target, i.data)).collect()
+    }
+
+    pub fn from_generic(items: Vec<(String, Vec<u8>)>) -> Self {
+        let mut out: Vec<Item> = items
+            .iter()
+            .map(|(m, d)| Item { target: m.clone(), ty: m.clone(), format: 8, data: d.clone() })
+            .collect();
+        // X11 applications ask for UTF8_STRING; Wayland ones offer MIME types.
+        if !out.iter().any(|i| i.target == "UTF8_STRING") {
+            if let Some((_, d)) = items
+                .iter()
+                .find(|(m, _)| m == "text/plain;charset=utf-8")
+                .or_else(|| items.iter().find(|(m, _)| m == "text/plain"))
+            {
+                out.push(Item { target: "UTF8_STRING".into(), ty: "UTF8_STRING".into(), format: 8, data: d.clone() });
+            }
+        }
+        Snapshot { items: out }
+    }
 }
 
 struct Atoms {
@@ -458,6 +482,19 @@ mod tests {
             let _ = self.0.kill();
             let _ = self.0.wait();
         }
+    }
+
+    #[test]
+    fn a_wayland_snapshot_restores_on_x11_with_utf8_string_added() {
+        let generic = vec![
+            ("text/plain;charset=utf-8".to_string(), b"hello".to_vec()),
+            ("text/html".to_string(), b"<b>hello</b>".to_vec()),
+        ];
+        let s = Snapshot::from_generic(generic.clone());
+        assert!(s.items.iter().any(|i| i.target == "UTF8_STRING" && i.data == b"hello"));
+        // And the round trip back keeps what was there.
+        let back = s.into_generic();
+        assert!(generic.iter().all(|g| back.contains(g)));
     }
 
     fn item(target: &str, data: Vec<u8>) -> Item {

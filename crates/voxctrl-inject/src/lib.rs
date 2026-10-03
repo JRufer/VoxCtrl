@@ -236,7 +236,7 @@ async fn paste_text(text: &str) -> Result<()> {
             let holds_our_text = owned || voxctrl_clipboard::current_text().as_deref() == Some(ours.as_str());
             if holds_our_text {
                 let formats = saved.format_count();
-                voxctrl_clipboard::restore(saved).map(|()| Some(formats))
+                h.restore(saved).map(|()| Some(formats))
             } else {
                 Ok(None)
             }

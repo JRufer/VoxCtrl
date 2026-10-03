@@ -57,6 +57,7 @@ mod imp {
     pub fn current_text() -> Option<String> { None }
     impl Snapshot { pub fn format_count(&self) -> usize { 0 } }
     impl Held {
+        pub fn restore(&self, _: Snapshot) -> Result<()> { Ok(()) }
         pub fn still_current(&self) -> bool { false }
         pub fn mark(&self) -> usize { 0 }
         pub fn tracks_reads(&self) -> bool { false }
@@ -108,6 +109,11 @@ impl Snapshot {
 }
 
 impl Held {
+    /// Put `snapshot` back on the clipboard this text was placed on.
+    pub fn restore(&self, snapshot: Snapshot) -> Result<()> {
+        self.0.restore(snapshot.0)
+    }
+
     /// Whether the text we placed is still what the clipboard holds. `false`
     /// once anything else has taken the clipboard over.
     pub fn still_current(&self) -> bool {

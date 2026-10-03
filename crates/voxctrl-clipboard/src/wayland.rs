@@ -13,14 +13,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
-use tracing::debug;
 use wl_clipboard_rs::copy::{self, MimeSource, Options, Source};
 use wl_clipboard_rs::paste::{self, ClipboardType, Seat};
 
 /// A clipboard larger than this is not worth round-tripping.
 const MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
 /// How long one format may take to arrive.
-const READ_TIMEOUT: Duration = Duration::from_millis(1500);
+const READ_TIMEOUT: Duration = Duration::from_millis(700);
 
 pub struct Snapshot {
     items: Vec<(String, Vec<u8>)>,
@@ -29,6 +28,15 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn format_count(&self) -> usize {
         self.items.len()
+    }
+
+    /// The formats as (mime type, bytes), for restoring through another backend.
+    pub fn into_generic(self) -> Vec<(String, Vec<u8>)> {
+        self.items
+    }
+
+    pub fn from_generic(items: Vec<(String, Vec<u8>)>) -> Self {
+        Snapshot { items }
     }
 }
 
@@ -40,33 +48,55 @@ pub fn snapshot() -> Result<Snapshot> {
     };
 
     let mut items = Vec::new();
+    let mut skipped = Vec::new();
     let mut total = 0usize;
-    for mime in types {
-        match paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Specific(&mime)) {
-            Ok((mut reader, _)) => {
-                // The owner writes into a pipe; one that never finishes would
-                // block this forever, so each read gets a deadline.
-                let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    let mut data = Vec::new();
-                    let r = reader.read_to_end(&mut data).map(|_| data);
-                    let _ = tx.send(r);
-                });
-                let data = match rx.recv_timeout(READ_TIMEOUT) {
-                    Ok(Ok(d)) => d,
-                    Ok(Err(e)) => bail!("reading {mime} failed: {e}"),
-                    Err(_) => bail!("the clipboard owner did not finish sending {mime}"),
-                };
+    for mime in &types {
+        // One format that cannot be read must not cost the others: a
+        // clipboard owner (or the compositor's X11 bridge) can answer for
+        // most of what it offers and stall on one type. That one is skipped.
+        match read_one(mime) {
+            Ok(data) => {
                 total += data.len();
                 if total > MAX_TOTAL_BYTES {
                     bail!("clipboard too large to back up");
                 }
-                items.push((mime, data));
+                items.push((mime.clone(), data));
             }
-            Err(e) => debug!("clipboard type {mime} not read: {e}"),
+            Err(e) => {
+                tracing::warn!("clipboard format {mime} could not be backed up: {e:#}");
+                skipped.push(mime.clone());
+            }
         }
     }
+    if items.is_empty() && !types.is_empty() {
+        // The clipboard has content that could not be read. That is not the
+        // same as an empty clipboard, and must not be reported as one: a
+        // restore of "empty" would clear it.
+        bail!("none of the {} clipboard formats could be read", types.len());
+    }
+    if !skipped.is_empty() {
+        tracing::warn!("{} of {} clipboard formats could not be backed up: {skipped:?}", skipped.len(), types.len());
+    }
     Ok(Snapshot { items })
+}
+
+/// Read one format. The owner writes into a pipe, and one that never finishes
+/// would block forever, so the read has a deadline.
+fn read_one(mime: &str) -> Result<Vec<u8>> {
+    let (mut reader, _) =
+        paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Specific(mime))
+            .map_err(|e| anyhow!("{e}"))?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut data = Vec::new();
+        let r = reader.read_to_end(&mut data).map(|_| data);
+        let _ = tx.send(r);
+    });
+    match rx.recv_timeout(READ_TIMEOUT) {
+        Ok(Ok(d)) => Ok(d),
+        Ok(Err(e)) => bail!("read failed: {e}"),
+        Err(_) => bail!("the clipboard owner did not finish sending it"),
+    }
 }
 
 /// The clipboard's text, if it holds any.

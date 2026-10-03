@@ -189,6 +189,10 @@ pub struct Held {
 }
 
 impl Held {
+    pub fn restore(&self, s: Snapshot) -> Result<()> {
+        restore(s)
+    }
+
     pub fn still_current(&self) -> bool {
         unsafe { GetClipboardSequenceNumber() == self.seq }
     }

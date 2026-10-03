@@ -42,20 +42,34 @@ pub enum Held {
 
 pub fn snapshot() -> Result<Snapshot> {
     let mut last = anyhow!("no display server found (neither WAYLAND_DISPLAY nor DISPLAY is set)");
+    // The first backend that sees content wins. An *empty* answer is not
+    // trusted while another backend is still to be asked: on a Wayland
+    // session the X11 clipboard (XWayland) and the Wayland one are bridged
+    // lazily, so one can look empty while the other holds the copy.
+    let mut empty: Option<Snapshot> = None;
     for b in order() {
         let r = match b {
             Backend::Wayland => wayland::snapshot().map(Snapshot::Wayland),
             Backend::X11 => x11::snapshot().map(Snapshot::X11),
         };
         match r {
-            Ok(s) => return Ok(s),
+            Ok(s) if s.format_count() > 0 => {
+                tracing::info!(backend = ?b, formats = s.format_count(), "clipboard backed up");
+                return Ok(s);
+            }
+            Ok(s) => {
+                debug!("clipboard snapshot via {b:?} found nothing");
+                empty.get_or_insert(s);
+            }
             Err(e) => {
-                debug!("clipboard snapshot via {b:?} failed: {e:#}");
+                tracing::warn!("clipboard snapshot via {b:?} failed: {e:#}");
                 last = e;
             }
         }
     }
-    Err(last)
+    // Only an empty answer is trusted as "empty"; if every backend that
+    // answered at all failed, say so rather than claim an empty clipboard.
+    empty.ok_or(last)
 }
 
 pub fn set_text(text: &str) -> Result<Held> {
@@ -97,6 +111,22 @@ pub fn restore(s: Snapshot) -> Result<()> {
 }
 
 impl Snapshot {
+    fn into_wayland(self) -> wayland::Snapshot {
+        match self {
+            Snapshot::Wayland(s) => s,
+            Snapshot::X11(s) => wayland::Snapshot::from_generic(s.into_generic()),
+        }
+    }
+
+    fn into_x11(self) -> x11::Snapshot {
+        match self {
+            Snapshot::X11(s) => s,
+            Snapshot::Wayland(s) => x11::Snapshot::from_generic(s.into_generic()),
+        }
+    }
+}
+
+impl Snapshot {
     pub fn format_count(&self) -> usize {
         match self {
             Snapshot::Wayland(s) => s.format_count(),
@@ -106,6 +136,17 @@ impl Snapshot {
 }
 
 impl Held {
+    /// Put `s` back through the backend that holds the borrowed text, which is
+    /// not necessarily the one the snapshot was taken through (the two can
+    /// disagree about which is usable). Restoring through the wrong one would
+    /// leave the dictation on the real clipboard.
+    pub fn restore(&self, s: Snapshot) -> Result<()> {
+        match self {
+            Held::Wayland(_) => wayland::restore(s.into_wayland()),
+            Held::X11(_) => x11::restore(s.into_x11()),
+        }
+    }
+
     pub fn still_current(&self) -> bool {
         match self {
             Held::Wayland(h) => h.still_current(),
