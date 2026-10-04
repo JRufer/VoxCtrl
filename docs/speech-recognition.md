@@ -294,6 +294,7 @@ files there manually to run fully offline; the tokenizer ships inside the app.
 - **Execution**: Runs through ONNX Runtime with optional GPU offloading.
 - **Language**: English-focused with automatic language token routing.
 - **Storage**: Downloaded into `~/.local/share/voxctrl/models/parakeet/`.
+- **Redux variant**: Settings → Engine also offers `TDT 0.6B v3 Redux`, [Moondream's 1.58-bit ternary version](https://huggingface.co/moondream/parakeet-redux) of the same model (~420 MB instead of ~665 MB, same 25 languages). It uses the community ONNX export [`eschmidbauer/parakeet-redux-onnx`](https://huggingface.co/eschmidbauer/parakeet-redux-onnx) (ternary weights stored as ONNX Runtime `MatMulNBits` blocks) and runs through the same pipeline. Per Moondream it is slightly worse on English (6.55 vs 6.26 WER) and in noise, and better on multilingual and long-form audio. Licence: CC-BY-4.0.
 
 ---
 

@@ -85,7 +85,8 @@
   ];
 
   const parakeetModelSizeOptions = [
-    { value: "tdt-0.6b-v3", label: "TDT 0.6B v3 (INT8, ~665 MB)" }
+    { value: "tdt-0.6b-v3", label: "TDT 0.6B v3 (INT8, ~665 MB)" },
+    { value: "tdt-0.6b-v3-redux", label: "TDT 0.6B v3 Redux (1.58-bit, ~420 MB)" }
   ];
 
   let downloadedMap = $state<Record<string, boolean>>({});
@@ -563,7 +564,7 @@
             <span class="status-checking">⏳ Checking local model files...</span>
           {:else if parakeetDownloading}
             <span class="status-downloading"
-              >⏳ Downloading Parakeet {cfg.engine.parakeet.model_size} (ONNX INT8)...</span
+              >⏳ Downloading Parakeet {cfg.engine.parakeet.model_size} (ONNX)...</span
             >
           {:else if parakeetDownloadedMap[cfg.engine.parakeet.model_size]}
             <span class="status-downloaded">✔ Model downloaded and ready</span>
