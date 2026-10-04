@@ -62,6 +62,34 @@ pub const MODEL_FILES: [&str; 5] = [
 pub const HF_BASE_URL: &str =
     "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main";
 
+/// Model size id for Moondream's 1.58-bit ternary Parakeet Redux.
+pub const REDUX_SIZE: &str = "tdt-0.6b-v3-redux";
+
+/// Community ONNX export of `moondream/parakeet-redux` (ternary weights stored
+/// as ONNX Runtime `MatMulNBits` blocks, bit-exact with the source). Same tensor
+/// names and logit layout as the NVIDIA export, so the pipeline is unchanged.
+const REDUX_BASE_URL: &str =
+    "https://huggingface.co/eschmidbauer/parakeet-redux-onnx/resolve/main";
+
+/// `(remote file, local file)` pairs for the Redux export. Remote names differ
+/// from ours, so they are saved under the standard local names.
+const REDUX_FILES: [(&str, &str); 5] = [
+    ("config.json", CONFIG_FILE),
+    ("vocab.txt", VOCAB_FILE),
+    ("preprocessor.onnx", PREPROCESSOR_FILE),
+    ("encoder-model.onnx", ENCODER_FILE),
+    ("decoder_joint-model.onnx", DECODER_FILE),
+];
+
+/// Base URL and `(remote, local)` file list for a model size.
+fn download_spec(size: &str) -> (&'static str, Vec<(&'static str, &'static str)>) {
+    if size == REDUX_SIZE {
+        (REDUX_BASE_URL, REDUX_FILES.to_vec())
+    } else {
+        (HF_BASE_URL, MODEL_FILES.iter().map(|f| (*f, *f)).collect())
+    }
+}
+
 // ── Filesystem layout ─────────────────────────────────────────────────────────
 
 /// Default parent directory for Parakeet models: `<models_base_dir>/parakeet/`.
@@ -80,7 +108,7 @@ fn model_size_dir(model_dir: &str, size: &str) -> PathBuf {
 }
 
 pub fn valid_model_size(size: &str) -> bool {
-    matches!(size, "tdt-0.6b-v3" | "tdt-0.6b-v3-int8")
+    matches!(size, "tdt-0.6b-v3" | "tdt-0.6b-v3-int8" | REDUX_SIZE)
 }
 
 /// True when all 5 model files are present on disk.
@@ -99,7 +127,7 @@ static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// Fetch the 5 model files for `size` into `<model_dir>/<size>/`.
 pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     if !valid_model_size(size) {
-        bail!("Unknown Parakeet model size '{size}' (expected 'tdt-0.6b-v3')");
+        bail!("Unknown Parakeet model size '{size}' (expected 'tdt-0.6b-v3' or '{REDUX_SIZE}')");
     }
 
     let dir = model_size_dir(model_dir, size);
@@ -107,12 +135,13 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
 
     let _guard = DOWNLOAD_LOCK.lock().await;
 
-    for file in MODEL_FILES {
-        let path = dir.join(file);
+    let (base_url, files) = download_spec(size);
+    for (remote, local) in files {
+        let path = dir.join(local);
         if path.exists() {
             continue;
         }
-        let url = format!("{HF_BASE_URL}/{file}");
+        let url = format!("{base_url}/{remote}");
         info!("Downloading Parakeet file: {url}");
         let response = reqwest::get(&url)
             .await
@@ -659,5 +688,33 @@ mod tests {
         let res = backend.transcribe(&req).expect("transcribe silence");
         println!("Parakeet transcribe silence result: {:?}", res.text);
         assert_eq!(res.text, "");
+    }
+
+    /// Network + large download; run manually with `--ignored`.
+    #[test]
+    #[ignore]
+    fn test_redux_download_and_transcribe() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(download_model(REDUX_SIZE, "")).expect("download redux");
+        assert!(is_model_downloaded(REDUX_SIZE, ""));
+        let mut cfg = ParakeetConfig::default();
+        cfg.model_size = REDUX_SIZE.into();
+        let mut backend = ParakeetBackend::new(cfg);
+        backend.load().expect("load redux");
+        let path = std::env::var("REDUX_TEST_PCM").expect("REDUX_TEST_PCM");
+        let bytes = std::fs::read(path).unwrap();
+        let audio: Vec<f32> = bytes
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+        let req = TranscribeRequest {
+            audio,
+            language: None,
+            word_timestamps: false,
+            initial_prompt: None,
+        };
+        let res = backend.transcribe(&req).expect("transcribe");
+        println!("REDUX RESULT: {:?}", res.text);
+        assert!(res.text.to_lowercase().contains("fox"));
     }
 }
