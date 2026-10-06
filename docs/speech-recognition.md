@@ -288,7 +288,7 @@ files there manually to run fully offline; the tokenizer ships inside the app.
 
 ## GPU / CPU per engine
 
-Each engine has its own **GPU acceleration** switch in **Settings → Engine** (S1-mini's is in **Settings → Features**), and the first-run wizard's GPU toggle applies to whichever engine is selected. The switch is disabled when the build has no GPU path for that engine:
+Every engine uses the same **GPU acceleration** checkbox — whisper.cpp, Moonshine and Parakeet in **Settings → Engine**, and the TTS engines in **Settings → Text to Speech**. A chip in the corner of each section (`✔ Ready (Vulkan (AMD/Intel/NVIDIA))`, or `✔ Ready (CPU)`) says which device the engine is using. Each engine has its own switch in **Settings → Engine** (S1-mini's is in **Settings → Features**), and the first-run wizard's GPU toggle applies to whichever engine is selected. The switch is disabled when the build has no GPU path for that engine:
 
 | Engine | GPU path | Config key |
 |---|---|---|

@@ -5,6 +5,8 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
   import CustomSelect from "./CustomSelect.svelte";
+  import GpuToggle from "./GpuToggle.svelte";
+  import DeviceChip from "./DeviceChip.svelte";
   import KeyValueListEditor from "./KeyValueListEditor.svelte";
   import StopKeyRecorder from "./StopKeyRecorder.svelte";
 
@@ -12,6 +14,29 @@
   function markDirty() {
     config.set(cfg);
     configDirty.set(true);
+  }
+
+  // Which engines can offload to a GPU, and through what. TTS support is not
+  // fixed at compile time the way STT's is: audio.cpp opens a Vulkan device (or
+  // Piper's ONNX Runtime a CUDA one) when it can and falls back to the CPU
+  // when it cannot, so the switch is always offered.
+  const ttsGpu = $derived(
+    cfg.tts.engine === "piper"
+      ? { backend: "cuda", on: cfg.tts.gpu }
+      : cfg.tts.engine === "pocket_tts"
+      ? { backend: "vulkan", on: cfg.tts.pocket_tts.gpu }
+      : cfg.tts.engine === "breeze_tts_2"
+      ? { backend: "vulkan", on: cfg.tts.breeze_tts_2.gpu }
+      : cfg.tts.engine === "vox_cpm_2"
+      ? { backend: "vulkan", on: cfg.tts.vox_cpm_2.gpu }
+      : null,
+  );
+  function setTtsGpu(v: boolean) {
+    if (cfg.tts.engine === "piper") cfg.tts.gpu = v;
+    else if (cfg.tts.engine === "pocket_tts") cfg.tts.pocket_tts.gpu = v;
+    else if (cfg.tts.engine === "breeze_tts_2") cfg.tts.breeze_tts_2.gpu = v;
+    else if (cfg.tts.engine === "vox_cpm_2") cfg.tts.vox_cpm_2.gpu = v;
+    markDirty();
   }
 
   // ── Run Speed Timer ────────────────────────────────────────────────────────
@@ -707,7 +732,12 @@
   <h2>Text to Speech</h2>
 
   <div class="field-group">
-    <h3>TTS Engine</h3>
+    <div class="field-label-row">
+      <h3>TTS Engine</h3>
+      {#if ttsGpu}
+        <DeviceChip state="device" backend={ttsGpu.backend} on={ttsGpu.on} />
+      {/if}
+    </div>
     <label class="field">
       <span>Enable TTS</span>
       <input type="checkbox" bind:checked={cfg.tts.enabled} onchange={markDirty} />
@@ -716,30 +746,13 @@
       <span>Engine</span>
       <CustomSelect bind:value={cfg.tts.engine} options={engineOptions} onchange={onEngineChanged} />
     </label>
-    {#if cfg.tts.engine === "piper"}
-    <label class="field">
-      <span>GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Use CUDA GPU acceleration (ONNX Runtime). Falls back to CPU if unavailable.</p>
-    {:else if cfg.tts.engine === "pocket_tts"}
-    <label class="field">
-      <span>Vulkan GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.pocket_tts.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
-    {:else if cfg.tts.engine === "breeze_tts_2"}
-    <label class="field">
-      <span>Vulkan GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.breeze_tts_2.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
-    {:else if cfg.tts.engine === "vox_cpm_2"}
-    <label class="field">
-      <span>Vulkan GPU Acceleration</span>
-      <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.gpu} onchange={markDirty} />
-    </label>
-    <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Runs synthesis on the GPU via Vulkan. Falls back to the CPU whenever no Vulkan device can be opened.</p>
+    {#if ttsGpu}
+      <GpuToggle
+        backend={ttsGpu.backend}
+        on={ttsGpu.on}
+        onchange={setTtsGpu}
+        hint="Falls back to the CPU whenever no usable device can be opened. Takes effect on the next synthesis."
+      />
     {/if}
     <label class="field">
       <span>Speed ({cfg.tts.speed.toFixed(2)}×)</span>

@@ -5,6 +5,9 @@
   import { onMount } from "svelte";
 
   import CustomSelect from "./CustomSelect.svelte";
+  import GpuToggle from "./GpuToggle.svelte";
+  import DeviceChip from "./DeviceChip.svelte";
+  import { gpuLabel } from "./gpu";
   import KeyValueListEditor from "./KeyValueListEditor.svelte";
   import { autoResize } from "../actions";
 
@@ -23,13 +26,6 @@
   let s1MiniDownloading = $state(false);
   let s1MiniGpu = $state<string | null>(null);
 
-  const GPU_LABELS: Record<string, string> = {
-    cuda: "CUDA (NVIDIA)",
-    vulkan: "Vulkan (AMD/Intel/NVIDIA)",
-    coreml: "CoreML (Apple)",
-    webgpu: "WebGPU (AMD/Intel/NVIDIA)",
-  };
-  const gpuLabel = (id: string) => GPU_LABELS[id] ?? id;
 
   function ensureS1MiniConfig() {
     if (!cfg.engine.s1_mini) {
@@ -116,13 +112,11 @@
   <div class="field-group">
     <div class="field-label-row">
       <h3>S1-mini Dictation Cleanup</h3>
-      {#if s1MiniDownloaded}
-        <span class="status-pill success">✔ Ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)})` : "(CPU)"}</span>
-      {:else if s1MiniDownloading}
-        <span class="status-pill downloading">⏳ Downloading</span>
-      {:else if s1MiniEnabled}
-        <span class="status-pill error">Missing</span>
-      {/if}
+      <DeviceChip
+        state={s1MiniDownloaded ? "ready" : s1MiniDownloading ? "downloading" : s1MiniEnabled ? "missing" : "checking"}
+        backend={s1MiniGpu}
+        on={cfg.engine.s1_mini.gpu}
+      />
     </div>
 
     <label class="field">
@@ -144,22 +138,15 @@
     </div>
 
     {#if s1MiniEnabled}
-      <label class="field">
-        <span>GPU acceleration{s1MiniGpu ? ` (${gpuLabel(s1MiniGpu)})` : ""}</span>
-        <input
-          type="checkbox"
-          bind:checked={cfg.engine.s1_mini.gpu}
-          onchange={markDirty}
-          disabled={!s1MiniGpu}
-        />
-      </label>
-      <p class="hint">
-        {#if s1MiniGpu}
-          Off runs S1-mini on the CPU. Takes effect on the next cleanup.
-        {:else}
-          This build has no GPU path for S1-mini; it runs on the CPU.
-        {/if}
-      </p>
+      <GpuToggle
+        backend={s1MiniGpu}
+        on={cfg.engine.s1_mini.gpu}
+        onchange={(v) => {
+          cfg.engine.s1_mini.gpu = v;
+          markDirty();
+        }}
+        hint="Off runs S1-mini on the CPU. Takes effect on the next cleanup."
+      />
       <div class="model-status-container mt-1">
         {#if s1MiniChecking}
           <span class="status-checking">⏳ Checking S1-mini model files...</span>
@@ -336,18 +323,6 @@
     @apply bg-[var(--accent2)];
   }
 
-  .status-pill {
-    @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;
-  }
-  .status-pill.success {
-    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
-  }
-  .status-pill.error {
-    @apply bg-red-500/15 text-red-300 border border-red-500/30;
-  }
-  .status-pill.downloading {
-    @apply bg-cyan-500/15 text-cyan-300 border border-cyan-500/30;
-  }
 
   .field-title-col {
     @apply flex flex-col flex-1 mr-4;
