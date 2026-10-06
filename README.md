@@ -201,11 +201,11 @@ npx tauri build --bundles nsis
 ```
 
 #### 2. GPU-Accelerated Build (WebGPU Direct3D 12)
-Enables Direct3D 12 GPU acceleration for Moonshine via WebGPU and Vulkan for S1-mini:
+Enables Direct3D 12 GPU acceleration for Moonshine and Parakeet via WebGPU and Vulkan for S1-mini:
 ```bash
 npm run build
 cargo build --bin voxctrl-llm-sidecar --release --features vulkan
-npx tauri build --bundles nsis --features moonshine-webgpu
+npx tauri build --bundles nsis --features moonshine-webgpu,parakeet-webgpu
 ```
 The resulting installer is saved to `src-tauri/target/release/bundle/nsis/`.
 

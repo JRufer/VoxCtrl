@@ -382,6 +382,7 @@ fn clean_via_sidecar(
     text: &str,
     styling: &str,
     custom_dir: Option<&str>,
+    gpu: bool,
 ) -> Result<String> {
     let binary = find_llm_sidecar_binary().context("sidecar binary not found")?;
     let mut guard = match SIDECAR_PROCESS.lock() {
@@ -403,6 +404,7 @@ fn clean_via_sidecar(
             "raw_text": text,
             "styling": styling,
             "model_path": model_path.to_string_lossy(),
+            "gpu": gpu,
         }),
     ) {
         Ok(r) => r,
@@ -432,7 +434,7 @@ fn global_engine_cell() -> &'static Arc<Mutex<Option<S1MiniEngine>>> {
 
 /// Run text cleanup through S1-mini, lazily loading the model if needed.
 /// Falls back to the original text on any error.
-pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>) -> String {
+pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>, gpu: bool) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return text.to_string();
@@ -445,7 +447,7 @@ pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>) -> S
 
     // 1. Attempt accelerated cleanup via the LLM sidecar if available
     if find_llm_sidecar_binary().is_some() {
-        match clean_via_sidecar(text, styling, custom_dir) {
+        match clean_via_sidecar(text, styling, custom_dir, gpu) {
             Ok(cleaned) => {
                 return if cleaned.is_empty() && !trimmed.is_empty() {
                     String::new()
@@ -521,7 +523,7 @@ mod tests {
     #[test]
     fn test_s1_mini_clean_dictation() {
         if is_s1_mini_downloaded(None) {
-            let res = clean_dictation("um so uh we should definitely meet at 3pm tomorrow", "semi-formal", None);
+            let res = clean_dictation("um so uh we should definitely meet at 3pm tomorrow", "semi-formal", None, true);
             assert!(!res.is_empty());
             assert!(res.contains("meet at 3") || res.contains("tomorrow"));
         }

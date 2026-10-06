@@ -129,6 +129,27 @@ jobs:
             artifact_label: linux-x86_64-vulkan
             cuda: false
             vulkan: true
+            lunarg_dist: jammy
+
+          # ── Linux Vulkan + WebGPU ──────────────────────────────────────────
+          # The same app with ONNX Runtime's WebGPU provider added, so
+          # Moonshine and Parakeet can use the GPU too (the Vulkan build above
+          # only accelerates whisper.cpp; ONNX Runtime has no Vulkan provider).
+          # Dawn, the WebGPU implementation, is a prebuilt shared library
+          # linked against glibc 2.38 / GCC 13's libstdc++, and the app binary
+          # NEEDs it — so this build cannot start on Ubuntu 22.04 or Debian 12.
+          # That is why it is a second artifact built on a newer runner rather
+          # than a change to the one above, which keeps running there.
+          # The updater keeps each install on its own variant by file name
+          # (crates/voxctrl-update/src/install.rs).
+          - name: linux-vulkan-webgpu
+            os: ubuntu-24.04
+            features: "vulkan,moonshine-webgpu,parakeet-webgpu"
+            artifact_label: linux-x86_64-vulkan-webgpu
+            cuda: false
+            vulkan: true
+            webgpu: true
+            lunarg_dist: noble
 
           # ── Windows ────────────────────────────────────────────────────────
           # The only Windows build, mirroring the Linux Vulkan row above: it
@@ -149,7 +170,7 @@ jobs:
           # assumes it covers every engine.
           - name: windows-webgpu
             os: windows-2022
-            features: "moonshine-webgpu"
+            features: "moonshine-webgpu,parakeet-webgpu"
             artifact_label: windows-x86_64-webgpu
             cuda: false
 
@@ -196,8 +217,8 @@ jobs:
         run: |
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
             | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list \
-            https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${{ matrix.lunarg_dist }}.list \
+            https://packages.lunarg.com/vulkan/lunarg-vulkan-${{ matrix.lunarg_dist }}.list
           sudo apt-get update -q
           sudo apt-get install -y vulkan-sdk
           glslc --version
@@ -231,11 +252,31 @@ jobs:
         run: cargo build --bin voxctrl-llm-sidecar --release --features vulkan
 
       - name: Build AppImage + deb (Linux, Vulkan)
-        if: runner.os == 'Linux' && matrix.vulkan
+        if: runner.os == 'Linux' && matrix.vulkan && !matrix.webgpu
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
         run: npm run tauri build -- --features vulkan
+
+      # Dawn (libwebgpu_dawn.so) is a NEEDED library of the binary. ort leaves
+      # it in target/release; LD_LIBRARY_PATH lets linuxdeploy resolve it, and
+      # the extra config has the .deb install it to /usr/lib, which the
+      # binary's rpath ($ORIGIN/../lib, src-tauri/build.rs) covers. The AppImage
+      # gets it in the slimming step below if linuxdeploy did not.
+      - name: Build AppImage + deb (Linux, Vulkan + WebGPU)
+        if: runner.os == 'Linux' && matrix.webgpu
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          # Build once so ort fetches Dawn into target/release.
+          cargo build --release -p voxctrl-app --features "${{ matrix.features }}"
+          dawn="$(realpath target/release/libwebgpu_dawn.so)"
+          export LD_LIBRARY_PATH="$PWD/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cat > "$RUNNER_TEMP/tauri-webgpu.conf.json" <<EOF
+          {"bundle":{"linux":{"deb":{"files":{"/usr/lib/libwebgpu_dawn.so":"$dawn"}}}}}
+          EOF
+          npm run tauri build -- --config "$RUNNER_TEMP/tauri-webgpu.conf.json" --features "${{ matrix.features }}"
 
       # linuxdeploy bundles whatever graphics/Wayland/input libraries exist on
       # the build host. On ubuntu-22.04 those are older than modern desktops, and
@@ -266,6 +307,14 @@ jobs:
           ( cd "$work" && ./in.AppImage --appimage-extract >/dev/null )
 
           root="$work/squashfs-root"
+          # The WebGPU build NEEDs Dawn; make sure it is in usr/lib (where the
+          # binary's rpath and AppRun look) whether or not linuxdeploy found it.
+          if [ "${{ matrix.webgpu }}" = "true" ] && [ -z "$(find "$root" -name 'libwebgpu_dawn.so*' -print -quit)" ]; then
+            mkdir -p "$root/usr/lib"
+            cp -L "$(find . -path '*/release/libwebgpu_dawn.so' -print -quit)" "$root/usr/lib/libwebgpu_dawn.so"
+            echo "Bundled libwebgpu_dawn.so into the AppImage"
+          fi
+
           # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)
           helper_dir=""
           for dir in "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" "/usr/lib/webkit2gtk-4.1" "/usr/lib64/webkit2gtk-4.1"; do
@@ -607,6 +656,7 @@ jobs:
             | Platform | File suffix | GPU required |
             |---|---|---|
             | Linux | `-linux-x86_64-vulkan.AppImage` | None — GPU used if present |
+            | Linux (newer distros) | `-linux-x86_64-vulkan-webgpu.AppImage` | None — GPU used if present; also accelerates Moonshine and Parakeet. Needs glibc 2.38+ (Ubuntu 24.04, Fedora 39, Debian 13, Arch and similar) |
             | Windows | `-windows-x86_64-webgpu.exe` | None — GPU used if present |
 
             **There is one Windows build now, too.** It accelerates the

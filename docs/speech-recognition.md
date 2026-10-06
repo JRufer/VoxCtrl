@@ -286,6 +286,19 @@ files there manually to run fully offline; the tokenizer ships inside the app.
 
 ---
 
+## GPU / CPU per engine
+
+Each engine has its own **GPU acceleration** switch in **Settings → Engine** (S1-mini's is in **Settings → Features**), and the first-run wizard's GPU toggle applies to whichever engine is selected. The switch is disabled when the build has no GPU path for that engine:
+
+| Engine | GPU path | Config key |
+|---|---|---|
+| whisper.cpp | Vulkan (or CUDA) | `engine.whisper_cpp.device` (`auto` / `cpu`) |
+| Moonshine | ONNX Runtime WebGPU / CUDA / CoreML | `engine.moonshine.device` (`auto` / `cpu`) |
+| Parakeet TDT | ONNX Runtime WebGPU / CUDA / CoreML | `engine.parakeet.device` (`auto` / `cpu`) |
+| S1-mini | Vulkan sidecar | `engine.s1_mini.gpu` |
+
+Parakeet defaults to the CPU: its INT8 models run mostly on the CPU even with the GPU provider registered, so on an RTX 4090 the standard model measured about four times slower on WebGPU and Redux only marginally faster. Turn it on if your GPU and models behave differently.
+
 ## Parakeet TDT Backend
 
 [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is an NVIDIA FastConformer transducer model offering state-of-the-art accuracy, real-time transcription speeds, and immune to the autoregressive repetition loops that Whisper can occasionally experience on background noise.

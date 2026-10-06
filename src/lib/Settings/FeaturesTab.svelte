@@ -10,7 +10,7 @@
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   if (cfg.engine && !cfg.engine.s1_mini) {
-    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal" };
+    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal", gpu: true };
   }
   function markDirty() {
     config.set(cfg);
@@ -36,6 +36,7 @@
       cfg.engine.s1_mini = {
         enabled: false,
         styling: "semi-formal",
+        gpu: true,
       };
     }
   }
@@ -143,6 +144,22 @@
     </div>
 
     {#if s1MiniEnabled}
+      <label class="field">
+        <span>GPU acceleration{s1MiniGpu ? ` (${gpuLabel(s1MiniGpu)})` : ""}</span>
+        <input
+          type="checkbox"
+          bind:checked={cfg.engine.s1_mini.gpu}
+          onchange={markDirty}
+          disabled={!s1MiniGpu}
+        />
+      </label>
+      <p class="hint">
+        {#if s1MiniGpu}
+          Off runs S1-mini on the CPU. Takes effect on the next cleanup.
+        {:else}
+          This build has no GPU path for S1-mini; it runs on the CPU.
+        {/if}
+      </p>
       <div class="model-status-container mt-1">
         {#if s1MiniChecking}
           <span class="status-checking">⏳ Checking S1-mini model files...</span>
@@ -151,7 +168,7 @@
             >⏳ Downloading S1-mini model (s1-mini-q4_k_m.gguf & tokenizer.json)...</span
           >
         {:else if s1MiniDownloaded}
-          <span class="status-downloaded">✔ Model downloaded and ready {s1MiniGpu ? `(${gpuLabel(s1MiniGpu)} GPU accelerated)` : "on CPU"}</span>
+          <span class="status-downloaded">✔ Model downloaded and ready {s1MiniGpu && cfg.engine.s1_mini.gpu ? `(${gpuLabel(s1MiniGpu)} GPU accelerated)` : "on CPU"}</span>
         {:else}
           <div class="status-missing-wrapper">
             <span class="status-missing">❌ Model files missing</span>

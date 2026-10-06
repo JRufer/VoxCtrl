@@ -51,13 +51,16 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.whisper_cpp.language", Safe),
     ("engine.moonshine.model_size", Safe),
     ("engine.moonshine.language", Safe),
+    ("engine.moonshine.device", Safe),
     ("engine.parakeet.model_size", Safe),
     ("engine.parakeet.language", Safe),
+    ("engine.parakeet.device", Safe),
     ("engine.remote_openai.endpoint", Endpoint),
     ("engine.remote_openai.api_key", Secret),
     ("engine.remote_openai.model", Safe),
     ("engine.remote_openai.language", Safe),
     ("engine.s1_mini.styling", Safe),
+    ("engine.s1_mini.gpu", Safe),
     // A device node such as /dev/input/event4. No account name, no home
     // directory, and which node was picked is the whole question when a
     // hotkey does not fire.

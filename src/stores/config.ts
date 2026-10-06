@@ -15,6 +15,8 @@ export interface AppConfig {
 export interface S1MiniConfig {
   enabled: boolean;
   styling: string;
+  /** Offload cleanup to the GPU when this build can; false forces the CPU. */
+  gpu: boolean;
 }
 
 export interface EngineConfig {
@@ -45,11 +47,15 @@ export interface WhisperCppConfig {
 export interface MoonshineConfig {
   model_size: string;
   language: string;
+  /** "auto" = GPU when this build has one, "cpu" = never use the GPU. */
+  device: string;
 }
 
 export interface ParakeetConfig {
   model_size: string;
   language: string;
+  /** "auto" = GPU when this build has one, "cpu" = never use the GPU. */
+  device: string;
 }
 
 export interface AudioConfig {
@@ -168,8 +174,8 @@ const defaultConfig: AppConfig = {
       threads: 0,
       language: "auto",
     },
-    moonshine: { model_size: "base", language: "en" },
-    parakeet: { model_size: "tdt-0.6b-v3", language: "auto" },
+    moonshine: { model_size: "base", language: "en", device: "auto" },
+    parakeet: { model_size: "tdt-0.6b-v3", language: "auto", device: "cpu" },
     remote_openai: {
       endpoint: "http://localhost:8000/v1",
       api_key: null,
@@ -180,6 +186,7 @@ const defaultConfig: AppConfig = {
     s1_mini: {
       enabled: false,
       styling: "semi-formal",
+      gpu: true,
     },
   },
   audio: {

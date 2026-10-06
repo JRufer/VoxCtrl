@@ -25,6 +25,9 @@ struct Request {
 #[derive(Debug, Deserialize)]
 struct LoadParams {
     model_path: String,
+    /// Offload to the GPU when this build can. Absent = yes.
+    #[serde(default)]
+    gpu: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +39,8 @@ struct CleanParams {
     context: Option<String>,
     #[serde(default)]
     model_path: Option<String>,
+    #[serde(default)]
+    gpu: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -86,18 +91,22 @@ struct LoadedState {
     model: LlamaModel,
     gpu_layers: u32,
     device_desc: String,
+    /// What the caller asked for, so a changed setting reloads the model even
+    /// when the path is the same.
+    gpu_requested: bool,
 }
 
 fn load_model(
     backend: &LlamaBackend,
     path: &Path,
+    use_gpu: bool,
 ) -> Result<(LlamaModel, u32, String), Box<dyn std::error::Error>> {
     if !path.exists() {
         return Err(format!("Model file not found: {}", path.display()).into());
     }
 
     #[cfg(feature = "vulkan")]
-    {
+    if use_gpu {
         tracing::info!("Attempting to load model with Vulkan GPU offload: {}", path.display());
         let params = LlamaModelParams::default().with_n_gpu_layers(99);
         match LlamaModel::load_from_file(backend, path, &params) {
@@ -114,6 +123,7 @@ fn load_model(
         }
     }
 
+    let _ = use_gpu;
     tracing::info!("Loading model on CPU: {}", path.display());
     let params = LlamaModelParams::default().with_n_gpu_layers(0);
     let model = LlamaModel::load_from_file(backend, path, &params)?;
@@ -306,8 +316,9 @@ fn main() {
                 };
 
                 let path = PathBuf::from(&params.model_path);
+                let want_gpu = params.gpu.unwrap_or(true);
                 if let Some(s) = &state {
-                    if s.model_path == path {
+                    if s.model_path == path && s.gpu_requested == want_gpu {
                         send_response(
                             &mut stdout_lock,
                             id,
@@ -322,13 +333,14 @@ fn main() {
                     }
                 }
 
-                match load_model(&backend, &path) {
+                match load_model(&backend, &path, want_gpu) {
                     Ok((model, gpu_layers, device_desc)) => {
                         state = Some(LoadedState {
                             model_path: path,
                             model,
                             gpu_layers,
                             device_desc: device_desc.clone(),
+                            gpu_requested: want_gpu,
                         });
                         send_response(
                             &mut stdout_lock,
@@ -366,17 +378,27 @@ fn main() {
                     }
                 };
 
-                // If a model path was passed and model not yet loaded, load it
+                // Load when nothing is loaded yet, or reload when the caller's
+                // GPU/CPU choice changed since the model was loaded.
+                let want_gpu = params.gpu.unwrap_or(true);
+                if params.model_path.is_some()
+                    && state.as_ref().is_some_and(|s| s.gpu_requested != want_gpu)
+                {
+                    // Free the old model before allocating the new one.
+                    tracing::info!("Device setting changed (gpu={want_gpu}); reloading model");
+                    state = None;
+                }
                 if state.is_none() {
                     if let Some(mp) = &params.model_path {
                         let path = PathBuf::from(mp);
-                        match load_model(&backend, &path) {
+                        match load_model(&backend, &path, want_gpu) {
                             Ok((model, gpu_layers, device_desc)) => {
                                 state = Some(LoadedState {
                                     model_path: path,
                                     model,
                                     gpu_layers,
                                     device_desc,
+                                    gpu_requested: want_gpu,
                                 });
                             }
                             Err(e) => {

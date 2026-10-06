@@ -53,7 +53,7 @@ Output artifacts land in `src-tauri\target\release\bundle\`:
 - `nsis\VoxCtrl_<version>_x64-setup.exe` — NSIS installer
 - `msi\VoxCtrl_<version>_x64.msi` — MSI package
 
-### Build with WebGPU acceleration (Direct3D 12 for Moonshine)
+### Build with WebGPU acceleration (Direct3D 12 for Moonshine and Parakeet)
 
 This is what the published Windows release actually ships — the CPU-only
 build above and the WebGPU build measure within 0.1 MB of each other, so
@@ -63,10 +63,10 @@ cleanly when no usable Direct3D 12 GPU is found.
 To build it, accelerating Moonshine speech recognition via ONNX Runtime's WebGPU execution provider over Direct3D 12:
 
 ```powershell
-npx tauri build --bundles nsis --features moonshine-webgpu
+npx tauri build --bundles nsis --features moonshine-webgpu,parakeet-webgpu
 ```
 
-This accelerates Moonshine on any modern Direct3D 12 capable GPU (NVIDIA, AMD, Intel) with no vendor SDK needed at build time.
+This accelerates Moonshine and Parakeet on any modern Direct3D 12 capable GPU (NVIDIA, AMD, Intel) with no vendor SDK needed at build time.
 
 ### Build with CUDA acceleration
 

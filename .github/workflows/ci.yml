@@ -101,12 +101,13 @@ jobs:
       # is the same shape of gap that let the Windows backend ship unbuildable,
       # so each shipped GPU variant gets checked here.
       #
-      # `moonshine-webgpu` is what the Windows GPU release artifact is built
-      # with; `vulkan` is what the Linux AppImage is built with. Both pull
-      # their own prebuilt ONNX Runtime / compile their own shaders, so this is
-      # not free, but it is far cheaper than finding out at release time.
-      - name: cargo check (moonshine-webgpu)
-        run: cargo check -p voxctrl-app --features moonshine-webgpu
+      # `moonshine-webgpu,parakeet-webgpu` is what the Windows GPU release
+      # artifact and the Linux WebGPU AppImage are built with; `vulkan` is what
+      # the Linux AppImage is built with. Both pull their own prebuilt ONNX
+      # Runtime / compile their own shaders, so this is not free, but it is far
+      # cheaper than finding out at release time.
+      - name: cargo check (moonshine-webgpu, parakeet-webgpu)
+        run: cargo check -p voxctrl-app --features moonshine-webgpu,parakeet-webgpu
 
       # Since the CPU AppImage was dropped, `vulkan` is not a variant of the
       # Linux release — it *is* the Linux release. The default-features check

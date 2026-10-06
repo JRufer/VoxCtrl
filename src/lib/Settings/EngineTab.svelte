@@ -49,13 +49,13 @@
     {
       value: "moonshine",
       label: moonshineGpu
-        ? `Moonshine (${gpuLabel(moonshineGpu)})`
+        ? `Moonshine (${gpuLabel(moonshineGpu)} or CPU)`
         : "Moonshine (CPU only)",
     },
     {
       value: "parakeet",
       label: parakeetGpu
-        ? `Parakeet TDT (${gpuLabel(parakeetGpu)})`
+        ? `Parakeet TDT (${gpuLabel(parakeetGpu)} or CPU)`
         : "Parakeet TDT (CPU only)",
     },
     { value: "remote-openai", label: "Remote Speech Engine (OpenAI API)" },
@@ -481,8 +481,8 @@
               >Moonshine runs on the CPU in this build</strong
             >
             <p class="m-0 text-slate-200 text-xs leading-relaxed">
-              ONNX Runtime, which Moonshine uses, has no Vulkan backend, so the
-              Device setting above applies to Whisper.cpp only. Moonshine holds
+              ONNX Runtime, which Moonshine uses, has no Vulkan backend, and this
+              build has no other GPU provider compiled in. Moonshine holds
               its weights in RAM as fp32 — roughly <code>530&nbsp;MB</code> for
               <code>base</code>, <code>240&nbsp;MB</code> for <code>tiny</code> —
               where Whisper.cpp{whisperGpu
@@ -522,6 +522,26 @@
           {/if}
         </div>
       {/if}
+
+      <label class="field">
+        <span>GPU acceleration{moonshineGpu ? ` (${gpuLabel(moonshineGpu)})` : ""}</span>
+        <input
+          type="checkbox"
+          checked={cfg.engine.moonshine.device !== "cpu"}
+          disabled={!moonshineGpu}
+          onchange={(e) => {
+            cfg.engine.moonshine.device = e.currentTarget.checked ? "auto" : "cpu";
+            markDirty();
+          }}
+        />
+      </label>
+      <p class="hint">
+        {#if moonshineGpu}
+          Off runs Moonshine on the CPU. Takes effect the next time the model loads.
+        {:else}
+          This build has no GPU provider for Moonshine; it runs on the CPU.
+        {/if}
+      </p>
 
       <label class="field">
         <span>Language</span>
@@ -581,6 +601,28 @@
           {/if}
         </div>
       {/if}
+
+      <label class="field">
+        <span>GPU acceleration{parakeetGpu ? ` (${gpuLabel(parakeetGpu)})` : ""}</span>
+        <input
+          type="checkbox"
+          checked={cfg.engine.parakeet.device === "auto"}
+          disabled={!parakeetGpu}
+          onchange={(e) => {
+            cfg.engine.parakeet.device = e.currentTarget.checked ? "auto" : "cpu";
+            markDirty();
+          }}
+        />
+      </label>
+      <p class="hint">
+        {#if parakeetGpu}
+          Off by default: the INT8 models run mostly on the CPU even with the GPU
+          provider, so it is measurably slower on the standard model and only
+          marginally faster on Redux. Takes effect the next time the model loads.
+        {:else}
+          This build has no GPU provider for Parakeet; it runs on the CPU.
+        {/if}
+      </p>
 
       <label class="field">
         <span>Language</span>
