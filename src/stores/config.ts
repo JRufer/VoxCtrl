@@ -174,7 +174,7 @@ const defaultConfig: AppConfig = {
       threads: 0,
       language: "auto",
     },
-    moonshine: { model_size: "base", language: "en", device: "auto" },
+    moonshine: { model_size: "base", language: "en", device: "cpu" },
     parakeet: { model_size: "tdt-0.6b-v3", language: "auto", device: "cpu" },
     remote_openai: {
       endpoint: "http://localhost:8000/v1",

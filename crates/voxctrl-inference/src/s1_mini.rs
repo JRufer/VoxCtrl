@@ -446,6 +446,13 @@ fn clean_via_sidecar(
     Ok(cleaned)
 }
 
+/// One S1-mini cleanup through the sidecar on the chosen device, for the
+/// benchmark. Unlike [`clean_dictation`] it does not fall back to the in-process
+/// engine on failure — a fallback would time the wrong thing.
+pub fn bench_clean(text: &str, gpu: bool) -> Result<()> {
+    clean_via_sidecar(text, "semi-formal", None, gpu).map(|_| ())
+}
+
 // Global cached engine instance
 static GLOBAL_ENGINE: std::sync::OnceLock<Arc<Mutex<Option<S1MiniEngine>>>> =
     std::sync::OnceLock::new();

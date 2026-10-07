@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod bench;
 pub mod finalize;
 #[cfg(feature = "moonshine")]
 pub mod moonshine;

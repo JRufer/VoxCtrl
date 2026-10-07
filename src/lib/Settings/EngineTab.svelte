@@ -7,6 +7,7 @@
   import CustomSelect from "./CustomSelect.svelte";
   import GpuToggle from "./GpuToggle.svelte";
   import DeviceChip from "./DeviceChip.svelte";
+  import BenchmarkPanel from "./BenchmarkPanel.svelte";
   import { gpuLabel } from "./gpu";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
@@ -347,6 +348,16 @@
     </label>
   </div>
 
+  <BenchmarkPanel
+    onApply={(rec) => {
+      if (rec.whisper) cfg.engine.whisper_cpp.device = rec.whisper === "gpu" ? "auto" : "cpu";
+      if (rec.moonshine) cfg.engine.moonshine.device = rec.moonshine === "gpu" ? "auto" : "cpu";
+      if (rec.parakeet) cfg.engine.parakeet.device = rec.parakeet === "gpu" ? "auto" : "cpu";
+      if (rec.s1_mini) cfg.engine.s1_mini.gpu = rec.s1_mini === "gpu";
+      markDirty();
+    }}
+  />
+
   {#if cfg.engine.backend === "whisper-cpp"}
     <div class="field-group">
       <div class="field-label-row">
@@ -524,7 +535,7 @@
           cfg.engine.moonshine.device = v ? "auto" : "cpu";
           markDirty();
         }}
-        hint="Off runs Moonshine on the CPU. Takes effect the next time the model loads."
+        hint="Off by default: Moonshine runs part of its work on the CPU even with the GPU provider, so the GPU is often slower. Use Speed test above to check your machine. Takes effect the next time the model loads."
       />
 
       <label class="field">

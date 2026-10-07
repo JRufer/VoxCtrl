@@ -12,6 +12,7 @@ mod openai;
 mod hotkeys;
 mod setup;
 mod display;
+mod benchmark;
 
 pub use core::*;
 pub use routing::*;
@@ -23,3 +24,4 @@ pub use openai::*;
 pub use hotkeys::*;
 pub use setup::*;
 pub use display::*;
+pub use benchmark::*;

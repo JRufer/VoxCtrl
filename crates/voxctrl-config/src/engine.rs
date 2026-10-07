@@ -43,20 +43,17 @@ pub struct MoonshineConfig {
     pub model_size: String,
     /// BCP-47 language code, e.g. "en"
     pub language: String,
-    /// "auto" (GPU when the build has an ONNX Runtime GPU provider, else CPU)
-    /// | "cpu" (never use the GPU).
+    /// "cpu" | "auto" (GPU when the build has an ONNX Runtime GPU provider).
     #[serde(default = "default_onnx_device")]
     pub device: String,
 }
 
+/// Moonshine and Parakeet run their graphs part on the GPU and part on the CPU
+/// and bounce data across the bus on every decoding step, which measured 5–7×
+/// slower than the CPU on an RTX 4090 (see `voxctrl_inference::bench`). So the
+/// GPU is opt-in, and the Engine tab's benchmark says whether it pays off on a
+/// given machine.
 fn default_onnx_device() -> String {
-    "auto".into()
-}
-
-/// Parakeet's int8 ONNX graphs run mostly on the CPU even with a GPU
-/// provider registered (the provider has no int8 kernels), so the GPU is a
-/// measured wash or a loss for the shipped models. Opt-in rather than opt-out.
-fn default_parakeet_device() -> String {
     "cpu".into()
 }
 
@@ -75,7 +72,7 @@ pub struct ParakeetConfig {
     pub model_size: String,
     pub language: String,
     /// "auto" (GPU when the build has an ONNX Runtime GPU provider) | "cpu".
-    #[serde(default = "default_parakeet_device")]
+    #[serde(default = "default_onnx_device")]
     pub device: String,
 }
 
@@ -84,7 +81,7 @@ impl Default for ParakeetConfig {
         Self {
             model_size: "tdt-0.6b-v3".into(),
             language: "auto".into(),
-            device: default_parakeet_device(),
+            device: default_onnx_device(),
         }
     }
 }

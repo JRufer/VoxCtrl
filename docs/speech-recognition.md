@@ -297,7 +297,9 @@ Every engine uses the same **GPU acceleration** checkbox — whisper.cpp, Moonsh
 | Parakeet TDT | ONNX Runtime WebGPU / CUDA / CoreML | `engine.parakeet.device` (`auto` / `cpu`) |
 | S1-mini | Vulkan sidecar | `engine.s1_mini.gpu` |
 
-Parakeet defaults to the CPU: its INT8 models run mostly on the CPU even with the GPU provider registered, so on an RTX 4090 the standard model measured about four times slower on WebGPU and Redux only marginally faster. Turn it on if your GPU and models behave differently.
+**Speed test.** Settings → Engine → Speed test times each downloaded engine that has a GPU path on the CPU and on the GPU (one untimed warm-up, then the median of three runs on a short bundled clip) and recommends the GPU only where it is more than 10% faster. It shows an estimated duration before it starts and a progress bar with time remaining while it runs, and "Apply fastest settings" sets each engine's checkbox. The measuring lives in `crates/voxctrl-inference/src/bench.rs`.
+
+Moonshine and Parakeet default to the CPU: they run part of their work on the CPU even with the GPU provider (Parakeet's INT8 operations have no GPU kernel) and pass data across on every decoding step, so on an RTX 4090 they measured 5–7× slower on WebGPU. Turn the GPU on if the Speed test says your machine behaves differently.
 
 ## Parakeet TDT Backend
 
