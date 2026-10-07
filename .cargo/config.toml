@@ -1,3 +1,18 @@
 [env]
 CMAKE_PREFIX_PATH = { value = "crates/voxctrl-llm-sidecar/spirv-headers", relative = true }
 CPATH = { value = "crates/voxctrl-llm-sidecar/spirv-headers/include", relative = true }
+
+# whisper.cpp's ggml defaults to GGML_NATIVE=ON, which compiles for whatever CPU
+# the build runs on. A release built on a CI runner with AVX-512 then dies with
+# SIGILL ("illegal instruction", an EVEX vpbroadcastq) on any CPU without it —
+# AMD Zen 3 and earlier, and most Intel desktop parts — and GitHub's runners
+# are a mix of CPUs, so it fails only on some builds (v0.8.0/0.8.1 on a Ryzen
+# 5800X3D). Pin a portable baseline instead: AVX2 + FMA + F16C (Haswell / Zen 1
+# and newer) and nothing wider. whisper-rs-sys forwards GGML_* variables to
+# CMake. The S1-mini sidecar's llama.cpp already builds without GGML_NATIVE.
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+GGML_AVX512 = "OFF"

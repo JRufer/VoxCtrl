@@ -231,6 +231,10 @@ GPU support is decided at compile time and differs by engine — which is why th
 
 `./build_appimage.sh` builds the WebGPU variant automatically when the host glibc is 2.38 or newer (`--webgpu` / `--no-webgpu` override). The Speed test (`crates/voxctrl-inference/src/bench.rs`, commands in `src-tauri/src/commands/benchmark.rs`) is how a user finds out which device wins on their hardware.
 
+### CPU baseline
+
+`.cargo/config.toml` pins whisper.cpp's ggml to AVX2 + FMA + F16C (`GGML_NATIVE=OFF`). Left at its default, ggml compiles for the *build machine's* CPU, and a release built on a CI runner with AVX-512 crashes with SIGILL on CPUs without it (v0.8.0/0.8.1 on a Ryzen 5800X3D). Do not enable `GGML_NATIVE` or AVX-512 in anything that ships. A local build for your own machine can opt back in with `GGML_NATIVE=ON cargo build …`.
+
 ### Release notes
 
 The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.
