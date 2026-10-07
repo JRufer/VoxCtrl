@@ -320,6 +320,9 @@ if [ "$BUILD_MODE" = "vulkan" ]; then
     fi
     info "Compiling voxctrl-llm-sidecar with Vulkan GPU acceleration..."
     cargo build --bin voxctrl-llm-sidecar --release --features vulkan
+    # Tauri's beforeBuildCommand rebuilds the sidecar; without this it would do
+    # so without Vulkan and bundle that CPU-only copy over the one built above.
+    export VOXCTRL_SIDECAR_FEATURES=vulkan
     TAURI_FEATURES="vulkan"
     if [ "$WEBGPU" = true ]; then
         info "Enabling WebGPU acceleration for Moonshine and Parakeet..."

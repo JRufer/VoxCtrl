@@ -180,8 +180,8 @@ Compile the standalone, hardware-accelerated, self-contained AppImage:
 #### 3. Standard Production Build (deb & AppImage)
 ```bash
 npm run build
-cargo build --bin voxctrl-llm-sidecar --release --features vulkan
-npx tauri build --features vulkan
+# The sidecar is rebuilt by tauri's beforeBuildCommand; this keeps it on Vulkan.
+VOXCTRL_SIDECAR_FEATURES=vulkan npx tauri build --features vulkan
 ```
 
 ---
@@ -204,7 +204,8 @@ npx tauri build --bundles nsis
 Enables Direct3D 12 GPU acceleration for Moonshine and Parakeet via WebGPU and Vulkan for S1-mini:
 ```bash
 npm run build
-cargo build --bin voxctrl-llm-sidecar --release --features vulkan
+# The sidecar is rebuilt by tauri's beforeBuildCommand; this keeps it on Vulkan.
+set VOXCTRL_SIDECAR_FEATURES=vulkan
 npx tauri build --bundles nsis --features moonshine-webgpu,parakeet-webgpu
 ```
 The resulting installer is saved to `src-tauri/target/release/bundle/nsis/`.

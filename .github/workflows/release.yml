@@ -270,6 +270,9 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
+          # beforeBuildCommand rebuilds the sidecar; without the feature it
+          # would bundle a CPU-only copy over the Vulkan one built above.
+          VOXCTRL_SIDECAR_FEATURES: vulkan
         run: npm run tauri build -- --features vulkan
 
       # Dawn (libwebgpu_dawn.so) is a NEEDED library of the binary. ort leaves
@@ -282,6 +285,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
+          VOXCTRL_SIDECAR_FEATURES: vulkan
         run: |
           # Build once so ort fetches Dawn into target/release.
           cargo build --release -p voxctrl-app --features "${{ matrix.features }}"

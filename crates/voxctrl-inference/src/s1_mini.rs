@@ -306,6 +306,28 @@ pub fn sidecar_available() -> bool {
     find_llm_sidecar_binary().is_some()
 }
 
+/// The GPU backend the bundled sidecar was actually compiled with, asked of the
+/// sidecar itself (its `ping` reports it) and cached for the life of the
+/// process. `None` when there is no sidecar or it is a CPU build.
+///
+/// This is asked rather than inferred from this binary's own features because
+/// the two are built separately and can disagree: a Vulkan app has shipped with
+/// a CPU-only sidecar, and the UI — assuming from its own features — said
+/// Vulkan while S1-mini ran on the CPU.
+pub fn sidecar_gpu_backend() -> Option<&'static str> {
+    static BACKEND: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    *BACKEND.get_or_init(|| {
+        let binary = find_llm_sidecar_binary()?;
+        let mut proc = SidecarProcess::spawn(&binary).ok()?;
+        let reply = proc.call("ping", serde_json::json!({})).ok()?;
+        // Dropping `proc` closes the sidecar's stdin, which ends its loop.
+        match reply.get("backend").and_then(|b| b.as_str()) {
+            Some("vulkan") => Some("vulkan"),
+            _ => None,
+        }
+    })
+}
+
 struct SidecarProcess {
     _child: Child,
     stdin: BufWriter<ChildStdin>,
