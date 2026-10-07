@@ -286,6 +286,21 @@ files there manually to run fully offline; the tokenizer ships inside the app.
 
 ---
 
+## GPU / CPU per engine
+
+Every engine uses the same **GPU acceleration** checkbox — whisper.cpp, Moonshine and Parakeet in **Settings → Engine**, and the TTS engines in **Settings → Text to Speech**. A chip in the corner of each section (`✔ Ready (Vulkan (AMD/Intel/NVIDIA))`, or `✔ Ready (CPU)`) says which device the engine is using. Each engine has its own switch in **Settings → Engine** (S1-mini's is in **Settings → Features**), and the first-run wizard's GPU toggle applies to whichever engine is selected. The switch is disabled when the build has no GPU path for that engine:
+
+| Engine | GPU path | Config key |
+|---|---|---|
+| whisper.cpp | Vulkan (or CUDA) | `engine.whisper_cpp.device` (`auto` / `cpu`) |
+| Moonshine | ONNX Runtime WebGPU / CUDA / CoreML | `engine.moonshine.device` (`auto` / `cpu`) |
+| Parakeet TDT | ONNX Runtime WebGPU / CUDA / CoreML | `engine.parakeet.device` (`auto` / `cpu`) |
+| S1-mini | Vulkan sidecar | `engine.s1_mini.gpu` |
+
+**Speed test.** Settings → Engine → Speed test times each downloaded engine that has a GPU path on the CPU and on the GPU (one untimed warm-up, then the median of three runs on a short bundled clip) and recommends the GPU only where it is more than 10% faster. It shows an estimated duration before it starts and a progress bar with time remaining while it runs, and "Apply fastest settings" sets each engine's checkbox. The measuring lives in `crates/voxctrl-inference/src/bench.rs`.
+
+Moonshine and Parakeet default to the CPU: they run part of their work on the CPU even with the GPU provider (Parakeet's INT8 operations have no GPU kernel) and pass data across on every decoding step, so on an RTX 4090 they measured 5–7× slower on WebGPU. Turn the GPU on if the Speed test says your machine behaves differently.
+
 ## Parakeet TDT Backend
 
 [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is an NVIDIA FastConformer transducer model offering state-of-the-art accuracy, real-time transcription speeds, and immune to the autoregressive repetition loops that Whisper can occasionally experience on background noise.

@@ -9,10 +9,16 @@ set -euo pipefail
 # Parse command line options
 FORCE_CPU_FLAG=false
 FORCE_VULKAN_FLAG=false
+# WebGPU (ONNX Runtime's GPU provider) accelerates Moonshine and Parakeet; the
+# Vulkan backend alone only accelerates whisper.cpp. "auto" turns it on when the
+# build host's glibc can run Dawn (see below), --webgpu / --no-webgpu override.
+WEBGPU_MODE=auto
 for arg in "$@"; do
     case "$arg" in
         --cpu) FORCE_CPU_FLAG=true ;;
         --vulkan) FORCE_VULKAN_FLAG=true ;;
+        --webgpu) WEBGPU_MODE=on ;;
+        --no-webgpu) WEBGPU_MODE=off ;;
     esac
 done
 
@@ -265,6 +271,26 @@ else
     fi
 fi
 
+# The prebuilt ONNX Runtime WebGPU build links Dawn (libwebgpu_dawn.so), which
+# is built against glibc 2.38 and libstdc++ from GCC 13. It is a NEEDED library
+# of the app binary, so on a host older than that the whole app would fail to
+# start — not just the GPU path. Build hosts with a glibc below 2.38 (Ubuntu
+# 22.04, Debian 12) therefore produce the Vulkan-only AppImage unless forced.
+WEBGPU=false
+HOST_GLIBC="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+glibc_ok=false
+if [ -n "$HOST_GLIBC" ] && [ "$(printf '%s\n2.38\n' "$HOST_GLIBC" | sort -V | head -n1)" = "2.38" ]; then
+    glibc_ok=true
+fi
+if [ "$BUILD_MODE" = "vulkan" ]; then
+    case "$WEBGPU_MODE" in
+        on)   WEBGPU=true ;;
+        auto) if [ "$glibc_ok" = true ]; then WEBGPU=true; else
+                  warn "Host glibc ${HOST_GLIBC:-unknown} is older than 2.38; building without WebGPU (Moonshine/Parakeet stay on the CPU). Use --webgpu to force."
+              fi ;;
+    esac
+fi
+
 info "Running Tauri release compiler with headless PATH..."
 # Set up a cleanup trap to restore /usr/lib/insync if it was hidden
 cleanup() {
@@ -294,7 +320,18 @@ if [ "$BUILD_MODE" = "vulkan" ]; then
     fi
     info "Compiling voxctrl-llm-sidecar with Vulkan GPU acceleration..."
     cargo build --bin voxctrl-llm-sidecar --release --features vulkan
-    npx tauri build --verbose -- --features vulkan
+    # Tauri's beforeBuildCommand rebuilds the sidecar; without this it would do
+    # so without Vulkan and bundle that CPU-only copy over the one built above.
+    export VOXCTRL_SIDECAR_FEATURES=vulkan
+    TAURI_FEATURES="vulkan"
+    if [ "$WEBGPU" = true ]; then
+        info "Enabling WebGPU acceleration for Moonshine and Parakeet..."
+        TAURI_FEATURES="vulkan,moonshine-webgpu,parakeet-webgpu"
+        # linuxdeploy resolves the binary's libraries with ldd; point it at the
+        # directory where ort leaves libwebgpu_dawn.so.
+        export LD_LIBRARY_PATH="$ROOT_DIR/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
+    npx tauri build --verbose -- --features "$TAURI_FEATURES"
 else
     info "Compiling for CPU only (whisper-cpp + Moonshine + Inflect)..."
     # Moonshine and Inflect-Micro are default features; only GPU backends and
@@ -338,6 +375,22 @@ chmod +x "$work/in.AppImage"
 ( cd "$work" && ./in.AppImage --appimage-extract >/dev/null )
 
 root="$work/squashfs-root"
+
+# The WebGPU build links Dawn as a shared library. linuxdeploy bundles it when
+# it can resolve it; make sure of it either way, in usr/lib where the binary's
+# rpath ($ORIGIN/../lib, set in src-tauri/build.rs) and AppRun both look.
+if [ "$WEBGPU" = true ]; then
+    if [ -z "$(find "$root" -name 'libwebgpu_dawn.so*' -print -quit)" ]; then
+        dawn="$(find "$ROOT_DIR/target/release" -maxdepth 1 -name 'libwebgpu_dawn.so' -print -quit)"
+        if [ -z "$dawn" ]; then
+            fail "WebGPU build requested but libwebgpu_dawn.so was not found in target/release"
+            exit 1
+        fi
+        mkdir -p "$root/usr/lib"
+        cp -L "$dawn" "$root/usr/lib/libwebgpu_dawn.so"
+        info "Bundled libwebgpu_dawn.so into the AppImage"
+    fi
+fi
 
 # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)
 helper_dir=""
@@ -456,7 +509,11 @@ fi
 rm -rf "$work"
 ok "AppImage successfully slimmed."
 
-if [ "$BUILD_MODE" = "vulkan" ]; then
+if [ "$BUILD_MODE" = "vulkan" ] && [ "$WEBGPU" = true ]; then
+    # The updater reads "vulkan" and "webgpu" off the file name to keep a user
+    # on the variant they installed (crates/voxctrl-update/src/install.rs).
+    PORTABLE_PATH="./${APP_NAME}-linux-x86_64-vulkan-webgpu.AppImage"
+elif [ "$BUILD_MODE" = "vulkan" ]; then
     PORTABLE_PATH="./${APP_NAME}-linux-x86_64-vulkan.AppImage"
 else
     PORTABLE_PATH="./${APP_NAME}-linux-x86_64.AppImage"

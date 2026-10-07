@@ -43,6 +43,18 @@ pub struct MoonshineConfig {
     pub model_size: String,
     /// BCP-47 language code, e.g. "en"
     pub language: String,
+    /// "cpu" | "auto" (GPU when the build has an ONNX Runtime GPU provider).
+    #[serde(default = "default_onnx_device")]
+    pub device: String,
+}
+
+/// Moonshine and Parakeet run their graphs part on the GPU and part on the CPU
+/// and bounce data across the bus on every decoding step, which measured 5–7×
+/// slower than the CPU on an RTX 4090 (see `voxctrl_inference::bench`). So the
+/// GPU is opt-in, and the Engine tab's benchmark says whether it pays off on a
+/// given machine.
+fn default_onnx_device() -> String {
+    "cpu".into()
 }
 
 impl Default for MoonshineConfig {
@@ -50,6 +62,7 @@ impl Default for MoonshineConfig {
         Self {
             model_size: "base".into(),
             language: "en".into(),
+            device: default_onnx_device(),
         }
     }
 }
@@ -58,6 +71,9 @@ impl Default for MoonshineConfig {
 pub struct ParakeetConfig {
     pub model_size: String,
     pub language: String,
+    /// "auto" (GPU when the build has an ONNX Runtime GPU provider) | "cpu".
+    #[serde(default = "default_onnx_device")]
+    pub device: String,
 }
 
 impl Default for ParakeetConfig {
@@ -65,6 +81,7 @@ impl Default for ParakeetConfig {
         Self {
             model_size: "tdt-0.6b-v3".into(),
             language: "auto".into(),
+            device: default_onnx_device(),
         }
     }
 }
@@ -120,6 +137,14 @@ pub struct S1MiniConfig {
     pub enabled: bool,
     #[serde(default = "default_s1_mini_styling")]
     pub styling: String,
+    /// Offload cleanup to the GPU when the sidecar was built with Vulkan.
+    /// `false` forces the CPU.
+    #[serde(default = "default_true")]
+    pub gpu: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for S1MiniConfig {
@@ -127,6 +152,7 @@ impl Default for S1MiniConfig {
         Self {
             enabled: false,
             styling: default_s1_mini_styling(),
+            gpu: true,
         }
     }
 }

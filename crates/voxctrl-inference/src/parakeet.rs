@@ -245,7 +245,7 @@ impl ParakeetBackend {
         }
     }
 
-    fn build_session(path: &Path) -> Result<Session> {
+    fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
         let builder = Session::builder()
             .map_err(|e| anyhow!("ort session builder: {e}"))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
@@ -253,14 +253,18 @@ impl ParakeetBackend {
             .with_intra_threads(crate::util::inference_threads())
             .map_err(|e| anyhow!("set intra threads: {e}"))?;
 
-        let mut builder = Self::with_gpu(builder);
+        let mut builder = Self::with_gpu(builder, use_gpu);
 
         builder
             .commit_from_file(path)
             .with_context(|| format!("load ONNX graph {}", path.display()))
     }
 
-    fn with_gpu(builder: SessionBuilder) -> SessionBuilder {
+    fn with_gpu(builder: SessionBuilder, use_gpu: bool) -> SessionBuilder {
+        // The user's Device setting: "cpu" skips provider registration entirely.
+        if !use_gpu {
+            return builder;
+        }
         #[cfg(any(
             feature = "parakeet-cuda",
             feature = "parakeet-coreml",
@@ -320,10 +324,16 @@ impl TranscriptionBackend for ParakeetBackend {
         }
 
         info!("Loading Parakeet '{size}' model from {}", dir.display());
+        let use_gpu = self.cfg.device != "cpu";
+        match crate::parakeet_gpu_backend() {
+            Some(_) if !use_gpu => info!("Parakeet acceleration: none (Device set to CPU)"),
+            Some(backend) => info!("Parakeet acceleration: {backend}"),
+            None => info!("Parakeet acceleration: none (CPU); this build has no ONNX Runtime GPU provider"),
+        }
 
-        let preprocessor = Self::build_session(&dir.join(PREPROCESSOR_FILE))?;
-        let encoder = Self::build_session(&dir.join(ENCODER_FILE))?;
-        let decoder = Self::build_session(&dir.join(DECODER_FILE))?;
+        let preprocessor = Self::build_session(&dir.join(PREPROCESSOR_FILE), use_gpu)?;
+        let encoder = Self::build_session(&dir.join(ENCODER_FILE), use_gpu)?;
+        let decoder = Self::build_session(&dir.join(DECODER_FILE), use_gpu)?;
 
         let vocab = load_vocab(&dir.join(VOCAB_FILE))?;
 
@@ -661,7 +671,7 @@ mod tests {
         if !path.exists() {
             return;
         }
-        let session = ParakeetBackend::build_session(path).unwrap();
+        let session = ParakeetBackend::build_session(path, false).unwrap();
         let outputs = session.outputs();
         let s1_idx = outputs.iter().position(|o| o.name() == "output_states_1").unwrap_or(2);
         let s2_idx = outputs.iter().position(|o| o.name() == "output_states_2").unwrap_or(3);

@@ -34,6 +34,10 @@
    *  offload either, and naming a backend it does not have is how the toggle
    *  came to read "ON · Vulkan" on builds with no GPU support at all. */
   let whisperGpu = $state<string | null>(null);
+  /** Same, for the two ONNX Runtime engines, whose GPU support is a separate
+   *  compile-time choice from whisper.cpp's. */
+  let moonshineGpu = $state<string | null>(null);
+  let parakeetGpu = $state<string | null>(null);
 
   /** model id → on disk, per engine. */
   let whisperDownloaded = $state<Record<string, boolean>>({});
@@ -62,12 +66,32 @@
     cuda: "CUDA",
     vulkan: "Vulkan",
     coreml: "CoreML",
+    webgpu: "WebGPU",
   };
   /** Offloading is only really on when the build has somewhere to offload to. */
-  const gpuOn = $derived(
+  const whisperGpuOn = $derived(
     !!whisperGpu && $config.engine.whisper_cpp.device !== "cpu",
   );
-  const gpuPath = $derived(whisperGpu ? (GPU_LABELS[whisperGpu] ?? whisperGpu) : "");
+  /** The GPU backend the selected engine has in this build, or null. */
+  const engineGpu = $derived(
+    selectedEngine === "whisper-cpp"
+      ? whisperGpu
+      : selectedEngine === "moonshine"
+      ? moonshineGpu
+      : selectedEngine === "parakeet"
+      ? parakeetGpu
+      : null,
+  );
+  /** Whether the selected engine is set to use the GPU its build offers. */
+  const gpuOn = $derived(
+    !!engineGpu &&
+      (selectedEngine === "whisper-cpp"
+        ? $config.engine.whisper_cpp.device !== "cpu"
+        : selectedEngine === "moonshine"
+        ? $config.engine.moonshine.device !== "cpu"
+        : $config.engine.parakeet.device === "auto"),
+  );
+  const gpuPath = $derived(engineGpu ? (GPU_LABELS[engineGpu] ?? engineGpu) : "");
 
   /** The model the current engine will actually load. */
   const selectedModel = $derived(
@@ -154,11 +178,14 @@
   function toggleGpu() {
     // Nothing to switch on in a CPU-only build: the setting would flip and the
     // engine would go on running exactly as it was.
-    if (!whisperGpu) return;
+    if (!engineGpu) return;
     patchConfig((cfg) => {
       // "auto" means "use the backend this build has", which is a better answer
       // than pinning a name from here — there is only ever one to pick.
-      cfg.engine.whisper_cpp.device = gpuOn ? "cpu" : "auto";
+      const next = gpuOn ? "cpu" : "auto";
+      if (selectedEngine === "moonshine") cfg.engine.moonshine.device = next;
+      else if (selectedEngine === "parakeet") cfg.engine.parakeet.device = next;
+      else cfg.engine.whisper_cpp.device = next;
     });
   }
 
@@ -305,9 +332,21 @@
     invoke<boolean>("parakeet_available")
       .then((v) => (parakeetAvailable = v))
       .catch(() => (parakeetAvailable = false));
-    invoke<{ whisper_gpu: string | null }>("accelerator_support")
-      .then((v) => (whisperGpu = v?.whisper_gpu ?? null))
-      .catch(() => (whisperGpu = null));
+    invoke<{
+      whisper_gpu: string | null;
+      moonshine_gpu: string | null;
+      parakeet_gpu: string | null;
+    }>("accelerator_support")
+      .then((v) => {
+        whisperGpu = v?.whisper_gpu ?? null;
+        moonshineGpu = v?.moonshine_gpu ?? null;
+        parakeetGpu = v?.parakeet_gpu ?? null;
+      })
+      .catch(() => {
+        whisperGpu = null;
+        moonshineGpu = null;
+        parakeetGpu = null;
+      });
     void refreshReadiness();
     return () => {
       registerGate(STEP, null);
@@ -346,7 +385,7 @@
         ? $config.engine.moonshine.model_size
         : $config.engine.whisper_cpp.model_size;
     const model = engine.models.find((m) => m.id === chosen) ?? engine.models[0];
-    const gpu = engine.gpu && gpuOn;
+    const gpu = engine.gpu && whisperGpuOn;
     const speed = Math.min(1, model.speed + (gpu ? 0.3 : 0));
     const ram = gpu ? model.mb * 0.3 : model.mb;
     const vram = gpu ? model.mb * 1.1 : 0;
@@ -387,15 +426,15 @@
       class="vx-card gpu-toggle"
       class:vx-on={gpuOn}
       onclick={toggleGpu}
-      disabled={!whisperGpu}
+      disabled={!engineGpu}
     >
       <span class="switch" class:on={gpuOn}><span class="knob"></span></span>
       <span class="gpu-copy">
         <span class="gpu-title">
           <span class="glyph">∗</span> GPU offloading
           <span class="state" class:on={gpuOn}>
-            {#if !whisperGpu}
-              UNAVAILABLE · CPU BUILD
+            {#if !engineGpu}
+              UNAVAILABLE · CPU
             {:else if gpuOn}
               ON · {gpuPath}
             {:else}
@@ -404,12 +443,13 @@
           </span>
         </span>
         <span class="gpu-desc">
-          {#if whisperGpu}
-            Moves whisper.cpp weights from RAM to your GPU: faster, less RAM, uses VRAM. Moonshine is
-            CPU-native and unaffected.
+          {#if selectedEngine === "remote-openai"}
+            The remote engine runs on the server, so there is nothing to offload here.
+          {:else if engineGpu}
+            Runs the selected engine on your GPU ({gpuPath}) instead of the CPU. Applies to the
+            engine you have picked; each engine keeps its own setting.
           {:else}
-            This build has no GPU backend compiled in, so both engines run on the CPU. The Vulkan
-            download accelerates whisper.cpp; Moonshine is CPU-native either way.
+            This build has no GPU backend for the selected engine, so it runs on the CPU.
           {/if}
         </span>
       </span>

@@ -212,7 +212,7 @@ impl MoonshineBackend {
         }
     }
 
-    fn build_session(path: &Path) -> Result<Session> {
+    fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
         // The builder methods return `ort::Error<SessionBuilder>` (the error
         // carries the builder back for recovery), which is not a `Send + Sync`
         // `std::error::Error`, so it can't flow through `anyhow::Context`. Format
@@ -225,7 +225,7 @@ impl MoonshineBackend {
             .with_intra_threads(crate::util::inference_threads())
             .map_err(|e| anyhow!("set intra threads: {e}"))?;
 
-        let mut builder = Self::with_gpu(builder);
+        let mut builder = Self::with_gpu(builder, use_gpu);
 
         builder
             .commit_from_file(path)
@@ -240,7 +240,11 @@ impl MoonshineBackend {
     /// showed a Device setting: the fallback is fine, being told about it is the
     /// point. On failure the builder is recovered from the error and returned
     /// unchanged, so a machine with no usable CUDA still loads the model.
-    fn with_gpu(builder: SessionBuilder) -> SessionBuilder {
+    fn with_gpu(builder: SessionBuilder, use_gpu: bool) -> SessionBuilder {
+        // The user's Device setting: "cpu" skips provider registration entirely.
+        if !use_gpu {
+            return builder;
+        }
         #[cfg(any(
             feature = "moonshine-cuda",
             feature = "moonshine-coreml",
@@ -318,7 +322,9 @@ impl TranscriptionBackend for MoonshineBackend {
         }
 
         info!("Loading Moonshine '{size}' model from {}", dir.display());
+        let use_gpu = self.cfg.device != "cpu";
         match crate::moonshine_gpu_backend() {
+            Some(_) if !use_gpu => info!("Moonshine acceleration: none (Device set to CPU)"),
             Some(backend) => info!("Moonshine acceleration: {backend}"),
             // Said at INFO on every load because the alternative — saying
             // nothing — is what let a CPU-only backend look like a GPU one for
@@ -329,8 +335,8 @@ impl TranscriptionBackend for MoonshineBackend {
             ),
         }
 
-        let encoder = Self::build_session(&dir.join(ENCODER_FILE))?;
-        let decoder = Self::build_session(&dir.join(DECODER_FILE))?;
+        let encoder = Self::build_session(&dir.join(ENCODER_FILE), use_gpu)?;
+        let decoder = Self::build_session(&dir.join(DECODER_FILE), use_gpu)?;
 
         let tokenizer = Tokenizer::from_bytes(TOKENIZER_JSON)
             .map_err(|e| anyhow!("load bundled Moonshine tokenizer: {e}"))?;
@@ -708,7 +714,7 @@ mod tests {
 
     #[test]
     fn test_new_backend_reports_name_and_unloaded() {
-        let cfg = MoonshineConfig { model_size: "base".into(), language: "en".into() };
+        let cfg = MoonshineConfig { model_size: "base".into(), language: "en".into(), device: "auto".into() };
         let b = MoonshineBackend::new(cfg);
         assert_eq!(b.name(), "moonshine");
         assert!(!b.is_loaded());
@@ -716,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_transcribe_before_load_errors() {
-        let cfg = MoonshineConfig { model_size: "base".into(), language: "en".into() };
+        let cfg = MoonshineConfig { model_size: "base".into(), language: "en".into(), device: "auto".into() };
         let b = MoonshineBackend::new(cfg);
         let req = TranscribeRequest {
             audio: vec![0.0; 1600],

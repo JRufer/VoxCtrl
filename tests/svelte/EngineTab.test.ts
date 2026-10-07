@@ -31,10 +31,12 @@ const mockConfig = {
     moonshine: {
       model_size: "base",
       language: "en",
+      device: "auto",
     },
     parakeet: {
       model_size: "tdt-0.6b-v3",
       language: "auto",
+      device: "cpu",
     },
   },
 } as any;
@@ -122,45 +124,70 @@ describe("EngineTab.svelte GPU support", () => {
     });
   }
 
-  /** Open the Device CustomSelect and read its option labels. */
-  async function deviceOptionLabels(cfg: any) {
+  /** The GPU acceleration checkbox, found by its label. */
+  async function gpuCheckbox(cfg: any) {
     render(EngineTab, { cfg });
-    const label = (await screen.findByText("Device")).closest("label") as HTMLElement;
-    const trigger = label.querySelector(".custom-select-trigger") as HTMLElement;
-    await fireEvent.click(trigger);
-    return within(trigger.parentElement as HTMLElement)
-      .getAllByRole("button")
-      .map((b) => b.textContent?.trim())
-      .filter(Boolean) as string[];
+    const label = (await screen.findByText(/^GPU acceleration/)).closest("label") as HTMLElement;
+    return { label, box: label.querySelector("input[type=checkbox]") as HTMLInputElement };
   }
+
+  const baseCfg = () => ({
+    ...mockConfig,
+    engine: {
+      ...mockConfig.engine,
+      whisper_cpp: { ...mockConfig.engine.whisper_cpp, model_size: "base" },
+    },
+  });
 
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
   });
 
-  test("offers the one GPU backend this build has, and not the other", async () => {
+  test("offers the one GPU backend this build has, on, and names it", async () => {
     buildWith({ whisper_gpu: "vulkan", moonshine_gpu: null });
 
-    const labels = await deviceOptionLabels({
-      ...mockConfig,
-      engine: { ...mockConfig.engine, whisper_cpp: { ...mockConfig.engine.whisper_cpp } },
-    });
+    const { label, box } = await gpuCheckbox(baseCfg());
 
-    await waitFor(() => expect(labels.some((l) => /vulkan/i.test(l))).toBe(true));
-    expect(labels.some((l) => /cuda/i.test(l))).toBe(false);
-    expect(labels).toContain("CPU");
+    await waitFor(() => expect(label.textContent).toMatch(/vulkan/i));
+    expect(label.textContent).not.toMatch(/cuda/i);
+    expect(box.disabled).toBe(false);
+    expect(box.checked).toBe(true);
+  });
+
+  test("shows the device in the corner chip while the GPU is in use", async () => {
+    buildWith({ whisper_gpu: "vulkan", moonshine_gpu: null });
+    render(EngineTab, { cfg: baseCfg() });
+
+    expect(await screen.findByText(/✔ Ready \(Vulkan/)).toBeTruthy();
+  });
+
+  test("the chip says CPU once the toggle is switched off", async () => {
+    buildWith({ whisper_gpu: "vulkan", moonshine_gpu: null });
+    const cfg = baseCfg();
+    cfg.engine.whisper_cpp.device = "cpu";
+    render(EngineTab, { cfg });
+
+    expect(await screen.findByText("✔ Ready (CPU)")).toBeTruthy();
   });
 
   test("offers no GPU at all on a CPU-only build", async () => {
     buildWith({ whisper_gpu: null, moonshine_gpu: null });
 
-    const labels = await deviceOptionLabels({
-      ...mockConfig,
-      engine: { ...mockConfig.engine, whisper_cpp: { ...mockConfig.engine.whisper_cpp } },
-    });
+    const { box } = await gpuCheckbox(baseCfg());
 
-    expect(labels.some((l) => /cuda|vulkan/i.test(l))).toBe(false);
-    expect(labels).toContain("CPU");
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(await screen.findByText("✔ Ready (CPU)")).toBeTruthy();
+  });
+
+  test("switching the toggle off sets the device to cpu", async () => {
+    buildWith({ whisper_gpu: "vulkan", moonshine_gpu: null });
+    const cfg = baseCfg();
+    const { box } = await gpuCheckbox(cfg);
+    await waitFor(() => expect(box.disabled).toBe(false));
+
+    await fireEvent.click(box);
+    expect(cfg.engine.whisper_cpp.device).toBe("cpu");
   });
 
   /**

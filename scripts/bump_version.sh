@@ -10,6 +10,9 @@
 #     shipped with package.json still at 0.1.7).
 #   - Cargo.toml                  ([workspace.package] version) — the Cargo
 #     version inherited by every crate via `version.workspace = true`.
+#   - docs/release-notes/<version>.md — not a version field, but the release
+#     page's "What's new" text; a stub is created here and CI requires it be
+#     written before a release for that version will build.
 #
 # Nothing enforces these match each other, and nothing enforces the release
 # tag matches them either (release.yml lets a manual workflow_dispatch
@@ -64,6 +67,22 @@ if ! grep -q '^\[workspace\.package\]' Cargo.toml; then
 fi
 sed -i "/^\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
 echo "  Updated Cargo.toml"
+
+# The release page's "What's new" is built from docs/release-notes/<version>.md
+# (see release.yml). Create a stub so the notes are written in the same commit
+# as the bump; CI refuses to build a release while the stub is still in place.
+NOTES_FILE="docs/release-notes/${NEW_VERSION}.md"
+mkdir -p docs/release-notes
+if [ ! -e "$NOTES_FILE" ]; then
+    cat > "$NOTES_FILE" <<'STUB'
+<!-- TODO: write release notes. Replace this file's contents with what changed
+     in this version, in the same style as the earlier files in this folder.
+     The "What's new in <version>" heading is added automatically. -->
+STUB
+    echo "  Created $NOTES_FILE (stub — write the release notes before pushing)"
+else
+    echo "  Release notes already exist: $NOTES_FILE"
+fi
 
 echo ""
 echo "Done. Verify with:"

@@ -45,6 +45,8 @@ chmod +x VoxCtrl-linux-x86_64-vulkan.AppImage
 
 > **One Linux build:** The Vulkan AppImage accelerates speech recognition on any NVIDIA, AMD, or Intel GPU via your host Vulkan driver, and automatically falls back to multi-threaded CPU execution if no Vulkan GPU is found. There is no longer a separate CPU-only build to choose between.
 
+> **Linux WebGPU build (newer distros):** `VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage` is the same app plus ONNX Runtime's WebGPU provider, which lets **Moonshine** and **Parakeet** use the GPU as well (the Vulkan build above only accelerates whisper.cpp). It bundles Dawn, which needs glibc 2.38 or newer (Ubuntu 24.04, Fedora 39, Debian 13, Arch and similar), so on Ubuntu 22.04 or Debian 12 use the plain Vulkan AppImage. Each engine has its own GPU/CPU switch in **Settings → Engine** (S1-mini's is in **Settings → Features**). Building locally with `./build_appimage.sh` produces this variant automatically when the host glibc is new enough; `--webgpu` / `--no-webgpu` override that.
+
 ### Debian / Ubuntu (.deb package)
 
 ```bash

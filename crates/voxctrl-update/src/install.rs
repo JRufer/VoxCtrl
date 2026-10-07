@@ -134,6 +134,13 @@ pub fn is_vulkan_build(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a file name belongs to the Vulkan + WebGPU AppImage build.
+pub fn is_webgpu_build(path: &Path) -> bool {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_lowercase().contains("webgpu"))
+        .unwrap_or(false)
+}
+
 /// Pick the release asset that replaces this installation.
 ///
 /// The release workflow labels every artifact with its platform — see
@@ -143,6 +150,15 @@ pub fn is_vulkan_build(path: &Path) -> bool {
 /// changes every release.
 pub fn select_asset<'a>(kind: &InstallKind, assets: &'a [ReleaseAsset]) -> Option<&'a ReleaseAsset> {
     match kind {
+        // The Vulkan + WebGPU AppImage (Moonshine and Parakeet on the GPU too).
+        // Read off the file name like the Vulkan flavour is. It needs a newer
+        // glibc than the plain Vulkan build, so it only ever moves *down* to
+        // that one when a release has no WebGPU asset, never the other way.
+        InstallKind::AppImage { path, vulkan: true } if is_webgpu_build(path) => {
+            appimage_named(assets, "-linux-x86_64-vulkan-webgpu.appimage")
+                .or_else(|| appimage_named(assets, "-linux-x86_64-vulkan.appimage"))
+                .or_else(|| appimage_named(assets, "-linux-x86_64.appimage"))
+        }
         InstallKind::AppImage { vulkan: true, .. } => {
             // Keep the GPU build if the release has one; a release that shipped
             // only the CPU variant is still an upgrade worth taking, and the
@@ -231,6 +247,41 @@ mod tests {
         let kind = InstallKind::AppImage { path: "/home/u/vk.AppImage".into(), vulkan: true };
         let picked = select_asset(&kind, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.4.0_amd64-linux-x86_64-vulkan.AppImage");
+    }
+
+    #[test]
+    fn a_webgpu_appimage_stays_on_the_webgpu_build() {
+        let assets = vec![
+            asset("VoxCtrl-linux-x86_64-vulkan.AppImage"),
+            asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"),
+        ];
+        let kind = InstallKind::AppImage {
+            path: "/home/u/VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage".into(),
+            vulkan: true,
+        };
+        assert_eq!(
+            select_asset(&kind, &assets).unwrap().name,
+            "VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"
+        );
+    }
+
+    /// The WebGPU asset must never be picked for a plain Vulkan install: it
+    /// needs a newer glibc, and a user on an older distro would be updated
+    /// onto a build that does not start.
+    #[test]
+    fn a_plain_vulkan_appimage_is_never_moved_onto_the_webgpu_build() {
+        let assets = vec![
+            asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"),
+            asset("VoxCtrl-linux-x86_64-vulkan.AppImage"),
+        ];
+        let kind = InstallKind::AppImage {
+            path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(),
+            vulkan: true,
+        };
+        assert_eq!(
+            select_asset(&kind, &assets).unwrap().name,
+            "VoxCtrl-linux-x86_64-vulkan.AppImage"
+        );
     }
 
     #[test]

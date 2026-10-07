@@ -398,11 +398,12 @@ pub fn spawn_text_delivery_worker(
             // If dictation starts with the trigger word but does not match a command
             // (e.g. "VoxCtrl is a great app."), the full sentence including the
             // trigger word is retained as the result text and cleaned by S1-mini.
-            let (global_s1_mini_enabled, s1_mini_styling, show_notif) = {
+            let (global_s1_mini_enabled, s1_mini_styling, s1_mini_gpu, show_notif) = {
                 let cfg_lock = state.config.blocking_lock();
                 (
                     cfg_lock.data.engine.s1_mini.enabled,
                     cfg_lock.data.engine.s1_mini.styling.clone(),
+                    cfg_lock.data.engine.s1_mini.gpu,
                     cfg_lock.data.ui.show_notification,
                 )
             };
@@ -434,7 +435,7 @@ pub fn spawn_text_delivery_worker(
                 .iter()
                 .any(|t| t.id == target_id && t.delivery == voxctrl_routing::DeliveryType::Speak);
             let text = if !is_speak_target && s1_mini_enabled && !raw_text.trim().is_empty() {
-                voxctrl_inference::s1_mini::clean_dictation(&raw_text, &s1_mini_styling, None)
+                voxctrl_inference::s1_mini::clean_dictation(&raw_text, &s1_mini_styling, None, s1_mini_gpu)
             } else {
                 raw_text
             };

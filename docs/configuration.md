@@ -28,11 +28,13 @@ Full schema with defaults:
     },
     "moonshine": {
       "model_size": "base",
-      "language": "en"
+      "language": "en",
+      "device": "cpu"
     },
     "parakeet": {
       "model_size": "tdt-0.6b-v3",
-      "language": "auto"
+      "language": "auto",
+      "device": "cpu"
     },
     "remote_openai": {
       "endpoint": "http://localhost:8000/v1",
@@ -43,7 +45,8 @@ Full schema with defaults:
     },
     "s1_mini": {
       "enabled": false,
-      "styling": "semi-formal"
+      "styling": "semi-formal",
+      "gpu": true
     }
   },
   "audio": {
@@ -156,7 +159,7 @@ The engine config supports four distinct speech-recognition backends.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `model_size` | string | `"tiny"` | Whisper model to load (see valid values below). `tiny`/`tiny.en` auto-download silently on first launch; other sizes require an explicit download in Settings → Engine. |
-| `device` | string | `"auto"` | Compute device: `auto`/`cpu`/`cuda`/`vulkan` |
+| `device` | string | `"auto"` | `"auto"` uses the build's GPU backend (Vulkan or CUDA) when it has one; `"cpu"` never offloads. Settings → Engine writes these two values from its *GPU acceleration* checkbox. `"cuda"`/`"vulkan"` are accepted and mean the same as `"auto"`. |
 | `threads` | integer | `0` | CPU thread count; 0 = one per physical core |
 | `model_dir` | string | `""` | Custom model directory; empty = `~/.local/share/voxctrl/models/`. Supports `~` expansion. The directory must already exist. |
 
@@ -170,6 +173,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 |---|---|---|---|
 | `model_size` | string | `"base"` | `"base"` or `"tiny"` |
 | `language` | string | `"en"` | BCP-47 language code (output label only) |
+| `device` | string | `"cpu"` | `"cpu"` or `"auto"` (GPU when the build has an ONNX Runtime GPU provider; otherwise CPU). The GPU is opt-in because Moonshine runs part of its graph on the CPU and measured 5–7× slower on WebGPU; the Speed test checks your machine. |
 
 > **Build requirement:** the Moonshine backend is a **default** compile-time
 > feature, so a standard build includes it. It links ONNX Runtime, which is
@@ -184,6 +188,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 |---|---|---|---|
 | `model_size` | string | `"tdt-0.6b-v3"` | Parakeet model size (INT8 ONNX) |
 | `language` | string | `"auto"` | Target language code |
+| `device` | string | `"cpu"` | `"cpu"` or `"auto"` (GPU when the build has an ONNX Runtime GPU provider). Opt-in for the same reason as Moonshine: Parakeet's INT8 operations have no GPU kernel, so the GPU measured slower. |
 
 **`remote_openai` sub-object** (used when `backend = "remote-openai"` — Bring Your Own Voice Engine):
 
@@ -201,6 +206,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable on-device text normalization using Superwhisper's fine-tuned S1-mini (Qwen3-0.6B) model. |
 | `styling` | string | `"semi-formal"` | Text styling passed to S1-mini (`"semi-formal"`, `"formal"`, `"casual"`, etc.). |
+| `gpu` | bool | `true` | Run cleanup on the GPU via the Vulkan sidecar. `false` forces the CPU. Takes effect on the next cleanup. Ignored when the bundled sidecar is a CPU build. |
 
 > **Model files:** Enabling S1-mini requires downloading `s1-mini-q4_k_m.gguf` (~462 MB) and `tokenizer.json` (~11.4 MB) from Hugging Face (~480 MB download total). When toggled on in Settings → Post-Processing, VoxCtrl automatically checks for these files in `~/.local/share/voxctrl/models/s1-mini/` and downloads them if missing.
 

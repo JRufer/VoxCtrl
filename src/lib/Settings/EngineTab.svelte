@@ -5,6 +5,10 @@
   import { onMount } from "svelte";
 
   import CustomSelect from "./CustomSelect.svelte";
+  import GpuToggle from "./GpuToggle.svelte";
+  import DeviceChip from "./DeviceChip.svelte";
+  import BenchmarkPanel from "./BenchmarkPanel.svelte";
+  import { gpuLabel } from "./gpu";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   function markDirty() {
@@ -36,30 +40,12 @@
   let moonshineGpu = $state<string | null>(null);
   let parakeetGpu = $state<string | null>(null);
 
-  const GPU_LABELS: Record<string, string> = {
-    cuda: "CUDA (NVIDIA)",
-    vulkan: "Vulkan (AMD/Intel/NVIDIA)",
-    coreml: "CoreML (Apple)",
-    webgpu: "WebGPU (AMD/Intel/NVIDIA)",
-  };
-  const gpuLabel = (id: string) => GPU_LABELS[id] ?? id;
-
-  let backendOptions = $derived([
+  let backendOptions = [
     { value: "whisper-cpp", label: "Whisper.cpp" },
-    {
-      value: "moonshine",
-      label: moonshineGpu
-        ? `Moonshine (${gpuLabel(moonshineGpu)})`
-        : "Moonshine (CPU only)",
-    },
-    {
-      value: "parakeet",
-      label: parakeetGpu
-        ? `Parakeet TDT (${gpuLabel(parakeetGpu)})`
-        : "Parakeet TDT (CPU only)",
-    },
+    { value: "moonshine", label: "Moonshine" },
+    { value: "parakeet", label: "Parakeet TDT" },
     { value: "remote-openai", label: "Remote Speech Engine (OpenAI API)" },
-  ]);
+  ];
 
   let whisperModelSizeOptions = $derived(
     MODEL_SIZES.map(s => ({
@@ -67,17 +53,6 @@
       label: `${s}${downloadedMap[s] ? " ✔" : ""}`
     }))
   );
-
-  // Only what this build can actually do. Offering "Vulkan" unconditionally —
-  // as this list used to — meant a CUDA build and a CPU-only build both showed
-  // a Vulkan option that selecting changed nothing about: the device setting
-  // says *whether* to offload, and ggml links exactly one backend to offload
-  // to. So there is at most one GPU entry, named after the one in the build.
-  let deviceOptions = $derived([
-    { value: "auto", label: whisperGpu ? `Auto (${gpuLabel(whisperGpu)})` : "Auto" },
-    ...(whisperGpu ? [{ value: whisperGpu, label: gpuLabel(whisperGpu) }] : []),
-    { value: "cpu", label: "CPU" },
-  ]);
 
   const moonshineModelSizeOptions = [
     { value: "base", label: "Base" },
@@ -373,9 +348,26 @@
     </label>
   </div>
 
+  <BenchmarkPanel
+    onApply={(rec) => {
+      if (rec.whisper) cfg.engine.whisper_cpp.device = rec.whisper === "gpu" ? "auto" : "cpu";
+      if (rec.moonshine) cfg.engine.moonshine.device = rec.moonshine === "gpu" ? "auto" : "cpu";
+      if (rec.parakeet) cfg.engine.parakeet.device = rec.parakeet === "gpu" ? "auto" : "cpu";
+      if (rec.s1_mini) cfg.engine.s1_mini.gpu = rec.s1_mini === "gpu";
+      markDirty();
+    }}
+  />
+
   {#if cfg.engine.backend === "whisper-cpp"}
     <div class="field-group">
-      <h3>Whisper.cpp Settings</h3>
+      <div class="field-label-row">
+        <h3>Whisper.cpp Settings</h3>
+        <DeviceChip
+          state={checking ? "checking" : downloading ? "downloading" : downloadedMap[cfg.engine.whisper_cpp.model_size] ? "ready" : "missing"}
+          backend={whisperGpu}
+          on={cfg.engine.whisper_cpp.device !== "cpu"}
+        />
+      </div>
       <label class="field">
         <span>Model size</span>
         <CustomSelect bind:value={cfg.engine.whisper_cpp.model_size} options={whisperModelSizeOptions} onchange={onModelChanged} />
@@ -403,10 +395,16 @@
         {/if}
       </div>
 
-      <label class="field">
-        <span>Device</span>
-        <CustomSelect bind:value={cfg.engine.whisper_cpp.device} options={deviceOptions} onchange={markDirty} />
-      </label>
+      <GpuToggle
+        backend={whisperGpu}
+        on={cfg.engine.whisper_cpp.device !== "cpu"}
+        onchange={(v) => {
+          // "auto" means "the one GPU backend this build has".
+          cfg.engine.whisper_cpp.device = v ? "auto" : "cpu";
+          markDirty();
+        }}
+        hint="Off runs Whisper.cpp on the CPU. Takes effect the next time the model loads."
+      />
       <div class="field">
         <span>Model directory (leave blank for default)</span>
         <input
@@ -451,7 +449,14 @@
     </div>
   {:else if cfg.engine.backend === "moonshine"}
     <div class="field-group">
-      <h3>Moonshine Settings</h3>
+      <div class="field-label-row">
+        <h3>Moonshine Settings</h3>
+        <DeviceChip
+          state={!moonshineAvailable ? "checking" : moonshineChecking ? "checking" : moonshineDownloading ? "downloading" : moonshineDownloadedMap[cfg.engine.moonshine.model_size] ? "ready" : "missing"}
+          backend={moonshineGpu}
+          on={cfg.engine.moonshine.device !== "cpu"}
+        />
+      </div>
 
       {#if !moonshineAvailable}
         <div
@@ -481,8 +486,8 @@
               >Moonshine runs on the CPU in this build</strong
             >
             <p class="m-0 text-slate-200 text-xs leading-relaxed">
-              ONNX Runtime, which Moonshine uses, has no Vulkan backend, so the
-              Device setting above applies to Whisper.cpp only. Moonshine holds
+              ONNX Runtime, which Moonshine uses, has no Vulkan backend, and this
+              build has no other GPU provider compiled in. Moonshine holds
               its weights in RAM as fp32 — roughly <code>530&nbsp;MB</code> for
               <code>base</code>, <code>240&nbsp;MB</code> for <code>tiny</code> —
               where Whisper.cpp{whisperGpu
@@ -523,6 +528,16 @@
         </div>
       {/if}
 
+      <GpuToggle
+        backend={moonshineGpu}
+        on={cfg.engine.moonshine.device !== "cpu"}
+        onchange={(v) => {
+          cfg.engine.moonshine.device = v ? "auto" : "cpu";
+          markDirty();
+        }}
+        hint="Off by default: Moonshine runs part of its work on the CPU even with the GPU provider, so the GPU is often slower. Use Speed test above to check your machine. Takes effect the next time the model loads."
+      />
+
       <label class="field">
         <span>Language</span>
         <input
@@ -534,7 +549,14 @@
     </div>
   {:else if cfg.engine.backend === "parakeet"}
     <div class="field-group">
-      <h3>Parakeet Settings</h3>
+      <div class="field-label-row">
+        <h3>Parakeet Settings</h3>
+        <DeviceChip
+          state={!parakeetAvailable ? "checking" : parakeetChecking ? "checking" : parakeetDownloading ? "downloading" : parakeetDownloadedMap[cfg.engine.parakeet.model_size] ? "ready" : "missing"}
+          backend={parakeetGpu}
+          on={cfg.engine.parakeet.device === "auto"}
+        />
+      </div>
 
       {#if !parakeetAvailable}
         <div
@@ -581,6 +603,16 @@
           {/if}
         </div>
       {/if}
+
+      <GpuToggle
+        backend={parakeetGpu}
+        on={cfg.engine.parakeet.device === "auto"}
+        onchange={(v) => {
+          cfg.engine.parakeet.device = v ? "auto" : "cpu";
+          markDirty();
+        }}
+        hint="Off by default: the INT8 models run mostly on the CPU even with the GPU provider, so it is measurably slower on the standard model and only marginally faster on Redux. Takes effect the next time the model loads."
+      />
 
       <label class="field">
         <span>Language</span>

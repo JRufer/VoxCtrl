@@ -306,6 +306,28 @@ pub fn sidecar_available() -> bool {
     find_llm_sidecar_binary().is_some()
 }
 
+/// The GPU backend the bundled sidecar was actually compiled with, asked of the
+/// sidecar itself (its `ping` reports it) and cached for the life of the
+/// process. `None` when there is no sidecar or it is a CPU build.
+///
+/// This is asked rather than inferred from this binary's own features because
+/// the two are built separately and can disagree: a Vulkan app has shipped with
+/// a CPU-only sidecar, and the UI — assuming from its own features — said
+/// Vulkan while S1-mini ran on the CPU.
+pub fn sidecar_gpu_backend() -> Option<&'static str> {
+    static BACKEND: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    *BACKEND.get_or_init(|| {
+        let binary = find_llm_sidecar_binary()?;
+        let mut proc = SidecarProcess::spawn(&binary).ok()?;
+        let reply = proc.call("ping", serde_json::json!({})).ok()?;
+        // Dropping `proc` closes the sidecar's stdin, which ends its loop.
+        match reply.get("backend").and_then(|b| b.as_str()) {
+            Some("vulkan") => Some("vulkan"),
+            _ => None,
+        }
+    })
+}
+
 struct SidecarProcess {
     _child: Child,
     stdin: BufWriter<ChildStdin>,
@@ -382,6 +404,7 @@ fn clean_via_sidecar(
     text: &str,
     styling: &str,
     custom_dir: Option<&str>,
+    gpu: bool,
 ) -> Result<String> {
     let binary = find_llm_sidecar_binary().context("sidecar binary not found")?;
     let mut guard = match SIDECAR_PROCESS.lock() {
@@ -403,6 +426,7 @@ fn clean_via_sidecar(
             "raw_text": text,
             "styling": styling,
             "model_path": model_path.to_string_lossy(),
+            "gpu": gpu,
         }),
     ) {
         Ok(r) => r,
@@ -422,6 +446,13 @@ fn clean_via_sidecar(
     Ok(cleaned)
 }
 
+/// One S1-mini cleanup through the sidecar on the chosen device, for the
+/// benchmark. Unlike [`clean_dictation`] it does not fall back to the in-process
+/// engine on failure — a fallback would time the wrong thing.
+pub fn bench_clean(text: &str, gpu: bool) -> Result<()> {
+    clean_via_sidecar(text, "semi-formal", None, gpu).map(|_| ())
+}
+
 // Global cached engine instance
 static GLOBAL_ENGINE: std::sync::OnceLock<Arc<Mutex<Option<S1MiniEngine>>>> =
     std::sync::OnceLock::new();
@@ -432,7 +463,7 @@ fn global_engine_cell() -> &'static Arc<Mutex<Option<S1MiniEngine>>> {
 
 /// Run text cleanup through S1-mini, lazily loading the model if needed.
 /// Falls back to the original text on any error.
-pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>) -> String {
+pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>, gpu: bool) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return text.to_string();
@@ -445,7 +476,7 @@ pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>) -> S
 
     // 1. Attempt accelerated cleanup via the LLM sidecar if available
     if find_llm_sidecar_binary().is_some() {
-        match clean_via_sidecar(text, styling, custom_dir) {
+        match clean_via_sidecar(text, styling, custom_dir, gpu) {
             Ok(cleaned) => {
                 return if cleaned.is_empty() && !trimmed.is_empty() {
                     String::new()
@@ -521,7 +552,7 @@ mod tests {
     #[test]
     fn test_s1_mini_clean_dictation() {
         if is_s1_mini_downloaded(None) {
-            let res = clean_dictation("um so uh we should definitely meet at 3pm tomorrow", "semi-formal", None);
+            let res = clean_dictation("um so uh we should definitely meet at 3pm tomorrow", "semi-formal", None, true);
             assert!(!res.is_empty());
             assert!(res.contains("meet at 3") || res.contains("tomorrow"));
         }

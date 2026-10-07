@@ -57,15 +57,16 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 ### Engine Tab
 - Backend selector (`whisper-cpp`, `moonshine`, `parakeet`, `remote-openai`)
 - Whisper model size selector with download status
-- Compute device selector (auto / CPU / CUDA / Vulkan)
+- **Speed test**: times each downloaded engine that has a GPU path on the CPU and on the GPU, shows the expected duration up front, then a progress bar with the test in progress and time remaining (with Cancel), then a CPU/GPU table with the faster device highlighted and an **Apply fastest settings** button. Engines it cannot test are listed with the reason (for example, the selected model is not downloaded).
+- A **GPU acceleration** checkbox in each engine's section (disabled when the build has no GPU path for that engine), and a corner chip showing the model state and device in use, e.g. `✔ Ready (Vulkan (AMD/Intel/NVIDIA))` or `✔ Ready (CPU)`
 - Thread count control
-- Moonshine model and language settings
-- Parakeet TDT model selector and download controls
+- Moonshine model and language settings (CPU by default)
+- Parakeet TDT model selector and download controls (CPU by default)
 - Remote Speech Engine settings (endpoint URL, Bearer API token, model identifier, ISO language, and interactive "Test Connection" button with server model discovery tag chips)
 - **Missing Model Warning & Auto-Redirection**: Startup check programmatically determines if the configured voice model file is downloaded. If missing, it immediately switches the active Settings tab to "Engine" and presents a yellow warning alert prompting the user to select and download a model.
 
 ### Post-Processing Tab
-- **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), and reactive download progress for Qwen3-0.6B model files (~480 MB)
+- **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), a **GPU acceleration** checkbox with the same device chip as the engines, and reactive download progress for Qwen3-0.6B model files (~480 MB)
 - **Basic Text Cleanup**: filler removal, spoken punctuation, and auto-format-lists toggles. Greyed out and disabled whenever S1-mini is enabled, with a note that S1-mini already covers the same normalization — the two are never applied together.
 - Custom vocabulary list editor
 - Snippet key-value editor
@@ -179,7 +180,7 @@ config as it is made:
 | Step | Writes | Notes |
 |---|---|---|
 | Welcome | — | A read-only contents page; the cards preview the steps rather than linking to them |
-| Engine | `engine.backend`, model size, `whisper_cpp.device`, `remote_openai.*` | Choose from 4 engines: `whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine`. For local models, Continue downloads the chosen model and waits for it. For Remote Speech Engine, an interactive connection test validates the endpoint and fetches available models before proceeding |
+| Engine | `engine.backend`, model size, the selected engine's GPU toggle (`whisper_cpp.device` / `moonshine.device` / `parakeet.device`), `remote_openai.*` | Choose from 4 engines: `whisper.cpp`, `Moonshine`, `Parakeet TDT`, or `Remote Speech Engine`. For local models, Continue downloads the chosen model and waits for it. For Remote Speech Engine, an interactive connection test validates the endpoint and fetches available models before proceeding |
 | Hotkey | `bindings.toml` | Only gestures the running shortcut backend can deliver are offered, and the combination is validated by the same Rust rules the portal registration uses. Blocked until the desktop has accepted the shortcut, because the next step is a live test |
 | Overlay | `ui.show_overlay`, `ui.overlay_style`, `ui.overlay_position` | Each style previews a recording of the real overlay, bundled at `src/assets/overlays/<style id>.webm`, falling back to a CSS animation |
 | Test | — | A real dictation: the transcript is injected into the focused window, and the readout follows the pipeline's own recording and processing state |
