@@ -16,12 +16,13 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
 
 * **High-Performance Offline Speech Recognition**:
   * **whisper.cpp**: Native local inference via `whisper-rs` (GGUF models) with Vulkan/CUDA GPU compute and CPU fallback.
-  * **Moonshine**: Streaming ONNX speech recognition with WebGPU Direct3D 12 acceleration on Windows and CPU execution on Linux.
-  * **Parakeet TDT**: Ultra-fast non-autoregressive transcription via NVIDIA Parakeet ONNX models.
+  * **Moonshine**: Streaming ONNX speech recognition. Runs on the CPU by default; optional WebGPU acceleration (Direct3D 12 on Windows, the Linux WebGPU AppImage on newer distros).
+  * **Parakeet TDT**: Ultra-fast non-autoregressive transcription via NVIDIA Parakeet ONNX models (including the 1.58-bit Redux variant). CPU by default; optional WebGPU acceleration.
+  * **One GPU switch per engine, and a Speed test**: every engine has the same *GPU acceleration* checkbox and a chip showing the device in use. **Settings → Engine → Speed test** times each engine on the CPU and GPU on your machine and recommends the faster one — the GPU is several times faster for some engines and slower for others.
   * **Remote Speech Engine**: Offload transcription to any OpenAI-compatible `/v1/audio/transcriptions` network endpoint (Faster-Whisper, vLLM, Whisper standalone, or cloud APIs) with zero local RAM/VRAM overhead.
 * **On-Device S1-mini Dictation Cleanup**:
   * Intelligent text normalization powered by Superwhisper's [s1-mini](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download).
-  * Runs in an isolated `voxctrl-llm-sidecar` process using `llama.cpp` with Vulkan GPU offload and automatic CPU fallback.
+  * Runs in an isolated `voxctrl-llm-sidecar` process using `llama.cpp` with Vulkan GPU offload (switchable to CPU in Settings) and automatic CPU fallback.
   * Cleans spoken self-corrections, fixes punctuation and casing, and strips filler words while strictly preserving command keywords.
 * **Programmable Output Command Router (11 Delivery Targets)**:
   * Route dictation to focused windows (`inject`), system clipboard (`clipboard`), shell commands (`exec`), FIFO pipes (`pipe`), TCP/Unix sockets (`socket`), markdown files (`file`), desktop bus (`dbus`), HTTP APIs (`http`), HMAC-signed webhooks (`webhook`), audio playback (`speak`), or conversational LLMs (`chat`).
@@ -80,7 +81,7 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | **`voxctrl-app`** | Tauri 2 application shell, Svelte IPC commands, system tray, and window management. |
 | **`voxctrl-core`** | Shared domain types, audio buffer representations, and engine traits. |
 | **`voxctrl-audio`** | `cpal` audio input stream, ring buffers, device enumeration, VAD, and RNNoise. |
-| **`voxctrl-inference`** | Multi-engine STT runner (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, and remote HTTP). |
+| **`voxctrl-inference`** | Multi-engine STT runner (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, and remote HTTP) and the CPU-vs-GPU Speed test (`bench.rs`). |
 | **`voxctrl-llm-sidecar`** | Independent companion process running `llama.cpp` (`llama_cpp_2`) with Vulkan GPU offload and CPU fallback for S1-mini text cleanup. |
 | **`voxctrl-llm`** | IPC client communicating with `voxctrl-llm-sidecar` and external OpenAI-compatible LLM endpoints. |
 | **`voxctrl-routing`** | 11-way delivery router, voice command prefix matcher, and multi-target dispatch. |
@@ -110,6 +111,8 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
    ./VoxCtrl-linux-x86_64-vulkan.AppImage
    ```
    *The AppImage automatically utilizes Vulkan GPU acceleration if available, falling back gracefully to CPU compute.*
+
+   On a newer distro (glibc 2.38+: Ubuntu 24.04, Fedora 39, Debian 13, Arch and similar) you can instead download **`VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage`**, which also lets Moonshine and Parakeet use the GPU. Use the plain Vulkan AppImage on Ubuntu 22.04 and Debian 12.
 3. On first launch, the **First-Run Setup Wizard** guides you through microphone selection, engine configuration, and hotkey binding. You can also re-launch it anytime with:
    ```bash
    voxctrl --setup
@@ -117,7 +120,7 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
 
 ### Windows
 
-1. Download **`VoxCtrl-windows-x86_64-webgpu.exe`** from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest). *It automatically utilizes Direct3D 12 WebGPU acceleration for Moonshine if a usable GPU is available, falling back gracefully to CPU compute.*
+1. Download **`VoxCtrl-windows-x86_64-webgpu.exe`** from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest). *It can use Direct3D 12 WebGPU acceleration for Moonshine and Parakeet if a usable GPU is available (switch it on per engine in Settings → Engine, or run the Speed test), and otherwise runs on the CPU.*
 2. Run the installer and launch VoxCtrl from the Start Menu or System Tray.
 
 ---

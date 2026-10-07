@@ -219,6 +219,22 @@ In such a build, selecting Moonshine falls back to whisper-cpp, and the Inflect
 TTS engine still downloads its model but leaves Test TTS disabled — only
 synthesis is gated.
 
+### GPU builds, per engine
+
+GPU support is decided at compile time and differs by engine — which is why the app reports it per engine (`accelerator_support`) rather than as one flag:
+
+| Engine | Feature | Notes |
+|---|---|---|
+| whisper.cpp | `vulkan` (or `cuda`) | ggml links exactly one backend. |
+| Moonshine / Parakeet | `moonshine-webgpu`, `parakeet-webgpu` (also `-cuda`, `-coreml`) | ONNX Runtime has no Vulkan provider; WebGPU runs on Dawn (Direct3D 12 on Windows, Vulkan underneath on Linux). On Linux the build links a shared `libwebgpu_dawn.so` that needs glibc 2.38+, so it ships as a separate `-vulkan-webgpu` artifact and `src-tauri/build.rs` adds an rpath for it. |
+| S1-mini | `vulkan` on `voxctrl-llm-sidecar` | Built separately from the app. Tauri's `beforeBuildCommand` runs `scripts/build-sidecar.mjs`, which takes its features from `VOXCTRL_SIDECAR_FEATURES` — set it to `vulkan` for GPU builds, or the CPU-only sidecar gets bundled. The app asks the sidecar (`ping`) which backend it really has. |
+
+`./build_appimage.sh` builds the WebGPU variant automatically when the host glibc is 2.38 or newer (`--webgpu` / `--no-webgpu` override). The Speed test (`crates/voxctrl-inference/src/bench.rs`, commands in `src-tauri/src/commands/benchmark.rs`) is how a user finds out which device wins on their hardware.
+
+### Release notes
+
+The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.
+
 ### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 on the GPU
 
 These three engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s

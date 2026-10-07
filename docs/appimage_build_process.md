@@ -81,6 +81,7 @@ chmod +x build_appimage.sh
 2. **Frontend Compiles**: Compiles all visual assets and generates the optimized production build (`/dist`).
 3. **Environment Setup**: Prepends the workspace root to the shell `$PATH` and exports `APPIMAGE_EXTRACT_AND_RUN=1` and `QT_QPA_PLATFORM=offscreen` to allow FUSE-less head-free compilation.
 4. **Tauri Releases**: Runs `npx tauri build` to compile the optimized release binary and bundles it using the FUSE-bypass tools.
+   - **GPU variants**: the build is Vulkan by default (it also sets `VOXCTRL_SIDECAR_FEATURES=vulkan` so the S1-mini sidecar tauri bundles keeps Vulkan). When the host glibc is 2.38 or newer it also enables `moonshine-webgpu,parakeet-webgpu`, bundles `libwebgpu_dawn.so` into `usr/lib`, and names the result `VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage`. Pass `--webgpu` or `--no-webgpu` to override, `--cpu` for a CPU-only build.
 5. **Relocation**: Copies the completed executable dynamically using the `productName` and `version` from `tauri.conf.json` (e.g. `VoxCtrl-0.1.0-x86_64.AppImage`) directly to the project root, creating a convenient `VoxCtrl-latest-x86_64.AppImage` symlink.
 
 ---
