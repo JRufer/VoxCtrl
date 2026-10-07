@@ -440,6 +440,12 @@ done
 #
 # This has to run before the strip loop below, which skips usr/lib/fallback.
 # Keep this list in sync with .github/workflows/release.yml.
+#   libsharpyuv / libwebp* — Ubuntu 24.04 ships libsharpyuv as its own library
+#     (22.04 had it inside libwebp). Bundled, it shadows the host's newer copy,
+#     and a host libavif that needs SharpYuvConvertWithOptions then aborts the
+#     whole app at launch: "symbol lookup error: /usr/lib/libavif.so.16:
+#     undefined symbol: SharpYuvConvertWithOptions" (Arch, v0.8.0). Host-first,
+#     because the bundled WebKitGTK still needs libwebp when the host has none.
 #   libwebkit2gtk / libjavascriptcoregtk — the ubuntu-22.04 build host's
 #     WebKitGTK renders a transparent window's compositing layers without
 #     their alpha channel, so an overlay animating as it closes leaves an
@@ -454,7 +460,8 @@ done
 mkdir -p "$root/usr/lib/fallback"
 for pat in 'libsystemd.so*' 'libudev.so*' \
            'libgstgl-1.0.so*' 'libwayland-server.so*' \
-           'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*'; do
+           'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*' \
+           'libsharpyuv.so*' 'libwebp.so*' 'libwebpdemux.so*' 'libwebpmux.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done
