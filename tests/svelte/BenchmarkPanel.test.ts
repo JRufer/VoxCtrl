@@ -39,6 +39,19 @@ describe("BenchmarkPanel", () => {
     expect(screen.queryByRole("button", { name: /Test this machine/ })).toBeNull();
   });
 
+  test("says why an engine is left out of the test", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      steps,
+      skipped: [{ engine: "whisper", reason: "the selected model (large-v3) is not downloaded" }],
+      est_secs: 21,
+    });
+    render(BenchmarkPanel, { onApply: vi.fn() });
+
+    expect(
+      await screen.findByText(/is not tested: the selected model \(large-v3\) is not downloaded/),
+    ).toBeTruthy();
+  });
+
   test("shows a progress bar while running, driven by the backend's progress events", async () => {
     let finish!: (v: unknown) => void;
     vi.mocked(invoke).mockImplementation(async (cmd: string) => {

@@ -38,7 +38,13 @@
     s1_mini: "S1-mini cleanup",
   };
 
+  interface Skipped {
+    engine: string;
+    reason: string;
+  }
+
   let steps = $state<Step[]>([]);
+  let skipped = $state<Skipped[]>([]);
   let estSecs = $state(0);
   let planned = $state(false);
 
@@ -94,8 +100,9 @@
 
   async function loadPlan() {
     try {
-      const plan = await invoke<{ steps: Step[]; est_secs: number }>("benchmark_plan");
+      const plan = await invoke<{ steps: Step[]; skipped: Skipped[]; est_secs: number }>("benchmark_plan");
       steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      skipped = Array.isArray(plan?.skipped) ? plan.skipped : [];
       estSecs = plan?.est_secs ?? 0;
     } catch (e) {
       console.error("benchmark_plan failed", e);
@@ -155,6 +162,16 @@
   });
 </script>
 
+{#snippet skippedList()}
+  {#if skipped.length > 0}
+    <ul class="bench-skipped">
+      {#each skipped as s}
+        <li><strong>{TITLES[s.engine] ?? s.engine}</strong> is not tested: {s.reason}.</li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
 <div class="field-group">
   <h3>Speed test</h3>
 
@@ -165,6 +182,7 @@
       Nothing to compare: the speed test needs an engine with a GPU path in this
       build and its model downloaded. Download a model above, then come back.
     </p>
+    {@render skippedList()}
   {:else}
     <p class="hint">
       Whether the GPU helps depends on your machine — it can be several times
@@ -199,6 +217,10 @@
 
     {#if error}
       <p class="field-error-msg">{error}</p>
+    {/if}
+
+    {#if !running}
+      {@render skippedList()}
     {/if}
 
     {#if !running && engines.length > 0}
@@ -273,6 +295,9 @@
   }
   .bench-model {
     @apply text-[var(--text-muted)] ml-1;
+  }
+  .bench-skipped {
+    @apply list-none m-0 mt-2 p-0 text-xs text-[var(--text-muted)] flex flex-col gap-0.5;
   }
   .bench-error {
     @apply text-red-300;

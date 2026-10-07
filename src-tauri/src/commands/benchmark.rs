@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
-use voxctrl_inference::bench::{self, BenchResult, BenchStep};
+use voxctrl_inference::bench::{self, BenchResult, BenchStep, Skipped};
 
 use crate::state::AppState;
 
@@ -21,6 +21,8 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 #[derive(Serialize)]
 pub struct BenchmarkPlan {
     pub steps: Vec<BenchStep>,
+    /// Engines left out, with the reason.
+    pub skipped: Vec<Skipped>,
     /// Sum of the steps' estimates, in seconds.
     pub est_secs: u32,
 }
@@ -28,11 +30,11 @@ pub struct BenchmarkPlan {
 #[tauri::command]
 pub async fn benchmark_plan(state: State<'_, Arc<AppState>>) -> Result<BenchmarkPlan, String> {
     let cfg = state.config.lock().await.data.clone();
-    let steps = tauri::async_runtime::spawn_blocking(move || bench::plan(&cfg))
+    let (steps, skipped) = tauri::async_runtime::spawn_blocking(move || bench::plan_with_skips(&cfg))
         .await
         .map_err(|e| e.to_string())?;
     let est_secs = steps.iter().map(|s| s.est_secs).sum();
-    Ok(BenchmarkPlan { steps, est_secs })
+    Ok(BenchmarkPlan { steps, skipped, est_secs })
 }
 
 /// Sent as each phase of each step begins, and once more when a step ends.

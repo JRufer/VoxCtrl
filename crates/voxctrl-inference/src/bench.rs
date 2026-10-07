@@ -98,13 +98,23 @@ fn estimate_secs(engine: &str, device: &str, model: &str) -> u32 {
     }
 }
 
-/// The steps a run would take on this build with this configuration.
+/// An engine the run leaves out, and why — shown to the user so a missing
+/// engine reads as "download its model" rather than as a bug.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Skipped {
+    pub engine: &'static str,
+    pub reason: String,
+}
+
+/// The steps a run would take on this build with this configuration, and the
+/// engines it leaves out.
 ///
-/// An engine appears only when there is a choice to measure — the build has a
+/// An engine is measured only when there is a choice to make — the build has a
 /// GPU path for it — and the model the user has configured is on disk. It gets
 /// both devices so they are timed back to back.
-pub fn plan(cfg: &AppConfig) -> Vec<BenchStep> {
+pub fn plan_with_skips(cfg: &AppConfig) -> (Vec<BenchStep>, Vec<Skipped>) {
     let mut steps = Vec::new();
+    let mut skipped = Vec::new();
     let mut add = |engine: &'static str, model: String| {
         for device in ["cpu", "gpu"] {
             steps.push(BenchStep {
@@ -121,29 +131,58 @@ pub fn plan(cfg: &AppConfig) -> Vec<BenchStep> {
             });
         }
     };
+    let mut skip = |engine: &'static str, reason: String| skipped.push(Skipped { engine, reason });
 
     let w = &cfg.engine.whisper_cpp;
-    if crate::whisper_gpu_backend().is_some()
-        && crate::whisper_cpp::is_model_downloaded(&w.model_size, &w.model_dir)
-    {
+    if crate::whisper_gpu_backend().is_none() {
+        skip("whisper", "this build has no GPU path for it".into());
+    } else if !crate::whisper_cpp::is_model_downloaded(&w.model_size, &w.model_dir) {
+        skip("whisper", format!("the selected model ({}) is not downloaded", w.model_size));
+    } else {
         add("whisper", w.model_size.clone());
     }
+
     #[cfg(feature = "moonshine")]
-    if crate::moonshine_gpu_backend().is_some()
-        && crate::moonshine::is_model_downloaded(&cfg.engine.moonshine.model_size, "")
     {
-        add("moonshine", cfg.engine.moonshine.model_size.clone());
+        let size = &cfg.engine.moonshine.model_size;
+        if crate::moonshine_gpu_backend().is_none() {
+            skip("moonshine", "this build has no GPU path for it".into());
+        } else if !crate::moonshine::is_model_downloaded(size, "") {
+            skip("moonshine", format!("the selected model ({size}) is not downloaded"));
+        } else {
+            add("moonshine", size.clone());
+        }
     }
+    #[cfg(not(feature = "moonshine"))]
+    skip("moonshine", "this build does not include it".into());
+
     #[cfg(feature = "parakeet")]
-    if crate::parakeet_gpu_backend().is_some()
-        && crate::parakeet::is_model_downloaded(&cfg.engine.parakeet.model_size, "")
     {
-        add("parakeet", cfg.engine.parakeet.model_size.clone());
+        let size = &cfg.engine.parakeet.model_size;
+        if crate::parakeet_gpu_backend().is_none() {
+            skip("parakeet", "this build has no GPU path for it".into());
+        } else if !crate::parakeet::is_model_downloaded(size, "") {
+            skip("parakeet", format!("the selected model ({size}) is not downloaded"));
+        } else {
+            add("parakeet", size.clone());
+        }
     }
-    if crate::s1_mini::sidecar_gpu_backend().is_some() && crate::s1_mini::is_s1_mini_downloaded(None) {
+    #[cfg(not(feature = "parakeet"))]
+    skip("parakeet", "this build does not include it".into());
+
+    if crate::s1_mini::sidecar_gpu_backend().is_none() {
+        skip("s1_mini", "this build has no GPU path for it".into());
+    } else if !crate::s1_mini::is_s1_mini_downloaded(None) {
+        skip("s1_mini", "its model is not downloaded".into());
+    } else {
         add("s1_mini", "q4_k_m".into());
     }
-    steps
+    (steps, skipped)
+}
+
+/// The steps alone, for the run itself.
+pub fn plan(cfg: &AppConfig) -> Vec<BenchStep> {
+    plan_with_skips(cfg).0
 }
 
 /// Decode the bundled clip to f32 samples.
