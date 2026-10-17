@@ -186,8 +186,8 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `model_size` | string | `"tdt-0.6b-v3"` | Parakeet model size (INT8 ONNX) |
-| `language` | string | `"auto"` | Target language code |
+| `model_size` | string | `"tdt-0.6b-v3"` | Parakeet model: `"tdt-0.6b-v3"` (INT8 ONNX), `"tdt-0.6b-v3-redux"` (1.58-bit Redux) or `"phonon-2"` (English-only Phonon-2) |
+| `language` | string | `"auto"` | Target language code (ignored by `"phonon-2"`, which is English-only) |
 | `device` | string | `"cpu"` | `"cpu"` or `"auto"` (GPU when the build has an ONNX Runtime GPU provider). Opt-in for the same reason as Moonshine: Parakeet's INT8 operations have no GPU kernel, so the GPU measured slower. |
 
 **`remote_openai` sub-object** (used when `backend = "remote-openai"` — Bring Your Own Voice Engine):

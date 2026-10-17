@@ -79,6 +79,10 @@
         <span class="credit-license">CC-BY-4.0</span>
       </div>
       <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/FermionResearch/Phonon-2" target="_blank">Fermion Research Phonon-2 (model)</a>
+        <span class="credit-license">CC-BY-4.0</span>
+      </div>
+      <div class="credit-item">
         <a class="credit-name-link" href="https://github.com/microsoft/onnxruntime" target="_blank">ONNX Runtime</a>
         <span class="credit-license">MIT / Apache 2.0</span>
       </div>
