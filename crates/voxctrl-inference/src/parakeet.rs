@@ -13,10 +13,23 @@
 //! 1. `nemo128.onnx`                — raw 16 kHz audio `[1, samples]` → 128-mel features `[1, 128, T]`
 //! 2. `encoder-model.int8.onnx`     — mel features `[1, 128, T]` → hidden states `[1, 1024, T']`
 //! 3. `decoder_joint-model.int8.onnx` — TDT greedy transducer loop over frames `T'`
+//!
+//! Two derivatives of the same model run through this pipeline unchanged, only
+//! with different weights: Moondream's 1.58-bit Parakeet Redux and Fermion
+//! Research's English-only Phonon-2. Their exports use the same tensor names,
+//! shapes and logit layout as the NVIDIA one; [`download_spec`] saves their
+//! files under the local names above.
+//!
+//! Audio longer than [`CHUNK_MAX_SAMPLES`] is split at the quietest point
+//! between 25 and 35 seconds and each piece is transcribed on its own (see
+//! [`chunk_ranges`]), as Phonon-2's own runtime does. The encoder's attention
+//! cost grows with the square of the input length, so one long buffer is both
+//! slower and far heavier on memory than the same audio in windows.
 
 use std::{
     fs::File,
     io::{BufRead, BufReader},
+    ops::Range,
     path::{Path, PathBuf},
     sync::Mutex,
     time::Instant,
@@ -81,12 +94,48 @@ const REDUX_FILES: [(&str, &str); 5] = [
     ("decoder_joint-model.onnx", DECODER_FILE),
 ];
 
+/// Model size id for Fermion Research's Phonon-2, an English-only retrain of
+/// Parakeet TDT 0.6B v3 with five-value (~2.1-bit) encoder weights
+/// (<https://huggingface.co/FermionResearch/Phonon-2>).
+pub const PHONON2_SIZE: &str = "phonon-2";
+
+/// Community ONNX export of Phonon-2. Fermion ships its weights only in its own
+/// `.bps` container, which needs their Python/MLX runtime; this export expands
+/// them into the onnx-asr `nemo-conformer-tdt` layout, so it shares this
+/// backend's tensor names, shapes and logit layout (8,192 pieces plus blank,
+/// five duration classes).
+const PHONON2_BASE_URL: &str =
+    "https://huggingface.co/tiyuvta/Phonon-2-ONNX/resolve/main";
+
+/// `(remote file, local file)` pairs for the Phonon-2 export.
+///
+/// - The preprocessor is Phonon-2's own front end (pre-emphasis and per-band
+///   normalisation), not the stock NeMo one, so it has to come from this repo.
+/// - `exact4x2` is the encoder reproducing Fermion's fp32 runtime token for
+///   token at about half the size: each five-value row is stored as two ternary
+///   planes in `MatMulNBits`, the same contrib op the Redux export already
+///   relies on, so the bundled ONNX Runtime runs it as is.
+/// - The decoder is the export's single fp32 decoder/joint graph.
+const PHONON2_FILES: [(&str, &str); 5] = [
+    ("config.json", CONFIG_FILE),
+    ("vocab.txt", VOCAB_FILE),
+    ("preprocessor-model.onnx", PREPROCESSOR_FILE),
+    ("encoder-model.exact4x2.onnx", ENCODER_FILE),
+    ("decoder_joint-model.onnx", DECODER_FILE),
+];
+
+/// True for model sizes that only transcribe English. The language setting
+/// does not apply to them, and their results report `"en"`.
+pub fn is_english_only(size: &str) -> bool {
+    size == PHONON2_SIZE
+}
+
 /// Base URL and `(remote, local)` file list for a model size.
 fn download_spec(size: &str) -> (&'static str, Vec<(&'static str, &'static str)>) {
-    if size == REDUX_SIZE {
-        (REDUX_BASE_URL, REDUX_FILES.to_vec())
-    } else {
-        (HF_BASE_URL, MODEL_FILES.iter().map(|f| (*f, *f)).collect())
+    match size {
+        REDUX_SIZE => (REDUX_BASE_URL, REDUX_FILES.to_vec()),
+        PHONON2_SIZE => (PHONON2_BASE_URL, PHONON2_FILES.to_vec()),
+        _ => (HF_BASE_URL, MODEL_FILES.iter().map(|f| (*f, *f)).collect()),
     }
 }
 
@@ -108,7 +157,7 @@ fn model_size_dir(model_dir: &str, size: &str) -> PathBuf {
 }
 
 pub fn valid_model_size(size: &str) -> bool {
-    matches!(size, "tdt-0.6b-v3" | "tdt-0.6b-v3-int8" | REDUX_SIZE)
+    matches!(size, "tdt-0.6b-v3" | "tdt-0.6b-v3-int8" | REDUX_SIZE | PHONON2_SIZE)
 }
 
 /// True when all 5 model files are present on disk.
@@ -127,7 +176,10 @@ static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// Fetch the 5 model files for `size` into `<model_dir>/<size>/`.
 pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     if !valid_model_size(size) {
-        bail!("Unknown Parakeet model size '{size}' (expected 'tdt-0.6b-v3' or '{REDUX_SIZE}')");
+        bail!(
+            "Unknown Parakeet model size '{size}' \
+             (expected 'tdt-0.6b-v3', '{REDUX_SIZE}' or '{PHONON2_SIZE}')"
+        );
     }
 
     let dir = model_size_dir(model_dir, size);
@@ -143,22 +195,68 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
         }
         let url = format!("{base_url}/{remote}");
         info!("Downloading Parakeet file: {url}");
-        let response = reqwest::get(&url)
-            .await
-            .with_context(|| format!("request {url}"))?
-            .error_for_status()
-            .with_context(|| format!("fetch {url}"))?;
-        let bytes = response.bytes().await.with_context(|| format!("read {url}"))?;
-        let tmp = path.with_extension("part");
-        tokio::fs::write(&tmp, &bytes)
-            .await
-            .with_context(|| format!("write {}", tmp.display()))?;
-        tokio::fs::rename(&tmp, &path)
-            .await
-            .with_context(|| format!("finalize {}", path.display()))?;
+        download_file(&url, &path).await?;
     }
 
     info!("Parakeet '{size}' model ready in {}", dir.display());
+    Ok(())
+}
+
+/// Stream `url` to `path` through a `.part` file, renamed into place only once
+/// the whole body has arrived.
+///
+/// Streaming keeps memory flat: the encoders are 400–660 MB, and buffering one
+/// with `Response::bytes()` held all of it in RAM before a byte reached disk.
+/// When the server sends a length, a body that ends short is rejected rather
+/// than renamed into place, where `is_model_downloaded` would later have taken
+/// it for a finished file. A failed attempt removes its `.part` file.
+async fn download_file(url: &str, path: &Path) -> Result<()> {
+    let tmp = path.with_extension("part");
+    let result = stream_to(url, &tmp).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+    result?;
+    tokio::fs::rename(&tmp, path)
+        .await
+        .with_context(|| format!("finalize {}", path.display()))
+}
+
+async fn stream_to(url: &str, tmp: &Path) -> Result<()> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let response = reqwest::get(url)
+        .await
+        .with_context(|| format!("request {url}"))?
+        .error_for_status()
+        .with_context(|| format!("fetch {url}"))?;
+    let expected = response.content_length();
+
+    let mut file = tokio::fs::File::create(tmp)
+        .await
+        .with_context(|| format!("create {}", tmp.display()))?;
+    let mut written: u64 = 0;
+    let mut body = response.bytes_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.with_context(|| format!("read {url}"))?;
+        file.write_all(&chunk)
+            .await
+            .with_context(|| format!("write {}", tmp.display()))?;
+        written += chunk.len() as u64;
+    }
+    file.flush()
+        .await
+        .with_context(|| format!("flush {}", tmp.display()))?;
+    file.sync_all()
+        .await
+        .with_context(|| format!("sync {}", tmp.display()))?;
+
+    if let Some(expected) = expected {
+        if written != expected {
+            bail!("download of {url} ended early: got {written} of {expected} bytes");
+        }
+    }
     Ok(())
 }
 
@@ -414,12 +512,34 @@ impl TranscriptionBackend for ParakeetBackend {
         }
 
         let t0 = Instant::now();
-        let text = run_inference(state, &req.audio)?;
+        let ranges = chunk_ranges(&req.audio);
+        if ranges.len() > 1 {
+            tracing::debug!(
+                "Parakeet: {:.1} s of audio split into {} windows",
+                n_samples as f32 / SAMPLE_RATE as f32,
+                ranges.len()
+            );
+        }
+        let mut parts: Vec<String> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            let part = run_inference(state, &req.audio[range])?;
+            let part = part.trim();
+            if !part.is_empty() {
+                parts.push(part.to_string());
+            }
+        }
+        let text = parts.join(" ");
         let inference_ms = t0.elapsed().as_millis() as u32;
 
+        let language = if is_english_only(&self.cfg.model_size) {
+            "en".to_string()
+        } else {
+            self.cfg.language.clone()
+        };
+
         Ok(TranscriptionResult {
-            text: text.trim().to_string(),
-            language: self.cfg.language.clone(),
+            text,
+            language,
             language_probability: 1.0,
             duration_ms: (n_samples / (SAMPLE_RATE / 1000)) as u32,
             inference_ms,
@@ -451,6 +571,81 @@ fn argmax(slice: &[f32]) -> usize {
 
 fn dims(shape: &[i64]) -> Vec<usize> {
     shape.iter().map(|&d| d as usize).collect()
+}
+
+// ── Long-audio chunking ───────────────────────────────────────────────────────
+
+/// A window never ends before this many samples (25 s) unless the audio does.
+pub const CHUNK_MIN_SAMPLES: usize = 25 * SAMPLE_RATE;
+/// No window is longer than this (35 s); audio up to this length is one window.
+pub const CHUNK_MAX_SAMPLES: usize = 35 * SAMPLE_RATE;
+/// The last window is at least this long (2 s), so a cut never strands a
+/// sliver of audio too short to hold a word.
+const CHUNK_MIN_TAIL_SAMPLES: usize = 2 * SAMPLE_RATE;
+/// Energy is measured over this span (200 ms) centred on each candidate cut:
+/// long enough to find a pause between words rather than a quiet sample
+/// inside one.
+const CUT_WINDOW_SAMPLES: usize = SAMPLE_RATE / 5;
+/// Distance between candidate cuts (10 ms).
+const CUT_STEP_SAMPLES: usize = SAMPLE_RATE / 100;
+
+/// Split `audio` into consecutive windows of 25–35 s, cutting each at the
+/// quietest 200 ms in that range so that cuts land in pauses between words.
+///
+/// The windows are contiguous and cover every sample once. Audio no longer than
+/// [`CHUNK_MAX_SAMPLES`] comes back as a single window.
+pub(crate) fn chunk_ranges(audio: &[f32]) -> Vec<Range<usize>> {
+    let n = audio.len();
+    if n <= CHUNK_MAX_SAMPLES {
+        return vec![0..n];
+    }
+
+    let half = CUT_WINDOW_SAMPLES / 2;
+    let mut ranges = Vec::new();
+    let mut start = 0;
+
+    while n - start > CHUNK_MAX_SAMPLES {
+        // n - start > 35 s, so hi - lo >= 35 - 2 - 25 > 0 seconds.
+        let lo = start + CHUNK_MIN_SAMPLES;
+        let hi = (start + CHUNK_MAX_SAMPLES).min(n - CHUNK_MIN_TAIL_SAMPLES);
+
+        // Prefix sums of squared samples over just the span the candidates'
+        // windows reach, so memory stays bounded by one window's worth.
+        let span_lo = lo.saturating_sub(half);
+        let span_hi = (hi + half).min(n);
+        let mut prefix = Vec::with_capacity(span_hi - span_lo + 1);
+        let mut acc = 0.0f64;
+        prefix.push(acc);
+        for &s in &audio[span_lo..span_hi] {
+            acc += f64::from(s) * f64::from(s);
+            prefix.push(acc);
+        }
+        let energy = |centre: usize| {
+            let a = centre.saturating_sub(half).max(span_lo) - span_lo;
+            let b = (centre + half).min(span_hi) - span_lo;
+            prefix[b] - prefix[a]
+        };
+
+        // Strictly-less keeps the earliest of equally quiet points, so pure
+        // silence is cut at 25 s and leaves the most room for what follows.
+        let mut best = lo;
+        let mut best_energy = f64::INFINITY;
+        let mut cut = lo;
+        while cut <= hi {
+            let e = energy(cut);
+            if e < best_energy {
+                best_energy = e;
+                best = cut;
+            }
+            cut += CUT_STEP_SAMPLES;
+        }
+
+        ranges.push(start..best);
+        start = best;
+    }
+
+    ranges.push(start..n);
+    ranges
 }
 
 fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
@@ -650,8 +845,115 @@ mod tests {
     fn test_valid_model_size() {
         assert!(valid_model_size("tdt-0.6b-v3"));
         assert!(valid_model_size("tdt-0.6b-v3-int8"));
+        assert!(valid_model_size(REDUX_SIZE));
+        assert!(valid_model_size(PHONON2_SIZE));
         assert!(!valid_model_size("base"));
         assert!(!valid_model_size(""));
+    }
+
+    #[test]
+    fn test_english_only() {
+        assert!(is_english_only(PHONON2_SIZE));
+        assert!(!is_english_only("tdt-0.6b-v3"));
+        assert!(!is_english_only(REDUX_SIZE));
+    }
+
+    /// Every size must save exactly the five local files `load()` and
+    /// `is_model_downloaded()` look for, each from one remote file.
+    #[test]
+    fn test_download_spec_covers_local_files() {
+        for size in ["tdt-0.6b-v3", "tdt-0.6b-v3-int8", REDUX_SIZE, PHONON2_SIZE] {
+            let (base, files) = download_spec(size);
+            assert!(base.starts_with("https://huggingface.co/"), "{size}: {base}");
+            let mut locals: Vec<&str> = files.iter().map(|(_, l)| *l).collect();
+            locals.sort_unstable();
+            let mut expected = MODEL_FILES.to_vec();
+            expected.sort_unstable();
+            assert_eq!(locals, expected, "{size}");
+        }
+    }
+
+    #[test]
+    fn test_phonon2_download_spec() {
+        let (base, files) = download_spec(PHONON2_SIZE);
+        assert_eq!(base, PHONON2_BASE_URL);
+        let remote_for = |local: &str| {
+            files.iter().find(|(_, l)| *l == local).map(|(r, _)| *r).unwrap()
+        };
+        assert_eq!(remote_for(PREPROCESSOR_FILE), "preprocessor-model.onnx");
+        assert_eq!(remote_for(ENCODER_FILE), "encoder-model.exact4x2.onnx");
+        assert_eq!(remote_for(DECODER_FILE), "decoder_joint-model.onnx");
+    }
+
+    /// Deterministic "speech": a loud tone everywhere except the given
+    /// silent gaps, each `(start_secs, len_secs)`.
+    fn tone_with_gaps(total_secs: f32, gaps: &[(f32, f32)]) -> Vec<f32> {
+        let n = (total_secs * SAMPLE_RATE as f32) as usize;
+        (0..n)
+            .map(|i| {
+                let t = i as f32 / SAMPLE_RATE as f32;
+                let silent = gaps.iter().any(|&(s, l)| t >= s && t < s + l);
+                if silent {
+                    0.0
+                } else {
+                    0.5 * (2.0 * std::f32::consts::PI * 220.0 * t).sin()
+                }
+            })
+            .collect()
+    }
+
+    fn assert_contiguous(ranges: &[Range<usize>], n: usize) {
+        assert_eq!(ranges.first().unwrap().start, 0);
+        assert_eq!(ranges.last().unwrap().end, n);
+        for pair in ranges.windows(2) {
+            assert_eq!(pair[0].end, pair[1].start, "gap or overlap in {ranges:?}");
+        }
+        for r in ranges {
+            assert!(r.len() <= CHUNK_MAX_SAMPLES, "window too long: {r:?}");
+        }
+    }
+
+    #[test]
+    fn test_chunk_ranges_short_audio_is_one_window() {
+        assert_eq!(chunk_ranges(&[]), vec![0..0]);
+        let audio = vec![0.1f32; CHUNK_MAX_SAMPLES];
+        assert_eq!(chunk_ranges(&audio), vec![0..CHUNK_MAX_SAMPLES]);
+    }
+
+    #[test]
+    fn test_chunk_ranges_cut_in_pauses() {
+        // Pauses at 30 s and 58 s: both sit inside the 25–35 s search range of
+        // their window, so each cut should land in one.
+        let audio = tone_with_gaps(80.0, &[(30.0, 0.5), (58.0, 0.5)]);
+        let ranges = chunk_ranges(&audio);
+        assert_contiguous(&ranges, audio.len());
+        assert_eq!(ranges.len(), 3, "{ranges:?}");
+        let secs = |s: usize| s as f32 / SAMPLE_RATE as f32;
+        let cut1 = secs(ranges[0].end);
+        let cut2 = secs(ranges[1].end);
+        assert!((30.0..30.5).contains(&cut1), "first cut at {cut1}s");
+        assert!((58.0..58.5).contains(&cut2), "second cut at {cut2}s");
+    }
+
+    #[test]
+    fn test_chunk_ranges_without_pauses() {
+        // No quiet point at all: windows still respect the bounds.
+        let audio = tone_with_gaps(100.0, &[]);
+        let ranges = chunk_ranges(&audio);
+        assert_contiguous(&ranges, audio.len());
+        for r in &ranges[..ranges.len() - 1] {
+            assert!(r.len() >= CHUNK_MIN_SAMPLES, "window too short: {r:?}");
+        }
+    }
+
+    #[test]
+    fn test_chunk_ranges_never_strands_a_short_tail() {
+        // 35.5 s of silence: the only way to split it leaves a tail, which
+        // must be at least the minimum length.
+        let audio = vec![0.0f32; CHUNK_MAX_SAMPLES + SAMPLE_RATE / 2];
+        let ranges = chunk_ranges(&audio);
+        assert_contiguous(&ranges, audio.len());
+        assert!(ranges.last().unwrap().len() >= CHUNK_MIN_TAIL_SAMPLES, "{ranges:?}");
     }
 
     #[test]
@@ -726,5 +1028,38 @@ mod tests {
         let res = backend.transcribe(&req).expect("transcribe");
         println!("REDUX RESULT: {:?}", res.text);
         assert!(res.text.to_lowercase().contains("fox"));
+    }
+
+    /// Network + ~735 MB download; run manually with `--ignored`.
+    ///
+    /// `PHONON2_TEST_PCM` is raw little-endian f32 mono at 16 kHz, e.g.
+    /// `ffmpeg -i clip.wav -f f32le -ac 1 -ar 16000 clip.pcm`. Use a clip
+    /// longer than 35 s to exercise the chunked path as well.
+    #[test]
+    #[ignore]
+    fn test_phonon2_download_and_transcribe() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(download_model(PHONON2_SIZE, "")).expect("download phonon-2");
+        assert!(is_model_downloaded(PHONON2_SIZE, ""));
+        let mut cfg = ParakeetConfig::default();
+        cfg.model_size = PHONON2_SIZE.into();
+        let mut backend = ParakeetBackend::new(cfg);
+        backend.load().expect("load phonon-2");
+        let path = std::env::var("PHONON2_TEST_PCM").expect("PHONON2_TEST_PCM");
+        let bytes = std::fs::read(path).unwrap();
+        let audio: Vec<f32> = bytes
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+        let req = TranscribeRequest {
+            audio,
+            language: None,
+            word_timestamps: false,
+            initial_prompt: None,
+        };
+        let res = backend.transcribe(&req).expect("transcribe");
+        println!("PHONON-2 RESULT: {:?}", res.text);
+        assert_eq!(res.language, "en");
+        assert!(!res.text.is_empty());
     }
 }

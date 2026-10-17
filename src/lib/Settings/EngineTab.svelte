@@ -61,8 +61,12 @@
 
   const parakeetModelSizeOptions = [
     { value: "tdt-0.6b-v3", label: "TDT 0.6B v3 (INT8, ~665 MB)" },
-    { value: "tdt-0.6b-v3-redux", label: "TDT 0.6B v3 Redux (1.58-bit, ~420 MB)" }
+    { value: "tdt-0.6b-v3-redux", label: "TDT 0.6B v3 Redux (1.58-bit, ~420 MB)" },
+    { value: "phonon-2", label: "Phonon-2 (English only, ~735 MB)" }
   ];
+
+  /** Parakeet sizes that only transcribe English; the language field does not apply. */
+  const PARAKEET_ENGLISH_ONLY = new Set(["phonon-2"]);
 
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
@@ -614,18 +618,26 @@
         hint="Off by default: the INT8 models run mostly on the CPU even with the GPU provider, so it is measurably slower on the standard model and only marginally faster on Redux. Takes effect the next time the model loads."
       />
 
-      <label class="field">
-        <span>Language</span>
-        <input
-          type="text"
-          bind:value={cfg.engine.parakeet.language}
-          placeholder="auto"
-          onchange={markDirty}
-        />
-      </label>
-      <p class="hint">
-        NVIDIA FastConformer TDT 0.6B with 128-mel ONNX preprocessor and INT8 quantization (~665 MB total).
-      </p>
+      {#if PARAKEET_ENGLISH_ONLY.has(cfg.engine.parakeet.model_size)}
+        <p class="hint">
+          Phonon-2 transcribes English only, so the language setting does not apply to it.
+          Fermion Research's retrain of Parakeet TDT 0.6B v3 with ~2-bit encoder weights:
+          the most accurate English option here (5.2% average WER on the Open ASR Leaderboard).
+        </p>
+      {:else}
+        <label class="field">
+          <span>Language</span>
+          <input
+            type="text"
+            bind:value={cfg.engine.parakeet.language}
+            placeholder="auto"
+            onchange={markDirty}
+          />
+        </label>
+        <p class="hint">
+          NVIDIA FastConformer TDT 0.6B with 128-mel ONNX preprocessor and INT8 quantization (~665 MB total).
+        </p>
+      {/if}
     </div>
   {:else if cfg.engine.backend === "remote-openai"}
     {@const _ = ensureRemoteConfig()}
