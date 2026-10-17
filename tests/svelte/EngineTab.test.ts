@@ -255,3 +255,28 @@ describe("EngineTab.svelte GPU support", () => {
     );
   });
 });
+
+describe("EngineTab.svelte Parakeet language field", () => {
+  function parakeetWith(model_size: string) {
+    return {
+      ...mockConfig,
+      engine: {
+        ...mockConfig.engine,
+        backend: "parakeet",
+        parakeet: { ...mockConfig.engine.parakeet, model_size },
+      },
+    };
+  }
+
+  test("shows the language field for multilingual Parakeet models", async () => {
+    render(EngineTab, { cfg: parakeetWith("tdt-0.6b-v3") });
+    expect(await screen.findByPlaceholderText("auto")).not.toBeNull();
+    expect(screen.queryByText(/transcribes English only/)).toBeNull();
+  });
+
+  test("hides the language field for Phonon-2 and says it is English only", async () => {
+    render(EngineTab, { cfg: parakeetWith("phonon-2") });
+    expect(await screen.findByText(/transcribes English only/)).not.toBeNull();
+    expect(screen.queryByPlaceholderText("auto")).toBeNull();
+  });
+});
