@@ -514,7 +514,6 @@ gone out.
 interface BugReportContext {
   relay_configured: boolean;   // false → the page hides Send and offers the rest
   issues_new_url: string;
-  support_email: string;
   log_path: string;
   install_id: string;
   limits: {
@@ -542,7 +541,6 @@ interface BugReportPreview {
   blocked_reason: string | null;  // why the limits will not allow a send
   can_submit: boolean;
   github_url: string;             // GitHub's new-issue form, prefilled
-  mailto_url: string;
 }
 ```
 

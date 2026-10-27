@@ -1367,6 +1367,33 @@ describe("DoneStep", () => {
     expect(screen.getByText("Copy diagnostics")).toBeTruthy();
   });
 
+  test("the failure screen sends people to GitHub with the log, not to email", async () => {
+    wizard.recordIssue({
+      id: "model-download",
+      step: 1,
+      title: "Speech model could not be downloaded.",
+      detail: "Error: connection reset",
+    });
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_setup_status") return setupStatus();
+      if (cmd === "wizard_failure_log") return "the log";
+      return undefined;
+    });
+    Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => {}) } });
+    render(DoneStep);
+
+    const btn = await screen.findByRole("button", { name: /Report it on GitHub/ });
+    expect(screen.queryByText(/Email us/)).toBeNull();
+    await fireEvent.click(btn);
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("open_external_url", {
+        url: expect.stringMatching(/^https:\/\/github\.com\/JRufer\/VoxCtrl\/issues\/new\?/),
+      }),
+    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("the log");
+    expect(invoke).not.toHaveBeenCalledWith("send_bug_report_email", expect.anything());
+  });
+
   test("problems the wizard never saw are found by re-checking the install", async () => {
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_setup_status") {

@@ -140,7 +140,7 @@
 
     // `--simulate-wizard-error` / `--test-wizard-error`: skip straight to the
     // last screen with a fake failure recorded, so the apology / log-capture /
-    // email-us flow can be exercised without actually breaking a hotkey or a
+    // report-on-GitHub flow can be exercised without actually breaking a hotkey or a
     // microphone to trigger it for real.
     invoke<boolean>("wizard_error_test_active")
       .then((active) => {
@@ -151,7 +151,7 @@
           title: "Simulated failure (--simulate-wizard-error) — the live test did not detect any transcribed audio.",
           detail:
             "This is a test fixture, not a real failure: it exists so the wizard's error screen " +
-            "(apology, log capture, copy-to-clipboard, email-us) can be verified without needing " +
+            "(apology, log capture, copy-to-clipboard, report-on-GitHub) can be verified without needing " +
             "a genuinely broken hotkey or microphone.",
         });
         wizard.visited = STEP_LABELS.length - 1;

@@ -168,7 +168,7 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
 /// setup/test step.
 ///
 /// Exists so the "something went wrong" screen on the wizard's last page — the
-/// apology, the log capture, the email-us button — can be exercised without
+/// apology, the log capture, the report-on-GitHub button — can be exercised without
 /// actually breaking hotkeys or a microphone, which matters most on Windows,
 /// where those are the two things most often reported broken and neither is
 /// easy to fake by hand.
@@ -776,7 +776,6 @@ pub fn run() {
             bug_report::wizard_failure_log,
             bug_report::open_external_url,
             bug_report::open_report_folder,
-            bug_report::send_bug_report_email,
             bug_report::suggested_bug_report_filename,
             bug_report::reset_bug_report_identity,
         ])

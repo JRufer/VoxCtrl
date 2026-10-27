@@ -42,7 +42,7 @@ env:
   # Baked in at build time rather than read from config, so nothing on a user's
   # machine can redirect their reports somewhere else. Unset — which it is until
   # the relay is deployed — the Send button does not appear and the page offers
-  # the routes that need no server (save, copy, GitHub, email).
+  # the routes that need no server (save, copy, GitHub).
   #
   # Set the VOXCTRL_BUGREPORT_ENDPOINT repository secret to switch it on; see
   # scripts/bug-report-relay/README.md.

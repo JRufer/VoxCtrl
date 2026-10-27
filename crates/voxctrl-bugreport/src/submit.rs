@@ -1,7 +1,8 @@
 //! Getting a finished report to the maintainer.
 //!
-//! There are three routes, and the reason there are three is worth stating
-//! plainly, because it is the constraint that shaped this whole feature:
+//! Every route ends at a GitHub issue. There are two, and the reason there are
+//! two is worth stating plainly, because it is the constraint that shaped this
+//! whole feature:
 //!
 //! **GitHub has no anonymous issue creation.** `POST /repos/{owner}/{repo}/issues`
 //! requires a credential, and there is no unauthenticated equivalent. Shipping a
@@ -18,10 +19,9 @@
 //! 2. [`github_issue_url`] opens GitHub's new-issue form with everything
 //!    filled in, for a reporter who does have an account. Nothing is sent
 //!    anywhere until they press Submit on GitHub's own page.
-//! 3. [`mailto_url`], plus saving the report to a file, for when there is no
-//!    relay deployed, no account, or no wish to use either.
 //!
-//! Routes 2 and 3 need no infrastructure at all and work the day this ships.
+//! Route 2 needs no infrastructure at all. The report can also be saved or
+//! copied, to paste into an issue by hand.
 
 use std::time::Duration;
 
@@ -49,17 +49,10 @@ pub fn relay_endpoint() -> Option<&'static str> {
 /// The repository issues are filed against.
 pub const ISSUES_NEW_URL: &str = "https://github.com/JRufer/VoxCtrl/issues/new";
 
-/// Where a report can be emailed when there is no relay and no GitHub account.
-pub const SUPPORT_EMAIL: &str = "jrufer@jrufer.com";
-
 /// GitHub answers a `GET` longer than about 4-8 KB with an error page (414 URI Too Long)
 /// rather than the form, so the prefilled body is kept compact and safe.
 const MAX_URL_BODY_CHARS: usize = 1200;
 
-/// A mail client's command line is shorter still, and a body that overflows it
-/// is silently cut — so the email route carries a pointer to the saved file
-/// along with key system specs rather than the entire raw log.
-const MAX_MAILTO_BODY_CHARS: usize = 1000;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -226,50 +219,11 @@ pub fn github_issue_url(report: &BugReport) -> String {
     )
 }
 
-/// A prefilled email, for reporters with neither a relay nor an account.
-///
-/// The body includes a structured summary and system hardware details,
-/// and points to the saved report file so long logs can be attached.
-pub fn mailto_url(report: &BugReport, saved_file: Option<&str>) -> String {
-    let s = &report.system;
-    let attachment_line = match saved_file {
-        Some(path) => format!("The full report is saved at:\n{path}\nPlease attach that file (or press Ctrl+V to paste the report)."),
-        None => "Use \"Save report to a file\" on VoxCtrl's Bug Report page and attach the file \
-                 it writes."
-            .to_string(),
-    };
-    let body = format!(
-        "{}\n\n---\n{attachment_line}\n\n### System\n- VoxCtrl: {} ({})\n- OS: {} — {} {}\n- Desktop / Session: {} ({})\n- CPU: {} ({} cores)\n- Memory: {}\n- Display / GPU: {}\n- Report ID: {}\n",
-        truncate_chars(report.statement.description.trim(), MAX_MAILTO_BODY_CHARS),
-        s.app_version,
-        s.install_kind,
-        s.os,
-        s.os_name.as_deref().unwrap_or("unknown"),
-        s.os_version.as_deref().unwrap_or(""),
-        s.desktop.as_deref().unwrap_or("unknown"),
-        s.session_type.as_deref().unwrap_or("unknown"),
-        s.cpu_model.as_deref().unwrap_or("unknown"),
-        s.cpu_logical_cores
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "?".into()),
-        s.memory_total_mb
-            .map(|mb| format!("{} MB", mb))
-            .unwrap_or_else(|| "unknown".into()),
-        crate::report::or_none(&s.gpus.join(" · ")),
-        &report.fingerprint[..12.min(report.fingerprint.len())],
-    );
-    format!(
-        "mailto:{SUPPORT_EMAIL}?subject={}&body={}",
-        percent_encode(&report.issue_title()),
-        percent_encode(&body)
-    )
-}
-
 /// Percent-encode for a query string.
 ///
 /// Only the RFC 3986 unreserved set survives; everything else, space included,
-/// is escaped. Space becomes `%20` rather than `+`, because `mailto:` bodies
-/// are not form-encoded and a `+` there arrives as a literal plus sign.
+/// is escaped. Space becomes `%20` rather than `+`, which every consumer of a
+/// URL reads as a space.
 fn percent_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 3);
     for byte in text.as_bytes() {
@@ -385,19 +339,8 @@ mod tests {
     }
 
     #[test]
-    fn the_email_route_points_at_the_file_rather_than_inlining_it() {
-        let url = mailto_url(&report(), Some("/tmp/voxctrl-report.md"));
-        let decoded = percent_decode(&url);
-        assert!(decoded.starts_with("mailto:"));
-        assert!(decoded.contains("/tmp/voxctrl-report.md"));
-        assert!(decoded.contains("Please attach that file"));
-    }
-
-    #[test]
-    fn spaces_in_a_mailto_body_are_percent_escaped_not_turned_into_plus_signs() {
-        // A `+` in a mailto body arrives as a literal plus, which turns the
-        // covering note into gibberish.
-        let url = mailto_url(&report(), None);
+    fn spaces_in_an_issue_link_are_percent_escaped_not_turned_into_plus_signs() {
+        let url = github_issue_url(&report());
         assert!(!url.contains('+'));
         assert!(url.contains("%20"));
     }

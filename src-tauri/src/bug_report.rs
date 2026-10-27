@@ -1,7 +1,7 @@
 //! The Tauri commands behind Settings → Bug Report.
 //!
 //! Everything the user sees on that page comes from here, and every route out
-//! of it — send, save, GitHub, email — is built from the same single report
+//! of it — send, save, copy, GitHub — is built from the same single report
 //! object, so the preview they read is the report that goes.
 //!
 //! See `crates/voxctrl-bugreport` for what a report may contain and why, and
@@ -181,7 +181,6 @@ pub struct BugReportContext {
     /// only the routes that need no server, and says so.
     pub relay_configured: bool,
     pub issues_new_url: String,
-    pub support_email: String,
     /// The log file a report quotes, so the user can go and read it first.
     pub log_path: String,
     pub install_id: String,
@@ -206,7 +205,6 @@ pub async fn bug_report_context() -> Result<BugReportContext, String> {
     Ok(BugReportContext {
         relay_configured: submit::relay_endpoint().is_some(),
         issues_new_url: submit::ISSUES_NEW_URL.to_string(),
-        support_email: submit::SUPPORT_EMAIL.to_string(),
         log_path: voxctrl_bugreport::logs::log_path()
             .to_string_lossy()
             .into_owned(),
@@ -236,7 +234,6 @@ pub struct BugReportPreview {
     pub blocked_reason: Option<String>,
     pub can_submit: bool,
     pub github_url: String,
-    pub mailto_url: String,
 }
 
 #[tauri::command]
@@ -261,7 +258,6 @@ pub async fn preview_bug_report(
         can_submit: blocked.is_none() && submit::relay_endpoint().is_some(),
         blocked_reason: blocked.map(|refusal| refusal.message()),
         github_url: submit::github_issue_url(&report),
-        mailto_url: submit::mailto_url(&report, None),
     })
 }
 
@@ -423,78 +419,6 @@ pub async fn open_report_folder(app: tauri::AppHandle, path: Option<String>) -> 
     }
 }
 
-/// Open an email composer, passing the attachment to xdg-email if possible.
-#[tauri::command]
-pub async fn send_bug_report_email(
-    app: tauri::AppHandle,
-    mailto_url: String,
-    attachment_path: Option<String>,
-) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(ref path) = attachment_path {
-            if std::path::Path::new(path).exists() {
-                let mut cmd = crate::host_env::host_command("xdg-email");
-                cmd.arg("--utf8");
-                cmd.arg("--attach").arg(path);
-
-                if let Some(rest) = mailto_url.strip_prefix("mailto:") {
-                    let mut parts = rest.splitn(2, '?');
-                    let to = parts.next().unwrap_or("");
-                    let query = parts.next().unwrap_or("");
-                    let mut subject = None;
-                    let mut body = None;
-                    for param in query.split('&') {
-                        if let Some(val) = param.strip_prefix("subject=") {
-                            subject = Some(percent_decode_simple(val));
-                        } else if let Some(val) = param.strip_prefix("body=") {
-                            body = Some(percent_decode_simple(val));
-                        }
-                    }
-                    if let Some(s) = subject {
-                        cmd.arg("--subject").arg(s);
-                    }
-                    if let Some(b) = body {
-                        cmd.arg("--body").arg(b);
-                    }
-                    cmd.arg(to);
-                } else {
-                    cmd.arg(&mailto_url);
-                }
-
-                if let Ok(mut child) = cmd.spawn() {
-                    let _ = child.wait();
-                    return Ok(());
-                }
-            }
-        }
-        open_external_url(app, mailto_url).await
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = attachment_path;
-        open_external_url(app, mailto_url).await
-    }
-}
-
-fn percent_decode_simple(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(b) = u8::from_str_radix(&input[i + 1..i + 3], 16) {
-                out.push(b);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 /// A suggested filename for the save dialog.
 #[tauri::command]
 pub fn suggested_bug_report_filename() -> String {
@@ -537,7 +461,7 @@ pub fn wizard_error_test_active() -> bool {
 
 /// The same log excerpt a real bug report would carry — scrubbed of paths and
 /// account names, capped to the same size — for the wizard's "something went
-/// wrong" screen to offer the user for pasting into an email.
+/// wrong" screen to offer the user for pasting into a GitHub issue.
 ///
 /// A plain string rather than the full [`voxctrl_bugreport::BugReport`]: that
 /// struct also carries the redacted config, targets and bindings, which this

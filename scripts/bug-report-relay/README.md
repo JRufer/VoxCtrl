@@ -19,7 +19,7 @@ The reporter needs no account and never sees the credential.
 **VoxCtrl works without this.** With no relay deployed, the Bug Report page
 hides the Send button and offers **Save to a file**, **Copy**, **Open on
 GitHub** (which prefills GitHub's own new-issue form, for reporters who do have
-an account) and **Email it**. Those need no infrastructure at all. The relay
+an account). Those need no infrastructure at all. The relay
 only adds the account-free one-click route.
 
 ---
