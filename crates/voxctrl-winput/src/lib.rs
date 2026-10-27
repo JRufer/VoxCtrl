@@ -198,6 +198,44 @@ mod imp {
         Ok(())
     }
 
+    /// The program behind the window that has keyboard focus, as its file
+    /// name without the extension (`slack`, `thunderbird`, `code`), if any.
+    ///
+    /// Window classes are often shared (every Chromium/Electron app reports
+    /// `Chrome_WidgetWin_1`), so this is what per-app settings match against.
+    pub fn foreground_app() -> Option<String> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return None;
+            }
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == 0 {
+                return None;
+            }
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return None;
+            }
+            let mut buf = [0u16; 1024];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+            CloseHandle(process);
+            if ok == 0 || len == 0 {
+                return None;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            super::program_stem(&path)
+        }
+    }
+
     /// The class name of the window that has keyboard focus, if any.
     pub fn foreground_class() -> Option<String> {
         unsafe {
@@ -269,7 +307,29 @@ mod imp {
 }
 
 #[cfg(target_os = "windows")]
-pub use imp::{auto_shortcut, foreground_class, press_paste, type_text};
+pub use imp::{auto_shortcut, foreground_app, foreground_class, press_paste, type_text};
+
+/// A program's name from its full path: the file name without its extension,
+/// lowercased (`C:\\...\\Slack.exe` → `slack`).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn program_stem(path: &str) -> Option<String> {
+    let file = path.rsplit(['\\', '/']).next()?;
+    let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+    (!stem.is_empty()).then(|| stem.to_lowercase())
+}
+
+#[cfg(test)]
+mod program_stem_tests {
+    use super::program_stem;
+
+    #[test]
+    fn takes_the_lowercased_file_stem() {
+        assert_eq!(program_stem(r"C:\Users\me\AppData\Local\slack\app-4.41\Slack.exe").as_deref(), Some("slack"));
+        assert_eq!(program_stem(r"C:\Program Files\Mozilla Thunderbird\thunderbird.exe").as_deref(), Some("thunderbird"));
+        assert_eq!(program_stem("Code").as_deref(), Some("code"));
+        assert_eq!(program_stem(r"C:\dir\").as_deref(), None);
+    }
+}
 
 #[cfg(test)]
 mod tests {

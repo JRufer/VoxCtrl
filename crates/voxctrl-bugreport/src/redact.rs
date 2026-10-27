@@ -61,6 +61,8 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.remote_openai.language", Safe),
     ("engine.s1_mini.styling", Safe),
     ("engine.s1_mini.gpu", Safe),
+    // App names say which apps someone uses: counted, never quoted.
+    ("engine.s1_mini.app_styles", FreeText),
     // A device node such as /dev/input/event4. No account name, no home
     // directory, and which node was picked is the whole question when a
     // hotkey does not fire.

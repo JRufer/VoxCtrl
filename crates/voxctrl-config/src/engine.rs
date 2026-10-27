@@ -141,6 +141,39 @@ pub struct S1MiniConfig {
     /// `false` forces the CPU.
     #[serde(default = "default_true")]
     pub gpu: bool,
+    /// A different styling per app: the first rule whose `app` matches the
+    /// app focused when dictation started wins, otherwise `styling` applies.
+    #[serde(default)]
+    pub app_styles: Vec<AppStyleRule>,
+}
+
+/// "Use this cleanup styling when dictating into this app."
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppStyleRule {
+    /// Matched case-insensitively against the focused app's name (its window
+    /// class on Linux, its program name on Windows); a rule matches when this
+    /// text appears anywhere in it, so `slack` matches `Slack` and
+    /// `com.slack.Slack`.
+    pub app: String,
+    pub styling: String,
+}
+
+impl S1MiniConfig {
+    /// The styling for a dictation into `app` (the focused app's name, if it
+    /// could be found): the first matching rule's, otherwise the default.
+    pub fn styling_for(&self, app: Option<&str>) -> &str {
+        let Some(app) = app.map(str::trim).filter(|a| !a.is_empty()) else {
+            return &self.styling;
+        };
+        let app = app.to_lowercase();
+        self.app_styles
+            .iter()
+            .find(|rule| {
+                let pattern = rule.app.trim().to_lowercase();
+                !pattern.is_empty() && !rule.styling.trim().is_empty() && app.contains(&pattern)
+            })
+            .map_or(&self.styling, |rule| &rule.styling)
+    }
 }
 
 fn default_true() -> bool {
@@ -153,6 +186,7 @@ impl Default for S1MiniConfig {
             enabled: false,
             styling: default_s1_mini_styling(),
             gpu: true,
+            app_styles: Vec::new(),
         }
     }
 }
@@ -171,4 +205,55 @@ pub struct EngineConfig {
     pub remote_openai: RemoteOpenAiConfig,
     #[serde(default)]
     pub s1_mini: S1MiniConfig,
+}
+
+#[cfg(test)]
+mod app_style_tests {
+    use super::*;
+
+    fn cfg(rules: &[(&str, &str)]) -> S1MiniConfig {
+        S1MiniConfig {
+            app_styles: rules
+                .iter()
+                .map(|(app, styling)| AppStyleRule { app: app.to_string(), styling: styling.to_string() })
+                .collect(),
+            ..S1MiniConfig::default()
+        }
+    }
+
+    #[test]
+    fn no_app_or_no_rule_uses_the_default() {
+        let c = cfg(&[("slack", "casual")]);
+        assert_eq!(c.styling_for(None), "semi-formal");
+        assert_eq!(c.styling_for(Some("")), "semi-formal");
+        assert_eq!(c.styling_for(Some("firefox")), "semi-formal");
+    }
+
+    #[test]
+    fn rules_match_case_insensitively_anywhere_in_the_name() {
+        let c = cfg(&[("slack", "casual"), ("Thunderbird", "formal")]);
+        assert_eq!(c.styling_for(Some("Slack")), "casual");
+        assert_eq!(c.styling_for(Some("com.slack.Slack")), "casual");
+        assert_eq!(c.styling_for(Some("thunderbird")), "formal");
+    }
+
+    #[test]
+    fn the_first_matching_rule_wins() {
+        let c = cfg(&[("code", "verbatim"), ("code-oss", "concise")]);
+        assert_eq!(c.styling_for(Some("code-oss")), "verbatim");
+    }
+
+    #[test]
+    fn blank_rules_are_ignored() {
+        let c = cfg(&[("", "casual"), ("slack", " "), ("slack", "casual")]);
+        assert_eq!(c.styling_for(Some("firefox")), "semi-formal");
+        assert_eq!(c.styling_for(Some("slack")), "casual");
+    }
+
+    #[test]
+    fn older_configs_without_rules_still_load() {
+        let c: S1MiniConfig = serde_json::from_str(r#"{"enabled": true, "styling": "formal"}"#).unwrap();
+        assert!(c.app_styles.is_empty());
+        assert_eq!(c.styling_for(Some("slack")), "formal");
+    }
 }

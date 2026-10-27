@@ -67,6 +67,7 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### Post-Processing Tab
 - **S1-mini dictation cleanup**: global toggle, styling selection (`semi-formal`, etc.), a **GPU acceleration** checkbox with the same device chip as the engines, and reactive download progress for Qwen3-0.6B model files (~480 MB)
+- **Styling per app** (under S1-mini): a list of *app → styling* rules, with **Detect app** (a three-second countdown, then adds the focused app) and **Add app**. The first rule matching the app focused when dictation starts wins (`engine.s1_mini.app_styles`)
 - **Basic Text Cleanup**: filler removal, spoken punctuation, and auto-format-lists toggles. Greyed out and disabled whenever S1-mini is enabled, with a note that S1-mini already covers the same normalization — the two are never applied together.
 - Custom vocabulary list editor
 - Snippet key-value editor
