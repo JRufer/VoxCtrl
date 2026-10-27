@@ -19,6 +19,7 @@ mod installer;
 mod live_text;
 mod host_env;
 mod mint_shortcuts;
+mod overlay_rendering;
 mod pipeline;
 pub mod render_env;
 mod services;
@@ -522,6 +523,7 @@ pub fn run() {
                 tracing::error!("Could not open Settings: {e}");
             }
         }))
+        .plugin(overlay_rendering::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
