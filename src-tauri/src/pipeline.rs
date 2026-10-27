@@ -207,6 +207,21 @@ pub fn spawn_audio_coordinator(
                         .store(live_text_enabled, std::sync::atomic::Ordering::SeqCst);
                     *state_for_audio.live_session.lock().unwrap_or_else(|e| e.into_inner()) =
                         crate::live_text::LiveSession::new(session_id);
+                    // Per-app cleanup styling: note which app this dictation is
+                    // going into, now, while it still has focus. Only when there
+                    // are rules to match, so nobody else pays for the lookup.
+                    *state_for_audio.focused_app.lock().unwrap_or_else(|e| e.into_inner()) = (session_id, None);
+                    if !cfg.engine.s1_mini.app_styles.is_empty() {
+                        let focused = state_for_audio.focused_app.clone();
+                        let sid = session_id;
+                        rt_handle.spawn(async move {
+                            let app = voxctrl_inject::focused_app().await;
+                            let mut slot = focused.lock().unwrap_or_else(|e| e.into_inner());
+                            if slot.0 == sid {
+                                slot.1 = app;
+                            }
+                        });
+                    }
                     interim_enabled = commands_enabled || live_text_enabled;
                     state_for_audio
                         .interim_for_commands
@@ -445,14 +460,22 @@ pub fn spawn_text_delivery_worker(
             // If dictation starts with the trigger word but does not match a command
             // (e.g. "VoxCtrl is a great app."), the full sentence including the
             // trigger word is retained as the result text and cleaned by S1-mini.
+            // The app this dictation went into, if it was looked up for it.
+            let focused_app = {
+                let slot = state.focused_app.lock().unwrap_or_else(|e| e.into_inner());
+                (slot.0 == output.session_id).then(|| slot.1.clone()).flatten()
+            };
             let (global_s1_mini_enabled, s1_mini_styling, s1_mini_gpu, show_notif) = {
                 let cfg_lock = state.config.blocking_lock();
-                (
-                    cfg_lock.data.engine.s1_mini.enabled,
-                    cfg_lock.data.engine.s1_mini.styling.clone(),
-                    cfg_lock.data.engine.s1_mini.gpu,
-                    cfg_lock.data.ui.show_notification,
-                )
+                let s1 = &cfg_lock.data.engine.s1_mini;
+                let styling = s1.styling_for(focused_app.as_deref()).to_string();
+                if styling != s1.styling {
+                    tracing::info!(
+                        "Cleanup styling '{styling}' for app '{}'",
+                        focused_app.as_deref().unwrap_or_default()
+                    );
+                }
+                (s1.enabled, styling, s1.gpu, cfg_lock.data.ui.show_notification)
             };
 
             let s1_mini_enabled = output

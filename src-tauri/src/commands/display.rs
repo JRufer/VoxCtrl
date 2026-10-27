@@ -55,3 +55,14 @@ pub async fn get_available_monitors(app: tauri::AppHandle) -> Result<Vec<Monitor
 pub fn overlay_content_ready(app: tauri::AppHandle) {
     crate::window::reveal_overlay(&app);
 }
+
+/// The app that has keyboard focus after waiting `delay_ms`, for setting up
+/// per-app cleanup styles: Settings starts a short countdown so the user can
+/// click into the app they want a rule for. `None` when the desktop can't say
+/// which app is focused (GNOME; KDE without `kdotool`).
+#[tauri::command]
+pub async fn detect_focused_app(delay_ms: Option<u64>) -> Result<Option<String>, String> {
+    let delay = delay_ms.unwrap_or(3000).min(10_000);
+    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    Ok(voxctrl_inject::focused_app().await)
+}

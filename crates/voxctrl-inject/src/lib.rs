@@ -121,6 +121,25 @@ fn configured_shortcut() -> Option<Shortcut> {
     }
 }
 
+/// The name of the app that has keyboard focus, for per-app settings: its
+/// window class on Linux (`Slack`, `org.kde.konsole`, `firefox`), its program
+/// name on Windows (`slack`, `thunderbird`). `None` when the desktop can't
+/// say: GNOME has no way to ask, and KDE needs `kdotool` installed.
+pub async fn focused_app() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        keys_linux::focused_window_class().await.filter(|c| !c.trim().is_empty())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tokio::task::spawn_blocking(voxctrl_winput::foreground_app).await.ok().flatten()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 /// Inject text into the currently focused window using the best available
 /// method for the current platform and display server, honouring
 /// [`paste_mode`].

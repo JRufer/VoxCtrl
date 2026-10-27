@@ -33,6 +33,10 @@ pub struct AppState {
     /// Spaces out the next pass so the passes can't monopolise the CPU
     /// (`live_text::pass_interval_ms`).
     pub last_interim_ms: Arc<std::sync::atomic::AtomicU32>,
+    /// The app focused when the recording with this session id started, for
+    /// per-app cleanup styling (`S1MiniConfig::styling_for`). Only looked up
+    /// when there are per-app rules; `None` when the desktop can't say.
+    pub focused_app: Arc<std::sync::Mutex<(u64, Option<String>)>>,
     /// True when the current recording's interim passes are also used for
     /// early voice-command detection (`features.early_command_detection`).
     pub interim_for_commands: Arc<AtomicBool>,

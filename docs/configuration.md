@@ -46,7 +46,11 @@ Full schema with defaults:
     "s1_mini": {
       "enabled": false,
       "styling": "semi-formal",
-      "gpu": true
+      "gpu": true,
+      "app_styles": [
+        { "app": "slack", "styling": "casual" },
+        { "app": "thunderbird", "styling": "formal" }
+      ]
     }
   },
   "audio": {
@@ -207,6 +211,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `enabled` | bool | `false` | Enable on-device text normalization using Superwhisper's fine-tuned S1-mini (Qwen3-0.6B) model. |
 | `styling` | string | `"semi-formal"` | Text styling passed to S1-mini (`"semi-formal"`, `"formal"`, `"casual"`, etc.). |
 | `gpu` | bool | `true` | Run cleanup on the GPU via the Vulkan sidecar. `false` forces the CPU. Takes effect on the next cleanup. Ignored when the bundled sidecar is a CPU build. |
+| `app_styles` | array | `[]` | Styling per app: `{ "app": "...", "styling": "..." }` rules. When dictation starts, VoxCtrl notes the focused app (its window class on Linux, its program name on Windows); the first rule whose `app` text appears in that name, ignoring case, picks the styling, and any other app uses `styling`. The focused app is only looked up when there is at least one rule. Detection works on X11, Hyprland, Sway and Windows, and on KDE with `kdotool` installed; GNOME can't report it, so `styling` always applies there. |
 
 > **Model files:** Enabling S1-mini requires downloading `s1-mini-q4_k_m.gguf` (~462 MB) and `tokenizer.json` (~11.4 MB) from Hugging Face (~480 MB download total). When toggled on in Settings → Post-Processing, VoxCtrl automatically checks for these files in `~/.local/share/voxctrl/models/s1-mini/` and downloads them if missing.
 

@@ -17,6 +17,15 @@ export interface S1MiniConfig {
   styling: string;
   /** Offload cleanup to the GPU when this build can; false forces the CPU. */
   gpu: boolean;
+  /** Styling per app; the first rule matching the focused app wins. */
+  app_styles: AppStyleRule[];
+}
+
+/** "Use this cleanup styling when dictating into this app." */
+export interface AppStyleRule {
+  /** Matched case-insensitively anywhere in the focused app's name. */
+  app: string;
+  styling: string;
 }
 
 export interface EngineConfig {
@@ -189,6 +198,7 @@ const defaultConfig: AppConfig = {
       enabled: false,
       styling: "semi-formal",
       gpu: true,
+      app_styles: [],
     },
   },
   audio: {

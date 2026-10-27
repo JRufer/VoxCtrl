@@ -9,12 +9,24 @@
   import DeviceChip from "./DeviceChip.svelte";
   import { gpuLabel } from "./gpu";
   import KeyValueListEditor from "./KeyValueListEditor.svelte";
+  import AppStylesEditor from "./AppStylesEditor.svelte";
   import { autoResize } from "../actions";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
   if (cfg.engine && !cfg.engine.s1_mini) {
-    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal", gpu: true };
+    cfg.engine.s1_mini = { enabled: false, styling: "semi-formal", gpu: true, app_styles: [] };
   }
+  if (cfg.engine?.s1_mini && !cfg.engine.s1_mini.app_styles) {
+    cfg.engine.s1_mini.app_styles = [];
+  }
+
+  const STYLE_OPTIONS = [
+    { value: "semi-formal", label: "Semi-formal (Default)" },
+    { value: "casual", label: "Casual" },
+    { value: "formal", label: "Formal" },
+    { value: "verbatim", label: "Verbatim" },
+    { value: "concise", label: "Concise" },
+  ];
   function markDirty() {
     config.set(cfg);
     configDirty.set(true);
@@ -33,6 +45,7 @@
         enabled: false,
         styling: "semi-formal",
         gpu: true,
+        app_styles: [],
       };
     }
   }
@@ -174,16 +187,16 @@
         <span>Cleanup styling</span>
         <CustomSelect
           bind:value={cfg.engine.s1_mini.styling}
-          options={[
-            { value: "semi-formal", label: "Semi-formal (Default)" },
-            { value: "casual", label: "Casual" },
-            { value: "formal", label: "Formal" },
-            { value: "verbatim", label: "Verbatim" },
-            { value: "concise", label: "Concise" }
-          ]}
+          options={STYLE_OPTIONS}
           onchange={markDirty}
         />
       </label>
+
+      <AppStylesEditor
+        bind:rules={cfg.engine.s1_mini.app_styles}
+        styleOptions={STYLE_OPTIONS}
+        onchange={markDirty}
+      />
     {/if}
   </div>
 
