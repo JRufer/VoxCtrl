@@ -14,7 +14,7 @@ When the MCP server is enabled, VoxCtrl listens on a local transport and present
 | `speak_text` | Queues text for TTS playback through the current voice |
 | `get_status` | Returns whether the mic is open and TTS is playing |
 | `set_target` | Lists the output targets, or picks the one dictations go to |
-| `get_recent_transcripts` | Returns recent dictations from Settings → History. **Only listed when the user allows it** (off by default) |
+| `get_recent_transcripts` | Returns recent dictations from the History window (tray → History). **Only listed when the user allows it** (off by default) |
 
 This lets an AI agent have a full voice conversation:
 
@@ -310,7 +310,7 @@ Returns recent dictations, newest first, as a JSON list of
 
 **This tool is off by default.** What someone dictates can be private, and
 any program that can reach the socket could call it. It's listed in
-`tools/list` only after the user turns on Settings → History → *Let MCP
+`tools/list` only after the user turns on the History window's Privacy settings → *Let MCP
 clients read recent dictations* (`history.mcp_access`). While it's off,
 calling it anyway is error `-32603` ("Reading dictation history is turned
 off…"). Dictations to targets marked *Don't keep in history* are never in the

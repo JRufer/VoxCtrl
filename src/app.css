@@ -236,6 +236,7 @@ input[type="checkbox"]:hover {
 }
 
 /* Global Beautiful Obsidian inputs */
+input[type="search"],
 input[type="number"],
 input[type="text"],
 input[type="password"] {
@@ -251,6 +252,7 @@ input[type="password"] {
   transition: var(--transition-spring-fast);
 }
 
+input[type="search"]:hover,
 input[type="number"]:hover,
 input[type="text"]:hover,
 input[type="password"]:hover {
@@ -258,6 +260,7 @@ input[type="password"]:hover {
   background-color: var(--color-obsidian-900);
 }
 
+input[type="search"]:focus,
 input[type="number"]:focus,
 input[type="text"]:focus,
 input[type="password"]:focus {

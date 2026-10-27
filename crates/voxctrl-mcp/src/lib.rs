@@ -139,7 +139,7 @@ pub trait McpCallbacks: Send + Sync + 'static {
 
     /// The user's recent dictations, newest first, at most `limit`, those
     /// containing `query` when it isn't empty. `None` when the user hasn't
-    /// allowed MCP clients to read history (Settings → History), which is
+    /// allowed MCP clients to read history (History window → Privacy settings), which is
     /// the default; the tool is then not even listed.
     fn recent_transcripts(
         &self,
@@ -402,7 +402,7 @@ fn get_tool_list(default_record_timeout: f64, history_access: bool) -> Value {
     if history_access {
         list["tools"].as_array_mut().expect("tools is an array").push(json!({
             "name": "get_recent_transcripts",
-            "description": "Returns the user's recent dictations from VoxCtrl's history, newest first, as a JSON list of {at, target, text}. Only available because the user allowed it in Settings → History. Dictations can be private: use them only for what the user asked you to do.\n\nPARAMETERS:\n  limit (number, optional): How many to return, 1–50. Default 10.\n  query (string, optional): Only dictations containing this text (case-insensitive).",
+            "description": "Returns the user's recent dictations from VoxCtrl's history, newest first, as a JSON list of {at, target, text}. Only available because the user allowed it in VoxCtrl's History window. Dictations can be private: use them only for what the user asked you to do.\n\nPARAMETERS:\n  limit (number, optional): How many to return, 1–50. Default 10.\n  query (string, optional): Only dictations containing this text (case-insensitive).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -490,7 +490,7 @@ async fn call_tool<C: McpCallbacks>(name: &str, args: Option<&Value>, cb: &Arc<C
                 .to_string();
             let transcripts = cb.recent_transcripts(limit, query).await.ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Reading dictation history is turned off. The user can allow it in VoxCtrl Settings → History."
+                    "Reading dictation history is turned off. The user can allow it in VoxCtrl's History window (tray menu → History → Privacy settings)."
                 )
             })?;
             Ok(

@@ -12,9 +12,10 @@ VoxCtrl opens several `WebviewWindow`s managed by Tauri:
 | Setup Wizard | `/wizard` | Fitted to the display, 16:9 (min 1280 × 720) | Resizable, first run only |
 | Setup / Diagnostics | `/udev-warning` | 580 × 600 (min 480 × 420) | Always-on-top |
 | Update | `/update` | 560 × 620 (min 460 × 420) | Resizable, built on demand |
+| History | `/history` | 720 × 780 (min 480 × 420) | Resizable, built on demand from the tray menu |
 | Overlay | `/overlay` | 592 × 222 | Transparent, always-on-top, no decorations, click-through |
 
-Settings, the Wizard, and Setup/Diagnostics are declared in `src-tauri/tauri.conf.json`, start hidden (`visible: false`), and are shown programmatically. The Overlay and Update windows are built entirely in code (`window::open_overlay_window` / `window::open_update_window` in `src-tauri/src/window.rs`) rather than declared statically.
+Settings, the Wizard, and Setup/Diagnostics are declared in `src-tauri/tauri.conf.json`, start hidden (`visible: false`), and are shown programmatically. The Overlay, Update and History windows are built entirely in code (`window::open_overlay_window` / `window::open_update_window` / `window::open_history_window` in `src-tauri/src/window.rs`) rather than declared statically.
 
 ### Window Lifecycle
 
@@ -35,7 +36,7 @@ the focused window — and does not move it.
 
 ## Settings Window
 
-The main configuration interface. Organized into a sidebar with twelve tabs:
+The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### General Tab
 - "Open setup wizard" button — re-runs the first-run wizard
@@ -121,18 +122,6 @@ Ollama or LM Studio instance, or a hosted provider).
 - Custom prompt text area
 - "Test Connection" button → shows available models
 
-### History Tab
-Recent dictations, newest first, with the time and the target each went to.
-- Search box, and **Clear all** (asks once before clearing)
-- Per entry: **Copy**, **Type again** (hides Settings so focus returns to the
-  window you were in, then types the text there), **Read aloud** (when TTS is
-  on), **Send to…** (any output target) and **Delete**
-- Privacy settings: **Keep a history of dictations**, **Keep history between
-  restarts** (encrypted, key in the system keyring; shows why if the keyring
-  refused), **Most dictations to keep**, **Forget dictations after**, and **Let
-  MCP clients read recent dictations** (off by default). See
-  [Privacy → Dictation history](privacy.md#dictation-history).
-
 ### Bug Report Tab
 Gathers a diagnostic report and offers four ways to send it. Full detail in
 [Bug Reports](./bug_reports.md).
@@ -154,6 +143,28 @@ Backed by `src-tauri/src/bug_report.rs` and the `voxctrl-bugreport` crate.
 - Links to documentation and source
 
 ---
+
+## History Window
+
+Opened from the tray menu (**🕘 History**), in its own window rather than in
+Settings. Recent dictations, newest first, with the time and the target each
+went to (`src/lib/History/HistoryWindow.svelte`).
+- Search box, and **Clear all** (asks once before clearing)
+- Per entry: **Copy**, **Type again** (hides the window so focus returns to
+  the one you were in, then types the text there), **Read aloud** (when TTS is
+  on), **Send to…** (any output target) and **Delete**
+- **Read aloud** shows its progress: a spinner and *Preparing voice…* while the
+  engine loads (the first read can take several seconds), then *Speaking ·
+  Stop* while it plays, then the button again. Other entries' Read aloud
+  buttons are disabled meanwhile, so presses can't pile up. It fails straight
+  away, with a message, when TTS isn't running, and gives up after 90 seconds
+  if playback never starts.
+- **Privacy settings** (folded away behind a button): **Keep a history of
+  dictations**, **Keep history between restarts** (encrypted, key in the
+  system keyring; shows why if the keyring refused), **Most dictations to
+  keep**, **Forget dictations after**, and **Let MCP clients read recent
+  dictations** (off by default). See
+  [Privacy → Dictation history](privacy.md#dictation-history).
 
 ## Overlay Window
 

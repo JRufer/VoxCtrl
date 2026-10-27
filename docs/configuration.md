@@ -390,7 +390,7 @@ The server listens on `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` on Linux (falling back
 
 ### `history` section
 
-Settings → History. Private by default: memory only, closed to MCP clients. See [Privacy → Dictation history](privacy.md#dictation-history).
+The History window (tray menu → History). Private by default: memory only, closed to MCP clients. See [Privacy → Dictation history](privacy.md#dictation-history).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -434,7 +434,7 @@ delivery = "inject"
 strip_newlines = false        # Default: false. Replaces newlines with spaces and strips \r (inject and command targets)
 
 # Privacy
-skip_history = false          # Default: false. true keeps this target's dictations out of Settings → History
+skip_history = false          # Default: false. true keeps this target's dictations out of the History window (tray → History)
 
 # Per-target post-processing overrides (all optional; null = inherit global)
 [my_target.processing]

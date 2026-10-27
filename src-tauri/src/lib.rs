@@ -703,6 +703,8 @@ pub fn run() {
             clear_history,
             paste_history_entry,
             send_history_entry,
+            speak_history_entry,
+            open_history,
             get_custom_overlays,
             get_custom_overlay,
             detect_focused_app,

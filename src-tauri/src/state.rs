@@ -166,7 +166,7 @@ pub struct AppState {
     /// against a second "Update and restart" — from an impatient click or a
     /// second window — starting a parallel download over the same file.
     pub updating: Arc<AtomicBool>,
-    /// Recent dictations (Settings → History). In memory unless the user
+    /// Recent dictations (the History window, tray → History). In memory unless the user
     /// opted in to an encrypted copy on disk; see `history.rs`.
     pub history: Arc<crate::history::HistoryService>,
 }
