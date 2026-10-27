@@ -40,17 +40,24 @@
   ({{trigger}} is also available and carries the same value, kept for
   symmetry with the placeholder VoxCtrl substitutes elsewhere.)
 
-  LIVE TRANSCRIPT TEXT (optional)
-  ────────────────────────────────
-  This template doesn't use it, but any overlay can show the words being
-  transcribed while you speak: put the attribute
-  `data-voxctrl-live-text` on an empty element, and VoxCtrl fills it with
-  the transcript so far. Its presence in the HTML (not in a comment, like
-  this one) is also what makes VoxCtrl run the extra transcription that
-  produces the text, so overlays without it pay nothing. The page root
-  gets --voxctrl-has-live-text (0 or 1), and the element a `data-empty`
-  attribute while it has no text, for styling a "Listening…" state. See
-  the overlays README for a two-line layout recipe.
+  LIVE TRANSCRIPT TEXT
+  ────────────────────
+  The TRANSCRIPT field at the bottom of the card shows the words being
+  transcribed while you speak. VoxCtrl fills three kinds of element:
+    data-voxctrl-live-text       the whole transcript so far
+    data-voxctrl-live-committed  words that have settled and won't change
+    data-voxctrl-live-tentative  the newest words, which may still be
+                                 corrected (this template draws them dimmer)
+  The page root gets --voxctrl-has-live-text (0 or 1) to swap the "Say
+  something…" line for the words, --voxctrl-live-final (1 once the
+  finished transcript replaces the live guess), --voxctrl-live-enabled
+  (0 when live text is switched off in Settings, which hides the field
+  and shrinks the card back) and --voxctrl-live-split (1 on VoxCtrl
+  versions that fill the committed/tentative elements, so an overlay can
+  fall back to the whole-text element on older ones). Having any of these
+  attributes in the HTML (not in a comment, like this one) is also what
+  makes VoxCtrl run the extra transcription that produces the text, so
+  overlays without them pay nothing.
 
   WHY THIS TEMPLATE HAS NO <script> TAG
   ───────────────────────────────────────
@@ -278,5 +285,14 @@
     <span class="vc-custom-field-value vc-custom-target">{{target}}</span>
     <span class="vc-custom-field-value vc-custom-reading">Reading the card&hellip;</span>
     <span class="vc-custom-card-number">&bull;&bull;&bull;&bull; VOX</span>
+
+    <!-- Live transcript: a third field, like the built-in Voice Card's. See
+         LIVE TRANSCRIPT TEXT at the top for how these elements are filled. -->
+    <span class="vc-custom-field-label vc-custom-transcript-label">TRANSCRIPT</span>
+    <div class="vc-custom-transcript">
+      <span class="vc-custom-transcript-wait">Say something&hellip;</span>
+      <div class="vc-custom-live vc-custom-live-whole" data-voxctrl-live-text></div>
+      <div class="vc-custom-live vc-custom-live-split"><div><span data-voxctrl-live-committed></span> <span class="vc-custom-tentative" data-voxctrl-live-tentative></span></div></div>
+    </div>
   </div>
 </div>

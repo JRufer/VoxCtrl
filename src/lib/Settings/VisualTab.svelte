@@ -102,6 +102,16 @@
       <input type="checkbox" bind:checked={cfg.ui.show_overlay} onchange={markDirty} />
     </label>
 
+    {#if cfg.ui.show_overlay}
+      <label class="field">
+        <span>
+          Show live transcript in overlay
+          <small class="hint">Words appear as you speak, then settle into the final text. Uses extra processing while recording, and shows in screen shares.</small>
+        </span>
+        <input type="checkbox" bind:checked={cfg.ui.show_live_text} onchange={markDirty} />
+      </label>
+    {/if}
+
     <label class="field">
       <span>Show overlay on voice command trigger</span>
       <input type="checkbox" bind:checked={cfg.ui.show_command_overlay} onchange={markDirty} />
@@ -172,4 +182,8 @@
 </section>
 
 <style>
+  /* A hint under a checkbox's label, on its own line. */
+  .field span .hint {
+    display: block;
+  }
 </style>

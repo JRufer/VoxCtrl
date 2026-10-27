@@ -11,6 +11,8 @@ export interface AppStatus {
   word_count: number;
   active_target_id?: string;
   active_target_label?: string;
+  /** Whether the current speech engine can produce live text mid-recording. */
+  live_text_capable?: boolean;
 }
 
 export const status = writable<AppStatus>({

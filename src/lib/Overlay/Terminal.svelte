@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -44,7 +46,7 @@
   });
 </script>
 
-<div class="terminal" class:on={active}>
+<div class="terminal" class:on={active} class:live={$liveTextShown}>
   <div class="titlebar">
     <span class="dot"></span>
     <span class="dot"></span>
@@ -70,8 +72,13 @@
         connecting input device
       {:else}
         streaming to output
-      {/if}{cursorOn ? "_" : " "}
+      {/if}{$liveTextShown ? "" : cursorOn ? "_" : " "}
     </div>
+    {#if $liveTextShown}
+      <LiveText class="stdout" lines={3} placeholder="">
+        {#snippet after()}<span class="cursor">{cursorOn ? "█" : " "}</span>{/snippet}
+      </LiveText>
+    {/if}
   </div>
 </div>
 
@@ -129,6 +136,33 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  /* Live transcript: stdout lines under the status, with the cursor */
+  .terminal.live {
+    height: 178px;
+  }
+
+  .body :global(.stdout) {
+    --lt-font: 'SF Mono', Menlo, Consolas, monospace;
+    --lt-size: 10px;
+    --lt-line-height: 13px;
+    --lt-weight: 600;
+    --lt-tracking: 0;
+    --lt-color: #e0f2fe;
+    --lt-tentative: rgba(186, 230, 253, 0.5);
+    --lt-placeholder: rgba(186, 230, 253, 0.45);
+    --lt-flash: #7dd3fc;
+    --lt-fade: 4px;
+  }
+
+  .body :global(.stdout .lt-flow)::before {
+    content: "> ";
+    color: #7dd3fc;
+  }
+
+  .cursor {
+    color: #ffffff;
   }
 
   .line1 {

@@ -230,6 +230,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `show_overlay` | bool | | `true` | Show visual HUD overlay during recording |
 | `show_command_overlay` | bool | | `true` | Show temporary UI overlay pill when a voice command trigger is activated |
 | `command_overlay_duration_secs` | integer | `1`–`10` | `3` | Duration in seconds to display the voice command overlay pill |
+| `show_live_text` | bool | | `true` | Show the words being transcribed, live, in the overlay, then the finished transcript. Runs extra transcription passes while recording; has no effect with the remote engine or a CPU-only medium/large Whisper model. See [Live transcript text](overlays.md#live-transcript-text) |
 | `overlay_style` | string | `"voice_card"`, `"waveform"`, `"pulse"`, `"blue_wave"`, `"mono_bars"`, `"spectrum"`, `"terminal"`, `"vinyl"`, `"none"` | `"blue_wave"` | HUD visualization style |
 | `overlay_position` | string | `"top"`, `"center"`, `"bottom"` | `"center"` | Screen positioning of the overlay window |
 | `overlay_monitor` | string | `"primary"` or monitor name | `"primary"` | Specific display screen for visual overlay |

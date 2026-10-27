@@ -78,25 +78,35 @@ needs to (a status label that changes text, not just color) the trick
 each other and toggle each one's `opacity` with the formula that should
 show it — see `.vc-custom-stamp-text` in `Custom/style.css`.
 
-**Live transcript text** (optional, opt-in): put the attribute
-`data-voxctrl-live-text` on any element and VoxCtrl fills it with the words
-being transcribed while the user is still speaking (it is a plain text
-node, updated a few times a second, newest words last):
+**Live transcript text**: VoxCtrl can fill elements with the words being
+transcribed while the user is still speaking (plain text, updated a few
+times a second, newest words last). `Custom/` shows it as a TRANSCRIPT
+field. Mark the elements with these attributes:
 
 ```html
-<div class="my-live-text" data-voxctrl-live-text></div>
+<!-- the whole transcript -->
+<div data-voxctrl-live-text></div>
+<!-- or settled words and still-changing words separately -->
+<div><span data-voxctrl-live-committed></span> <span class="dim" data-voxctrl-live-tentative></span></div>
 ```
 
-- The element has a `data-empty` attribute while there is no text yet, and
-  the page root carries `--voxctrl-has-live-text` (`0` or `1`), so CSS can
-  show a "Listening…" placeholder and hide it once words arrive.
-- Style it for one or two lines: fix its height, `overflow: hidden`, and
-  bottom-align the content (e.g. a flex column with `justify-content:
-  flex-end`) so the newest words stay visible as the text grows.
+- Tentative words are the engine's current guess at the newest speech and
+  can still be corrected; draw them dimmer or tinted. Committed words
+  won't change. When the recording ends, the finished transcript replaces
+  the live guess and `--voxctrl-live-final` turns `1`.
+- The page root carries `--voxctrl-has-live-text` (`0`/`1`) to swap a
+  "Listening…" placeholder for the words, `--voxctrl-live-enabled` (`0`
+  when live text is switched off in Settings, so the overlay can hide its
+  text area and shrink back), and `--voxctrl-live-split` (`1` on versions
+  that fill the committed/tentative elements; an overlay that has both can
+  show the split copy there and the whole-text copy on older versions).
+  Each element also has a `data-empty` attribute while it has no text.
+- Style the text area for one to three lines: fix its height,
+  `overflow: hidden`, and bottom-align the content (a flex column with
+  `justify-content: flex-end`) so the newest words stay visible.
 - **It costs transcription work.** VoxCtrl only runs the extra
-  mid-recording passes that feed this when the active overlay's HTML
-  contains the attribute (comments don't count), and only with a local
-  speech engine that isn't a heavy model without a GPU. Overlays without it
-  are unaffected. If no text arrives, the element simply stays empty.
-- The text is what is on screen in screen shares and recordings, so only
-  add it to overlays where that is wanted.
+  mid-recording passes that feed this when the active overlay's HTML has
+  one of these attributes (comments don't count), live text is switched on,
+  and the speech engine is local and not a heavy model without a GPU. If no
+  text arrives, the elements simply stay empty.
+- The text is on screen in screen shares and recordings.

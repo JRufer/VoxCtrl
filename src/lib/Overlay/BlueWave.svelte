@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, speaking = false, active = true } = $props();
 
@@ -15,6 +17,8 @@
 
 
   const isReady = $derived($status.audio_ready !== false);
+  // The water sits lower when the live transcript takes the sky above it.
+  const waterTop = $derived($liveTextShown ? 84 : 38);
   const targetLabel = $derived($status.active_target_label || "Focused Window");
 
   function wavePath(amp: number, freq: number, phase: number, yOff: number): string {
@@ -48,12 +52,12 @@
       path3 = wavePath(a3, 0.018, phase * 3.9, y3);
 
       // The buoy sits on the front wave's surface (panel coordinates)
-      buoyY = 38 + y3 - 21 + Math.sin(phase * 2.2) * 2.5;
+      buoyY = waterTop + y3 - 21 + Math.sin(phase * 2.2) * 2.5;
     });
   });
 </script>
 
-<div class="ocean" class:on={active} class:processing={$status.processing}>
+<div class="ocean" class:on={active} class:processing={$status.processing} class:live={$liveTextShown}>
   <div class="moon"></div>
 
   <span class="title">OCEAN WAVE</span>
@@ -66,6 +70,14 @@
       high tide — listening
     {/if}
   </span>
+
+  {#if $liveTextShown}
+    <LiveText
+      class="sky"
+      lines={3}
+      placeholder={$status.processing ? "the current is carrying your words…" : recording && !isReady ? "waiting for the tide…" : "speak, and the words drift in…"}
+    />
+  {/if}
 
   <!-- Water fills on load and drains away on unload -->
   <div class="water">
@@ -170,6 +182,31 @@
     height: 90px;
     transform: translateY(92px);
     transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Live transcript: a band of sky between the title and the water */
+  .ocean.live {
+    height: 174px;
+  }
+
+  .live .water {
+    top: 84px;
+  }
+
+  .ocean :global(.sky) {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: 41px;
+    --lt-size: 11px;
+    --lt-line-height: 13px;
+    --lt-weight: 600;
+    --lt-tracking: 0.02em;
+    --lt-color: #e0f2fe;
+    --lt-tentative: rgba(103, 232, 249, 0.6);
+    --lt-placeholder: rgba(125, 211, 252, 0.35);
+    --lt-flash: #22d3ee;
+    text-shadow: 0 0 10px rgba(8, 145, 178, 0.35);
   }
 
   .on .water {

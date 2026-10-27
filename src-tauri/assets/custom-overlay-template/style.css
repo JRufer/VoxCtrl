@@ -32,7 +32,8 @@
 
   position: relative;
   width: 340px;
-  height: 152px;
+  /* Taller by the TRANSCRIPT field while live text is switched on. */
+  height: calc(152px + 50px * var(--voxctrl-live-enabled, 1));
   border-radius: 16px;
   overflow: hidden;
   background: linear-gradient(135deg, #181b24 0%, #0b0d12 55%, #141925 100%);
@@ -265,4 +266,66 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.18em;
+}
+
+/* ---- Live transcript field ---------------------------------------------
+   A third field under TARGET in the same label/value style. Two lines,
+   bottom-aligned so the newest words stay in view; older lines fade out at
+   the top. Exactly one of the two text copies shows: the split one (settled
+   words bright, tentative ones dim) where VoxCtrl fills it, the whole-text
+   one on older versions. */
+.vc-custom-field-label.vc-custom-transcript-label {
+  top: 152px;
+  opacity: var(--voxctrl-live-enabled, 1);
+}
+
+.vc-custom-transcript {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 162px;
+  height: 26px;
+  opacity: var(--voxctrl-live-enabled, 1);
+}
+
+.vc-custom-live {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: #e5e7eb;
+  font-size: 10.5px;
+  line-height: 13px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 6px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 6px);
+  transition: opacity 0.2s ease;
+}
+.vc-custom-live-whole {
+  opacity: calc(var(--voxctrl-has-live-text, 0) * (1 - var(--voxctrl-live-split, 0)));
+}
+.vc-custom-live-split {
+  opacity: calc(var(--voxctrl-has-live-text, 0) * var(--voxctrl-live-split, 0));
+}
+
+.vc-custom-tentative {
+  color: rgba(229, 231, 235, 0.45);
+  transition: color 0.25s ease;
+}
+
+.vc-custom-transcript-wait {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  line-height: 13px;
+  font-size: 10.5px;
+  font-weight: 650;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.28);
+  opacity: calc(1 - var(--voxctrl-has-live-text, 0));
+  transition: opacity 0.2s ease;
 }

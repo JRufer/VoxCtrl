@@ -23,6 +23,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
         word_count: state.total_words(),
         active_target_id,
         active_target_label: target_label,
+        live_text_capable: state.is_live_text_capable(),
     })
 }
 
@@ -36,6 +37,9 @@ pub struct StatusPayload {
     pub word_count: u32,
     pub active_target_id: String,
     pub active_target_label: String,
+    /// Whether the current speech engine can produce live text, so built-in
+    /// overlays only make room for it when it can arrive.
+    pub live_text_capable: bool,
 }
 
 #[tauri::command]
@@ -85,6 +89,7 @@ pub async fn save_config(
     state.set_gain(new_config.audio.gain);
     state.set_noise_suppression(new_config.audio.noise_suppression);
     state.set_overlay_enabled(new_config.ui.show_overlay);
+    state.set_live_text_capable(crate::pipeline::live_text_capable(&new_config));
     voxctrl_inject::set_paste_mode(new_config.features.paste_instead_of_typing);
     voxctrl_inject::set_paste_shortcut(&new_config.features.paste_shortcut);
 

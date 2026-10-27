@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -57,7 +59,7 @@
   });
 </script>
 
-<div class="mono" class:on={active}>
+<div class="mono" class:on={active} class:live={$liveTextShown}>
   <div class="status">
     <span
       class="dot"
@@ -89,6 +91,15 @@
 
   <div class="baseline"></div>
   <div class="target">{targetLabel}</div>
+
+  {#if $liveTextShown}
+    <div class="caption-rule"></div>
+    <LiveText
+      class="caption"
+      lines={3}
+      placeholder="…"
+    />
+  {/if}
 </div>
 
 <style>
@@ -109,6 +120,55 @@
 
   .mono.on {
     opacity: 1;
+  }
+
+  /* Live transcript: bars and target lift; a caption sits below a hairline */
+  .mono {
+    --lift: 0px;
+  }
+
+  .mono.live {
+    --lift: 52px;
+    height: 164px;
+  }
+
+  .mono .bars,
+  .mono .baseline {
+    bottom: calc(28px + var(--lift));
+  }
+
+  .mono .target {
+    bottom: calc(6px + var(--lift));
+  }
+
+  .caption-rule {
+    position: absolute;
+    left: 18px;
+    width: 154px;
+    bottom: 50px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .mono :global(.caption) {
+    position: absolute;
+    left: 18px;
+    width: 154px;
+    bottom: 10px;
+    text-align: center;
+    --lt-size: 9px;
+    --lt-line-height: 12px;
+    --lt-weight: 500;
+    --lt-tracking: 0.03em;
+    --lt-color: #f5f5f5;
+    --lt-tentative: rgba(255, 255, 255, 0.4);
+    --lt-placeholder: rgba(255, 255, 255, 0.3);
+    --lt-flash: #ffffff;
+  }
+
+  .mono :global(.caption .lt-placeholder) {
+    font-style: normal;
+    letter-spacing: 0.3em;
   }
 
   .status {

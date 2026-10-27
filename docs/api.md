@@ -702,22 +702,29 @@ await listen<number>('audio-level', (event) => {
 ```
 
 ### `live-transcript`
-Emitted a few times a second while recording, **only when the active custom
-overlay contains a `data-voxctrl-live-text` element** (see
-[Live transcript text](./overlays.md#live-transcript-text)). `session_id`
-increases with each recording; a payload from an earlier recording than the one
-already shown is ignored.
+Emitted a few times a second while recording, **only when the overlay shows
+live text** (see [Live transcript text](./overlays.md#live-transcript-text)),
+and once more with the finished transcript. `session_id` increases with each
+recording; a payload from an earlier recording than the one already shown is
+ignored.
 
 ```typescript
-await listen<{ session_id: number; text: string }>('live-transcript', (event) => {
-  liveText = event.payload.text;
+await listen<{
+  session_id: number;
+  committed: string; // settled words; never change
+  tentative: string; // newest words; may still be corrected
+  text: string;      // committed + tentative, for overlays that show it whole
+  final: boolean;    // true for the finished transcript
+}>('live-transcript', (event) => {
+  liveTranscript.set(event.payload);
 });
 ```
 
-The text is the interim transcript after VoxCtrl's normal clean-up (fillers,
-spoken punctuation, snippets, lists). It is **not** processed by S1-mini or the
-hotkey's OpenAI rewrite, and a spoken voice-command trigger is still in it, so
-it can differ from what is finally delivered.
+The live text is the interim transcript after VoxCtrl's normal clean-up
+(fillers, spoken punctuation, snippets, lists). It is **not** processed by
+S1-mini or the hotkey's OpenAI rewrite, and a spoken voice-command trigger is
+still in it, so it can differ from what is finally delivered. Versions before
+0.8.4 sent only `session_id` and `text`.
 
 ### `update-progress`
 Emitted while an update downloads, at most once per megabyte.

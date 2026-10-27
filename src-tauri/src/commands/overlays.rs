@@ -84,12 +84,39 @@ pub async fn get_custom_overlay(name: String) -> Result<Option<CustomOverlayInfo
 }
 
 /// Marker attribute a custom overlay puts on an element to receive the
-/// in-progress transcript.
+/// whole in-progress transcript.
 pub const LIVE_TEXT_MARKER: &str = "data-voxctrl-live-text";
 
-/// Whether the overlay style `name` is a custom one that shows live text.
+/// The attributes a custom overlay can use to receive live text: the whole
+/// transcript (`data-voxctrl-live-text`) or its committed and tentative words
+/// (`data-voxctrl-live-committed`, `data-voxctrl-live-tentative`).
+const LIVE_TEXT_MARKERS: [&str; 3] = [
+    LIVE_TEXT_MARKER,
+    "data-voxctrl-live-committed",
+    "data-voxctrl-live-tentative",
+];
+
+/// The built-in styles, all of which show live text when it is switched on.
+const BUILTIN_STYLES: [&str; 8] =
+    ["voice_card", "waveform", "pulse", "blue_wave", "mono_bars", "spectrum", "terminal", "vinyl"];
+
+/// Whether the overlay style `name` shows live text: every built-in style
+/// does, and a custom one does when its HTML has a live-text element.
 pub fn overlay_has_live_text(name: &str) -> bool {
-    find_custom_overlay(name).is_some_and(|o| strip_html_comments(&o.html).contains(LIVE_TEXT_MARKER))
+    if BUILTIN_STYLES.contains(&name) {
+        return true;
+    }
+    match find_custom_overlay(name) {
+        Some(o) => html_has_live_text(&o.html),
+        // A style that is neither built in nor found on disk falls back to
+        // the Voice Card in the overlay, which shows live text.
+        None => true,
+    }
+}
+
+fn html_has_live_text(html: &str) -> bool {
+    let html = strip_html_comments(html);
+    LIVE_TEXT_MARKERS.iter().any(|m| html.contains(m))
 }
 
 /// An overlay's explanatory comments may name the marker without using it.
@@ -137,6 +164,21 @@ mod tests {
         assert!(!strip_html_comments(commented).contains(LIVE_TEXT_MARKER));
         let used = "<!-- note -->\n<div data-voxctrl-live-text></div>";
         assert!(strip_html_comments(used).contains(LIVE_TEXT_MARKER));
+    }
+
+    #[test]
+    fn split_live_text_elements_enable_live_text() {
+        assert!(html_has_live_text("<span data-voxctrl-live-committed></span>"));
+        assert!(html_has_live_text("<span data-voxctrl-live-tentative></span>"));
+        assert!(!html_has_live_text("<div class=\"plain\"></div>"));
+        assert!(!html_has_live_text("<!-- data-voxctrl-live-committed --><div></div>"));
+    }
+
+    #[test]
+    fn built_in_styles_show_live_text() {
+        for style in BUILTIN_STYLES {
+            assert!(overlay_has_live_text(style), "{style}");
+        }
     }
 
     #[tokio::test]

@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, speaking = false, active = true } = $props();
 
@@ -50,7 +52,12 @@
 </script>
 
 <div class="card-scene" class:on={active}>
-  <div class="card" class:processing={$status.processing} class:initializing={recording && !isReady}>
+  <div
+    class="card"
+    class:processing={$status.processing}
+    class:initializing={recording && !isReady}
+    class:live={$liveTextShown}
+  >
     <div class="sheen"></div>
 
     <div class="chip">
@@ -95,6 +102,15 @@
       {/if}
     </span>
     <span class="card-number">•••• VOX</span>
+
+    {#if $liveTextShown}
+      <span class="field-label transcript-label">TRANSCRIPT</span>
+      <LiveText
+        class="transcript"
+        lines={2}
+        placeholder={$status.processing ? "Reading the card…" : recording && !isReady ? "Warming up…" : "Say something…"}
+      />
+    {/if}
   </div>
 </div>
 
@@ -282,6 +298,30 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Live transcript: a third field under TARGET, same label/value styling. */
+  .card.live {
+    height: 202px;
+  }
+
+  .transcript-label {
+    top: 152px;
+  }
+
+  .card :global(.transcript) {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 162px;
+    --lt-size: 10.5px;
+    --lt-line-height: 13px;
+    --lt-weight: 650;
+    --lt-tracking: 0.03em;
+    --lt-color: #e5e7eb;
+    --lt-tentative: rgba(229, 231, 235, 0.45);
+    --lt-placeholder: rgba(255, 255, 255, 0.28);
+    --lt-flash: rgba(52, 211, 153, 0.8);
   }
 
   .card-number {
