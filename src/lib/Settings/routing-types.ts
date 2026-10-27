@@ -39,6 +39,7 @@ export interface OutputTarget {
   chat_reply_mode: string;
   chat_reset_phrase?: string;
   strip_newlines: boolean;
+  skip_history: boolean;
   processing?: TargetProcessingConfig;
   response_pipe?: string;
 }
@@ -80,6 +81,7 @@ export function newOutputTarget(): OutputTarget {
     chat_timeout_secs: 120,
     chat_reply_mode: "speak",
     strip_newlines: false,
+    skip_history: false,
     processing: {},
   };
 }

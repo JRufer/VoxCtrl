@@ -10,6 +10,7 @@ export interface AppConfig {
   openai: OpenAiConfig;
   tts: TtsConfig;
   mcp: McpConfig;
+  history: HistoryConfig;
 }
 
 export interface S1MiniConfig {
@@ -175,6 +176,18 @@ export interface McpConfig {
   visual_feedback: boolean;
 }
 
+/** Dictation history. Private by default: in memory only, closed to MCP. */
+export interface HistoryConfig {
+  enabled: boolean;
+  /** Keep between restarts, encrypted with a key in the system keyring. */
+  persist: boolean;
+  max_entries: number;
+  /** 0 = until max_entries pushes them out. */
+  max_age_hours: number;
+  /** Let MCP clients read recent dictations. */
+  mcp_access: boolean;
+}
+
 const defaultConfig: AppConfig = {
   engine: {
     backend: "whisper-cpp",
@@ -288,6 +301,7 @@ const defaultConfig: AppConfig = {
     },
   },
   mcp: { server_enabled: false, record_timeout: 15.0, visual_feedback: true },
+  history: { enabled: true, persist: false, max_entries: 50, max_age_hours: 24, mcp_access: false },
 };
 
 export const config = writable<AppConfig>(defaultConfig);

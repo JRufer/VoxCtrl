@@ -34,6 +34,7 @@ function injectTarget(): OutputTargetLike {
     chat_timeout_secs: 30,
     chat_reply_mode: "inject",
     strip_newlines: false,
+    skip_history: false,
   };
 }
 

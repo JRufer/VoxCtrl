@@ -8,6 +8,8 @@ edition.workspace = true
 # rest of the app rather than a second, subtly different copy here.
 voxctrl-text = { workspace = true }
 voxctrl-config = { workspace = true }
+# Where VoxCtrl's own MCP server listens, the default for MCP targets.
+voxctrl-mcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

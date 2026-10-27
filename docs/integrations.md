@@ -16,7 +16,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 | Platform | Socket |
 |---|---|
-| Linux | `/tmp/voxctrl-mcp.sock` (Unix domain socket) |
+| Linux | `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` (Unix domain socket), also reachable as `/tmp/voxctrl-mcp.sock` |
 | Windows | `\\.\pipe\voxctrl-mcp` (named pipe) |
 
 ### Protocol

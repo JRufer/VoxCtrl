@@ -170,7 +170,7 @@
       How long <code>transcribe_voice</code> listens when the calling agent does not ask for a
       specific timeout. An explicit <code>timeout_seconds</code> in the tool call still wins.
     </p>
-    <p class="hint">Socket: <code>/tmp/voxctrl-mcp.sock</code> (Linux) / <code>\\.\pipe\voxctrl-mcp</code> (Windows)</p>
+    <p class="hint">Socket: <code>$XDG_RUNTIME_DIR/voxctrl-mcp.sock</code>, also reachable as <code>/tmp/voxctrl-mcp.sock</code> (Linux) / <code>\\.\pipe\voxctrl-mcp</code> (Windows)</p>
   </div>
 </section>
 

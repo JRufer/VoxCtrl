@@ -5,11 +5,19 @@ Usage:
     python scripts/speak_mcp.py "Hello, this is a custom sentence spoken back to you!"
 """
 
+import os
 import socket
 import json
 import sys
 
-SOCKET_PATH = "/tmp/voxctrl-mcp.sock"
+# VoxCtrl listens in the private runtime folder; /tmp/voxctrl-mcp.sock is a
+# compatibility link to it.
+_RUNTIME = os.environ.get("XDG_RUNTIME_DIR")
+SOCKET_PATH = (
+    os.path.join(_RUNTIME, "voxctrl-mcp.sock")
+    if _RUNTIME and os.path.exists(os.path.join(_RUNTIME, "voxctrl-mcp.sock"))
+    else "/tmp/voxctrl-mcp.sock"
+)
 
 def speak(text):
     print(f"Connecting to MCP Server at {SOCKET_PATH}...")

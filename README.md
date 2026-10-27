@@ -24,6 +24,7 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
   * Intelligent text normalization powered by Superwhisper's [s1-mini](https://huggingface.co/superwhisper/s1-mini-GGUF) (~480 MB download).
   * Runs in an isolated `voxctrl-llm-sidecar` process using `llama.cpp` with Vulkan GPU offload (switchable to CPU in Settings) and automatic CPU fallback.
   * Cleans spoken self-corrections, fixes punctuation and casing, and strips filler words while strictly preserving command keywords.
+* **Private Dictation History**: **Settings → History** lists recent dictations to copy, type again, read aloud or send to another target. It's kept in memory only and forgotten after 24 hours or 50 entries by default. Keeping it between restarts is opt-in: the file is encrypted and its key lives in your desktop keyring. Any target can opt out with *Don't keep in history*. See [Privacy](docs/privacy.md#dictation-history).
 * **Programmable Output Command Router (11 Delivery Targets)**:
   * Route dictation to focused windows (`inject`), system clipboard (`clipboard`), shell commands (`exec`), FIFO pipes (`pipe`), TCP/Unix sockets (`socket`), markdown files (`file`), desktop bus (`dbus`), HTTP APIs (`http`), HMAC-signed webhooks (`webhook`), audio playback (`speak`), or conversational LLMs (`chat`).
   * **Spoken Voice Commands**: Say *"VoxCtrl notes, meeting recap"* to dynamically dispatch text to the command named **notes**.
@@ -40,7 +41,7 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
   * VoxCtrl never monitors your keyboard keystrokes—the desktop simply notifies VoxCtrl when its registered shortcut is triggered.
   * Supports `hold`, `toggle`, `double_tap`, and `double_tap_hold` gestures.
 * **Built-in Model Context Protocol (MCP) Server**:
-  * Local JSON-RPC server (`/tmp/voxctrl-mcp.sock` on Linux or named pipe on Windows) exposing `transcribe_voice`, `speak_text`, and `get_status` tools to AI clients like Claude Desktop and Cursor.
+  * Local JSON-RPC server (a Unix socket in `$XDG_RUNTIME_DIR` on Linux, also at `/tmp/voxctrl-mcp.sock`, or a named pipe on Windows) exposing `transcribe_voice`, `speak_text`, `get_status` and `set_target` tools to AI clients like Claude Desktop and Cursor, plus `get_recent_transcripts` if you allow it.
 * **First-Run Setup Wizard & In-App Updates**:
   * 7-step interactive wizard (`voxctrl --setup`) for instant microphone, engine, hotkey, and overlay configuration.
   * Self-contained updater that downloads, cryptographically verifies (SHA-256), and atomically replaces application binaries on release.

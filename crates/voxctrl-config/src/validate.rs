@@ -36,5 +36,12 @@ pub fn validate(cfg: &AppConfig) -> Vec<String> {
         ));
     }
 
+    if cfg.history.max_entries > HISTORY_MAX_ENTRIES {
+        errors.push(format!(
+            "history.max_entries {} is above the limit of {HISTORY_MAX_ENTRIES}",
+            cfg.history.max_entries
+        ));
+    }
+
     errors
 }

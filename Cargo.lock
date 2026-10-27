@@ -6856,6 +6856,7 @@ dependencies = [
  "voxctrl-bugreport",
  "voxctrl-config",
  "voxctrl-dbus",
+ "voxctrl-history",
  "voxctrl-hotkeys",
  "voxctrl-inference",
  "voxctrl-inject",
@@ -7054,8 +7055,10 @@ name = "voxctrl-mcp"
 version = "0.8.5"
 dependencies = [
  "anyhow",
+ "libc",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -7083,6 +7086,7 @@ dependencies = [
  "tracing",
  "voxctrl-config",
  "voxctrl-inject",
+ "voxctrl-mcp",
  "voxctrl-text",
  "zbus 4.4.0",
 ]

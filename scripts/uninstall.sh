@@ -20,7 +20,8 @@
 #                                                      pocket-tts voices, startup_errors.log)
 #     - ~/.local/share/ai.voxctrl.app/ and ~/.cache/ai.voxctrl.app/  (WebKit profile)
 #     - kyutai pocket-tts entries in the HuggingFace cache
-#     - /tmp/voxctrl-mcp.sock
+#     - the MCP socket ($XDG_RUNTIME_DIR/voxctrl-mcp.sock and its /tmp link)
+#     - the dictation-history key in the desktop keyring, if one was made
 #     - (optional, prompted) the AppImage file itself
 #
 # Usage:
@@ -76,7 +77,13 @@ if pkill -x voxctrl 2>/dev/null; then
 else
     skip "No running VoxCtrl processes"
 fi
-rm -f /tmp/voxctrl-mcp.sock && skip "Removed MCP socket (if present)"
+rm -f /tmp/voxctrl-mcp.sock "${XDG_RUNTIME_DIR:-/nonexistent}/voxctrl-mcp.sock" && skip "Removed MCP socket (if present)"
+# The key that encrypts a kept dictation history lives in the keyring, not
+# in ~/.local/share, so removing the folder alone would leave it behind.
+if command -v secret-tool >/dev/null 2>&1; then
+    secret-tool clear application voxctrl purpose dictation-history-key 2>/dev/null \
+        && skip "Removed the dictation-history key from the keyring (if present)"
+fi
 
 # ── 2. System-level changes (sudo) ────────────────────────────────────────────
 act "Reverting system integration (sudo required)"

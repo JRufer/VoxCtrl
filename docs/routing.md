@@ -38,6 +38,7 @@ are under [`command` — Voice Command Router](#command--voice-command-router).
 | `label` | string | required | The target's name — shown in the UI, and spoken to route dictation here through a `command` target (see [Voice Command Router](#command--voice-command-router)) |
 | `delivery` | string | required | Delivery type (see below) |
 | `strip_newlines` | bool | `false` | Replace newlines (`\n`) with spaces and strip carriage returns (`\r`). Honored by the `inject` and `command` targets |
+| `skip_history` | bool | `false` | Never add what's dictated to this target to Settings → History ("Don't keep in history" in the target editor). A dictation sent to several targets is kept if any of them allows it |
 | `processing` | object | (inherit) | Per-target post-processing overrides |
 | `response_pipe` | string | null | FIFO path for TTS response output |
 
@@ -231,7 +232,7 @@ Enqueues the text as a response to a pending `transcribe_voice` tool call from a
 [[target]]
 id = "mcp_out"
 delivery = "mcp"
-mcp_path = "/tmp/voxctrl-mcp.sock"   # Optional socket path override
+mcp_path = "/run/user/1000/voxctrl-mcp.sock"   # Optional; defaults to VoxCtrl's own server
 mcp_tool = "transcribe_voice"        # Optional tool name hint
 ```
 

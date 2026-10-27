@@ -80,6 +80,7 @@ describe("HotkeysTab.svelte Conflict Detection and Nested Modal", () => {
         file_prefix: "",
         file_timestamp: true,
         strip_newlines: false,
+        skip_history: false,
         tts_engine: "None",
       },
     ];

@@ -643,7 +643,8 @@ impl DeliveryTarget for McpTarget {
 
         #[cfg(target_os = "linux")]
         let s = {
-            let path = self.0.mcp_path.as_deref().unwrap_or("/tmp/voxctrl-mcp.sock");
+            let default_path = voxctrl_mcp::socket_path();
+            let path = self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
             match UnixStream::connect(path).await {
                 Ok(s) => s,
                 Err(e) => return DeliveryResult::err(format!("Failed to connect to MCP socket {path}: {e}")),
@@ -760,7 +761,8 @@ impl DeliveryTarget for McpTarget {
     async fn test(&self) -> TestResult {
         #[cfg(target_os = "linux")]
         {
-            let path = self.0.mcp_path.as_deref().unwrap_or("/tmp/voxctrl-mcp.sock");
+            let default_path = voxctrl_mcp::socket_path();
+            let path = self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
             match UnixStream::connect(path).await {
                 Ok(_) => TestResult { reachable: true, detail: format!("MCP socket {path} reachable") },
                 Err(e) => TestResult { reachable: false, detail: e.to_string() },

@@ -58,7 +58,7 @@
     {#if clonedTtsVoicesDir}
       <div class="kv"><span>Cloned TTS voices</span><span><code>{clonedTtsVoicesDir}</code></span></div>
     {/if}
-    <div class="kv"><span>MCP socket</span><span><code>/tmp/voxctrl-mcp.sock</code></span></div>
+    <div class="kv"><span>MCP socket</span><span><code>$XDG_RUNTIME_DIR/voxctrl-mcp.sock</code></span></div>
   </div>
 
   <div class="field-group">

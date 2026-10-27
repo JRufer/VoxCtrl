@@ -21,6 +21,7 @@ function newTarget() {
     chat_timeout_secs: 120,
     chat_reply_mode: "speak",
     strip_newlines: false,
+    skip_history: false,
     file_timestamp_format: "%Y-%m-%dT%H:%M:%SZ",
     processing: {},
   } as any;

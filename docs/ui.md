@@ -35,7 +35,7 @@ the focused window — and does not move it.
 
 ## Settings Window
 
-The main configuration interface. Organized into a sidebar with eleven tabs:
+The main configuration interface. Organized into a sidebar with twelve tabs:
 
 ### General Tab
 - "Open setup wizard" button — re-runs the first-run wizard
@@ -87,6 +87,7 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
   live preview that flags an invalid pattern
 - Per-target processing override controls (filler removal, spoken punctuation, list formatting, code mode)
 - Single-line mode for `inject` and `command` targets
+- **Don't keep in history** (Privacy), for targets whose dictation shouldn't appear in the History tab
 
 ### Visual Feedback Tab
 - Preview and selection of overlay animation styles
@@ -119,6 +120,18 @@ Ollama or LM Studio instance, or a hosted provider).
 - Mode selector
 - Custom prompt text area
 - "Test Connection" button → shows available models
+
+### History Tab
+Recent dictations, newest first, with the time and the target each went to.
+- Search box, and **Clear all** (asks once before clearing)
+- Per entry: **Copy**, **Type again** (hides Settings so focus returns to the
+  window you were in, then types the text there), **Read aloud** (when TTS is
+  on), **Send to…** (any output target) and **Delete**
+- Privacy settings: **Keep a history of dictations**, **Keep history between
+  restarts** (encrypted, key in the system keyring; shows why if the keyring
+  refused), **Most dictations to keep**, **Forget dictations after**, and **Let
+  MCP clients read recent dictations** (off by default). See
+  [Privacy → Dictation history](privacy.md#dictation-history).
 
 ### Bug Report Tab
 Gathers a diagnostic report and offers four ways to send it. Full detail in

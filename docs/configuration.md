@@ -143,6 +143,13 @@ Full schema with defaults:
     "server_enabled": false,
     "record_timeout": 15.0,
     "visual_feedback": true
+  },
+  "history": {
+    "enabled": true,
+    "persist": false,
+    "max_entries": 50,
+    "max_age_hours": 24,
+    "mcp_access": false
   }
 }
 ```
@@ -379,6 +386,20 @@ shared `tts.speed`. See [tts.md](tts.md) for the full engine notes.
 | `record_timeout` | float | `15.0` | How long `transcribe_voice` listens when the MCP client passes no `timeout_seconds`. Read per call, so a change applies without restarting the server; a non-positive value falls back to `15.0` |
 | `visual_feedback` | bool | `true` | Show overlay indicator while MCP server is listening to microphone |
 
+The server listens on `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` on Linux (falling back to `/tmp/voxctrl-mcp.sock` without a runtime folder), with `/tmp/voxctrl-mcp.sock` kept as a link to it for older client configs, and on `\\.\pipe\voxctrl-mcp` on Windows.
+
+### `history` section
+
+Settings → History. Private by default: memory only, closed to MCP clients. See [Privacy → Dictation history](privacy.md#dictation-history).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Keep recent dictations. Turning it off also clears them. |
+| `persist` | bool | `false` | Keep history between restarts, encrypted (XChaCha20-Poly1305) in `~/.local/share/voxctrl/history/history.bin`, with the key in the system keyring (Linux) or protected by DPAPI (Windows). Refused, and turned back off, when no keyring is available. Turning it off deletes the file and the key. |
+| `max_entries` | int | `50` | The most dictations kept, oldest dropped first. At most `1000`. |
+| `max_age_hours` | int | `24` | Dictations older than this are dropped. `0` keeps them until `max_entries` pushes them out. |
+| `mcp_access` | bool | `false` | Let MCP clients read recent dictations through `get_recent_transcripts`. While off, the tool isn't listed. |
+
 ### Updates
 
 VoxCtrl never checks for updates on its own — there is nothing to configure.
@@ -411,6 +432,9 @@ delivery = "inject"
 
 # Text formatting
 strip_newlines = false        # Default: false. Replaces newlines with spaces and strips \r (inject and command targets)
+
+# Privacy
+skip_history = false          # Default: false. true keeps this target's dictations out of Settings → History
 
 # Per-target post-processing overrides (all optional; null = inherit global)
 [my_target.processing]

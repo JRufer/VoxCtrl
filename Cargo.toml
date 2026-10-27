@@ -137,6 +137,7 @@ voxctrl-llm      = { path = "crates/voxctrl-llm" }
 voxctrl-text     = { path = "crates/voxctrl-text" }
 voxctrl-update   = { path = "crates/voxctrl-update" }
 voxctrl-bugreport = { path = "crates/voxctrl-bugreport" }
+voxctrl-history = { path = "crates/voxctrl-history" }
 
 [profile.release]
 lto = "fat"

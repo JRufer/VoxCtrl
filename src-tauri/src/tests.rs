@@ -107,6 +107,10 @@ fn make_test_state() -> AppState {
         hotkey_health: Arc::new(voxctrl_hotkeys::ListenerHealth::default()),
         pending_update: Arc::new(Mutex::new(None)),
         updating: Arc::new(AtomicBool::new(false)),
+        history: Arc::new(crate::history::HistoryService::new(
+            std::env::temp_dir().join("voxctrl-test-history-never-written.bin"),
+            Box::new(voxctrl_history::keys::MemoryKeyStore::default()),
+        )),
     }
 }
 
@@ -208,6 +212,7 @@ async fn test_sequential_multi_target_delivery() {
         processing: Default::default(),
         response_pipe: None,
         strip_newlines: false,
+        skip_history: false,
     };
 
     let target_b = OutputTarget {
@@ -246,6 +251,7 @@ async fn test_sequential_multi_target_delivery() {
         processing: Default::default(),
         response_pipe: None,
         strip_newlines: false,
+        skip_history: false,
     };
 
     let targets = vec![target_a, target_b];
@@ -895,4 +901,32 @@ fn bindings_resolve_from_the_cache() {
     assert_eq!(state.binding("rewrite").and_then(|b| b.openai_enabled), Some(true));
     assert!(state.binding("missing").is_none());
     assert!(state.binding("").is_none(), "no hotkey must not match a binding");
+}
+
+/// A target marked "Don't keep in history" never reaches the history, and a
+/// dictation broadcast to several targets is kept once if any allows it.
+#[test]
+fn history_respects_targets_that_opt_out() {
+    use voxctrl_routing::models::OutputTarget;
+    let state = make_test_state();
+    state.history.apply_config(&voxctrl_config::HistoryConfig::default());
+
+    let open = OutputTarget::default_inject();
+    let private = OutputTarget {
+        id: "vault".into(),
+        label: "Password Manager".into(),
+        skip_history: true,
+        ..OutputTarget::default_inject()
+    };
+    let targets = vec![open, private];
+
+    crate::pipeline::record_history(&state, &targets, "vault", "hunter2");
+    assert!(state.history.search("", 10).is_empty(), "opted-out target was recorded");
+
+    crate::pipeline::record_history(&state, &targets, "default", "hello");
+    crate::pipeline::record_history(&state, &targets, "vault, default", "both");
+    let kept = state.history.search("", 10);
+    let texts: Vec<_> = kept.iter().map(|e| e.text.as_str()).collect();
+    assert_eq!(texts, vec!["both", "hello"]);
+    assert_eq!(kept[0].target_label, "Focused Window", "only the targets that allow it are named");
 }
