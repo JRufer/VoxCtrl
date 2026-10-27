@@ -565,10 +565,10 @@
               <input
                 type="text"
                 bind:value={editingTarget.mcp_path}
-                placeholder="e.g. /tmp/voxctrl-mcp.sock"
+                placeholder="e.g. /run/user/1000/voxctrl-mcp.sock"
                 class="full-width-input"
               />
-              <p class="hint">Leave empty to use defaults (<code>/tmp/voxctrl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctrl-mcp</code> on Windows).</p>
+              <p class="hint">Leave empty for VoxCtrl's own server (<code>$XDG_RUNTIME_DIR/voxctrl-mcp.sock</code> on Linux, <code>\\.\pipe\voxctrl-mcp</code> on Windows).</p>
             </div>
 
             <div class="field col">
@@ -775,6 +775,17 @@
             </label>
           </div>
         {/if}
+
+        <div class="processing-toggles">
+          <h5>Privacy</h5>
+          <label class="checkbox-field">
+            <input type="checkbox" bind:checked={editingTarget.skip_history} />
+            <span>Don't keep in history</span>
+          </label>
+          <p class="hint">
+            Dictation sent to this target is never added to Settings → History.
+          </p>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn-action secondary" onclick={onCancel}>Cancel</button>

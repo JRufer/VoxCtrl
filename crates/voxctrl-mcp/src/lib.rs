@@ -4,6 +4,9 @@
 //!   - transcribe_voice(timeout_seconds) → {text}
 //!   - speak_text(text) → {}
 //!   - get_status() → {recording, speaking}
+//!   - set_target(target_id?) → label, or the list of targets
+//!   - get_recent_transcripts(limit?, query?) → [{at, target, text}], listed
+//!     only when the user allowed MCP access to history
 
 #[cfg(not(target_os = "windows"))]
 use std::path::PathBuf;
@@ -26,8 +29,35 @@ use tracing::warn;
 /// does not exist.
 #[cfg(target_os = "windows")]
 pub const SOCKET_PATH: &str = r"\\.\pipe\voxctrl-mcp";
+/// The address VoxCtrl has always advertised on Linux. It is now a link to
+/// [`socket_path`], kept so existing MCP client configs keep working.
 #[cfg(not(target_os = "windows"))]
-pub const SOCKET_PATH: &str = "/tmp/voxctrl-mcp.sock";
+pub const SOCKET_PATH: &str = LEGACY_SOCKET_PATH;
+
+/// The pre-0.8.5 socket location, in the shared `/tmp`.
+pub const LEGACY_SOCKET_PATH: &str = "/tmp/voxctrl-mcp.sock";
+
+/// Where the Linux server's socket actually lives: the user's private
+/// runtime folder (`$XDG_RUNTIME_DIR`, normally `/run/user/<uid>`, which only
+/// that user can enter), falling back to `/tmp` without one.
+///
+/// In the shared `/tmp`, another account on the machine could create
+/// `voxctrl-mcp.sock` first, while VoxCtrl isn't running, and pose as the
+/// server: an MCP client would then hand it whatever it asked VoxCtrl to
+/// speak, and take back whatever "transcript" it chose to return. A name
+/// inside the runtime folder can't be taken by anyone else.
+#[cfg(not(target_os = "windows"))]
+pub fn socket_path() -> PathBuf {
+    runtime_socket_path(std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn runtime_socket_path(runtime_dir: Option<PathBuf>) -> PathBuf {
+    match runtime_dir {
+        Some(dir) if dir.is_absolute() && dir.is_dir() => dir.join("voxctrl-mcp.sock"),
+        _ => PathBuf::from(LEGACY_SOCKET_PATH),
+    }
+}
 
 // ── JSON-RPC types ────────────────────────────────────────────────────────────
 
@@ -79,6 +109,23 @@ impl JsonRpcResponse {
 
 // ── App callbacks ─────────────────────────────────────────────────────────────
 
+/// One dictation from the history, as `get_recent_transcripts` returns it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Transcript {
+    /// When it was dictated, RFC 3339.
+    pub at: String,
+    /// Where it was delivered.
+    pub target: String,
+    pub text: String,
+}
+
+/// An output target, as `set_target` lists them.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TargetInfo {
+    pub id: String,
+    pub label: String,
+}
+
 /// Callbacks that the MCP server uses to interact with the app coordinator.
 pub trait McpCallbacks: Send + Sync + 'static {
     /// Start recording and return the transcribed text (blocks until done or timeout).
@@ -89,6 +136,26 @@ pub trait McpCallbacks: Send + Sync + 'static {
 
     /// Get current status flags.
     fn get_status(&self) -> impl std::future::Future<Output = (bool, bool)> + Send;
+
+    /// The user's recent dictations, newest first, at most `limit`, those
+    /// containing `query` when it isn't empty. `None` when the user hasn't
+    /// allowed MCP clients to read history (Settings → History), which is
+    /// the default; the tool is then not even listed.
+    fn recent_transcripts(
+        &self,
+        limit: usize,
+        query: String,
+    ) -> impl std::future::Future<Output = Option<Vec<Transcript>>> + Send;
+
+    /// The output targets a dictation can be sent to.
+    fn list_targets(&self) -> impl std::future::Future<Output = Vec<TargetInfo>> + Send;
+
+    /// Send the next dictations to `target_id` (until a hotkey picks another
+    /// target). Returns the target's label; errors for an unknown id.
+    fn set_target(
+        &self,
+        target_id: String,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// The user's configured recording timeout (Settings → General → Record
     /// timeout), in seconds. Used for `transcribe_voice` whenever the caller
@@ -112,11 +179,40 @@ pub async fn run_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()> {
 
 // ── Unix socket server (Linux) ────────────────────────────────────────────────
 
+/// Point the old `/tmp` address at the real socket, so MCP clients set up
+/// before the move keep connecting. Only an entry this user owns is ever
+/// replaced; one belonging to someone else is left alone (and reported), so
+/// a squatter can't be "fixed" into a hijack. The socket itself stays 0600,
+/// so the link grants nothing the socket doesn't.
+#[cfg(target_os = "linux")]
+fn link_legacy_path(real: &std::path::Path, legacy: &std::path::Path) {
+    use std::os::unix::fs::MetadataExt;
+    if real == legacy {
+        return;
+    }
+    if let Ok(meta) = std::fs::symlink_metadata(legacy) {
+        // SAFETY: getuid has no preconditions and cannot fail.
+        let me = unsafe { libc::getuid() };
+        if meta.uid() != me {
+            warn!(
+                "{} belongs to another user; MCP clients must use {}",
+                legacy.display(),
+                real.display()
+            );
+            return;
+        }
+        let _ = std::fs::remove_file(legacy);
+    }
+    if let Err(e) = std::os::unix::fs::symlink(real, legacy) {
+        debug!("Could not link {} to the MCP socket: {e}", legacy.display());
+    }
+}
+
 #[cfg(target_os = "linux")]
 async fn run_unix_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()> {
     use tokio::net::UnixListener;
 
-    let path = PathBuf::from(SOCKET_PATH);
+    let path = socket_path();
     if path.exists() {
         let _ = std::fs::remove_file(&path);
     }
@@ -124,7 +220,8 @@ async fn run_unix_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()> {
     // Restrict to the owning user only so other local users cannot
     // activate the microphone or issue TTS via the MCP socket.
     std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
-    info!("MCP server listening on {SOCKET_PATH}");
+    info!("MCP server listening on {}", path.display());
+    link_legacy_path(&path, std::path::Path::new(LEGACY_SOCKET_PATH));
 
     loop {
         match listener.accept().await {
@@ -223,7 +320,8 @@ async fn dispatch<C: McpCallbacks>(raw: &str, cb: &Arc<C>) -> Option<JsonRpcResp
             JsonRpcResponse::ok(id, json!({}))
         }
         "tools/list" => {
-            JsonRpcResponse::ok(id, get_tool_list(cb.default_record_timeout().await))
+            let history = cb.recent_transcripts(0, String::new()).await.is_some();
+            JsonRpcResponse::ok(id, get_tool_list(cb.default_record_timeout().await, history))
         }
         "tools/call" => {
             let name = req.params.as_ref()
@@ -248,8 +346,8 @@ async fn dispatch<C: McpCallbacks>(raw: &str, cb: &Arc<C>) -> Option<JsonRpcResp
 
 // ── Tool List Definition ──────────────────────────────────────────────────────
 
-fn get_tool_list(default_record_timeout: f64) -> Value {
-    json!({
+fn get_tool_list(default_record_timeout: f64, history_access: bool) -> Value {
+    let mut list = json!({
         "tools": [
             {
                 "name": "transcribe_voice",
@@ -285,9 +383,36 @@ fn get_tool_list(default_record_timeout: f64) -> Value {
                     "type": "object",
                     "properties": {}
                 }
+            },
+            {
+                "name": "set_target",
+                "description": "Chooses where the user's next dictations are delivered: typed into the focused window, appended to a file, sent to a webhook, and so on, as set up in VoxCtrl's Output Commands. Applies to transcribe_voice results and to the user's own dictation until they press a hotkey bound to another target.\n\nPARAMETERS:\n  target_id (string, optional): The id of the target. Omit it to list the available targets without changing anything.\n\nRETURN VALUE:\n  The label of the selected target, or a JSON list of {id, label} when target_id is omitted. An unknown id is an error that lists the valid ones.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target_id": {
+                            "type": "string",
+                            "description": "Output target id. Omit to list targets."
+                        }
+                    }
+                }
             }
         ]
-    })
+    });
+    if history_access {
+        list["tools"].as_array_mut().expect("tools is an array").push(json!({
+            "name": "get_recent_transcripts",
+            "description": "Returns the user's recent dictations from VoxCtrl's history, newest first, as a JSON list of {at, target, text}. Only available because the user allowed it in Settings → History. Dictations can be private: use them only for what the user asked you to do.\n\nPARAMETERS:\n  limit (number, optional): How many to return, 1–50. Default 10.\n  query (string, optional): Only dictations containing this text (case-insensitive).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "number", "description": "How many to return, 1–50. Default 10." },
+                    "query": { "type": "string", "description": "Only dictations containing this text." }
+                }
+            }
+        }));
+    }
+    list
 }
 
 // ── Tool Call Execution ───────────────────────────────────────────────────────
@@ -343,6 +468,35 @@ async fn call_tool<C: McpCallbacks>(name: &str, args: Option<&Value>, cb: &Arc<C
                 ]
             }))
         }
+        "set_target" => {
+            let wanted = args
+                .and_then(|a| a.get("target_id"))
+                .and_then(|t| t.as_str());
+            let text = match wanted {
+                None => serde_json::to_string(&cb.list_targets().await)?,
+                Some(id) => cb.set_target(id.to_string()).await?,
+            };
+            Ok(json!({ "content": [ { "type": "text", "text": text } ] }))
+        }
+        "get_recent_transcripts" => {
+            let limit = args
+                .and_then(|a| a.get("limit"))
+                .and_then(|l| l.as_f64())
+                .map_or(10, |l| l.clamp(1.0, 50.0) as usize);
+            let query = args
+                .and_then(|a| a.get("query"))
+                .and_then(|q| q.as_str())
+                .unwrap_or("")
+                .to_string();
+            let transcripts = cb.recent_transcripts(limit, query).await.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Reading dictation history is turned off. The user can allow it in VoxCtrl Settings → History."
+                )
+            })?;
+            Ok(
+                json!({ "content": [ { "type": "text", "text": serde_json::to_string(&transcripts)? } ] }),
+            )
+        }
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     }
 }
@@ -359,6 +513,9 @@ mod tests {
         configured_timeout: f64,
         /// Last timeout seen by `transcribe_voice`, as f64 bits.
         seen: AtomicU64,
+        /// `None`: history access off, as by default.
+        history: Option<Vec<Transcript>>,
+        target: std::sync::Mutex<String>,
     }
 
     impl FakeApp {
@@ -366,7 +523,15 @@ mod tests {
             Arc::new(Self {
                 configured_timeout,
                 seen: AtomicU64::new(f64::NAN.to_bits()),
+                history: None,
+                target: std::sync::Mutex::new("default".into()),
             })
+        }
+
+        fn with_history(history: Vec<Transcript>) -> Arc<Self> {
+            let mut app = Arc::try_unwrap(Self::new(15.0)).ok().unwrap();
+            app.history = Some(history);
+            Arc::new(app)
         }
 
         fn seen_timeout(&self) -> f64 {
@@ -391,6 +556,179 @@ mod tests {
         async fn default_record_timeout(&self) -> f64 {
             self.configured_timeout
         }
+
+        async fn recent_transcripts(&self, limit: usize, query: String) -> Option<Vec<Transcript>> {
+            let all = self.history.clone()?;
+            Some(
+                all.into_iter()
+                    .filter(|t| t.text.contains(&query))
+                    .take(limit)
+                    .collect(),
+            )
+        }
+
+        async fn list_targets(&self) -> Vec<TargetInfo> {
+            vec![
+                TargetInfo {
+                    id: "default".into(),
+                    label: "Focused Window".into(),
+                },
+                TargetInfo {
+                    id: "notes".into(),
+                    label: "Notes".into(),
+                },
+            ]
+        }
+
+        async fn set_target(&self, target_id: String) -> Result<String> {
+            let label = self
+                .list_targets()
+                .await
+                .into_iter()
+                .find(|t| t.id == target_id)
+                .map(|t| t.label)
+                .ok_or_else(|| anyhow::anyhow!("no target {target_id}"))?;
+            *self.target.lock().unwrap() = target_id;
+            Ok(label)
+        }
+    }
+
+    fn call(name: &str, arguments: Value) -> String {
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        })
+        .to_string()
+    }
+
+    fn tool_names(app: &Arc<FakeApp>) -> Vec<String> {
+        let raw = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string();
+        let res = block_on(dispatch(&raw, app)).expect("no response");
+        res.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn text_of(res: JsonRpcResponse) -> String {
+        res.result.expect("an error, not a result")["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn transcripts() -> Vec<Transcript> {
+        vec![
+            Transcript {
+                at: "2026-10-27T10:00:00Z".into(),
+                target: "Notes".into(),
+                text: "buy milk".into(),
+            },
+            Transcript {
+                at: "2026-10-27T09:00:00Z".into(),
+                target: "Focused Window".into(),
+                text: "hello there".into(),
+            },
+        ]
+    }
+
+    /// History is private unless the user says otherwise: by default the
+    /// tool isn't even offered, and calling it anyway is refused.
+    #[test]
+    fn history_is_closed_to_mcp_by_default() {
+        let app = FakeApp::new(15.0);
+        assert!(!tool_names(&app).contains(&"get_recent_transcripts".to_string()));
+        let res = block_on(dispatch(&call("get_recent_transcripts", json!({})), &app)).unwrap();
+        let err = res.error.expect("must be refused");
+        assert!(err.message.contains("turned off"), "{}", err.message);
+        assert!(res.result.is_none());
+    }
+
+    #[test]
+    fn history_is_readable_once_allowed() {
+        let app = FakeApp::with_history(transcripts());
+        assert!(tool_names(&app).contains(&"get_recent_transcripts".to_string()));
+        let text = text_of(
+            block_on(dispatch(
+                &call("get_recent_transcripts", json!({"query": "milk"})),
+                &app,
+            ))
+            .unwrap(),
+        );
+        let got: Vec<Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["text"], "buy milk");
+        assert_eq!(got[0]["target"], "Notes");
+    }
+
+    #[test]
+    fn set_target_lists_selects_and_rejects() {
+        let app = FakeApp::new(15.0);
+        assert!(tool_names(&app).contains(&"set_target".to_string()));
+        let listed = text_of(block_on(dispatch(&call("set_target", json!({})), &app)).unwrap());
+        assert!(listed.contains("\"notes\""), "{listed}");
+        assert_eq!(
+            *app.target.lock().unwrap(),
+            "default",
+            "listing changes nothing"
+        );
+
+        let picked = text_of(
+            block_on(dispatch(
+                &call("set_target", json!({"target_id": "notes"})),
+                &app,
+            ))
+            .unwrap(),
+        );
+        assert_eq!(picked, "Notes");
+        assert_eq!(*app.target.lock().unwrap(), "notes");
+
+        let res = block_on(dispatch(
+            &call("set_target", json!({"target_id": "nope"})),
+            &app,
+        ))
+        .unwrap();
+        assert!(res.error.is_some());
+        assert_eq!(*app.target.lock().unwrap(), "notes");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_socket_lives_in_the_private_runtime_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            runtime_socket_path(Some(dir.path().into())),
+            dir.path().join("voxctrl-mcp.sock")
+        );
+        assert_eq!(runtime_socket_path(None), PathBuf::from(LEGACY_SOCKET_PATH));
+        assert_eq!(
+            runtime_socket_path(Some("relative".into())),
+            PathBuf::from(LEGACY_SOCKET_PATH)
+        );
+        assert_eq!(
+            runtime_socket_path(Some(dir.path().join("missing"))),
+            PathBuf::from(LEGACY_SOCKET_PATH)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_old_address_links_to_the_new_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("voxctrl-mcp.sock");
+        std::fs::write(&real, b"").unwrap();
+        let legacy = dir.path().join("legacy.sock");
+        // A stale entry of our own is replaced.
+        std::fs::write(&legacy, b"stale").unwrap();
+        link_legacy_path(&real, &legacy);
+        assert_eq!(std::fs::read_link(&legacy).unwrap(), real);
+        // And again, over the link left last time.
+        link_legacy_path(&real, &legacy);
+        assert_eq!(std::fs::read_link(&legacy).unwrap(), real);
     }
 
     fn block_on<F: std::future::Future>(f: F) -> F::Output {

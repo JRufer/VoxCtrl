@@ -238,6 +238,12 @@ pub struct OutputTarget {
     #[serde(default)]
     pub strip_newlines: bool,
 
+    /// Keep this target's transcripts out of the dictation history, for
+    /// targets that receive things not worth (or not safe) keeping, such as
+    /// a password manager or a private chat.
+    #[serde(default)]
+    pub skip_history: bool,
+
     #[serde(default)]
     pub processing: TargetProcessingConfig,
 
@@ -303,6 +309,7 @@ impl OutputTarget {
             chat_reset_phrase: None,
             file_timestamp_format: crate::timestamp::default_file_timestamp_format(),
             strip_newlines: false,
+            skip_history: false,
             processing: TargetProcessingConfig::default(),
             response_pipe: None,
         }

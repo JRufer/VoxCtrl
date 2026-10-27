@@ -13,6 +13,7 @@ Everything below describes what the code does, with pointers to where it does it
 | Can VoxCtrl read what I type in other applications? | **No.** Your desktop delivers shortcuts; VoxCtrl is never given keystrokes. |
 | Does installing it grant any process new access to my keyboard? | **No.** No udev rule, no `input` group, nothing. |
 | Does my audio leave the machine? | **No by default.** Audio only leaves your machine if you explicitly configure the Remote Speech Engine pointing to an external or LAN server. |
+| Does it keep what I dictate? | **In memory only, by default**, as Settings → History, and gone when VoxCtrl quits. Keeping it across restarts is opt-in and encrypted. [Details](#dictation-history). |
 | Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
 | Does it phone home at all? | **Only when you press "Check for updates."** VoxCtrl never checks on its own; that request carries no identifiers, nothing about you. [Details](#network). |
 | Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
@@ -187,6 +188,56 @@ with no dependency on the rest of the app. `release.rs` builds the (at most two)
 `apply.rs` downloads and checks the digest, `signature.rs` checks the release
 signature, `src-tauri/src/updater.rs` is the manual
 check command and what it shows.
+
+---
+
+## Dictation history
+
+Settings → History lists your recent dictations so you can copy one, type it
+again or send it to another target. People dictate things they wouldn't want
+written down, so the history is built to leave as little behind as possible:
+
+- **Memory only, by default.** History is kept inside the running VoxCtrl
+  process: at most 50 dictations, none older than 24 hours (both adjustable),
+  and none of it is written anywhere. Quit VoxCtrl and it is gone.
+- **Keeping it between restarts is opt-in, and encrypted.** Turn on *Keep
+  history between restarts* and the history is saved to
+  `~/.local/share/voxctrl/history/history.bin`, encrypted with
+  XChaCha20-Poly1305. The file is created owner-only (`0600`, in a `0700`
+  folder) and replaced atomically, so no half-written copy is left around.
+  Its 256-bit key is never stored beside it: on Linux it lives in your
+  desktop keyring (KWallet or GNOME Keyring, through the Secret Service API,
+  as "VoxCtrl dictation history key"); on Windows it is protected with
+  Windows data protection (DPAPI), which only your Windows account can undo.
+  Another program that copies the file gets ciphertext.
+- **No keyring, no file.** If the keyring isn't available or you dismiss its
+  prompt, VoxCtrl refuses to save the history rather than saving it
+  unencrypted, turns the setting back off and says why. History stays in
+  memory.
+- **Turning it off cleans up.** Switching *Keep history between restarts* off
+  deletes the file and removes the key from the keyring. Switching history
+  off entirely also clears what's in memory. *Clear all* and each entry's
+  *Delete* apply to the file too.
+- **Per target.** Tick *Don't keep in history* on any output target (say, one
+  that fills in a password manager or posts to a private chat), and what you
+  dictate to it is never added.
+- **Not in the logs.** VoxCtrl logs how many words a transcription had, never
+  the words. (Releases before 0.8.5 logged the text.)
+- **Not over MCP, unless you allow it.** MCP clients can only read history
+  if you turn on *Let MCP clients read recent dictations*. Until then the
+  `get_recent_transcripts` tool isn't even offered.
+
+**What this can't protect against.** A program already running under your
+account, with your permissions, can read VoxCtrl's memory, and can ask your
+keyring for the key while the keyring is unlocked. Nothing a desktop app does
+can stop that. That threat is the reason the default is memory-only and
+short-lived. The protections above keep history away from other accounts,
+from backups and disk images, from anything that just reads files, and from
+MCP clients you haven't trusted with it.
+
+**The code:** `crates/voxctrl-history/` (`store.rs` for the file format and
+permissions, `keys.rs` for the keyring and DPAPI), and
+`src-tauri/src/history.rs` for when anything is saved or deleted.
 
 ---
 

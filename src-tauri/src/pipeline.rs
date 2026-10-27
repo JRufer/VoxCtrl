@@ -514,13 +514,14 @@ pub fn spawn_text_delivery_worker(
                 continue;
             }
 
+            // Never the text itself: logs end up in the journal and in bug
+            // reports, and dictation can be private.
+            let words = text.split_whitespace().count() as u32;
             tracing::info!(
-                "Received transcription: \"{}\" for target '{}' (took {}ms)",
-                text,
+                "Received transcription: {words} words for target '{}' (took {}ms)",
                 target_id,
                 output.inference_ms
             );
-            let words = text.split_whitespace().count() as u32;
             state.increment_words(words);
 
             // Deliver text via the output target router.
@@ -550,11 +551,44 @@ pub fn spawn_text_delivery_worker(
                 }
             });
 
+            record_history(&state, &targets, &target_id, &text);
+
             if show_notif {
                 voxctrl_inject::show_notification("VoxCtrl", &text);
             }
         }
     });
+}
+
+/// Add a delivered dictation to the history, unless every target it went to
+/// opted out ("Don't keep in history"). A dictation to several targets is
+/// kept once, under all their names, if any of them allows it.
+pub(crate) fn record_history(
+    state: &AppState,
+    targets: &[voxctrl_routing::OutputTarget],
+    target_id: &str,
+    text: &str,
+) {
+    let ids: Vec<&str> = target_id.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let kept: Vec<&str> = ids
+        .iter()
+        .copied()
+        .filter(|id| !targets.iter().any(|t| t.id == *id && t.skip_history))
+        .collect();
+    if kept.is_empty() {
+        return;
+    }
+    let label = kept
+        .iter()
+        .map(|id| voxctrl_routing::targets_display_label(id, targets))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if state.history.record(&kept.join(","), &label, text).is_some() {
+        if let Some(app) = crate::window::get_app_handle() {
+            use tauri::Emitter;
+            let _ = app.emit("history-changed", ());
+        }
+    }
 }
 
 pub fn spawn_hotkey_gesture_handler(

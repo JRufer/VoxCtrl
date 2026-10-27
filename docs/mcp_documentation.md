@@ -6,13 +6,15 @@ VoxCtrl ships a built-in **Model Context Protocol (MCP)** server that exposes th
 
 ## Overview
 
-When the MCP server is enabled, VoxCtrl listens on a local transport and presents three tools:
+When the MCP server is enabled, VoxCtrl listens on a local transport and presents these tools:
 
 | Tool | What it does |
 |---|---|
 | `transcribe_voice` | Opens the mic, records the user, returns the transcript |
 | `speak_text` | Queues text for TTS playback through the current voice |
 | `get_status` | Returns whether the mic is open and TTS is playing |
+| `set_target` | Lists the output targets, or picks the one dictations go to |
+| `get_recent_transcripts` | Returns recent dictations from Settings → History. **Only listed when the user allows it** (off by default) |
 
 This lets an AI agent have a full voice conversation:
 
@@ -82,10 +84,18 @@ The server starts automatically when the app launches if `server_enabled` is `tr
 
 The transport layer is platform-dependent:
 
-* **Linux**: A **Unix domain socket** located at:
+* **Linux**: A **Unix domain socket** in your private runtime folder:
   ```
-  /tmp/voxctrl-mcp.sock
+  $XDG_RUNTIME_DIR/voxctrl-mcp.sock     (normally /run/user/<uid>/voxctrl-mcp.sock)
   ```
+  `/tmp/voxctrl-mcp.sock` is kept as a link to it, so client configs written
+  for earlier releases keep working. The socket moved out of the shared `/tmp`
+  in 0.8.5: there, another account could create the name first, while
+  VoxCtrl wasn't running, and pose as the server. The runtime folder is
+  `0700`, so no one else can. The socket itself is `0600`. Without a runtime
+  folder, VoxCtrl falls back to `/tmp/voxctrl-mcp.sock`. If someone else
+  already owns that name, VoxCtrl leaves it alone, logs a warning, and clients
+  must use the runtime path.
 * **Windows**: A **Named Pipe** located at:
   ```
   \\.\pipe\voxctrl-mcp
@@ -272,6 +282,40 @@ The `text` field is a JSON-encoded object:
 | `recording` | `boolean` | `true` while the microphone is open |
 | `speaking` | `boolean` | `true` while TTS is playing |
 
+### `set_target`
+
+Chooses where dictations are delivered: the same output targets as Settings →
+Output Commands. It applies to `transcribe_voice` results and to the user's
+own dictation until they press a hotkey bound to another target. Without a
+`target_id`, it lists the targets and changes nothing.
+
+```json
+{"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+ "params": {"name": "set_target", "arguments": {"target_id": "notes"}}}
+```
+
+Returns the target's label as text (`"Notes"`), or, with no `target_id`, a
+JSON list of `{"id", "label"}`. An unknown id is error `-32603`, listing the
+valid ids.
+
+### `get_recent_transcripts`
+
+Returns recent dictations, newest first, as a JSON list of
+`{"at", "target", "text"}` (`at` is RFC 3339).
+
+| Argument | Type | Description |
+|---|---|---|
+| `limit` | `number` | How many to return, 1–50. Default 10 |
+| `query` | `string` | Only dictations containing this text, ignoring case |
+
+**This tool is off by default.** What someone dictates can be private, and
+any program that can reach the socket could call it. It's listed in
+`tools/list` only after the user turns on Settings → History → *Let MCP
+clients read recent dictations* (`history.mcp_access`). While it's off,
+calling it anyway is error `-32603` ("Reading dictation history is turned
+off…"). Dictations to targets marked *Don't keep in history* are never in the
+history to begin with.
+
 ---
 
 ## Error Codes
@@ -423,7 +467,7 @@ Download voices in **Settings → TTS → Voice Picker → ⬇ Download**.
 
 ### Socket and pipe paths
 
-* **Linux**: `/tmp/voxctrl-mcp.sock`
+* **Linux**: `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` (`voxctrl_mcp::socket_path()`), linked from `/tmp/voxctrl-mcp.sock`
 * **Windows**: `\\.\pipe\voxctrl-mcp`
 
 ### Threading model
@@ -471,5 +515,5 @@ The socket exists but the server is not listening yet. Wait a moment after VoxCt
 
 * Restart Claude Desktop after editing `claude_desktop_config.json`.
 * Confirm `socat` is installed and `socat STDIO UNIX-CONNECT:/tmp/voxctrl-mcp.sock` connects successfully from a terminal.
-* Check that `voxctrl-mcp.sock` exists (`ls -la /tmp/*.sock`).
+* Check that `voxctrl-mcp.sock` exists (`ls -la "$XDG_RUNTIME_DIR"/voxctrl-mcp.sock /tmp/voxctrl-mcp.sock`).
 * Ensure VoxCtrl is running and the MCP server is enabled in **Settings → General**.

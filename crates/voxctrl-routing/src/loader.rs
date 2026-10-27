@@ -89,6 +89,8 @@ struct RawTarget {
     #[serde(default)]
     strip_newlines: bool,
     #[serde(default)]
+    skip_history: bool,
+    #[serde(default)]
     pub processing: RawProcessing,
     response_pipe: Option<String>,
     // Legacy field kept for migration
@@ -233,6 +235,7 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
         chat_reset_phrase: r.chat_reset_phrase,
         file_timestamp_format: r.file_timestamp_format,
         strip_newlines: r.strip_newlines,
+        skip_history: r.skip_history,
         processing,
         response_pipe: r.response_pipe,
     }
@@ -313,6 +316,7 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
         chat_reset_phrase: t.chat_reset_phrase.clone(),
         file_timestamp_format: t.file_timestamp_format.clone(),
         strip_newlines: t.strip_newlines,
+        skip_history: t.skip_history,
         processing: RawProcessing {
             remove_fillers: p.remove_fillers,
             spoken_punctuation: p.spoken_punctuation,

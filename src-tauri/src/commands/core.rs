@@ -104,6 +104,19 @@ pub async fn save_config(
         }
     }
 
+    // History first: turning on "keep between restarts" needs the keyring,
+    // and if that's refused the setting is saved as off, so the switch the
+    // user just flipped visibly flips back (the History tab says why).
+    let mut new_config = new_config;
+    {
+        let history = state.history.clone();
+        let wanted = new_config.history.clone();
+        new_config.history = tokio::task::spawn_blocking(move || history.apply_config(&wanted))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit("history-changed", ());
+
     let mut guard = state.config.lock().await;
     let stop_key_changed = guard.data.tts.stop_key != new_config.tts.stop_key;
     guard.data = new_config.clone();

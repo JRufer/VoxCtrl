@@ -290,7 +290,7 @@ Pocket-TTS is a pure-Rust voice-cloning TTS engine (no system packages required)
 
 ### MCP Server (Claude Desktop / Cursor)
 1. Enable in Settings → Engine → MCP Server
-2. Configure your MCP client to connect to `/tmp/voxctrl-mcp.sock`
+2. Configure your MCP client to connect to `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` (`/tmp/voxctrl-mcp.sock` also works)
 
 ---
 

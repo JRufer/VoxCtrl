@@ -3,7 +3,14 @@ import json
 import pytest
 import os
 
-SOCKET_PATH = "/tmp/voxctrl-mcp.sock"
+# VoxCtrl listens in the private runtime folder; /tmp/voxctrl-mcp.sock is a
+# compatibility link to it.
+_RUNTIME = os.environ.get("XDG_RUNTIME_DIR")
+SOCKET_PATH = (
+    os.path.join(_RUNTIME, "voxctrl-mcp.sock")
+    if _RUNTIME and os.path.exists(os.path.join(_RUNTIME, "voxctrl-mcp.sock"))
+    else "/tmp/voxctrl-mcp.sock"
+)
 
 def send_rpc(sock, method, params=None, rpc_id=1):
     payload = {

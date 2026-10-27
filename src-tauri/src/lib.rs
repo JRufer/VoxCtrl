@@ -17,6 +17,7 @@ mod commands;
 mod custom_overlays;
 mod installer;
 mod live_text;
+mod history;
 mod host_env;
 mod mint_shortcuts;
 mod pipeline;
@@ -406,7 +407,24 @@ pub fn run() {
         overlay_tx: overlay_tx.clone(),
         pending_update: Arc::new(Mutex::new(None)),
         updating: Arc::new(AtomicBool::new(false)),
+        history: Arc::new(crate::history::HistoryService::system()),
     });
+
+    // Bring history up to the saved settings off the main thread: loading a
+    // kept history asks the keyring for its key, which may show the
+    // desktop's unlock prompt. A refusal here leaves the setting as it is
+    // (the keyring may simply not be running yet at login); the History tab
+    // shows why nothing is being kept.
+    {
+        let history = app_state.history.clone();
+        let history_cfg = cfg_data.history.clone();
+        std::thread::Builder::new()
+            .name("history-load".into())
+            .spawn(move || {
+                history.apply_config(&history_cfg);
+            })
+            .ok();
+    }
 
     let (audio_level_tx, audio_level_rx) = crossbeam_channel::bounded::<f32>(128);
 
@@ -680,6 +698,11 @@ pub fn run() {
             get_bindings,
             save_bindings,
             speak_text,
+            get_history,
+            delete_history_entry,
+            clear_history,
+            paste_history_entry,
+            send_history_entry,
             get_custom_overlays,
             get_custom_overlay,
             detect_focused_app,

@@ -13,7 +13,7 @@ pub async fn speak_text(
     text: String,
     voice: Option<String>,
 ) -> Result<(), String> {
-    info!("TTS speak_text via command: {text}");
+    info!("TTS speak_text via command: {} chars", text.chars().count());
     let handle = state.tts_handle.lock().await;
     if let Some(ref tts) = *handle {
         tts.speak_utterance(voxctrl_tts::Utterance {

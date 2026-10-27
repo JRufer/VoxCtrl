@@ -199,5 +199,6 @@ App.svelte  (route switcher)
 | `~/.local/share/voxctrl/models/` | Downloaded Whisper GGUF models |
 | `~/.local/share/voxctrl/piper-voices/` | Downloaded Piper voice packs |
 | `~/.local/share/voxctrl/models/inflect-micro/` | Inflect-Micro-v2 ONNX graphs and symbol list |
-| `/tmp/voxctrl-mcp.sock` | MCP Unix domain socket (Linux) |
+| `$XDG_RUNTIME_DIR/voxctrl-mcp.sock` | MCP Unix domain socket (Linux); `/tmp/voxctrl-mcp.sock` links to it |
+| `~/.local/share/voxctrl/history/history.bin` | Dictation history, only with "Keep history between restarts" on; encrypted, key in the system keyring |
 | `\\.\pipe\voxctrl-mcp` | MCP named pipe (Windows) |

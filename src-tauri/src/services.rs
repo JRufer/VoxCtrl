@@ -81,6 +81,52 @@ impl McpCallbacks for AppState {
             voxctrl_config::McpConfig::default().record_timeout
         }
     }
+
+    async fn recent_transcripts(
+        &self,
+        limit: usize,
+        query: String,
+    ) -> Option<Vec<voxctrl_mcp::Transcript>> {
+        if !self.history.mcp_access() {
+            return None;
+        }
+        Some(
+            self.history
+                .search(&query, limit)
+                .into_iter()
+                .map(|e| voxctrl_mcp::Transcript {
+                    at: chrono::DateTime::from_timestamp(e.at, 0)
+                        .map(|t| t.to_rfc3339())
+                        .unwrap_or_default(),
+                    target: e.target_label,
+                    text: e.text,
+                })
+                .collect(),
+        )
+    }
+
+    async fn list_targets(&self) -> Vec<voxctrl_mcp::TargetInfo> {
+        self.targets
+            .lock()
+            .await
+            .iter()
+            .map(|t| voxctrl_mcp::TargetInfo { id: t.id.clone(), label: t.label.clone() })
+            .collect()
+    }
+
+    async fn set_target(&self, target_id: String) -> anyhow::Result<String> {
+        let targets = self.targets.lock().await.clone();
+        let Some(target) = targets.iter().find(|t| t.id == target_id) else {
+            let ids: Vec<&str> = targets.iter().map(|t| t.id.as_str()).collect();
+            anyhow::bail!("No output target '{target_id}'. Available: {}", ids.join(", "));
+        };
+        // Like pressing a hotkey bound to that target, minus the hotkey: no
+        // binding's per-hotkey settings apply.
+        *self.active_target.lock().await = target.id.clone();
+        self.active_binding_id.lock().await.clear();
+        *self.active_binding_label.lock().await = target.label.clone();
+        Ok(target.label.clone())
+    }
 }
 
 pub fn start_mcp_server(callbacks: Arc<AppState>) {

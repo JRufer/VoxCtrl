@@ -620,3 +620,34 @@ fn legacy_dom_names_and_underscoreless_letters_are_repaired() {
     }
     assert_eq!(canonical_key_name("KEY_*"), None, "keypad * or Shift+8: ambiguous");
 }
+
+/// Configs written before history existed load with private defaults:
+/// history kept in memory only, and closed to MCP clients.
+#[test]
+fn history_defaults_are_private() {
+    let cfg: AppConfig = serde_json::from_value(
+        serde_json::to_value(AppConfig::default())
+            .map(|mut v| {
+                v.as_object_mut().unwrap().remove("history");
+                v
+            })
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(cfg.history, HistoryConfig::default());
+    assert!(cfg.history.enabled);
+    assert!(!cfg.history.persist, "keeping history on disk is opt-in");
+    assert!(!cfg.history.mcp_access, "MCP access to history is opt-in");
+    assert_eq!(cfg.history.max_entries, 50);
+    assert_eq!(cfg.history.max_age_hours, 24);
+}
+
+#[test]
+fn history_entry_limit_is_validated() {
+    let mut cfg = AppConfig::default();
+    assert!(validate(&cfg).is_empty());
+    cfg.history.max_entries = HISTORY_MAX_ENTRIES + 1;
+    assert!(validate(&cfg)
+        .iter()
+        .any(|e| e.contains("history.max_entries")));
+}

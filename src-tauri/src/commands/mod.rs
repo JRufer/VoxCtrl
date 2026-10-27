@@ -13,6 +13,7 @@ mod hotkeys;
 mod setup;
 mod display;
 mod benchmark;
+mod history;
 
 pub use core::*;
 pub use routing::*;
@@ -25,3 +26,4 @@ pub use hotkeys::*;
 pub use setup::*;
 pub use display::*;
 pub use benchmark::*;
+pub use history::*;

@@ -19,6 +19,7 @@ mod features;
 mod openai;
 mod tts;
 mod mcp;
+mod history;
 mod migrate;
 mod store;
 mod paths;
@@ -31,6 +32,7 @@ pub use features::*;
 pub use openai::*;
 pub use tts::*;
 pub use mcp::*;
+pub use history::*;
 use migrate::*;
 pub use migrate::{canonical_key_name, canonicalize_key_names};
 pub use store::*;
@@ -48,6 +50,9 @@ pub struct AppConfig {
     pub openai: OpenAiConfig,
     pub tts: TtsConfig,
     pub mcp: McpConfig,
+    /// Absent from configs written before history existed.
+    #[serde(default)]
+    pub history: HistoryConfig,
 }
 
 #[cfg(test)]
