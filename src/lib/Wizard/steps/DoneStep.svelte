@@ -9,7 +9,7 @@
   let trayOpen = $state(false);
   let copied = $state(false);
   let unloadTtsIdle = $state(true);
-  let emailingLog = $state(false);
+  let reportingLog = $state(false);
   let logActionStatus = $state<string | null>(null);
 
   type SetupStatus = {
@@ -157,18 +157,17 @@
 
   /**
    * The wizard's own escape hatch for a setup that didn't work: pull the same
-   * log a bug report would quote, put it on the clipboard, and hand the user
-   * an email draft to jrufer@gmail.com already addressed and worded — all they
-   * have to do is paste.
+   * log a bug report would quote, put it on the clipboard, and open a new
+   * GitHub issue already titled and worded — all they have to do is paste.
    *
-   * A dedicated command and a hand-built mailto rather than the full Settings
+   * A dedicated command and a hand-built link rather than the full Settings
    * → Bug Report flow: that flow builds a redacted copy of the config, targets
    * and bindings too, which takes a PowerShell probe on Windows to assemble —
    * exactly the slow, blocking thing this screen should not do to someone who
    * has just watched setup fail.
    */
-  async function emailUsTheLog() {
-    emailingLog = true;
+  async function reportLogOnGitHub() {
+    reportingLog = true;
     logActionStatus = null;
     try {
       const log = await invoke<string>("wizard_failure_log");
@@ -177,17 +176,17 @@
       } catch (e) {
         console.error("Wizard: clipboard write failed:", e);
       }
-      const subject = encodeURIComponent("VoxCtrl Bug Report");
+      const title = encodeURIComponent("Setup problem");
       const body = encodeURIComponent(
-        "Paste the log contents below and I will get back to you with a fix ASAP.\n\n",
+        "What went wrong during setup:\n\n\n### Log\n\n(Paste the log from your clipboard here.)\n",
       );
-      const mailtoUrl = `mailto:jrufer@gmail.com?subject=${subject}&body=${body}`;
-      await invoke("send_bug_report_email", { mailtoUrl, attachmentPath: null });
-      logActionStatus = "Log copied to your clipboard — paste it into the email that just opened.";
+      const url = `https://github.com/JRufer/VoxCtrl/issues/new?labels=bug&title=${title}&body=${body}`;
+      await invoke("open_external_url", { url });
+      logActionStatus = "Log copied to your clipboard — paste it into the GitHub issue that just opened.";
     } catch (e) {
-      logActionStatus = `Could not open your email app: ${e}`;
+      logActionStatus = `Could not open GitHub: ${e}`;
     } finally {
-      emailingLog = false;
+      reportingLog = false;
     }
   }
 
@@ -351,8 +350,8 @@
           {copied ? "✓ Copied" : "Copy diagnostics"}
         </button>
         <button class="vx-btn small" onclick={openSettings}>Open Settings</button>
-        <button class="vx-btn small" onclick={emailUsTheLog} disabled={emailingLog}>
-          {#if emailingLog}<span class="vx-spinner"></span>{/if} Email us the log
+        <button class="vx-btn small" onclick={reportLogOnGitHub} disabled={reportingLog}>
+          {#if reportingLog}<span class="vx-spinner"></span>{/if} Report it on GitHub
         </button>
       </div>
       {#if logActionStatus}

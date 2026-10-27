@@ -15,7 +15,6 @@
   type Context = {
     relay_configured: boolean;
     issues_new_url: string;
-    support_email: string;
     log_path: string;
     install_id: string;
     limits: Limits;
@@ -30,7 +29,6 @@
     blocked_reason: string | null;
     can_submit: boolean;
     github_url: string;
-    mailto_url: string;
   };
 
   type Outcome = { ok: boolean; issue_url: string | null; message: string };
@@ -369,78 +367,6 @@
     }
   }
 
-  async function sendEmail() {
-    if (!statement.summary.trim() || descriptionLength < minChars) {
-      actionStatus = {
-        type: "error",
-        message: `Please provide a summary and at least ${minChars} characters of description before sending email.`,
-      };
-      return;
-    }
-    const currentPreview = await ensurePreview();
-    if (!currentPreview) {
-      actionStatus = {
-        type: "error",
-        message: previewError ?? "Could not build bug report preview.",
-      };
-      return;
-    }
-    outcome = null;
-    actionStatus = null;
-
-    // 1. Copy full markdown report to clipboard
-    try {
-      await navigator.clipboard.writeText(currentPreview.markdown);
-    } catch (_) {}
-
-    // 2. Automatically save report to Downloads so the user has the file to attach
-    let savedLocation = savedPath;
-    if (!savedLocation) {
-      try {
-        savedLocation = await invoke<string>("save_bug_report", {
-          statement: {
-            ...statement,
-            summary: statement.summary.trim() || "Bug report",
-          },
-          path: null,
-        });
-        savedPath = savedLocation;
-      } catch (e) {
-        console.warn("Auto-save report for email failed:", e);
-      }
-    }
-
-    try {
-      await invoke("send_bug_report_email", {
-        mailtoUrl: currentPreview.mailto_url,
-        attachmentPath: savedLocation ?? null,
-      });
-      actionStatus = {
-        type: "ok",
-        message: savedLocation
-          ? `Action complete: Opened bug report draft in your email client. Full report saved to ${savedLocation} and copied to clipboard. (If your mail client is webmail in a browser, browser security blocks auto-attaching files — please attach the saved file or press Ctrl+V to paste).`
-          : "Action complete: Opened bug report draft in your email client.",
-        path: savedLocation ?? undefined,
-      };
-    } catch (e) {
-      const ok = await openLink(currentPreview.mailto_url);
-      if (ok) {
-        actionStatus = {
-          type: "ok",
-          message: savedLocation
-            ? `Action complete: Opened bug report draft in your email client. Full report saved to ${savedLocation} and copied to clipboard.`
-            : "Action complete: Opened bug report draft in your email client.",
-          path: savedLocation ?? undefined,
-        };
-      } else {
-        actionStatus = {
-          type: "error",
-          message: previewError ?? "Could not open your email client.",
-        };
-      }
-    }
-  }
-
   async function openFolder(path?: string) {
     try {
       await invoke("open_report_folder", { path: path ?? savedPath ?? null });
@@ -653,9 +579,6 @@
       <button class="btn-secondary" type="button" onclick={copyReport}>
         {copied ? "Copied ✓" : "Copy report"}
       </button>
-      <button class="btn-secondary" type="button" onclick={sendEmail}>
-        Email it
-      </button>
     </div>
 
     {#if actionStatus}
@@ -689,9 +612,10 @@
       {/if}
       <strong>Open on GitHub</strong> fills in the issue form in your browser and waits for you to
       press Submit there.
-      <strong>Save</strong>, <strong>Copy</strong> and <strong>Email</strong> put the report in your
-      hands to send however you like — attach the saved file to an email to
-      <code>{context?.support_email ?? "the address on the project page"}</code>.
+      <strong>Save</strong> and <strong>Copy</strong> give you the full report to paste or attach
+      into a <a href={context?.issues_new_url ?? "https://github.com/JRufer/VoxCtrl/issues/new"}
+      onclick={(e) => { e.preventDefault(); openLink(context?.issues_new_url ?? "https://github.com/JRufer/VoxCtrl/issues/new"); }}>GitHub issue</a>
+      yourself.
     </p>
 
     {#if savedPath && !actionStatus}

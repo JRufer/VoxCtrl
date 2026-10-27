@@ -130,7 +130,7 @@ And the obvious workaround is worse than the problem: a GitHub token shipped
 inside VoxCtrl would be extractable by anyone who downloads it, and the first
 use anyone would find for it is the spam this feature is meant to avoid.
 
-So there are four routes, and you pick:
+Every route ends at an issue on [GitHub](https://github.com/JRufer/VoxCtrl/issues). You pick how it gets there:
 
 ### Send report — no account needed
 
@@ -151,15 +151,17 @@ report** and paste.
 
 ### Save report to a file
 
-Writes the whole report as Markdown wherever you choose. Attach it to an email,
-put it in a forum post, hand it over on a USB stick. This route is never
+Writes the whole report as Markdown wherever you choose, to attach to a GitHub
+issue yourself, perhaps from another computer. This route is never
 rate-limited and never needs a network.
 
-### Email it
+### Copy report
 
-Opens your mail client with a covering note and the report ID. The report itself
-goes as the saved file, attached by hand — mail clients truncate long message
-bodies without saying so, and half a report is worse than none.
+Puts the whole report on your clipboard, to paste into a GitHub issue. Use it
+when a report is too long for **Open on GitHub**'s prefilled link.
+
+Reports aren't taken by email. Keeping them all on GitHub means every one is
+visible, searchable and answerable in the same place.
 
 ---
 

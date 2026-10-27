@@ -13,7 +13,6 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 const CONTEXT = {
   relay_configured: true,
   issues_new_url: "https://github.com/JRufer/VoxCtrl/issues/new",
-  support_email: "jrufer@jrufer.com",
   log_path: "/home/tester/.local/share/voxctrl/startup_errors.log",
   install_id: "0123456789abcdef0123456789abcdef",
   limits: {
@@ -34,7 +33,6 @@ const PREVIEW = {
   blocked_reason: null,
   can_submit: true,
   github_url: "https://github.com/JRufer/VoxCtrl/issues/new?title=x",
-  mailto_url: "mailto:jrufer@jrufer.com?subject=x",
 };
 
 const A_REAL_DESCRIPTION =
@@ -187,12 +185,12 @@ describe("BugReportTab", () => {
     expect(screen.getByText(/Copied ✓/i)).toBeTruthy();
   });
 
-  test("Email it executes action and updates UI to say action is complete", async () => {
+  test("there is no email route: reports go through GitHub", async () => {
     render(BugReportTab);
     await fillForm();
-    const btn = await screen.findByRole("button", { name: /Email it/i }, { timeout: 3000 });
-    await fireEvent.click(btn);
-    await screen.findByText(/Action complete: Opened bug report draft in your email client/i);
+    await screen.findByRole("button", { name: /Open on GitHub/i }, { timeout: 3000 });
+    expect(screen.queryByRole("button", { name: /Email/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/@jrufer|mailto:|email to/i);
   });
 
   test("Submit bug report when no relay submits via GitHub and updates UI", async () => {
