@@ -367,6 +367,7 @@ pub fn run() {
         live_text_wanted: Arc::new(AtomicBool::new(false)),
         live_text_capable: Arc::new(AtomicBool::new(crate::pipeline::live_text_capable(&cfg_data))),
         live_session: Arc::new(std::sync::Mutex::new(crate::live_text::LiveSession::default())),
+        last_interim_ms: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         interim_for_commands: Arc::new(AtomicBool::new(false)),
         interim_from_start: Arc::new(AtomicBool::new(true)),
         speaking: Arc::new(AtomicBool::new(false)),

@@ -23,6 +23,17 @@ pub const STEP_SAMPLES: usize = 4_800;
 /// ...and at least this long since the last pass started.
 pub const MIN_PASS_INTERVAL_MS: u128 = 400;
 
+/// How long to wait between pass starts, given how long the last pass took.
+///
+/// Each pass runs the speech model on every core, so passes started back to
+/// back keep the whole CPU busy for as long as the user talks, which starves
+/// everything else on the machine, the overlay's own rendering included. With
+/// at least twice the last pass's duration between starts, the model is busy
+/// at most half the time; a fast (GPU) engine still updates every 0.4 s.
+pub fn pass_interval_ms(last_pass_ms: u32) -> u128 {
+    MIN_PASS_INTERVAL_MS.max(2 * u128::from(last_pass_ms))
+}
+
 /// A tail at least this long is cut at its next good pause.
 const COMMIT_AFTER: usize = 6 * SAMPLE_RATE;
 /// A tail this long is cut at its quietest point even without a clear pause,
@@ -45,11 +56,20 @@ const PAUSE_RATIO: f32 = 0.35;
 /// The step is measured on the whole recording, never on the window a pass
 /// covers: the window can stop growing (it is capped), and measuring on it is
 /// what used to stop live text after the first ten seconds.
-pub fn pass_due(total: usize, last_pass_total: usize, ms_since_last_pass: u128, in_flight: bool) -> bool {
+///
+/// `interval_ms` is the minimum time between pass starts, from
+/// [`pass_interval_ms`].
+pub fn pass_due(
+    total: usize,
+    last_pass_total: usize,
+    ms_since_last_pass: u128,
+    interval_ms: u128,
+    in_flight: bool,
+) -> bool {
     !in_flight
         && total >= MIN_PASS_SAMPLES
         && total.saturating_sub(last_pass_total) >= STEP_SAMPLES
-        && ms_since_last_pass >= MIN_PASS_INTERVAL_MS
+        && ms_since_last_pass >= interval_ms.max(MIN_PASS_INTERVAL_MS)
 }
 
 fn rms(frame: &[f32]) -> f32 {
@@ -246,7 +266,7 @@ mod tests {
             total += chunk;
             let now = i * 100;
             let in_flight = now < busy_until;
-            if pass_due(total, last_total, now - last_ms, in_flight) {
+            if pass_due(total, last_total, now - last_ms, pass_interval_ms(150), in_flight) {
                 last_total = total;
                 last_ms = now;
                 busy_until = now + 150;
@@ -259,11 +279,41 @@ mod tests {
 
     #[test]
     fn no_pass_while_one_is_running_or_too_soon() {
-        assert!(!pass_due(5 * S, 0, 1000, true));
-        assert!(!pass_due(5 * S, 0, 100, false));
-        assert!(!pass_due(5 * S, 5 * S - 100, 1000, false));
-        assert!(!pass_due(MIN_PASS_SAMPLES - 1, 0, 1000, false));
-        assert!(pass_due(5 * S, 0, 1000, false));
+        let gap = MIN_PASS_INTERVAL_MS;
+        assert!(!pass_due(5 * S, 0, 1000, gap, true));
+        assert!(!pass_due(5 * S, 0, 100, gap, false));
+        assert!(!pass_due(5 * S, 5 * S - 100, 1000, gap, false));
+        assert!(!pass_due(MIN_PASS_SAMPLES - 1, 0, 1000, gap, false));
+        assert!(pass_due(5 * S, 0, 1000, gap, false));
+    }
+
+    #[test]
+    fn slow_passes_leave_the_cpu_idle_at_least_half_the_time() {
+        // A CPU engine taking 700 ms a pass: simulate 30 s of speech and
+        // measure how much of that time a pass was running.
+        let pass_ms = 700u128;
+        let chunk = S / 10;
+        let (mut total, mut last_total, mut last_ms, mut busy_until, mut busy) = (0usize, 0usize, 0u128, 0u128, 0u128);
+        for i in 1..=300u128 {
+            total += chunk;
+            let now = i * 100;
+            if pass_due(total, last_total, now - last_ms, pass_interval_ms(pass_ms as u32), now < busy_until) {
+                last_total = total;
+                last_ms = now;
+                busy_until = now + pass_ms;
+                busy += pass_ms;
+            }
+        }
+        let duty = busy as f64 / 30_000.0;
+        assert!(duty <= 0.55, "busy {:.0}% of the time", duty * 100.0);
+        assert!(busy >= 10 * pass_ms, "still updates regularly: {busy} ms busy");
+    }
+
+    #[test]
+    fn fast_passes_keep_the_quick_cadence() {
+        assert_eq!(pass_interval_ms(0), MIN_PASS_INTERVAL_MS);
+        assert_eq!(pass_interval_ms(120), MIN_PASS_INTERVAL_MS);
+        assert_eq!(pass_interval_ms(700), 1400);
     }
 
     #[test]

@@ -270,7 +270,11 @@ nothing.
 into a committed head and an uncommitted tail. A pass runs whenever at least
 0.3 s of new audio and 0.4 s have passed since the last one and none is running
 (`live_text::pass_due`, measured on the whole recording, so passes keep coming
-however long the dictation). Each *live* pass transcribes only the tail; words
+however long the dictation). Because each pass runs the speech model on every
+core, the next pass also waits at least twice as long as the last one took
+(`live_text::pass_interval_ms`): a CPU-only engine is busy at most about half
+the time, leaving the rest of the machine (the overlay's own rendering
+included) room to run, while a fast GPU engine still updates every 0.4 s. Each *live* pass transcribes only the tail; words
 that two passes in a row agree on (ignoring case and punctuation) are shown as
 committed, the rest as tentative. Once the tail is 6 s long it is cut at its
 quietest 100 ms (a pause between words), or at 12 s regardless, and the piece
