@@ -244,7 +244,7 @@ pub fn spawn_status_ticker(
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
-        let mut last_flags: Option<(bool, bool, bool, bool, bool, u32)> = None;
+        let mut last_flags: Option<(bool, bool, bool, bool, bool, u32, bool)> = None;
         let mut last_emit = tokio::time::Instant::now() - HEARTBEAT;
         // The label is derived from three rarely-changing strings and the
         // targets (tracked by their version, so a renamed label shows at once);
