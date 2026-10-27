@@ -70,6 +70,7 @@ fn make_test_state() -> AppState {
         live_text_wanted: Arc::new(AtomicBool::new(false)),
         live_text_capable: Arc::new(AtomicBool::new(true)),
         live_session: Arc::new(std::sync::Mutex::new(crate::live_text::LiveSession::default())),
+        last_interim_ms: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         interim_for_commands: Arc::new(AtomicBool::new(false)),
         interim_from_start: Arc::new(AtomicBool::new(true)),
         speaking: Arc::new(AtomicBool::new(false)),

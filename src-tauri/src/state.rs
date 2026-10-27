@@ -29,6 +29,10 @@ pub struct AppState {
     /// The live transcript of the current recording: committed words, the
     /// uncommitted tail, and the pass in flight. See `live_text.rs`.
     pub live_session: Arc<std::sync::Mutex<crate::live_text::LiveSession>>,
+    /// How long the last mid-recording pass took the speech model, in ms.
+    /// Spaces out the next pass so the passes can't monopolise the CPU
+    /// (`live_text::pass_interval_ms`).
+    pub last_interim_ms: Arc<std::sync::atomic::AtomicU32>,
     /// True when the current recording's interim passes are also used for
     /// early voice-command detection (`features.early_command_detection`).
     pub interim_for_commands: Arc<AtomicBool>,

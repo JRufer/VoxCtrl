@@ -241,6 +241,9 @@ pub fn spawn_audio_coordinator(
                         total,
                         last_interim_sample_count,
                         last_interim_instant.elapsed().as_millis(),
+                        crate::live_text::pass_interval_ms(
+                            state_for_audio.last_interim_ms.load(std::sync::atomic::Ordering::Relaxed),
+                        ),
                         state_for_audio.is_interim_in_flight(),
                     )
                 {
@@ -345,6 +348,7 @@ pub fn spawn_text_delivery_worker(
         while let Ok(output) = text_rx.recv() {
             if output.is_interim {
                 state.set_interim_in_flight(false);
+                state.last_interim_ms.store(output.inference_ms, std::sync::atomic::Ordering::Relaxed);
                 // Live text: fold this pass into the session's committed and
                 // tentative words. An empty result still counts (a commit
                 // pass over a pause moves the tail on); a failed one doesn't.
