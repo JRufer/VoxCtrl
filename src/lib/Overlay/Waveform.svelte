@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -51,6 +53,7 @@
   class:on={active}
   class:processing={$status.processing}
   class:initializing={recording && !isReady}
+  class:live={$liveTextShown}
 >
   <div class="scope-inner">
     <div class="header">
@@ -84,6 +87,17 @@
         <path class="trace" d={tracePath} />
       </svg>
     </div>
+
+    {#if $liveTextShown}
+      <div class="readout">
+        <span class="tgt readout-tag">TXT ▸</span>
+        <LiveText
+          class="readout-text"
+          lines={2}
+          placeholder={$status.processing ? "decoding trace…" : recording && !isReady ? "calibrating input…" : "awaiting signal…"}
+        />
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -195,6 +209,42 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Live transcript readout under the trace */
+  .scope.live {
+    height: 164px;
+  }
+
+  .readout {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    border-top: 1px solid rgba(74, 222, 128, 0.14);
+    padding-top: 6px;
+  }
+
+  .readout-tag {
+    flex-shrink: 0;
+    line-height: 12px;
+  }
+
+  .readout :global(.readout-text) {
+    flex: 1;
+    min-width: 0;
+    --lt-size: 10px;
+    --lt-line-height: 12px;
+    --lt-weight: 600;
+    --lt-tracking: 0.04em;
+    --lt-color: #d1fae5;
+    --lt-tentative: rgba(74, 222, 128, 0.55);
+    --lt-placeholder: rgba(187, 247, 208, 0.3);
+    --lt-flash: #4ade80;
+  }
+
+  .processing :global(.readout-text) {
+    --lt-tentative: rgba(56, 189, 248, 0.6);
+    --lt-flash: #38bdf8;
   }
 
   .stage {

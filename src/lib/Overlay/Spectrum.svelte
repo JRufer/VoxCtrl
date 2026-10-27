@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -59,7 +61,7 @@
   });
 </script>
 
-<div class="spectrum" class:on={active}>
+<div class="spectrum" class:on={active} class:live={$liveTextShown}>
   <div class="header">
     <span class="led" class:processing={$status.processing} class:standby={recording && !isReady}></span>
     <span class="title">SPECTRUM // EQ-16</span>
@@ -85,6 +87,17 @@
       <div class="bar" style="height: {h}px; opacity: {0.45 + 0.55 * (h / SPECTRUM_MAX)}"></div>
     {/each}
   </div>
+
+  {#if $liveTextShown}
+    <div class="lyric">
+      <span class="tgt lyric-tag">TXT ▸</span>
+      <LiveText
+        class="lyric-text"
+        lines={2}
+        placeholder={$status.processing ? "analyzing…" : recording && !isReady ? "warming up…" : "listening…"}
+      />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -194,6 +207,49 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Live transcript: the EQ lifts and a lyric line runs under its floor */
+  .spectrum {
+    --lift: 0px;
+  }
+
+  .spectrum.live {
+    --lift: 38px;
+    height: 170px;
+  }
+
+  .spectrum .bars,
+  .spectrum .floor {
+    bottom: calc(16px + var(--lift));
+  }
+
+  .lyric {
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    bottom: 12px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .lyric-tag {
+    flex-shrink: 0;
+    line-height: 12px;
+  }
+
+  .lyric :global(.lyric-text) {
+    flex: 1;
+    min-width: 0;
+    --lt-size: 10px;
+    --lt-line-height: 12px;
+    --lt-weight: 650;
+    --lt-tracking: 0.04em;
+    --lt-color: #fae8ff;
+    --lt-tentative: rgba(232, 121, 249, 0.7);
+    --lt-placeholder: rgba(245, 208, 254, 0.35);
+    --lt-flash: #e879f9;
   }
 
   .bars {

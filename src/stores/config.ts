@@ -76,6 +76,8 @@ export interface UiConfig {
   show_notification: boolean;
   show_command_overlay: boolean;
   command_overlay_duration_secs: number;
+  /** Show the words being transcribed, live, in the overlay. */
+  show_live_text: boolean;
 }
 
 export interface FeaturesConfig {
@@ -206,6 +208,7 @@ const defaultConfig: AppConfig = {
     show_notification: false,
     show_command_overlay: true,
     command_overlay_duration_secs: 3,
+    show_live_text: true,
   },
   features: {
     remove_fillers: true,

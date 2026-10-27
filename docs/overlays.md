@@ -215,40 +215,78 @@ driven this way, with no script).
 
 ### Live transcript text
 
-A custom overlay can show the words being transcribed **while the user is still
-speaking**. It opts in by putting the attribute `data-voxctrl-live-text` on an
-element:
+Every overlay can show the words being transcribed **while the user is still
+speaking**, and replace them with the finished transcript when the recording
+ends. It is controlled by **Settings → Visual & Feedback → Show live transcript
+in overlay** (`ui.show_live_text`, on by default).
+
+**Built-in styles** each draw it in their own look (`LiveText.svelte`, styled by
+each component through `--lt-*` custom properties): a TRANSCRIPT field on the
+Voice Card, a `TXT ▸` readout under the Waveform trace, a transmission log in the
+Pulse plate, words in the Ocean Wave sky, a caption under Mono Bars, a lyric line
+under the Spectrum floor, stdout lines in the Terminal and a typed paper label
+under the Vinyl meter. With the setting off, or with an engine that cannot
+produce live text (`status.live_text_capable` is false), the area is not
+rendered and each style looks exactly as it did before.
+
+**Committed and tentative words.** The transcript arrives in two parts.
+*Committed* words will not change; *tentative* words are the engine's current
+guess at the newest speech and may still be corrected, so overlays draw them
+dimmer or tinted. When the recording ends, the final transcript replaces the
+live guess, entirely committed, with `final: true`.
+
+**Custom overlays** opt in by marking elements with any of these attributes:
 
 ```html
-<div class="live" data-voxctrl-live-text></div>
+<div data-voxctrl-live-text></div>                    <!-- the whole transcript -->
+<span data-voxctrl-live-committed></span>             <!-- settled words -->
+<span data-voxctrl-live-tentative></span>             <!-- words that may change -->
 ```
 
-Because overlays cannot run script, `Overlay.svelte` writes into the element: it
-listens for the `live-transcript` event ([API](./api.md#live-transcript)) and
-sets the element's `textContent`, re-applying it after every render of the
-overlay HTML. It also sets `--voxctrl-has-live-text` (`0`/`1`) on the page root
-and a `data-empty` attribute on the element while there is no text, so CSS can
-show a "Listening…" line until words arrive.
+Because overlays cannot run script, `Overlay.svelte` writes into them: it
+listens for the `live-transcript` event ([API](./api.md#live-transcript)) and sets
+each marked element's `textContent`, re-applying it after every render of the
+overlay HTML, with a `data-empty` attribute while it has no text. It also sets
+these on the page root:
 
-The attribute is also the **opt-in that turns the feature on**. At the start of
-each recording the backend (`pipeline::spawn_audio_coordinator`) reads the active
-overlay's `index.html` (`commands::overlay_has_live_text`; HTML comments are
-ignored, so documenting the attribute in a comment does not enable it) and, if
-it is present and the overlay is shown, runs extra mid-recording transcription
-passes over the most recent ~10 s of audio (`LIVE_TEXT_MAX_SAMPLES`) and emits
-each result. Overlays without the attribute pay nothing. The passes are skipped
-for the remote backend and CPU-only medium/large Whisper models, so an overlay
-must look intentional when no text ever arrives.
+| Property | Values | Meaning |
+|---|---|---|
+| `--voxctrl-has-live-text` | `0`/`1` | Words have arrived (swap a "Listening…" line for them) |
+| `--voxctrl-live-final` | `0`/`1` | The finished transcript has replaced the live guess |
+| `--voxctrl-live-enabled` | `0`/`1` | Live text is switched on and the engine can produce it; an overlay can hide its text area and shrink back when `0` |
+| `--voxctrl-live-split` | `1` | This version fills the committed/tentative elements. Older versions never set it, so an overlay that carries both a split copy and a whole-text copy can show the right one with `var(--voxctrl-live-split, 0)` |
 
-What is shown is the interim transcript after the normal text clean-up. It is
-not processed by S1-mini or the hotkey's OpenAI rewrite, and a spoken voice
-command's trigger words are still in it, so it can differ from the delivered
-text. It is also visible in screen shares.
+The attributes are also the **opt-in that turns the work on**. At the start of
+each recording the backend (`pipeline::spawn_audio_coordinator`) decides
+`live_text_wanted`: the overlay is shown, live text is switched on, the engine
+can produce it (`pipeline::live_text_capable`: not the remote backend and not a
+CPU-only medium/large Whisper model), and the style is a built-in one or a
+custom one whose `index.html` contains a live-text attribute
+(`commands::overlay_has_live_text`; HTML comments are ignored, so documenting
+the attributes in a comment does not enable them). Overlays without them pay
+nothing.
 
-`Overlays/Dark Pill` in the
-[overlays repository](https://github.com/JRufer/VoxCtrl-Scripts-and-Overlays) is a
-complete example (Dark Minimal at twice the height, with a three-line text area
-at 9 px), and that repository's overlay-designer skills know the contract.
+**How the passes work** (`src-tauri/src/live_text.rs`). The recording is split
+into a committed head and an uncommitted tail. A pass runs whenever at least
+0.3 s of new audio and 0.4 s have passed since the last one and none is running
+(`live_text::pass_due`, measured on the whole recording, so passes keep coming
+however long the dictation). Each *live* pass transcribes only the tail; words
+that two passes in a row agree on (ignoring case and punctuation) are shown as
+committed, the rest as tentative. Once the tail is 6 s long it is cut at its
+quietest 100 ms (a pause between words), or at 12 s regardless, and the piece
+before the cut is transcribed once more as a *commit* pass whose text is
+appended to the committed text for good. Passes therefore stay short however
+long the user talks. The final transcription still runs over the whole
+recording, as before.
+
+What is shown live is the interim transcript after the normal text clean-up.
+It is not processed by S1-mini or the hotkey's OpenAI rewrite, and a spoken
+voice command's trigger words are still in it, so it can differ from the
+delivered text. It is also visible in screen shares.
+
+All six overlays in the
+[overlays repository](https://github.com/JRufer/VoxCtrl-Scripts-and-Overlays)
+use it, and the bundled `Custom/` template shows it as a TRANSCRIPT field.
 
 This is CSS-only because it has to be: the window's `script-src 'self'`
 content-security-policy (`src-tauri/tauri.conf.json`) blocks inline

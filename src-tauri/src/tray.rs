@@ -417,6 +417,7 @@ pub fn spawn_status_ticker(
                 state_for_ticker.is_mcp_recording(),
                 state_for_ticker.is_audio_ready(),
                 state_for_ticker.total_words(),
+                state_for_ticker.is_live_text_capable(),
             );
             let now = tokio::time::Instant::now();
             let unchanged = last_flags == Some(flags) && !label_changed;
@@ -435,6 +436,7 @@ pub fn spawn_status_ticker(
                 "word_count": flags.5,
                 "active_target_id": &active_target_id,
                 "active_target_label": &cached_label,
+                "live_text_capable": flags.6,
             });
 
             let _ = handle.emit("status-tick", &payload);

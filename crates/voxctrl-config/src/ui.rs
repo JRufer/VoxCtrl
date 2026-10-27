@@ -30,6 +30,10 @@ fn default_command_overlay_duration_secs() -> u32 {
     3
 }
 
+fn default_show_live_text() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub show_overlay: bool,
@@ -46,6 +50,10 @@ pub struct UiConfig {
     pub show_command_overlay: bool,
     #[serde(default = "default_command_overlay_duration_secs")]
     pub command_overlay_duration_secs: u32,
+    /// Show the words being transcribed, live, in the overlay. Costs extra
+    /// transcription passes while recording, so it can be switched off.
+    #[serde(default = "default_show_live_text")]
+    pub show_live_text: bool,
     /// Whether the first-run setup wizard has been finished.
     ///
     /// The serde default is `true` on purpose: a config file written by an
@@ -68,6 +76,7 @@ impl Default for UiConfig {
             show_notification: false,
             show_command_overlay: true,
             command_overlay_duration_secs: 3,
+            show_live_text: true,
             setup_completed: false,
         }
     }

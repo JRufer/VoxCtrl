@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -18,6 +20,7 @@
   class:on={active}
   class:processing={$status.processing}
   class:initializing={recording && !isReady}
+  class:live={$liveTextShown}
   style="--lvl: {level}"
 >
   <!-- Sonar dial -->
@@ -36,6 +39,7 @@
 
   <!-- Target-lock plate -->
   <div class="plate">
+    <div class="plate-head">
     <span class="reticle">⌖</span>
     <span class="plate-text">
       <span class="caption">
@@ -57,6 +61,16 @@
         {/if}
       </span>
     </span>
+    </div>
+
+    {#if $liveTextShown}
+      <div class="log-rule"></div>
+      <LiveText
+        class="log"
+        lines={4}
+        placeholder={$status.processing ? "Decoding transmission…" : recording && !isReady ? "Acquiring signal…" : "Awaiting transmission…"}
+      />
+    {/if}
   </div>
 </div>
 
@@ -230,6 +244,40 @@
   @keyframes lock-pulse {
     0%, 100% { opacity: 0.25; }
     50% { opacity: 0.85; }
+  }
+
+  .plate-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  /* Live transcript: the plate grows to the dial's height and becomes a log */
+  .live .plate {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 264px;
+    height: 124px;
+    padding: 12px 14px 10px;
+    box-sizing: border-box;
+  }
+
+  .log-rule {
+    height: 1px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, var(--tone-soft), transparent);
+  }
+
+  .plate :global(.log) {
+    --lt-size: 10.5px;
+    --lt-line-height: 13px;
+    --lt-weight: 600;
+    --lt-color: #e5e7eb;
+    --lt-tentative: var(--tone);
+    --lt-placeholder: rgba(255, 255, 255, 0.3);
+    --lt-flash: var(--tone);
   }
 
   .reticle {

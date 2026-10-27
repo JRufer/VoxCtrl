@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { onLevelFrame } from "./audio-level";
   import { status } from "../../stores/status";
+  import { liveTextShown } from "../../stores/liveTranscript";
+  import LiveText from "./LiveText.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -63,7 +65,7 @@
   });
 </script>
 
-<div class="vinyl" class:on={active}>
+<div class="vinyl" class:on={active} class:live={$liveTextShown}>
   <div class="header">
     <span class="vu-label">VU</span>
     <span class="subtitle">
@@ -96,6 +98,16 @@
     </svg>
     <div class="pivot"></div>
   </div>
+
+  {#if $liveTextShown}
+    <div class="label-strip">
+      <LiveText
+        class="typed"
+        lines={2}
+        placeholder={$status.processing ? "processing tape…" : recording && !isReady ? "warming up the valves…" : "rolling…"}
+      />
+    </div>
+  {/if}
 
   <div class="target">{targetLabel}</div>
 </div>
@@ -237,6 +249,46 @@
     height: 12px;
     border-radius: 50%;
     background: #292524;
+  }
+
+  /* Live transcript: a typed paper label under the meter face */
+  .vinyl.live {
+    height: 184px;
+  }
+
+  .label-strip {
+    position: absolute;
+    left: 16px;
+    top: 108px;
+    width: 288px;
+    height: 42px;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    background:
+      repeating-linear-gradient(
+        180deg,
+        transparent 0,
+        transparent 13px,
+        rgba(120, 89, 53, 0.14) 13px,
+        rgba(120, 89, 53, 0.14) 14px
+      ),
+      rgba(255, 252, 244, 0.7);
+    background-position: 0 7px;
+    border: 1px solid rgba(120, 89, 53, 0.25);
+    border-radius: 6px;
+  }
+
+  .label-strip :global(.typed) {
+    --lt-font: 'Courier Prime', 'Courier New', Courier, monospace;
+    --lt-size: 10.5px;
+    --lt-line-height: 14px;
+    --lt-weight: 700;
+    --lt-tracking: 0;
+    --lt-color: #3b2a1a;
+    --lt-tentative: rgba(91, 69, 48, 0.5);
+    --lt-placeholder: rgba(91, 69, 48, 0.45);
+    --lt-flash: rgba(220, 38, 38, 0.6);
+    --lt-fade: 0px;
   }
 
   .target {

@@ -16,6 +16,7 @@ mod bug_report;
 mod commands;
 mod custom_overlays;
 mod installer;
+mod live_text;
 mod host_env;
 mod mint_shortcuts;
 mod pipeline;
@@ -364,6 +365,8 @@ pub fn run() {
         processing: Arc::new(AtomicBool::new(false)),
         interim_in_flight: Arc::new(AtomicBool::new(false)),
         live_text_wanted: Arc::new(AtomicBool::new(false)),
+        live_text_capable: Arc::new(AtomicBool::new(crate::pipeline::live_text_capable(&cfg_data))),
+        live_session: Arc::new(std::sync::Mutex::new(crate::live_text::LiveSession::default())),
         interim_for_commands: Arc::new(AtomicBool::new(false)),
         interim_from_start: Arc::new(AtomicBool::new(true)),
         speaking: Arc::new(AtomicBool::new(false)),

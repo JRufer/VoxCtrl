@@ -16,11 +16,19 @@ pub struct AppState {
     pub processing: Arc<AtomicBool>,
     /// True while an interim (mid-recording) transcription pass is running
     pub interim_in_flight: Arc<AtomicBool>,
-    /// True for a recording whose overlay shows live transcript text (its
-    /// HTML has a `data-voxctrl-live-text` element), which is what turns on
-    /// the extra mid-recording transcription passes that feed it. Decided
-    /// when the recording starts.
+    /// True for a recording whose overlay shows live transcript text (a
+    /// built-in style with live text switched on, or a custom overlay whose
+    /// HTML has a `data-voxctrl-live-*` element), which is what turns on the
+    /// extra mid-recording transcription passes that feed it. Decided when
+    /// the recording starts.
     pub live_text_wanted: Arc<AtomicBool>,
+    /// Whether the current speech engine can produce live text at all (a
+    /// local engine that isn't a heavy model without a GPU). Mirrors the
+    /// config so the status ticker can report it without locking.
+    pub live_text_capable: Arc<AtomicBool>,
+    /// The live transcript of the current recording: committed words, the
+    /// uncommitted tail, and the pass in flight. See `live_text.rs`.
+    pub live_session: Arc<std::sync::Mutex<crate::live_text::LiveSession>>,
     /// True when the current recording's interim passes are also used for
     /// early voice-command detection (`features.early_command_detection`).
     pub interim_for_commands: Arc<AtomicBool>,
@@ -262,6 +270,14 @@ impl AppState {
         if let Some(tx) = self.speaking_tx.get() {
             let _ = tx.send(v);
         }
+    }
+
+    pub fn is_live_text_capable(&self) -> bool {
+        self.live_text_capable.load(Ordering::SeqCst)
+    }
+
+    pub fn set_live_text_capable(&self, v: bool) {
+        self.live_text_capable.store(v, Ordering::SeqCst);
     }
 
     pub fn is_overlay_enabled(&self) -> bool {

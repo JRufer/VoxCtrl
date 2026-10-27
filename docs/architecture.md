@@ -34,6 +34,7 @@ VoxCtrl/
 │       ├── main.rs    # App bootstrap
 │       ├── lib.rs     # Pipeline coordinator
 │       ├── commands.rs# Tauri #[command] handlers
+│       ├── live_text.rs # Live transcript: pass scheduling, commit cuts, committed/tentative words
 │       └── state.rs   # Shared AppState
 │
 └── crates/

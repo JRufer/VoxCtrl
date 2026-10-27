@@ -4,6 +4,14 @@
   import { listen } from "@tauri-apps/api/event";
   import { recording, speaking, mcpRecording, status } from "../../stores/status";
   import { config } from "../../stores/config";
+  import { get } from "svelte/store";
+  import {
+    liveTranscript,
+    liveTextShown,
+    liveFullText,
+    EMPTY_LIVE_TRANSCRIPT,
+    type LiveTranscript,
+  } from "../../stores/liveTranscript";
   import VoiceCard from "./VoiceCard.svelte";
   import Waveform from "./Waveform.svelte";
   import Pulse from "./Pulse.svelte";
@@ -117,39 +125,65 @@
   });
 
   // ── Live transcript ──────────────────────────────────────────────────────
-  // A custom overlay opts in by putting `data-voxctrl-live-text` on an
-  // element. Overlays cannot run script (the CSP blocks it), so the text is
-  // written into those elements from here. The backend only runs the extra
-  // mid-recording transcription when the active overlay has such an element.
-  let liveText = $state("");
-  let liveSession = 0;
+  // The backend streams the words being transcribed while the user speaks:
+  // `committed` words that consecutive passes agreed on (they no longer
+  // change), `tentative` words that may still be corrected, and finally the
+  // finished, cleaned-up transcript with `final: true`.
+  //
+  // Built-in overlays read it from the liveTranscript store (LiveText.svelte).
+  // A custom overlay opts in through its HTML: it cannot run script (the CSP
+  // blocks it), so the text is written into its marked elements from here —
+  //   [data-voxctrl-live-text]       the whole transcript (the original hook)
+  //   [data-voxctrl-live-committed]  committed words only
+  //   [data-voxctrl-live-tentative]  tentative words only
+  // plus root properties --voxctrl-has-live-text, --voxctrl-live-final and
+  // --voxctrl-live-split (always 1 here, so an overlay can show its split
+  // view on this version and fall back to the whole-text element elsewhere)
+  // and --voxctrl-live-enabled (0 when the user has switched live text off,
+  // so an overlay can collapse its text area).
+  // The backend only runs the extra mid-recording transcription when the
+  // active overlay wants it.
   let customContentEl = $state<HTMLElement | undefined>(undefined);
   let unlistenLiveTranscript: (() => void) | null = null;
 
-  function onLiveTranscript(payload: { session_id: number; text: string }) {
+  function onLiveTranscript(payload: Partial<LiveTranscript> & { session_id: number; text?: string }) {
+    const current = get(liveTranscript);
     // A pass from an earlier recording can land after the next one starts.
-    if (payload.session_id < liveSession) return;
-    liveSession = payload.session_id;
-    liveText = payload.text;
+    if (payload.session_id < current.session_id) return;
+    liveTranscript.set({
+      session_id: payload.session_id,
+      // Older backends sent only `text`: treat it all as tentative.
+      committed: payload.committed ?? "",
+      tentative: payload.tentative ?? (payload.committed === undefined ? payload.text ?? "" : ""),
+      final: payload.final ?? false,
+    });
   }
 
   $effect(() => {
     // A new recording starts with a clean slate.
-    if ($recording) liveText = "";
+    if ($recording) liveTranscript.update((t) => ({ ...EMPTY_LIVE_TRANSCRIPT, session_id: t.session_id }));
   });
 
   $effect(() => {
     // Re-applied after every render of the overlay's HTML, which replaces
     // the elements and would otherwise drop the text.
-    const text = liveText;
+    const t = $liveTranscript;
+    const text = liveFullText(t);
     void processedHtml;
     const root = document.documentElement;
     root.style.setProperty("--voxctrl-has-live-text", text ? "1" : "0");
+    root.style.setProperty("--voxctrl-live-final", t.final ? "1" : "0");
+    root.style.setProperty("--voxctrl-live-split", "1");
+    root.style.setProperty("--voxctrl-live-enabled", $liveTextShown ? "1" : "0");
     if (!customContentEl) return;
-    customContentEl.querySelectorAll("[data-voxctrl-live-text]").forEach((el) => {
-      el.textContent = text;
-      el.toggleAttribute("data-empty", !text);
-    });
+    const fill = (selector: string, value: string) =>
+      customContentEl!.querySelectorAll(selector).forEach((el) => {
+        el.textContent = value;
+        el.toggleAttribute("data-empty", !value);
+      });
+    fill("[data-voxctrl-live-text]", text);
+    fill("[data-voxctrl-live-committed]", t.committed.trim());
+    fill("[data-voxctrl-live-tentative]", t.tentative.trim());
   });
 
   let targetVolume = 0;
@@ -324,7 +358,7 @@
       unlistenAudioLevel = unlisten;
     });
 
-    listen<{ session_id: number; text: string }>("live-transcript", (event) => {
+    listen<Partial<LiveTranscript> & { session_id: number; text?: string }>("live-transcript", (event) => {
       onLiveTranscript(event.payload);
     }).then((unlisten) => {
       unlistenLiveTranscript = unlisten;

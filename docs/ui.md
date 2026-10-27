@@ -89,6 +89,7 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### Visual Feedback Tab
 - Preview and selection of overlay animation styles
+- **Show live transcript in overlay**: Checkbox (shown while the overlay is on) that displays the words being transcribed as you speak, then the finished transcript (`show_live_text`, default on). See [Live transcript text](./overlays.md#live-transcript-text).
 - **Show overlay on voice command trigger**: Checkbox toggle to enable or disable displaying the temporary UI overlay pill when a voice command trigger is activated (`show_command_overlay`).
 - **Command overlay duration (seconds)**: Number input control to set the display duration (1–10s, default 3s) for the voice command overlay pill (`command_overlay_duration_secs`).
 - **Overlay Position Control**: Dropdown choice for setting the Heads-Up display screen alignment (**Top**, **Center**, or **Bottom** of the screen).
