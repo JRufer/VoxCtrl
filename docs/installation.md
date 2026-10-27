@@ -467,3 +467,22 @@ If the application crashes, fails to launch, or encounters hardware/model errors
 - **Privacy:** To protect your privacy, this file **never** records or contains any transcribed speech text or LLM prompts. It only logs system configurations (models loaded, input devices, sample rates) and application/compiler errors.
 - **Submitting Reports:** Please attach this log file when opening issues or submitting crash reports on GitHub to help us diagnose the problem.
 
+### Overlay only partly drawn (WebKitGTK 2.54+)
+If the overlay shows only its moving parts (a waveform or blinking light)
+while its text, borders and background vanish, the cause is WebKitGTK 2.54's
+non-accelerated renderer, which wipes the unchanged parts of a transparent
+window. VoxCtrl avoids it automatically from 0.8.4: on WebKitGTK 2.54 and newer
+it keeps WebKit's accelerated renderer and sets
+`WEBKIT_DMABUF_RENDERER_FORCE_SHM=1`, so frames are shared through memory
+instead of GPU buffers (which the proprietary NVIDIA driver can't allocate).
+Older WebKitGTK still gets `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+
+Both are defaults: setting either variable yourself before starting VoxCtrl
+overrides them, for example to compare renderers:
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=0 WEBKIT_DMABUF_RENDERER_FORCE_SHM=1 ./VoxCtrl-linux-x86_64-vulkan.AppImage
+```
+
+See `src-tauri/src/render_env.rs` for the full reasoning.
+
