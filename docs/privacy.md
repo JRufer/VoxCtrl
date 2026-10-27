@@ -13,7 +13,7 @@ Everything below describes what the code does, with pointers to where it does it
 | Can VoxCtrl read what I type in other applications? | **No.** Your desktop delivers shortcuts; VoxCtrl is never given keystrokes. |
 | Does installing it grant any process new access to my keyboard? | **No.** No udev rule, no `input` group, nothing. |
 | Does my audio leave the machine? | **No by default.** Audio only leaves your machine if you explicitly configure the Remote Speech Engine pointing to an external or LAN server. |
-| Does it keep what I dictate? | **In memory only, by default**, as Settings → History, and gone when VoxCtrl quits. Keeping it across restarts is opt-in and encrypted. [Details](#dictation-history). |
+| Does it keep what I dictate? | **In memory only, by default**, shown in the History window (tray menu → History), and gone when VoxCtrl quits. Keeping it across restarts is opt-in and encrypted. [Details](#dictation-history). |
 | Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
 | Does it phone home at all? | **Only when you press "Check for updates."** VoxCtrl never checks on its own; that request carries no identifiers, nothing about you. [Details](#network). |
 | Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
@@ -193,7 +193,7 @@ check command and what it shows.
 
 ## Dictation history
 
-Settings → History lists your recent dictations so you can copy one, type it
+The History window (tray menu → History) lists your recent dictations so you can copy one, type it
 again or send it to another target. People dictate things they wouldn't want
 written down, so the history is built to leave as little behind as possible:
 

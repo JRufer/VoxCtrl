@@ -16,6 +16,8 @@ pub const WIZARD_WINDOW: &str = "wizard";
 
 /// Label of the "a new version is available" window.
 pub const UPDATE_WINDOW: &str = "update";
+/// Label of the dictation history window (tray → History).
+pub const HISTORY_WINDOW: &str = "history";
 
 /// The wizard's screens are laid out on a wide stage — two engine cards side by
 /// side, eight overlay thumbnails in a row, five voice cards in a row. The
@@ -590,6 +592,34 @@ pub fn open_update_window(app: &tauri::AppHandle) -> Result<(), String> {
     .decorations(true)
     .build()
     .map_err(|e| format!("Could not open the update window: {e}"))?;
+
+    show_and_focus_window(&window);
+    Ok(())
+}
+
+/// Show the dictation history window, building it if it has been closed.
+///
+/// A window of its own, opened from the tray, rather than a Settings tab:
+/// history is something to come back to while working, not configuration.
+pub fn open_history_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(HISTORY_WINDOW) {
+        show_and_focus_window(&existing);
+        return Ok(());
+    }
+
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        HISTORY_WINDOW,
+        tauri::WebviewUrl::App("/history".into()),
+    )
+    .title("VoxCtrl History")
+    .inner_size(720.0, 780.0)
+    .min_inner_size(480.0, 420.0)
+    .center()
+    .resizable(true)
+    .decorations(true)
+    .build()
+    .map_err(|e| format!("Could not open History: {e}"))?;
 
     show_and_focus_window(&window);
     Ok(())

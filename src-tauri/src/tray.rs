@@ -101,6 +101,7 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
     let tray_icon = record_off_icon.clone();
 
     let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
+    let history_i = tauri::menu::MenuItem::with_id(app, "history", "🕘  History", true, None::<&str>)?;
     let setup_i = tauri::menu::MenuItem::with_id(app, "setup", TRAY_SETUP_OK, true, None::<&str>)?;
     let tts_memory_i = tauri::menu::CheckMenuItem::with_id(
         app,
@@ -116,7 +117,7 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
     let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtrl", true, None::<&str>)?;
     let menu = tauri::menu::Menu::with_items(
         app,
-        &[&settings_i, &setup_i, &tts_memory_i, &separator, &quit_i],
+        &[&settings_i, &history_i, &setup_i, &tts_memory_i, &separator, &quit_i],
     )?;
     let _ = SETUP_MENU_ITEM.set(setup_i);
     let _ = TTS_MEMORY_MENU_ITEM.set(tts_memory_i);
@@ -130,6 +131,11 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
                 "settings" => {
                     if let Err(e) = crate::window::open_settings_window(app) {
                         tracing::error!("Could not open Settings: {e}");
+                    }
+                }
+                "history" => {
+                    if let Err(e) = crate::window::open_history_window(app) {
+                        tracing::error!("Could not open History: {e}");
                     }
                 }
                 "setup" => {

@@ -783,7 +783,7 @@
             <span>Don't keep in history</span>
           </label>
           <p class="hint">
-            Dictation sent to this target is never added to Settings → History.
+            Dictation sent to this target is never added to History.
           </p>
         </div>
       </div>

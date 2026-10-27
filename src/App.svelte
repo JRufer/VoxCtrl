@@ -5,6 +5,7 @@
   import UdevWarning from "./lib/Diagnostics/UdevWarning.svelte";
   import SetupWizard from "./lib/Wizard/SetupWizard.svelte";
   import UpdateDialog from "./lib/Update/UpdateDialog.svelte";
+  import HistoryWindow from "./lib/History/HistoryWindow.svelte";
 
   // Determine which view to render based on the URL path
   const path = window.location.pathname;
@@ -14,6 +15,7 @@
     if (path.startsWith("/udev-warning")) return "udev-warning";
     if (path.startsWith("/wizard")) return "wizard";
     if (path.startsWith("/update")) return "update";
+    if (path.startsWith("/history")) return "history";
     return "settings";
   }
 
@@ -32,6 +34,8 @@
   <SetupWizard />
 {:else if view === "update"}
   <UpdateDialog />
+{:else if view === "history"}
+  <HistoryWindow />
 {:else}
   <Settings />
 {/if}
