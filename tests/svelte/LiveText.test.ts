@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/svelte";
 import { tick } from "svelte";
 
@@ -37,11 +37,27 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-vi.stubGlobal(
-  "requestAnimationFrame",
-  (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as unknown as number
-);
-vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
+// Frames are timers here. Pending ones are cancelled after each test: one
+// left to fire after the file finishes runs once the stub is gone, and the
+// overlay's nested requestAnimationFrame call then throws, failing the whole
+// run at random (it did, on CI, twice).
+const pendingFrames = new Set<ReturnType<typeof setTimeout>>();
+vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+  const id = setTimeout(() => {
+    pendingFrames.delete(id);
+    cb(performance.now());
+  }, 16);
+  pendingFrames.add(id);
+  return id as unknown as number;
+});
+vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+  clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
+  pendingFrames.delete(id as unknown as ReturnType<typeof setTimeout>);
+});
+afterEach(() => {
+  pendingFrames.forEach(clearTimeout);
+  pendingFrames.clear();
+});
 
 import { status, type AppStatus } from "../../src/stores/status";
 import { config } from "../../src/stores/config";
