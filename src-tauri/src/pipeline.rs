@@ -288,6 +288,12 @@ pub fn spawn_audio_coordinator(
                 }
             } else {
                 if was_recording {
+                    // The key is up: live text and early command detection
+                    // have nothing left to do, and a pass still running would
+                    // make the final one below wait for it. Stop them first.
+                    // The overlay keeps the words it already shows until the
+                    // final transcript replaces them, as before.
+                    voxctrl_inference::cancel_interim_passes(session_id);
                     if is_remote_backend {
                         if let Some(session) = remote_session.take() {
                             let audio = std::mem::take(&mut accumulated_audio);
@@ -363,6 +369,18 @@ pub fn spawn_text_delivery_worker(
         while let Ok(output) = text_rx.recv() {
             if output.is_interim {
                 state.set_interim_in_flight(false);
+                // A pass that finished after its recording ended (an engine
+                // that cannot stop part-way, or one that was nearly done) is
+                // stale: the final transcript is on its way.
+                if voxctrl_inference::interim_cancelled(output.session_id) {
+                    if live_text_wanted_now(&state) {
+                        let mut live = state.live_session.lock().unwrap_or_else(|e| e.into_inner());
+                        if live.session_id == output.session_id {
+                            live.abandon_pass();
+                        }
+                    }
+                    continue;
+                }
                 state.last_interim_ms.store(output.inference_ms, std::sync::atomic::Ordering::Relaxed);
                 // Live text: fold this pass into the session's committed and
                 // tentative words. An empty result still counts (a commit
@@ -504,11 +522,23 @@ pub fn spawn_text_delivery_worker(
             let is_speak_target = targets
                 .iter()
                 .any(|t| t.id == target_id && t.delivery == voxctrl_routing::DeliveryType::Speak);
-            let text = if !is_speak_target && s1_mini_enabled && !raw_text.trim().is_empty() {
+            let transcript_after_release = state.ms_since_release();
+            let cleanup_started = std::time::Instant::now();
+            let cleaned = !is_speak_target && s1_mini_enabled && !raw_text.trim().is_empty();
+            let text = if cleaned {
                 voxctrl_inference::s1_mini::clean_dictation(&raw_text, &s1_mini_styling, None, s1_mini_gpu)
             } else {
                 raw_text
             };
+            // Where the wait between releasing the key and the text appearing
+            // goes. Counts only, never the text. "Transcript ready" includes
+            // any live-text pass the final one had to wait behind.
+            tracing::info!(
+                transcript_ready_ms = ?transcript_after_release,
+                transcription_ms = output.inference_ms,
+                cleanup_ms = cleaned.then(|| cleanup_started.elapsed().as_millis()),
+                "dictation timing after key release"
+            );
 
             if text.trim().is_empty() {
                 continue;
@@ -549,6 +579,7 @@ pub fn spawn_text_delivery_worker(
                 for tid in target_ids {
                     router.deliver_direct(&tid, &text_to_deliver).await;
                 }
+                tracing::info!(delivered_ms = ?state_lt.ms_since_release(), "dictation delivered after key release (includes putting the clipboard back, which happens after the paste)");
             });
 
             record_history(&state, &targets, &target_id, &text);
@@ -697,6 +728,27 @@ async fn run_gesture_loop(
                 tokio::spawn(async move {
                     preload_state.preload_tts_for_target(&preload_target).await;
                 });
+
+                // Same for the cleanup model, when this hotkey's dictation will
+                // be cleaned: otherwise its first use loads it after the key
+                // is released, and that load is what the user waits through.
+                let (s1_enabled_globally, s1_gpu) = {
+                    let cfg = state_for_gesture.config.lock().await;
+                    (cfg.data.engine.s1_mini.enabled, cfg.data.engine.s1_mini.gpu)
+                };
+                // The async lock: `AppState::binding` blocks, which this
+                // runtime thread must not.
+                let s1_enabled = state_for_gesture
+                    .bindings
+                    .lock()
+                    .await
+                    .iter()
+                    .find(|b| !event.binding_id.is_empty() && b.id == event.binding_id)
+                    .and_then(|b| b.s1_mini_enabled)
+                    .unwrap_or(s1_enabled_globally);
+                if s1_enabled {
+                    tokio::task::spawn_blocking(move || voxctrl_inference::s1_mini::preload(None, s1_gpu));
+                }
 
                 // The user just tried to dictate. If the install is not
                 // finished, say so now — otherwise the shortcut records

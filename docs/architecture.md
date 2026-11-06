@@ -95,6 +95,8 @@ voxctrl-hotkeys ──gesture_tx──► lib.rs coordinator
                     │  Silence hallucination filter
                     │  LLM rewrite via OpenAI API (optional, per-target)
                     │  S1-mini text normalization via voxctrl-llm-sidecar
+                    │    (sidecar started and model loaded when the hotkey is
+                    │     pressed, so the load overlaps the speech)
                          │
                     text_tx (InferenceOutput)
                          │

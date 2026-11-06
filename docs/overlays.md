@@ -283,6 +283,17 @@ appended to the committed text for good. Passes therefore stay short however
 long the user talks. The final transcription still runs over the whole
 recording, as before.
 
+**When the key is released**, live passes for that recording stop
+(`voxctrl_inference::cancel_interim_passes`, called from the audio coordinator
+before it queues the final pass). There is only one inference thread, so a pass
+still running would otherwise make the final transcription wait for it. A
+queued pass is skipped; a whisper.cpp pass that is already running stops
+part-way through its abort callback; with other engines a running pass
+finishes, but its result is discarded. The overlay keeps the words it is
+showing until the final transcript replaces them, exactly as before. Early
+command detection uses the same passes and stops at the same moment; routing
+was always decided by the final transcript.
+
 What is shown live is the interim transcript after the normal text clean-up.
 It is not processed by S1-mini or the hotkey's OpenAI rewrite, and a spoken
 voice command's trigger words are still in it, so it can differ from the

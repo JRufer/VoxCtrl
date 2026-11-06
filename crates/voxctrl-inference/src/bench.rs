@@ -280,6 +280,7 @@ fn measure(step: &BenchStep, cfg: &AppConfig, progress: &mut dyn FnMut(usize)) -
         language: None,
         word_timestamps: false,
         initial_prompt: None,
+        interim_session: None,
     };
     let device = if gpu { "auto" } else { "cpu" };
 

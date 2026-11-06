@@ -216,16 +216,26 @@ async fn paste_text(text: &str) -> Result<()> {
     #[cfg(target_os = "linux")]
     keys_linux::prepare().await;
 
-    // Chosen before the text goes on the clipboard, while the window that will
-    // receive the paste is certain to be the one that has focus.
-    let shortcut = match configured_shortcut() {
-        Some(s) => s,
-        None => auto_shortcut().await,
+    // The shortcut is chosen, and the clipboard backed up, at the same time:
+    // both only read, neither depends on the other, and each can mean asking
+    // another program (the compositor for the focused window, the clipboard
+    // owner for every format). Done in turn, their waits added up before the
+    // paste could be sent. The shortcut is still settled before the text goes
+    // on the clipboard, while the window that will receive the paste is
+    // certain to be the one that has focus.
+    let choose_shortcut = async {
+        match configured_shortcut() {
+            Some(s) => s,
+            None => auto_shortcut().await,
+        }
     };
+    let backup = blocking_with_timeout("clipboard backup", SNAPSHOT_TIMEOUT, voxctrl_clipboard::snapshot);
+    let (shortcut, backup) = tokio::join!(choose_shortcut, backup);
+    debug!(?shortcut, elapsed = ?started.elapsed(), "shortcut chosen and clipboard read");
 
     // 1. Back up. Failing to is not fatal: dropping the dictation is worse
     //    than losing what was copied, but it is logged.
-    let saved = match blocking_with_timeout("clipboard backup", SNAPSHOT_TIMEOUT, voxctrl_clipboard::snapshot).await {
+    let saved = match backup {
         Ok(Ok(s)) => {
             debug!(formats = s.format_count(), elapsed = ?started.elapsed(), "clipboard backed up");
             Some(s)

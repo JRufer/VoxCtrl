@@ -47,24 +47,45 @@ pub fn snapshot() -> Result<Snapshot> {
         Err(e) => bail!("{e}"),
     };
 
+    // Every format is read at once rather than one after another. Each read
+    // is its own connection and its own round trip to the clipboard owner,
+    // and a browser or office clipboard offers a dozen types: read in turn,
+    // those round trips add up to most of a second, all of it spent before
+    // the dictation can be pasted. Read together, the backup takes as long
+    // as the slowest one — and a format that stalls costs its own timeout,
+    // not the others' as well.
+    let results: Vec<(String, Result<Vec<u8>>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = types
+            .iter()
+            .map(|mime| (mime.clone(), s.spawn(move || read_one(mime))))
+            .collect();
+        handles
+            .into_iter()
+            .map(|(mime, h)| {
+                let r = h.join().unwrap_or_else(|_| Err(anyhow!("reader thread panicked")));
+                (mime, r)
+            })
+            .collect()
+    });
+
     let mut items = Vec::new();
     let mut skipped = Vec::new();
     let mut total = 0usize;
-    for mime in &types {
+    for (mime, result) in results {
         // One format that cannot be read must not cost the others: a
         // clipboard owner (or the compositor's X11 bridge) can answer for
         // most of what it offers and stall on one type. That one is skipped.
-        match read_one(mime) {
+        match result {
             Ok(data) => {
                 total += data.len();
                 if total > MAX_TOTAL_BYTES {
                     bail!("clipboard too large to back up");
                 }
-                items.push((mime.clone(), data));
+                items.push((mime, data));
             }
             Err(e) => {
                 tracing::warn!("clipboard format {mime} could not be backed up: {e:#}");
-                skipped.push(mime.clone());
+                skipped.push(mime);
             }
         }
     }

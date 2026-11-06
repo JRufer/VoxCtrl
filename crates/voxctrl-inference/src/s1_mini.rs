@@ -446,6 +446,53 @@ fn clean_via_sidecar(
     Ok(cleaned)
 }
 
+/// Have the cleanup model ready before it is needed: start the sidecar if it
+/// is not running and load the model into it.
+///
+/// Called when a dictation starts. Otherwise the first cleanup after launch —
+/// or after the sidecar was restarted — starts the process and reads the model
+/// from disk only once the user has stopped talking, and that wait sits
+/// between releasing the key and the text appearing. Loading while they speak
+/// hides it. A model that is already loaded makes this a single round trip.
+///
+/// Blocking; run it off the async runtime. Does nothing when the model is not
+/// downloaded or there is no sidecar (the in-process fallback is loaded on
+/// first use as before). A cleanup that arrives while this is loading waits
+/// for it on the sidecar lock rather than loading a second time.
+pub fn preload(custom_dir: Option<&str>, gpu: bool) {
+    if !is_s1_mini_downloaded(custom_dir) {
+        return;
+    }
+    let Some(binary) = find_llm_sidecar_binary() else { return };
+    let mut guard = match SIDECAR_PROCESS.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if guard.is_none() {
+        info!("Spawning LLM sidecar ahead of cleanup: {}", binary.display());
+        match SidecarProcess::spawn(&binary) {
+            Ok(p) => *guard = Some(p),
+            Err(e) => {
+                debug!("could not start the sidecar ahead of cleanup: {e:#}");
+                return;
+            }
+        }
+    }
+    let model_path = s1_mini_dir(custom_dir).join(MODEL_FILENAME);
+    let t0 = Instant::now();
+    let proc = guard.as_mut().unwrap();
+    match proc.call(
+        "load",
+        serde_json::json!({ "model_path": model_path.to_string_lossy(), "gpu": gpu }),
+    ) {
+        Ok(_) => debug!(elapsed = ?t0.elapsed(), "cleanup model ready"),
+        Err(e) => {
+            debug!("preloading the cleanup model failed ({e:#}); it will load on first use");
+            *guard = None;
+        }
+    }
+}
+
 /// One S1-mini cleanup through the sidecar on the chosen device, for the
 /// benchmark. Unlike [`clean_dictation`] it does not fall back to the in-process
 /// engine on failure — a fallback would time the wrong thing.

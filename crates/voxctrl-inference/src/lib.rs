@@ -212,6 +212,34 @@ use whisper_cpp::WhisperCppBackend;
 
 pub type AudioChunk = Vec<f32>;
 
+// ── Cancelling live passes ────────────────────────────────────────────────────
+
+/// The newest recording session whose live passes are no longer wanted.
+/// Sessions count up from 1, so 0 cancels nothing.
+static INTERIM_CANCELLED_UP_TO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Stop every live pass (live text, early command detection) for `session`
+/// and the sessions before it.
+///
+/// Called the moment a recording ends. Those passes only serve the overlay
+/// and the command head start while the user is still talking; afterwards
+/// the final pass over the whole recording replaces them. One already running
+/// would otherwise hold the single inference thread, and the final pass would
+/// wait for it before it could even start. Queued passes are skipped; a
+/// running whisper.cpp pass stops part-way. Never affects the final pass.
+pub fn cancel_interim_passes(session: u64) {
+    INTERIM_CANCELLED_UP_TO.fetch_max(session, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Whether live passes for `session` have been cancelled.
+pub fn interim_cancelled(session: u64) -> bool {
+    session <= INTERIM_CANCELLED_UP_TO.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The error a cancelled live pass reports. The caller treats an interim
+/// error as "this pass produced nothing", which is exactly right here.
+const CANCELLED: &str = "live pass cancelled: the recording ended";
+
 // ── Inference request ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -372,8 +400,22 @@ impl InferenceEngine {
             language,
             word_timestamps: false,
             initial_prompt: Some(finalize::initial_prompt(&app_config.features.custom_vocabulary)),
+            interim_session: is_interim.then_some(session_id),
         };
-        let result = self.backend.transcribe(&t_req)?;
+        let result = match self.backend.transcribe(&t_req) {
+            Ok(r) => r,
+            // Stopped part-way because the recording ended: not a failure.
+            Err(_) if is_interim && interim_cancelled(session_id) => {
+                return Ok(InferenceOutput::failed(
+                    req.target_id,
+                    req.binding_id,
+                    &anyhow::anyhow!(CANCELLED),
+                    is_interim,
+                    session_id,
+                ));
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut processed = finalize::post_process(&result.text, rms, &req.processing, app_config);
 
@@ -536,6 +578,19 @@ pub fn run_worker_with_config(
                         let is_interim = req.is_interim;
                         let session_id = req.session_id;
 
+                        // A live pass for a recording that has already ended
+                        // is not started at all: the final pass is next.
+                        if is_interim && interim_cancelled(session_id) {
+                            let _ = tx.send(InferenceOutput::failed(
+                                req.target_id,
+                                req.binding_id,
+                                &anyhow::anyhow!(CANCELLED),
+                                is_interim,
+                                session_id,
+                            ));
+                            continue;
+                        }
+
                         if !loaded {
                             match engine.load() {
                                 Ok(()) => {
@@ -648,6 +703,78 @@ mod tests {
             processing: Default::default(),
             binding: None,
         }
+    }
+
+    /// A backend that stops part-way the way whisper.cpp does once a live
+    /// pass is cancelled: it reports an error.
+    struct AbortingBackend;
+
+    impl TranscriptionBackend for AbortingBackend {
+        fn name(&self) -> &str {
+            "aborting"
+        }
+        fn load(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn transcribe(&self, req: &TranscribeRequest) -> Result<backend::TranscriptionResult> {
+            match req.interim_session {
+                Some(s) if interim_cancelled(s) => anyhow::bail!("whisper full: aborted"),
+                _ => Ok(backend::TranscriptionResult {
+                    text: "final words".into(),
+                    language: "en".into(),
+                    language_probability: 1.0,
+                    duration_ms: 0,
+                    inference_ms: 1,
+                    word_timestamps: None,
+                }),
+            }
+        }
+        fn unload(&mut self) {}
+        fn is_loaded(&self) -> bool {
+            true
+        }
+    }
+
+    /// Releasing the key ends that recording's live passes, and those of
+    /// earlier recordings, but not a later recording's — and never the final
+    /// pass. A pass stopped part-way is reported as producing nothing, not as
+    /// a transcription failure. (The only test in this crate that touches the
+    /// process-wide switch, so it cannot disturb the others.)
+    #[test]
+    fn ending_a_recording_cancels_its_live_passes_but_not_the_final_one() {
+        cancel_interim_passes(41);
+        assert!(interim_cancelled(40));
+        assert!(interim_cancelled(41));
+        assert!(!interim_cancelled(42), "a newer recording's passes must keep running");
+        cancel_interim_passes(3); // an older id never moves it back
+        assert!(interim_cancelled(41));
+
+        let engine = InferenceEngine { config: Arc::new(AppConfig::default()), backend: Box::new(AbortingBackend) };
+        let live = |session| InferenceRequest { is_interim: true, session_id: session, ..request(speech()) };
+
+        let stopped = engine.process(live(41)).expect("a cancelled pass is not an error");
+        assert!(stopped.text.is_empty());
+        assert!(stopped.error.as_deref().is_some_and(|e| e.contains("cancelled")));
+
+        let running = engine.process(live(42)).unwrap();
+        assert_eq!(running.text, "final words");
+
+        // The final pass for the very recording that was cancelled still runs.
+        let fin = engine.process(InferenceRequest { session_id: 41, ..request(speech()) }).unwrap();
+        assert!(fin.error.is_none());
+        assert_eq!(fin.text, "final words");
+    }
+
+    /// Live passes tell the backend which recording they belong to, so it can
+    /// stop once that recording ends; the final pass does not.
+    #[test]
+    fn only_live_passes_carry_their_session_to_the_backend() {
+        let (engine, requests) = recording_engine(AppConfig::default(), "hello");
+        engine.process(InferenceRequest { is_interim: true, session_id: 9_000, ..request(speech()) }).unwrap();
+        engine.process(request(speech())).unwrap();
+        let seen = requests.lock().unwrap();
+        assert_eq!(seen[0].interim_session, Some(9_000));
+        assert_eq!(seen[1].interim_session, None);
     }
 
     /// Only whisper.cpp takes a language hint, and only from its own setting:

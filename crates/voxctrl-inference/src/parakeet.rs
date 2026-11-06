@@ -996,6 +996,7 @@ mod tests {
             language: None,
             word_timestamps: false,
             initial_prompt: None,
+            interim_session: None,
         };
         let res = backend.transcribe(&req).expect("transcribe silence");
         println!("Parakeet transcribe silence result: {:?}", res.text);
@@ -1024,6 +1025,7 @@ mod tests {
             language: None,
             word_timestamps: false,
             initial_prompt: None,
+            interim_session: None,
         };
         let res = backend.transcribe(&req).expect("transcribe");
         println!("REDUX RESULT: {:?}", res.text);
@@ -1056,6 +1058,7 @@ mod tests {
             language: None,
             word_timestamps: false,
             initial_prompt: None,
+            interim_session: None,
         };
         let res = backend.transcribe(&req).expect("transcribe");
         println!("PHONON-2 RESULT: {:?}", res.text);

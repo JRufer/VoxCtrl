@@ -243,6 +243,12 @@ fn transcribe_with_state(
     if let Some(prompt) = &req.initial_prompt {
         params.set_initial_prompt(prompt);
     }
+    // A live pass stops as soon as its recording ends, so the final pass is
+    // not left waiting behind it. whisper.cpp polls this between steps of the
+    // encoder and decoder; `true` makes `full` return an error.
+    if let Some(session) = req.interim_session {
+        params.set_abort_callback_safe(move || crate::interim_cancelled(session));
+    }
 
     let t0 = Instant::now();
     state.full(params, &req.audio).context("whisper full")?;
@@ -472,6 +478,7 @@ mod tests {
             language: None,
             word_timestamps: false,
             initial_prompt: None,
+            interim_session: None,
         };
         assert!(backend.transcribe(&req).is_err());
     }
