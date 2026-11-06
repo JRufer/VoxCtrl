@@ -729,6 +729,7 @@ mod tests {
             language: None,
             word_timestamps: false,
             initial_prompt: None,
+            interim_session: None,
         };
         assert!(b.transcribe(&req).is_err());
     }

@@ -27,6 +27,12 @@ pub struct TranscribeRequest {
     pub word_timestamps: bool,
     /// Surrounding text to feed as an initial prompt (improves accuracy)
     pub initial_prompt: Option<String>,
+    /// Set for a live-text or command-detection pass made while the user is
+    /// still recording: the recording session it belongs to. A backend that
+    /// can stop part-way checks [`crate::interim_cancelled`] with it and gives
+    /// up once that recording has ended. `None` for the final pass, which is
+    /// never cancelled.
+    pub interim_session: Option<u64>,
 }
 
 /// Common interface every backend must implement.

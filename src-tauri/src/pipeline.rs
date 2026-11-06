@@ -288,6 +288,12 @@ pub fn spawn_audio_coordinator(
                 }
             } else {
                 if was_recording {
+                    // The key is up: live text and early command detection
+                    // have nothing left to do, and a pass still running would
+                    // make the final one below wait for it. Stop them first.
+                    // The overlay keeps the words it already shows until the
+                    // final transcript replaces them, as before.
+                    voxctrl_inference::cancel_interim_passes(session_id);
                     if is_remote_backend {
                         if let Some(session) = remote_session.take() {
                             let audio = std::mem::take(&mut accumulated_audio);
@@ -363,6 +369,18 @@ pub fn spawn_text_delivery_worker(
         while let Ok(output) = text_rx.recv() {
             if output.is_interim {
                 state.set_interim_in_flight(false);
+                // A pass that finished after its recording ended (an engine
+                // that cannot stop part-way, or one that was nearly done) is
+                // stale: the final transcript is on its way.
+                if voxctrl_inference::interim_cancelled(output.session_id) {
+                    if live_text_wanted_now(&state) {
+                        let mut live = state.live_session.lock().unwrap_or_else(|e| e.into_inner());
+                        if live.session_id == output.session_id {
+                            live.abandon_pass();
+                        }
+                    }
+                    continue;
+                }
                 state.last_interim_ms.store(output.inference_ms, std::sync::atomic::Ordering::Relaxed);
                 // Live text: fold this pass into the session's committed and
                 // tentative words. An empty result still counts (a commit

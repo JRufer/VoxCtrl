@@ -122,7 +122,7 @@ RUST_LOG=voxctrl_inject=debug,voxctrl_clipboard=debug,voxctrl_routing=info voxct
 | `clipboard backed up backend=… formats=N` | Backup worked. `formats=0` means the clipboard was genuinely empty |
 | `clipboard format … could not be backed up` | One format never finished sending and was skipped; it will not be restored |
 | `could not back up the clipboard … it will not be restored` | The backup failed entirely; the dictation is still pasted, but your previous clipboard is lost |
-| `dictation timing after key release transcript_ready_ms=… transcription_ms=… cleanup_ms=…` | Where the wait after releasing the key went: when the transcript was ready (including any live-text pass it waited behind), how long transcription itself took, and the cleanup model's time (absent when cleanup is off). No text is logged |
+| `dictation timing after key release transcript_ready_ms=… transcription_ms=… cleanup_ms=…` | Where the wait after releasing the key went: when the transcript was ready (a live-text pass running at release is now stopped, so this should be close to the transcription time), how long transcription itself took, and the cleanup model's time (absent when cleanup is off). No text is logged |
 | `paste shortcut sent shortcut=… ok=… elapsed=…` | Which shortcut was sent, whether the sender reported success, and how long after the paste step began. The text appears about now |
 | `dictation delivered after key release delivered_ms=…` | Everything done, including putting your clipboard back (which happens after the paste, so the text appeared earlier) |
 | `nothing could send the paste shortcut to native Wayland windows` | No `wtype`/`ydotool`/portal; only XWayland windows will receive it |
