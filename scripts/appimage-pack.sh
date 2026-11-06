@@ -19,6 +19,18 @@ appimagetool="${3:-./appimagetool.bin}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Everyone must be able to read the AppDir and run its programs. The AppDir is
+# usually unpacked with --appimage-extract, which creates squashfs-root with
+# mode 0700, and since late October 2026 appimagetool refuses to pack an AppDir
+# whose top level (or AppRun, .desktop or icon) others cannot read ("found 1
+# ERROR(S) in the AppDir"). The modes are carried into the image, so this is
+# also what lets another user — or a sandbox running the AppImage as a
+# different uid — open it at all. a+rX adds read everywhere and execute only
+# where something is already a directory or executable; nothing gains a write
+# bit.
+chmod -R a+rX "$appdir"
+[ -e "$appdir/AppRun" ] && chmod a+rx "$appdir/AppRun"
+
 pack() { # $1: runtime file to embed, or "" for appimagetool's built-in one
     rm -f "$out"
     if [ -n "${1:-}" ]; then
