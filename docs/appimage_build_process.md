@@ -266,6 +266,14 @@ stay clean on a newer host. The rules, each learned from a startup crash:
    cannot be fetched, or the AppImage built with it does not unpack again,
    packaging falls back to appimagetool's own runtime, so a build is never
    left worse off than before.
+7. **Everyone must be able to read the AppDir.** `--appimage-extract` creates
+   `squashfs-root` with mode 0700, and appimagetool (since late October 2026)
+   refuses to pack an AppDir whose top level, `AppRun`, `.desktop` file or
+   icon others cannot read: it stops with `found 1 ERROR(S) in the AppDir` and
+   lists the paths as `Problem N/M`. `scripts/appimage-pack.sh` runs
+   `chmod -R a+rX` on the AppDir before packing, which adds read access
+   everywhere and execute only where something is already a directory or a
+   program; nothing gains a write bit.
 
 ### Host baseline
 
