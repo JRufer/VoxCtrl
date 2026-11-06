@@ -93,15 +93,19 @@ async fn run_capture(bin: &str, args: &[&str]) -> Option<String> {
 /// how the paste shortcut gets sent, and the first use asks the user for
 /// permission. That dialog should be answered before the clipboard is taken,
 /// not while it is held.
+/// Whether `wtype` can send keys here. GNOME and KDE do not implement the
+/// virtual-keyboard protocol it uses, so having it installed there proves
+/// nothing — and trying it anyway costs a process start on every paste.
+fn wtype_usable() -> bool {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
+    have("wtype") && !(desktop.contains("gnome") || desktop.contains("kde"))
+}
+
 pub async fn prepare() {
     if !wayland_session() {
         return;
     }
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
-    // GNOME and KDE do not implement the virtual-keyboard protocol wtype uses,
-    // so having wtype installed there proves nothing.
-    let wtype_works = have("wtype") && !(desktop.contains("gnome") || desktop.contains("kde"));
-    if wtype_works || have("ydotool") {
+    if wtype_usable() || have("ydotool") {
         return;
     }
     let _ = crate::portal_keys::prepare().await;
@@ -179,7 +183,7 @@ pub async fn auto_shortcut() -> Shortcut {
 
 pub async fn send_paste(shortcut: Shortcut) -> Result<()> {
     if wayland_session() {
-        if have("wtype") {
+        if wtype_usable() {
             let args: &[&str] = match shortcut {
                 Shortcut::CtrlV => &["-M", "ctrl", "v", "-m", "ctrl"],
                 Shortcut::CtrlShiftV => &["-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl"],

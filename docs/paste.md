@@ -14,14 +14,17 @@ shortcut. Typing remains the fallback.
 
 ## What happens on every dictation
 
-1. **Choose the shortcut** for the focused window (below).
-2. **Back up the whole clipboard** — every format it offers, not just text.
-3. **Put the dictation on the clipboard**, asking clipboard managers and cloud
+1. **Choose the shortcut** for the focused window (below), and at the same
+   time **back up the whole clipboard** — every format it offers, not just
+   text. The two run together because each can mean waiting on another
+   program; on Wayland every format is read at once, so the backup takes as
+   long as the slowest format rather than all of them added up.
+2. **Put the dictation on the clipboard**, asking clipboard managers and cloud
    history not to record it.
-4. **Send the paste shortcut.**
-5. **Wait** for the application to read it (at least 300 ms; on X11 VoxCtrl can
+3. **Send the paste shortcut.**
+4. **Wait** for the application to read it (at least 300 ms; on X11 VoxCtrl can
    see the read and waits for slow applications, up to 2 s).
-6. **Restore the clipboard** — but only if it still holds the dictation. If you
+5. **Restore the clipboard** — but only if it still holds the dictation. If you
    copied something else in the meantime, that is yours and is left alone.
 
 If any step cannot be done, the text is **typed instead**, so a dictation is
@@ -84,7 +87,7 @@ treated as unreadable, **not** as empty — an empty-clipboard restore would cle
 |---|---|
 | **Windows** | `SendInput` |
 | **X11** | XTEST key events (no helper needed), then `xdotool` |
-| **Wayland** | `wtype`, `ydotool`, the **RemoteDesktop portal**, then X11 (reaches XWayland windows only — VoxCtrl logs a warning) |
+| **Wayland** | `wtype` (not on GNOME or KDE, which lack the protocol it needs), `ydotool`, the **RemoteDesktop portal**, then X11 (reaches XWayland windows only — VoxCtrl logs a warning) |
 
 Held modifier keys (typically the dictation hotkey) are released first, so they
 cannot turn Ctrl+V into a different shortcut.
@@ -119,7 +122,9 @@ RUST_LOG=voxctrl_inject=debug,voxctrl_clipboard=debug,voxctrl_routing=info voxct
 | `clipboard backed up backend=… formats=N` | Backup worked. `formats=0` means the clipboard was genuinely empty |
 | `clipboard format … could not be backed up` | One format never finished sending and was skipped; it will not be restored |
 | `could not back up the clipboard … it will not be restored` | The backup failed entirely; the dictation is still pasted, but your previous clipboard is lost |
-| `paste shortcut sent shortcut=… ok=…` | Which shortcut was sent, and whether the sender reported success |
+| `dictation timing after key release transcript_ready_ms=… transcription_ms=… cleanup_ms=…` | Where the wait after releasing the key went: when the transcript was ready (including any live-text pass it waited behind), how long transcription itself took, and the cleanup model's time (absent when cleanup is off). No text is logged |
+| `paste shortcut sent shortcut=… ok=… elapsed=…` | Which shortcut was sent, whether the sender reported success, and how long after the paste step began. The text appears about now |
+| `dictation delivered after key release delivered_ms=…` | Everything done, including putting your clipboard back (which happens after the paste, so the text appeared earlier) |
 | `nothing could send the paste shortcut to native Wayland windows` | No `wtype`/`ydotool`/portal; only XWayland windows will receive it |
 | `RemoteDesktop portal unavailable` | Permission declined, or no portal on this desktop |
 | `clipboard restored formats=N` | Restored |

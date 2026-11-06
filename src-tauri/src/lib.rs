@@ -376,6 +376,7 @@ pub fn run() {
         overlay_enabled: Arc::new(AtomicBool::new(cfg_data.ui.show_overlay)),
         mcp_recording: Arc::new(AtomicBool::new(false)),
         command_overlay_until: Arc::new(std::sync::Mutex::new(None)),
+        released_at: Arc::new(std::sync::Mutex::new(None)),
         hotkeys_inhibited: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),

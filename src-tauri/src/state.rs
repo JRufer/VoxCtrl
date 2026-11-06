@@ -58,6 +58,9 @@ pub struct AppState {
     /// see that function's doc comment for why this needs to live in shared
     /// state rather than only being a frontend timer.
     pub command_overlay_until: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    /// When the last recording stopped (the key was released). Only used to
+    /// log how long the text then took to arrive.
+    pub released_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
     /// True while the user is recording a new keybind in the settings UI.
     /// Any hotkey gesture event received while this is true is silently dropped,
     /// so the user cannot accidentally trigger dictation while pressing keys
@@ -269,8 +272,14 @@ impl AppState {
         // does is missing from the front of what the user is already saying.
         self.wake_audio();
         if !v {
+            *self.released_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
             let _ = self.audio_tx.send(Vec::new());
         }
+    }
+
+    /// Milliseconds since the last recording stopped, for timing logs.
+    pub fn ms_since_release(&self) -> Option<u128> {
+        self.released_at.lock().unwrap_or_else(|e| e.into_inner()).map(|t| t.elapsed().as_millis())
     }
 
     pub fn set_speaking(&self, v: bool) {
