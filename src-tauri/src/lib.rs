@@ -594,12 +594,22 @@ pub fn run() {
             // watching. `tray::spawn_status_ticker` still builds it if this
             // fails, so a failure here delays the overlay rather than losing
             // it.
-            if let Err(e) = crate::window::open_overlay_window(
-                app.handle(),
-                &cfg_data.ui.overlay_position,
-                &cfg_data.ui.overlay_monitor,
-            ) {
-                tracing::warn!("Could not pre-build the dictation overlay: {e}");
+            //
+            // Not without a compositor, though: there the window can't be
+            // transparent, so a pre-built idle overlay is a black rectangle
+            // on screen for the whole session (#181). The ticker builds it on
+            // first use instead, and maps it only while it has something to
+            // show — see `window::overlay_mapping_change`.
+            #[cfg(target_os = "linux")]
+            crate::window::watch_compositing();
+            if crate::window::desktop_composites() {
+                if let Err(e) = crate::window::open_overlay_window(
+                    app.handle(),
+                    &cfg_data.ui.overlay_position,
+                    &cfg_data.ui.overlay_monitor,
+                ) {
+                    tracing::warn!("Could not pre-build the dictation overlay: {e}");
+                }
             }
 
             // Setup system tray
