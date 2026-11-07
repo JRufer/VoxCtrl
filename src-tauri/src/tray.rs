@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    Emitter,
+    Emitter, Manager,
 };
 use crate::state::AppState;
 
@@ -236,6 +236,10 @@ pub fn spawn_status_ticker(
         // Whether the overlay window has been built yet — see this
         // function's doc comment for why this loop owns creating it.
         let mut overlay_built = false;
+        // Whether this loop last left the overlay window mapped. Only ever
+        // false without a compositor, where an idle mapped overlay is a black
+        // rectangle (#181) — see `window::overlay_mapping_change`.
+        let mut overlay_mapped = false;
         // Guards against a SIGFPE in the bundled WebKitGTK's vblank thread
         // when the compositor briefly has zero outputs — see
         // `window::suspend_overlay_without_outputs`.
@@ -344,14 +348,50 @@ pub fn spawn_status_ticker(
                     || (state_for_ticker.is_mcp_recording() && cfg.data.mcp.visual_feedback)
                     || state_for_ticker.is_command_overlay_active()
             };
+            // Built at startup when the desktop composites (see lib.rs).
+            if !overlay_built && crate::window::overlay_exists(&handle) {
+                overlay_built = true;
+                overlay_mapped = true;
+            }
+            let (position, monitor) = last_pos
+                .as_ref()
+                .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
+                .unwrap_or(("center", "primary"));
             if should_show_overlay && !overlay_built {
-                let (position, monitor) = last_pos
-                    .as_ref()
-                    .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
-                    .unwrap_or(("center", "primary"));
                 match crate::window::open_overlay_window(&handle, position, monitor) {
-                    Ok(_) => overlay_built = true,
+                    Ok(_) => {
+                        overlay_built = true;
+                        overlay_mapped = true;
+                    }
                     Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
+                }
+            }
+
+            // Without a compositor, map the overlay only while it has
+            // something to show (#181). With one this never does anything
+            // once the window is up. Left alone while the overlay is
+            // suspended for having no outputs; that restores it itself.
+            #[cfg(target_os = "linux")]
+            let suspended = overlay_suspended_no_outputs;
+            #[cfg(not(target_os = "linux"))]
+            let suspended = false;
+            if overlay_built && !suspended {
+                match crate::window::overlay_mapping_change(
+                    crate::window::desktop_composites(),
+                    should_show_overlay,
+                    overlay_mapped,
+                ) {
+                    Some(true) => match crate::window::open_overlay_window(&handle, position, monitor) {
+                        Ok(_) => overlay_mapped = true,
+                        Err(e) => tracing::error!("Failed to show the dictation overlay: {e}"),
+                    },
+                    Some(false) => {
+                        if let Some(window) = handle.get_webview_window(crate::window::OVERLAY_WINDOW) {
+                            let _ = window.hide();
+                        }
+                        overlay_mapped = false;
+                    }
+                    None => {}
                 }
             }
 
@@ -380,7 +420,11 @@ pub fn spawn_status_ticker(
             #[cfg(target_os = "linux")]
             if overlay_built && last_output_check.elapsed() >= crate::window::NO_OUTPUTS_POLL_INTERVAL {
                 last_output_check = tokio::time::Instant::now();
-                crate::window::suspend_overlay_without_outputs(&handle, &mut overlay_suspended_no_outputs);
+                crate::window::suspend_overlay_without_outputs(
+                    &handle,
+                    &mut overlay_suspended_no_outputs,
+                    overlay_mapped,
+                );
             }
 
             let active_target_id = state_for_ticker.active_target.lock().await.clone();

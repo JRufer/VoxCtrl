@@ -415,7 +415,11 @@ pub const NO_OUTPUTS_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// `scripts/appimage-hooks/host-first-fallback.sh`) has the underlying
 /// divide-by-zero fixed upstream.
 #[cfg(target_os = "linux")]
-pub fn suspend_overlay_without_outputs(app: &tauri::AppHandle, suspended: &mut bool) {
+///
+/// `wants_mapped` is whether the overlay would otherwise be mapped right now:
+/// without a compositor it is unmapped while idle (see
+/// [`overlay_mapping_change`]), and an output coming back must not map it.
+pub fn suspend_overlay_without_outputs(app: &tauri::AppHandle, suspended: &mut bool, wants_mapped: bool) {
     let Some(window) = app.get_webview_window(OVERLAY_WINDOW) else {
         return;
     };
@@ -433,7 +437,9 @@ pub fn suspend_overlay_without_outputs(app: &tauri::AppHandle, suspended: &mut b
         let _ = window.hide();
     } else if has_outputs && *suspended {
         *suspended = false;
-        let _ = window.show();
+        if wants_mapped {
+            let _ = window.show();
+        }
     }
 }
 
@@ -467,6 +473,81 @@ pub async fn nudge_overlay_repaint(app: &tauri::AppHandle) {
     let _ = window.set_size(tauri::LogicalSize::new(OVERLAY_WIDTH + 2.0, OVERLAY_HEIGHT));
     tokio::time::sleep(Duration::from_millis(120)).await;
     let _ = window.set_size(tauri::LogicalSize::new(OVERLAY_WIDTH, OVERLAY_HEIGHT));
+}
+
+/// Whether the X11 screen has a compositing manager, as last reported by GDK.
+///
+/// Starts `true` so that nothing changes before [`watch_compositing`] has run
+/// (and on any setup where it can't get a screen to ask).
+#[cfg(target_os = "linux")]
+static DESKTOP_COMPOSITES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Start tracking whether the desktop composites windows. Call once, on the
+/// main thread, after GTK is initialised and before the overlay is built.
+///
+/// Why this matters (#181): the overlay window is kept mapped for the whole
+/// session and is invisible while idle only because it is transparent.
+/// Transparency needs a compositing manager. On X11 without one — reported on
+/// Linux Mint/XFCE with xfwm4's "Enable display compositing" turned off — a
+/// window with an alpha channel is drawn opaque, so the idle overlay showed as
+/// a permanent black rectangle from startup, whatever the overlay settings
+/// said (those only change what is drawn inside the window). `set_opacity`
+/// is no help either: it also needs a compositor.
+///
+/// GDK reports changes too (`composited-changed`), so turning the compositor
+/// on or off while VoxCtrl runs is picked up without a restart.
+#[cfg(target_os = "linux")]
+pub fn watch_compositing() {
+    use std::sync::atomic::Ordering;
+    let Some(screen) = gtk::gdk::Screen::default() else {
+        return;
+    };
+    let composited = screen.is_composited();
+    DESKTOP_COMPOSITES.store(composited, Ordering::Relaxed);
+    if !composited {
+        tracing::info!(
+            "No compositing manager: the overlay window will be shown only while it has \
+             something to display"
+        );
+    }
+    screen.connect_composited_changed(|screen| {
+        let composited = screen.is_composited();
+        DESKTOP_COMPOSITES.store(composited, Ordering::Relaxed);
+        tracing::info!("Desktop compositing is now {}", if composited { "on" } else { "off" });
+    });
+}
+
+/// Whether the desktop composites windows, so a transparent window is
+/// actually see-through. Always `true` off Linux.
+pub fn desktop_composites() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        DESKTOP_COMPOSITES.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+/// Whether the overlay window has been built (at startup, or by the ticker).
+pub fn overlay_exists(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window(OVERLAY_WINDOW).is_some()
+}
+
+/// What to do with an already-built overlay window this tick:
+/// `Some(true)` to map it, `Some(false)` to unmap it, `None` to leave it.
+///
+/// With a compositor the window stays mapped, as it always has (see
+/// `open_overlay_window` for why). Without one, an idle mapped window is a
+/// black rectangle (#181), so it is mapped only while there is something to
+/// show and unmapped again as soon as there isn't. The cost is the brief
+/// unpainted frame on each activation that building once at startup avoids —
+/// but without a compositor that frame is black regardless, and a momentary
+/// one beats a permanent one.
+pub fn overlay_mapping_change(composited: bool, should_show: bool, mapped: bool) -> Option<bool> {
+    let want_mapped = composited || should_show;
+    (want_mapped != mapped).then_some(want_mapped)
 }
 
 /// Re-apply the anchor/monitor position to the overlay window, if it
@@ -742,6 +823,26 @@ pub fn raise_window(window: &tauri::WebviewWindow, keep_on_top: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With a compositor the overlay is kept mapped whatever is happening,
+    /// exactly as before #181.
+    #[test]
+    fn a_composited_desktop_keeps_the_overlay_mapped() {
+        assert_eq!(overlay_mapping_change(true, false, true), None);
+        assert_eq!(overlay_mapping_change(true, true, true), None);
+        // The compositor came back while the window was unmapped.
+        assert_eq!(overlay_mapping_change(true, false, false), Some(true));
+    }
+
+    /// Without one, an idle mapped overlay is a black rectangle (#181), so
+    /// it is mapped only while there is something to show.
+    #[test]
+    fn without_a_compositor_the_overlay_is_mapped_only_while_needed() {
+        assert_eq!(overlay_mapping_change(false, false, true), Some(false));
+        assert_eq!(overlay_mapping_change(false, true, false), Some(true));
+        assert_eq!(overlay_mapping_change(false, true, true), None);
+        assert_eq!(overlay_mapping_change(false, false, false), None);
+    }
 
     /// 1080p at 100% scaling is the common case: wide enough for a comfortable
     /// stage, and short enough that the height lands exactly on the floor.
