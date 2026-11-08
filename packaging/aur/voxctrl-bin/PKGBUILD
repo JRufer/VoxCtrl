@@ -1,0 +1,78 @@
+# Maintainer: Josh Rufer <jrufer at gmail dot com>
+#
+# Source of truth: packaging/aur/voxctrl-bin/PKGBUILD in github.com/JRufer/VoxCtrl.
+# The AUR copy is pushed by .github/workflows/aur-publish.yml when a release is
+# published; pkgver and the checksums below are filled in by
+# packaging/aur/update-pkgbuilds.sh. Edit this file in the app repo, not on the AUR.
+#
+# Please report bugs on GitHub, not in AUR comments:
+# https://github.com/JRufer/VoxCtrl/issues
+
+pkgname=voxctrl-bin
+pkgver=0.8.8
+pkgrel=1
+pkgdesc='Private, on-device voice dictation and voice command router for Linux (Wayland and X11)'
+arch=('x86_64')
+url='https://jrufer.com/voxctrl'
+license=('MIT')
+# From the NEEDED entries of usr/bin/voxctrl, voxctrl-llm-sidecar and
+# libwebgpu_dawn.so in the release .deb, plus the tray library Tauri loads at
+# run time and the portal that delivers global shortcuts.
+depends=('alsa-lib' 'cairo' 'dbus' 'gcc-libs' 'gdk-pixbuf2' 'glib2' 'glibc' 'gtk3'
+         'hicolor-icon-theme' 'libayatana-appindicator' 'libsoup3' 'openssl'
+         'vulkan-icd-loader' 'webkit2gtk-4.1' 'wtype' 'xdg-desktop-portal')
+optdepends=('xdotool: type transcriptions into windows on X11'
+            'wl-clipboard: clipboard delivery on Wayland'
+            'xclip: clipboard delivery on X11'
+            'espeak-ng: instant fallback text-to-speech voice'
+            'vulkan-driver: GPU acceleration for speech recognition and cleanup')
+provides=('voxctrl')
+conflicts=('voxctrl' 'voxctrl-git')
+# Stripping would only shave the prebuilt binaries the release already
+# stripped; debug packages have nothing to split from a prebuilt binary.
+options=('!strip' '!debug')
+_repo=https://github.com/JRufer/VoxCtrl
+_raw=https://raw.githubusercontent.com/JRufer/VoxCtrl/v$pkgver
+# The WebGPU build: Arch always has the glibc 2.38+ it needs, and it lets
+# Moonshine and Parakeet use the GPU as well as whisper.cpp.
+source=("voxctrl-$pkgver.deb::$_repo/releases/download/v$pkgver/VoxCtrl-linux-x86_64-vulkan-webgpu.deb"
+        "ai.voxctrl.app-$pkgver.desktop::$_raw/ai.voxctrl.app.desktop"
+        "LICENSE-$pkgver::$_raw/LICENSE")
+noextract=("voxctrl-$pkgver.deb")
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP')
+
+prepare() {
+  rm -rf deb root
+  mkdir deb root
+  bsdtar -xf "voxctrl-$pkgver.deb" -C deb
+  bsdtar -xf deb/data.tar.* -C root
+}
+
+package() {
+  install -Dm755 root/usr/bin/voxctrl             "$pkgdir/usr/bin/voxctrl"
+  install -Dm755 root/usr/bin/voxctrl-llm-sidecar "$pkgdir/usr/bin/voxctrl-llm-sidecar"
+
+  # Dawn, private to VoxCtrl. Releases up to 0.8.7 put it in usr/lib; the
+  # binary's RUNPATH looks in $ORIGIN/../lib/voxctrl from 0.8.8 on.
+  local dawn
+  dawn=$(find root/usr/lib -name 'libwebgpu_dawn.so' -print -quit)
+  install -Dm755 "$dawn" "$pkgdir/usr/lib/voxctrl/libwebgpu_dawn.so"
+
+  # The .deb's own launcher is VoxCtrl.desktop, which the desktop portal cannot
+  # match to the app id ai.voxctrl.app; install the repo's one instead.
+  install -Dm644 "ai.voxctrl.app-$pkgver.desktop" \
+    "$pkgdir/usr/share/applications/ai.voxctrl.app.desktop"
+
+  local size
+  for size in 32x32 128x128; do
+    install -Dm644 "root/usr/share/icons/hicolor/$size/apps/voxctrl.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/voxctrl.png"
+  done
+  # Tauri puts the @2x icon under a non-standard 256x256@2 directory.
+  install -Dm644 "root/usr/share/icons/hicolor/256x256@2/apps/voxctrl.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/voxctrl.png"
+
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

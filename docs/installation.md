@@ -47,6 +47,51 @@ chmod +x VoxCtrl-linux-x86_64-vulkan.AppImage
 
 > **Linux WebGPU build (newer distros):** `VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage` is the same app plus ONNX Runtime's WebGPU provider, which lets **Moonshine** and **Parakeet** use the GPU as well (the Vulkan build above only accelerates whisper.cpp). It bundles Dawn, which needs glibc 2.38 or newer (Ubuntu 24.04, Fedora 39, Debian 13, Arch and similar), so on Ubuntu 22.04 or Debian 12 use the plain Vulkan AppImage. Each engine has its own GPU/CPU switch in **Settings → Engine** (S1-mini's is in **Settings → Features**). Building locally with `./build_appimage.sh` produces this variant automatically when the host glibc is new enough; `--webgpu` / `--no-webgpu` override that.
 
+### Arch Linux (AUR)
+
+On Arch and Arch-based systems (Manjaro, EndeavourOS, CachyOS, Garuda), install
+from the AUR with your helper of choice:
+
+```bash
+paru -S voxctrl-bin      # or: yay -S voxctrl-bin
+```
+
+That also installs `wtype`, which types transcriptions into other windows on
+Wayland. On an X11 session, add `xdotool`; it's an optional dependency, so pacman
+lists it but doesn't install it for you:
+
+```bash
+sudo pacman -S --needed xdotool     # X11 only
+```
+
+Three packages are available; they replace one another, so you can switch
+between them:
+
+| Package | What it installs | Install time |
+|---|---|---|
+| `voxctrl-bin` | This release's WebGPU `.deb`, repackaged. Moonshine, Parakeet and whisper.cpp can all use the GPU | Under a minute |
+| `voxctrl` | The same release, built from source on your machine | 20–40 minutes |
+| `voxctrl-git` | The latest development version from `master`, built from source | 20–40 minutes |
+
+What goes where:
+
+| Path | What |
+|---|---|
+| `/usr/bin/voxctrl`, `/usr/bin/voxctrl-llm-sidecar` | The app and its S1-mini cleanup process |
+| `/usr/lib/voxctrl/libwebgpu_dawn.so` | The WebGPU library, private to VoxCtrl |
+| `/usr/share/applications/ai.voxctrl.app.desktop` | The menu launcher, named after the app id the desktop portal uses |
+| `/usr/share/icons/hicolor/*/apps/voxctrl.png` | Icons |
+
+Updates come with `paru -Syu` like the rest of the system; VoxCtrl's own updater
+sees that pacman owns the install and stays out of the way. Because the package
+ships the launcher, VoxCtrl doesn't write one into `~/.local/share/applications`,
+and removes one an earlier launch or a deleted AppImage left there. Your
+settings, models and voices in `~/.config/voxctrl/` and `~/.local/share/voxctrl/`
+are yours: `pacman -R` leaves them, and `scripts/uninstall.sh` removes them.
+
+Please report problems on [GitHub Issues](https://github.com/JRufer/VoxCtrl/issues)
+rather than in AUR comments; bug reports include which package you installed.
+
 ### Debian / Ubuntu (.deb package)
 
 ```bash
@@ -73,7 +118,9 @@ Windows builds are distributed as self-contained NSIS setup installers:
 
 There is no required install step. Global shortcuts need no permissions, and on
 every Linux launch VoxCtrl writes its own desktop entry and icon into
-`~/.local/share/` — no privileges needed for either:
+`~/.local/share/` — no privileges needed for either. (Not when a package that
+ships its own launcher installed VoxCtrl, such as the AUR packages; see
+[Arch Linux (AUR)](#arch-linux-aur).)
 
 - `~/.local/share/applications/ai.voxctrl.app.desktop` (menu launcher; the
   filename matches the application id VoxCtrl declares to the desktop portal, so
@@ -95,7 +142,9 @@ cannot do for itself.
 
 You do not need `--install` for it. Launch the AppImage; if a helper is missing,
 the setup window says so and offers **Install it** (via `pkexec`), or **Install
-it manually** for the exact command to paste into a terminal.
+it manually** for the exact command to paste into a terminal. On an install a
+package manager owns (the AUR, a `.deb`) it offers no one-click install, just
+the one command that adds the missing helper.
 
 `./VoxCtrl-x86_64.AppImage --install` remains available if you would rather do
 that step up front from a terminal. It installs those packages and nothing else
@@ -316,8 +365,8 @@ new build. Settings → About reports the version that is actually running.
 A few installations cannot update themselves, and say so instead of offering a
 button that would not work:
 
-- **A `.deb` or distro package** — the package manager owns those files. Update
-  it the way you installed it.
+- **A `.deb` or distro package**, including the AUR packages — the package
+  manager owns those files. Update it the way you installed it (`paru -Syu`).
 - **A build from source** — nothing to replace; rebuild.
 - **An AppImage in a directory you cannot write to** (`/opt`, a read-only mount)
   — move it somewhere you own, or download the new release by hand. This is

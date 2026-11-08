@@ -1,0 +1,90 @@
+name: AUR packages
+
+# Checks the PKGBUILDs in packaging/aur on Arch itself, before anything reaches
+# the AUR. Publishing is a separate workflow (aur-publish.yml), and the check of
+# each new release's own .deb runs in release.yml (job aur-smoke).
+#
+#   - On a PR touching packaging/aur or this file: build and install
+#     voxctrl-bin from the latest published release's .deb and check it
+#     (packaging/aur/smoke-test.sh).
+#   - Weekly, and on demand: build the source package from master in a clean
+#     Arch container, to catch toolchain drift (a new Rust, CMake or shaderc)
+#     before a user's `paru -S voxctrl` does. Too slow (30+ min) for every PR.
+on:
+  pull_request:
+    paths:
+      - "packaging/aur/**"
+      - ".github/workflows/aur.yml"
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      source_build:
+        description: "Also build the source package (slow)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  bin-smoke:
+    name: voxctrl-bin from the latest release
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Tools the checkout and download need
+        run: pacman -Syu --noconfirm --needed git jq curl
+
+      - uses: actions/checkout@v4
+
+      # Drafts have no public download, so this is the newest *published*
+      # release — what an AUR user would get today.
+      - name: Download the latest release's WebGPU .deb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api=https://api.github.com/repos/${{ github.repository }}
+          auth=(-H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28")
+          id=$(curl -fsSL "${auth[@]}" "$api/releases/latest" \
+            | jq -r '.assets[] | select(.name == "VoxCtrl-linux-x86_64-vulkan-webgpu.deb") | .id')
+          [ -n "$id" ] || { echo "::error::The latest release has no VoxCtrl-linux-x86_64-vulkan-webgpu.deb"; exit 1; }
+          curl -fsSL "${auth[@]}" -H "Accept: application/octet-stream" -o voxctrl.deb "$api/releases/assets/$id"
+          ls -l voxctrl.deb
+
+      - name: Smoke test
+        run: packaging/aur/smoke-test.sh voxctrl.deb
+
+  source-build:
+    name: voxctrl (source) from master
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.source_build)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 120
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed base-devel git namcap
+
+      - uses: actions/checkout@v4
+
+      # The PKGBUILD downloads the tag's tarball; stand this checkout in for it,
+      # under the name and top-level directory GitHub's archive would have.
+      - name: Build the package from this checkout
+        run: |
+          set -euo pipefail
+          useradd -m builder
+          work=$(mktemp -d)
+          cp packaging/aur/voxctrl/PKGBUILD "$work/"
+          pkgver=$(sed -n 's/^pkgver=//p' "$work/PKGBUILD")
+          git archive --format=tar.gz --prefix="VoxCtrl-$pkgver/" -o "$work/voxctrl-$pkgver.tar.gz" HEAD
+          chown -R builder: "$work"
+          namcap "$work/PKGBUILD"
+          # -s installs makedepends; builder needs pacman for that.
+          echo 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman' > /etc/sudoers.d/builder
+          su builder -c "cd '$work' && makepkg -s --noconfirm --skipchecksums -f"
+          pacman -U --noconfirm "$work"/voxctrl-*.pkg.tar.zst
+          namcap "$work"/voxctrl-*.pkg.tar.zst
+          ldd /usr/bin/voxctrl | (! grep 'not found')
+          voxctrl --version

@@ -277,9 +277,11 @@ jobs:
 
       # Dawn (libwebgpu_dawn.so) is a NEEDED library of the binary. ort leaves
       # it in target/release; LD_LIBRARY_PATH lets linuxdeploy resolve it, and
-      # the extra config has the .deb install it to /usr/lib, which the
-      # binary's rpath ($ORIGIN/../lib, src-tauri/build.rs) covers. The AppImage
-      # gets it in the slimming step below if linuxdeploy did not.
+      # the extra config has the .deb install it to /usr/lib/voxctrl — private
+      # to VoxCtrl, so it can't collide with another package's Dawn — which the
+      # binary's rpath ($ORIGIN/../lib/voxctrl, src-tauri/build.rs) covers. The
+      # AUR packages use the same path. The AppImage gets it in usr/lib in the
+      # slimming step below if linuxdeploy did not.
       - name: Build AppImage + deb (Linux, Vulkan + WebGPU)
         if: runner.os == 'Linux' && matrix.webgpu
         env:
@@ -292,7 +294,7 @@ jobs:
           dawn="$(realpath target/release/libwebgpu_dawn.so)"
           export LD_LIBRARY_PATH="$PWD/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           cat > "$RUNNER_TEMP/tauri-webgpu.conf.json" <<EOF
-          {"bundle":{"linux":{"deb":{"files":{"/usr/lib/libwebgpu_dawn.so":"$dawn"}}}}}
+          {"bundle":{"linux":{"deb":{"files":{"/usr/lib/voxctrl/libwebgpu_dawn.so":"$dawn"}}}}}
           EOF
           npm run tauri build -- --config "$RUNNER_TEMP/tauri-webgpu.conf.json" --features "${{ matrix.features }}"
 
@@ -529,6 +531,35 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+# ── AUR smoke test ────────────────────────────────────────────────────────────
+  # Packages this run's WebGPU .deb exactly as the AUR's voxctrl-bin will once
+  # the release is published, installs it on Arch and starts it
+  # (packaging/aur/smoke-test.sh). A red result here means AUR users would get
+  # a broken package from this release: fix it before publishing the draft.
+  # Not a dependency of `publish`, so an Arch-only problem never holds up the
+  # draft for every other platform.
+  aur-smoke:
+    name: AUR package smoke test
+    needs: build
+    if: always() && contains(needs.build.result, 'success')
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Tools the checkout needs
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifacts-linux-vulkan-webgpu
+          path: deb
+
+      - name: Smoke test
+        env:
+          VOXCTRL_SMOKE_STRICT: "1"
+        run: packaging/aur/smoke-test.sh deb/VoxCtrl-linux-x86_64-vulkan-webgpu.deb
+
 # ── Publish release ───────────────────────────────────────────────────────────
   publish:
     name: Publish GitHub release
@@ -572,6 +603,17 @@ jobs:
 
       - name: List release artifacts
         run: ls -lh release-artifacts/
+
+      # One checksum list for every downloadable file. The AUR job reads the
+      # .deb's hash from here, and anyone can check a download with
+      # `sha256sum -c --ignore-missing SHA256SUMS`. Written before signing so
+      # it gets a .minisig like everything else.
+      - name: Write SHA256SUMS
+        working-directory: release-artifacts
+        run: |
+          find . -maxdepth 1 -type f ! -name '*.minisig' ! -name SHA256SUMS -printf '%f\n' \
+            | sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
 
       # Sign every asset, then check each signature against the public key the
       # builds baked in — a secret and variable from different key pairs would

@@ -83,6 +83,7 @@ VoxCtrl/
 │   ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
 │   └── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
 │
+├── packaging/aur/          # AUR PKGBUILDs, publish + smoke-test scripts (docs/aur.md)
 ├── Cargo.toml              # Workspace definition
 ├── package.json            # Frontend deps
 ├── vite.config.ts
@@ -234,6 +235,10 @@ GPU support is decided at compile time and differs by engine — which is why th
 ### CPU baseline
 
 `.cargo/config.toml` pins whisper.cpp's ggml to AVX2 + FMA + F16C (`GGML_NATIVE=OFF`). Left at its default, ggml compiles for the *build machine's* CPU, and a release built on a CI runner with AVX-512 crashes with SIGILL on CPUs without it (v0.8.0/0.8.1 on a Ryzen 5800X3D). Do not enable `GGML_NATIVE` or AVX-512 in anything that ships. A local build for your own machine can opt back in with `GGML_NATIVE=ON cargo build …`.
+
+### AUR packages
+
+`packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
 
 ### Release notes
 

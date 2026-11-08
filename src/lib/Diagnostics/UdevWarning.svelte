@@ -39,6 +39,7 @@
     missing_injection_tool: string | null;
     pkexec_available: boolean;
     manual_package_commands: string;
+    package_managed: boolean;
     is_complete: boolean;
   };
 
@@ -346,7 +347,26 @@
               {/if}
             </span>
 
-            {#if setup.missing_injection_tool}
+            {#if setup.missing_injection_tool && setup.package_managed}
+              <!-- A package manager owns this install: no one-click install, just
+                   the one command that adds the optional helper. -->
+              <span class="step-detail">
+                VoxCtrl was installed by your package manager.
+                {#if setup.manual_package_commands}
+                  Add the helper the same way:
+                {:else}
+                  Install <code>{setup.missing_injection_tool}</code> with it, then reopen this window.
+                {/if}
+              </span>
+              {#if setup.manual_package_commands}
+                <div class="manual">
+                  <pre>{setup.manual_package_commands}</pre>
+                  <button class="btn-link" onclick={copyManual}>
+                    {copied ? "Copied" : "Copy command"}
+                  </button>
+                </div>
+              {/if}
+            {:else if setup.missing_injection_tool}
               <div class="step-actions">
                 {#if setup.pkexec_available && setup.manual_package_commands}
                   <button class="btn-primary" onclick={handleSetup}>Install it</button>

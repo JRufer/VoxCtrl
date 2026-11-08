@@ -44,7 +44,7 @@ A fixed list — not "whatever a system-information library returns", so that th
 list stays true when dependencies are upgraded
 (`crates/voxctrl-bugreport/src/sysinfo.rs`):
 
-- VoxCtrl's version, how it was installed (AppImage, installed, development),
+- VoxCtrl's version, how it was installed (AppImage, package (pacman), package (dpkg), installed, development),
   and which Cargo features it was built with
 - What this build can put on the GPU, for whisper.cpp and Moonshine
 - Operating system, distribution or Windows edition, kernel or NT build,

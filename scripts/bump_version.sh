@@ -10,6 +10,8 @@
 #     shipped with package.json still at 0.1.7).
 #   - Cargo.toml                  ([workspace.package] version) — the Cargo
 #     version inherited by every crate via `version.workspace = true`.
+#   - packaging/aur/{voxctrl-bin,voxctrl}/PKGBUILD (pkgver) — the AUR
+#     packages' version; aur-publish.yml sets it again from the tag.
 #   - docs/release-notes/<version>.md — not a version field, but the release
 #     page's "What's new" text; a stub is created here and CI requires it be
 #     written before a release for that version will build.
@@ -67,6 +69,18 @@ if ! grep -q '^\[workspace\.package\]' Cargo.toml; then
 fi
 sed -i "/^\[workspace\.package\]/,/^\[/ s/^version = \".*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
 echo "  Updated Cargo.toml"
+
+# The AUR PKGBUILDs' pkgver. The AUR copies get it (and real checksums) from
+# the release tag when .github/workflows/aur-publish.yml runs; this keeps the
+# repo's copies, and the smoke test that builds from them, on the same version.
+# Four-part versions aren't valid AUR versions here, so those are left alone.
+if [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    for pkgbuild in packaging/aur/voxctrl-bin/PKGBUILD packaging/aur/voxctrl/PKGBUILD; do
+        [ -f "$pkgbuild" ] || continue
+        sed -i -e "s/^pkgver=.*/pkgver=${NEW_VERSION}/" -e "s/^pkgrel=.*/pkgrel=1/" "$pkgbuild"
+        echo "  Updated $pkgbuild"
+    done
+fi
 
 # The release page's "What's new" is built from docs/release-notes/<version>.md
 # (see release.yml). Create a stub so the notes are written in the same commit

@@ -464,11 +464,13 @@ pub fn run() {
         inference_cfg_rx,
     );
 
-    // Setup desktop integration (launcher and icon) before initializing hotkey listeners,
-    // so xdg-desktop-portal can resolve the `ai.voxctrl.app` AppID against an installed .desktop file.
+    // Make sure a launcher named after the `ai.voxctrl.app` AppID exists before initializing
+    // hotkey listeners, so xdg-desktop-portal can resolve it to a name and icon. A package
+    // that ships its own launcher (the AUR packages) already provides it; anything else
+    // gets the per-user one in ~/.local (installer::ensure_desktop_integration).
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = crate::installer::setup_desktop_integration() {
+        if let Err(e) = crate::installer::ensure_desktop_integration() {
             tracing::warn!("Failed to setup desktop integration at startup: {e}");
         }
     }

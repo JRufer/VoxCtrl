@@ -24,7 +24,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
 pub struct SystemInfo {
     /// VoxCtrl's version, e.g. "0.5.1".
     pub app_version: String,
-    /// How this copy was installed: "AppImage", "installed" or "development".
+    /// How this copy was installed: "AppImage", "package (pacman)",
+    /// "package (dpkg)", "installed" or "development".
     pub install_kind: String,
     /// Cargo features the running binary was built with — the difference
     /// between the Windows CPU build and the GPU one.
@@ -113,7 +114,38 @@ fn install_kind() -> &'static str {
     if cfg!(debug_assertions) {
         return "development";
     }
-    "installed"
+    let exe = std::env::current_exe().unwrap_or_default();
+    package_kind(&exe, std::path::Path::new("/")).unwrap_or("installed")
+}
+
+/// Which package database owns the binary at `exe`, if any.
+///
+/// Only the package databases' own directories are looked at — no `pacman -Qo`
+/// or `dpkg -S`, which are slow and would run on every report. `root` is the
+/// filesystem root, so the test can point it at a fake one. The answer is a
+/// fixed label: nothing about the machine leaves in it.
+pub(crate) fn package_kind(exe: &std::path::Path, root: &std::path::Path) -> Option<&'static str> {
+    let s = exe.to_string_lossy();
+    if !(s.starts_with("/usr/") || s.starts_with("/opt/")) {
+        return None;
+    }
+
+    // pacman keeps one directory per installed package, named `<name>-<version>`.
+    // `voxctrl`, `voxctrl-bin` and `voxctrl-git` all start with the prefix.
+    let pacman_db = root.join("var/lib/pacman/local");
+    if let Ok(entries) = std::fs::read_dir(&pacman_db) {
+        if entries.flatten().any(|e| e.file_name().to_string_lossy().starts_with("voxctrl")) {
+            return Some("package (pacman)");
+        }
+    }
+
+    // The `.deb`'s package name is `vox-ctrl` (Tauri derives it from the
+    // product name).
+    if root.join("var/lib/dpkg/info/vox-ctrl.list").exists() {
+        return Some("package (dpkg)");
+    }
+
+    None
 }
 
 /// Just the language subtag: "en_US.UTF-8" and "en_GB" both become "en".
@@ -345,6 +377,41 @@ fn run(program: &str, args: &[&str]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pacman_package_is_named_as_such() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("var/lib/pacman/local/voxctrl-bin-0.8.8-1")).unwrap();
+        std::fs::create_dir_all(root.path().join("var/lib/pacman/local/glibc-2.42-1")).unwrap();
+        let exe = std::path::Path::new("/usr/bin/voxctrl");
+        assert_eq!(package_kind(exe, root.path()), Some("package (pacman)"));
+    }
+
+    #[test]
+    fn a_deb_is_named_as_such() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("var/lib/dpkg/info")).unwrap();
+        std::fs::write(root.path().join("var/lib/dpkg/info/vox-ctrl.list"), "/usr/bin/voxctrl\n").unwrap();
+        let exe = std::path::Path::new("/usr/bin/voxctrl");
+        assert_eq!(package_kind(exe, root.path()), Some("package (dpkg)"));
+    }
+
+    #[test]
+    fn no_package_database_means_no_package_label() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("var/lib/pacman/local/glibc-2.42-1")).unwrap();
+        assert_eq!(package_kind(std::path::Path::new("/usr/bin/voxctrl"), root.path()), None);
+    }
+
+    #[test]
+    fn a_binary_in_home_is_never_a_package() {
+        // Even on an Arch system with the package also installed: the copy
+        // running from the home directory is not the one pacman owns.
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("var/lib/pacman/local/voxctrl-0.8.8-1")).unwrap();
+        let exe = std::path::Path::new("/home/u/bin/voxctrl");
+        assert_eq!(package_kind(exe, root.path()), None);
+    }
 
     #[test]
     fn a_distribution_name_is_read_unquoted() {
