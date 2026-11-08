@@ -203,7 +203,7 @@ impl HistoryService {
         }
     }
 
-    /// Newest first, filtered by `query`.
+    /// Newest first, filtered by `query` (see [`voxctrl_history::matches`]).
     pub fn search(&self, query: &str, limit: usize) -> Vec<Entry> {
         let mut inner = self.lock();
         self.prune_locked(&mut inner);

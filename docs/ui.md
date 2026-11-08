@@ -149,7 +149,16 @@ Backed by `src-tauri/src/bug_report.rs` and the `voxctrl-bugreport` crate.
 Opened from the tray menu (**🕘 History**), in its own window rather than in
 Settings. Recent dictations, newest first, with the time and the target each
 went to (`src/lib/History/HistoryWindow.svelte`).
-- Search box, and **Clear all** (asks once before clearing)
+- Search box: every word must match, in any order, in the text or the target's
+  name; a phrase in double quotes matches as written. Matches are highlighted.
+  **Ctrl+F** or **/** jumps to it and **Esc** clears it. The same rules apply
+  to MCP's `get_recent_transcripts` query (`voxctrl_history::matches`).
+- Filters beside it: **target** (shown once history spans more than one) and
+  **time** (Any time, Last hour, Today, Last 7 days), with a count of what's
+  shown and **Clear search**
+- Entries grouped under day headings (Today, Yesterday, then the date)
+- **Clear all** (asks once before clearing; always clears everything, not just
+  what a search shows)
 - Per entry: **Copy**, **Type again** (hides the window so focus returns to
   the one you were in, then types the text there), **Read aloud** (when TTS is
   on), **Send to…** (any output target) and **Delete**

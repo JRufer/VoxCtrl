@@ -160,22 +160,56 @@ impl History {
         &self.entries
     }
 
-    /// Newest first, optionally only those whose text or target contains
-    /// `query` (case-insensitive), at most `limit` of them.
+    /// Newest first, optionally only those that match `query`, at most
+    /// `limit` of them. See [`matches`] for how a query matches.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Entry> {
-        let q = query.trim().to_lowercase();
+        let terms = terms(query);
         self.entries
             .iter()
             .rev()
-            .filter(|e| {
-                q.is_empty()
-                    || e.text.to_lowercase().contains(&q)
-                    || e.target_label.to_lowercase().contains(&q)
-            })
+            .filter(|e| matches_terms(e, &terms))
             .take(limit)
             .cloned()
             .collect()
     }
+}
+
+/// Split a search query into the terms that must all match: words, or
+/// phrases in double quotes ("send the report"), lower-cased. An unclosed
+/// quote runs to the end of the query. The History window highlights matches
+/// with the same rules (`src/lib/History/search.ts`).
+pub fn terms(query: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, part) in query.split('"').enumerate() {
+        if i % 2 == 1 {
+            // Inside quotes: one phrase, with its spaces squeezed.
+            let phrase = part.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !phrase.is_empty() {
+                out.push(phrase.to_lowercase());
+            }
+        } else {
+            out.extend(part.split_whitespace().map(str::to_lowercase));
+        }
+    }
+    out
+}
+
+/// Whether an entry matches a search query: every term appears, in any
+/// order and ignoring case, in its text or in the name of where it went. A
+/// blank query matches everything.
+pub fn matches(entry: &Entry, query: &str) -> bool {
+    matches_terms(entry, &terms(query))
+}
+
+fn matches_terms(entry: &Entry, terms: &[String]) -> bool {
+    if terms.is_empty() {
+        return true;
+    }
+    let text = entry.text.to_lowercase();
+    let target = entry.target_label.to_lowercase();
+    terms
+        .iter()
+        .all(|t| text.contains(t.as_str()) || target.contains(t.as_str()))
 }
 
 #[cfg(test)]
@@ -259,6 +293,45 @@ mod tests {
         assert_eq!(h.search("meeting", 10)[0].text, "groceries");
         assert!(h.search("nothing", 10).is_empty());
         assert_eq!(h.search("", 1).len(), 1);
+    }
+
+    #[test]
+    fn every_word_must_match_in_any_order() {
+        let mut h = History::new(Limits::default());
+        h.add(
+            1,
+            "default",
+            "Focused Window",
+            "Push the release to Thursday",
+        );
+        h.add(2, "notes", "Meeting Notes", "Thursday groceries");
+        assert_eq!(h.search("thursday release", 10)[0].id, 1);
+        assert_eq!(h.search("RELEASE   thursday", 10).len(), 1);
+        // A word can match the target name while another matches the text.
+        assert_eq!(h.search("notes thursday", 10)[0].id, 2);
+        assert!(h.search("thursday friday", 10).is_empty());
+    }
+
+    #[test]
+    fn quoted_phrases_must_match_together() {
+        let mut h = History::new(Limits::default());
+        h.add(1, "t", "T", "send the report to Dana");
+        h.add(2, "t", "T", "the report can wait, send it later");
+        assert_eq!(h.search("send report", 10).len(), 2);
+        let found = h.search("\"send the  report\"", 10);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, 1);
+        // An unclosed quote runs to the end.
+        assert_eq!(h.search("dana \"the report", 10).len(), 1);
+    }
+
+    #[test]
+    fn terms_splits_words_and_phrases() {
+        assert_eq!(
+            terms("  Hello \"New  York\" there "),
+            ["hello", "new york", "there"]
+        );
+        assert!(terms("  \"  \" ").is_empty());
     }
 
     #[test]

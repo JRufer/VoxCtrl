@@ -6,8 +6,16 @@
   import { config, configDirty } from "../../stores/config";
   import type { OutputTarget } from "../Settings/routing-types";
   import CustomSelect from "../Settings/CustomSelect.svelte";
-
-  type Entry = { id: number; at: number; target_id: string; target_label: string; text: string };
+  import {
+    applyFilters,
+    groupByDay,
+    highlight,
+    PERIOD_OPTIONS,
+    targetIds,
+    terms,
+    type Entry,
+    type Period,
+  } from "./search";
   type Status = {
     enabled: boolean;
     persisting: boolean;
@@ -25,6 +33,14 @@
   let entries = $state<Entry[]>([]);
   let status = $state<Status | null>(null);
   let query = $state("");
+  /** The query the listed entries were fetched with, for highlighting. */
+  let appliedQuery = $state("");
+  /** Only entries that went to this target ("" for any). */
+  let targetFilter = $state("");
+  let period = $state<Period>("any");
+  /** When the list was last fetched, so the day headings and "When" filter agree. */
+  let now = $state(new Date());
+  let searchEl = $state<HTMLInputElement | null>(null);
   let targets = $state<OutputTarget[]>([]);
   let confirmClear = $state(false);
   let notice = $state("");
@@ -47,10 +63,13 @@
   }
 
   async function refresh() {
+    const asked = query;
     try {
-      const view = await invoke<{ entries: Entry[]; status: Status }>("get_history", { query });
+      const view = await invoke<{ entries: Entry[]; status: Status }>("get_history", { query: asked });
       entries = view.entries;
       status = view.status;
+      appliedQuery = asked;
+      now = new Date();
     } catch (e) {
       console.error("get_history failed:", e);
     }
@@ -60,6 +79,38 @@
   function onSearch() {
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(refresh, 150);
+  }
+
+  function clearSearch() {
+    if (searchTimer) clearTimeout(searchTimer);
+    query = "";
+    targetFilter = "";
+    period = "any";
+    refresh();
+  }
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && query) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (searchTimer) clearTimeout(searchTimer);
+      query = "";
+      refresh();
+    }
+  }
+
+  /** Ctrl+F, or / outside a text field, jumps to the search box. */
+  function onWindowKey(e: KeyboardEvent) {
+    const inField =
+      e.target instanceof HTMLElement &&
+      (e.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName));
+    const find = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "f";
+    if (find || (e.key === "/" && !inField && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+      if (!searchEl) return;
+      e.preventDefault();
+      searchEl.focus();
+      searchEl.select();
+    }
   }
 
   function flash(message: string) {
@@ -148,6 +199,31 @@
     return sameDay ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
   }
 
+  let searchTerms = $derived(terms(appliedQuery));
+  let shown = $derived(applyFilters(entries, targetFilter, period, now));
+  let groups = $derived(groupByDay(shown, now));
+  let filtering = $derived(appliedQuery.trim() !== "" || targetFilter !== "" || period !== "any");
+
+  /** Every target that history mentions, named as Settings names it. */
+  let targetOptions = $derived.by(() => {
+    const labels = new Map<string, string>();
+    for (const e of entries) {
+      const ids = targetIds(e);
+      // A dictation sent to one target carries that target's name.
+      if (ids.length === 1 && !labels.has(ids[0])) labels.set(ids[0], e.target_label || ids[0]);
+      else for (const id of ids) if (!labels.has(id)) labels.set(id, id);
+    }
+    for (const t of targets) if (labels.has(t.id)) labels.set(t.id, t.label || t.id);
+    // Keep the chosen one listed even when the search hides all its entries.
+    if (targetFilter && !labels.has(targetFilter)) {
+      labels.set(targetFilter, targets.find((t) => t.id === targetFilter)?.label || targetFilter);
+    }
+    return [
+      { value: "", label: "All targets" },
+      ...[...labels].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+  });
+
   let sendOptions = $derived([
     { value: "", label: "Send to…" },
     ...targets.map((t) => ({ value: t.id, label: t.label || t.id })),
@@ -179,6 +255,8 @@
     };
   });
 </script>
+
+<svelte:window onkeydown={onWindowKey} />
 
 <main class="history-root">
   <header>
@@ -270,8 +348,11 @@
         type="search"
         placeholder="Search history"
         aria-label="Search history"
+        title="Words in any order. Put a phrase in quotes to match it exactly. Ctrl+F or / to jump here, Esc to clear."
+        bind:this={searchEl}
         bind:value={query}
         oninput={onSearch}
+        onkeydown={onSearchKey}
       />
       {#if confirmClear}
         <button class="btn-action danger" onclick={clearAll}>Clear all {status?.count ?? ""}</button>
@@ -284,24 +365,46 @@
         >
       {/if}
     </div>
+    {#if (status?.count ?? 0) > 0 || filtering}
+      <div class="filters">
+        {#if targetOptions.length > 2 || targetFilter}
+          <div class="filter" role="group" aria-label="Filter by target">
+            <CustomSelect bind:value={targetFilter} options={targetOptions} />
+          </div>
+        {/if}
+        <div class="filter" role="group" aria-label="Filter by time">
+          <CustomSelect bind:value={period} options={PERIOD_OPTIONS} />
+        </div>
+        {#if filtering}
+          <span class="count" role="status">
+            {shown.length} of {status?.count ?? entries.length}
+            {(status?.count ?? entries.length) === 1 ? "dictation" : "dictations"}
+          </span>
+          <button class="btn-action small" onclick={clearSearch}>Clear search</button>
+        {/if}
+      </div>
+    {/if}
     {#if notice}
       <p class="hint notice" role="status">{notice}</p>
     {/if}
 
     <div class="list-area">
-      {#if entries.length === 0}
+      {#if shown.length === 0}
         <p class="hint empty">
-          {query ? "Nothing in history matches that." : "Nothing dictated yet."}
+          {filtering ? "Nothing in history matches that." : "Nothing dictated yet."}
         </p>
       {:else}
+        {#each groups as group (group.day)}
+        <h2 class="day">{group.day}</h2>
         <ul class="entries">
-          {#each entries as entry (entry.id)}
+          {#each group.entries as entry (entry.id)}
             <li class="entry">
               <div class="meta">
                 <span>{when(entry.at)}</span>
-                <span class="target">→ {entry.target_label}</span>
+                <span class="target">→ {#each highlight(entry.target_label, searchTerms) as seg, i (i)}{#if seg.match}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}</span>
               </div>
-              <p class="text">{entry.text}</p>
+              <!-- One line: the text keeps its own spacing (pre-wrap). -->
+              <p class="text">{#each highlight(entry.text, searchTerms) as seg, i (i)}{#if seg.match}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}</p>
               <div class="actions">
                 <button class="btn-action small" onclick={() => copy(entry)}>Copy</button>
                 <button
@@ -346,6 +449,7 @@
             </li>
           {/each}
         </ul>
+        {/each}
       {/if}
     </div>
   {:else}
@@ -387,6 +491,28 @@
   }
   .toolbar input[type="search"] {
     @apply flex-1 min-w-0;
+  }
+  .filters {
+    @apply flex flex-wrap items-center gap-2 shrink-0;
+  }
+  .filter {
+    @apply min-w-[140px];
+  }
+  .filter :global(.custom-select-trigger) {
+    @apply h-[28px] py-0 px-2 text-[12px];
+  }
+  .count {
+    @apply text-[12px] text-[var(--text-muted)];
+  }
+  .day {
+    @apply text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)] m-0 mt-3 mb-1.5;
+  }
+  .day:first-child {
+    @apply mt-0;
+  }
+  mark {
+    @apply rounded-sm px-[1px] text-inherit;
+    background-color: color-mix(in srgb, var(--color-accent-blue) 35%, transparent);
   }
   .list-area {
     @apply flex-1 min-h-0 overflow-y-auto pr-1;
