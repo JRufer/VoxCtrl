@@ -1,5 +1,13 @@
 ## Downloads
 
+**Arch and Arch-based distributions:** `paru -S voxctrl-bin` (or `yay`) installs
+this release from the AUR, usually within minutes of it being published, and
+pacman keeps it updated. See
+[Installation → Arch Linux](https://github.com/JRufer/VoxCtrl/blob/master/docs/installation.md#arch-linux-aur).
+
+`SHA256SUMS` lists the checksum of every file below; check a download with
+`sha256sum -c --ignore-missing SHA256SUMS`.
+
 Pick the build for your platform and GPU:
 
 | Platform | File suffix | GPU required |

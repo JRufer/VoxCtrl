@@ -194,6 +194,12 @@ Keywords=whisper;voice;dictation;wayland;
         }
     }
 
+    register_mint_shortcut_if_needed();
+
+    Ok(())
+}
+
+fn register_mint_shortcut_if_needed() {
     #[cfg(target_os = "linux")]
     {
         // Only worth doing where nothing better can serve shortcuts: on an X11
@@ -206,14 +212,131 @@ Keywords=whisper;voice;dictation;wayland;
             let _ = crate::mint_shortcuts::register_mint_shortcut(None);
         }
     }
+}
 
+/// Where a distro package installs VoxCtrl's launcher.
+///
+/// Named after the portal application id, like the per-user one, so the
+/// desktop resolves `ai.voxctrl.app` to a name and an icon either way.
+pub const SYSTEM_DESKTOP_FILE: &str = "/usr/share/applications/ai.voxctrl.app.desktop";
+
+/// Whether VoxCtrl should write its own launcher into `~/.local`.
+///
+/// It must not when a package manager installed it and that package ships the
+/// launcher: a per-user entry shadows the system one, carries an absolute
+/// `Exec=`, and is left behind as a dead menu item after `pacman -R`. A `.deb`
+/// from before the launcher was renamed ships only `VoxCtrl.desktop`, which the
+/// portal cannot match to `ai.voxctrl.app`, so that install still needs the
+/// per-user entry — hence both conditions, not just the first.
+pub fn wants_user_launcher(package_managed: bool, system_launcher_exists: bool) -> bool {
+    !(package_managed && system_launcher_exists)
+}
+
+/// Remove a per-user launcher that a package's system launcher now replaces.
+///
+/// Only an entry that is safe to lose goes: one whose `Exec=` is this very
+/// binary (VoxCtrl wrote it on an earlier launch, before the package shipped
+/// its own launcher), or an AppImage that no longer exists. An entry for an
+/// AppImage the user still keeps alongside the package is theirs, and stays.
+/// Returns whether anything was removed.
+pub fn remove_superseded_user_launcher(home: &std::path::Path, current_exe: &std::path::Path) -> bool {
+    let launcher = home.join(".local/share/applications").join(DESKTOP_FILE_NAME);
+    let Ok(content) = std::fs::read_to_string(&launcher) else {
+        return false;
+    };
+    let Some(exec) = desktop_exec_path(&content) else {
+        return false;
+    };
+
+    let points_at_us = std::fs::canonicalize(&exec).ok().as_deref()
+        == std::fs::canonicalize(current_exe).ok().as_deref()
+        && exec.exists();
+    let dead_appimage = exec
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase().ends_with(".appimage"))
+        .unwrap_or(false)
+        && !exec.exists();
+
+    if !(points_at_us || dead_appimage) {
+        return false;
+    }
+    if std::fs::remove_file(&launcher).is_err() {
+        return false;
+    }
+    // The icon was written alongside the launcher and only ever by VoxCtrl.
+    // Left behind, it would shadow the package's icon of the same name.
+    let _ = std::fs::remove_file(home.join(".local/share/icons/hicolor/128x128/apps/voxctrl.png"));
+    true
+}
+
+/// The program path in a desktop entry's `Exec=` line, without arguments.
+fn desktop_exec_path(content: &str) -> Option<PathBuf> {
+    let exec = content
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("Exec="))?
+        .trim();
+    // VoxCtrl writes the path unquoted and with no arguments; take the first
+    // word in case someone added a field code such as %U by hand.
+    let program = exec.split_whitespace().next()?;
+    Some(PathBuf::from(program.trim_matches('"')))
+}
+
+/// Make sure the desktop can find VoxCtrl's launcher, the way this install needs.
+///
+/// A package that ships the launcher already provides it, so VoxCtrl writes
+/// nothing into the user's home and tidies up the entry an earlier launch left;
+/// anything else (an AppImage, a `.deb` without the launcher, a dev build) gets
+/// the per-user entry as before.
+pub fn ensure_desktop_integration() -> Result<(), String> {
+    let managed = voxctrl_update::install::is_package_managed();
+    let system_launcher = std::path::Path::new(SYSTEM_DESKTOP_FILE).exists();
+    if wants_user_launcher(managed, system_launcher) {
+        return setup_desktop_integration();
+    }
+
+    if let (Some(home), Ok(exe)) = (dirs::home_dir(), std::env::current_exe()) {
+        if remove_superseded_user_launcher(&home, &exe) {
+            tracing::info!("Removed a per-user launcher the package's own launcher replaces");
+        }
+    }
+    register_mint_shortcut_if_needed();
     Ok(())
+}
+
+/// The command that installs one missing package, for an install a package
+/// manager owns.
+///
+/// There VoxCtrl doesn't offer to run anything with administrator rights: the
+/// typing helpers are optional dependencies of the package, so the user adds
+/// the one their session needs the same way they installed VoxCtrl.
+pub fn single_package_command(pkg_mgr: &str, package: &str) -> Option<String> {
+    match pkg_mgr {
+        "pacman" => Some(format!("sudo pacman -S --needed {package}")),
+        "apt" => Some(format!("sudo apt-get install -y {package}")),
+        "dnf" => Some(format!("sudo dnf install -y {package}")),
+        "zypper" => Some(format!("sudo zypper install -y {package}")),
+        _ => None,
+    }
 }
 
 pub fn run_cli_installer() -> Result<(), String> {
     println!("=== VoxCtrl CLI Installer & Host Setup ===");
     let pkg_mgr = detect_pkg_manager();
     println!("Detected Package Manager: {}", pkg_mgr);
+
+    if voxctrl_update::install::is_package_managed() {
+        // The package already pulled in what VoxCtrl needs; the typing and
+        // clipboard helpers are optional dependencies the user chooses.
+        println!("VoxCtrl was installed by your package manager, so its dependencies");
+        println!("are already handled and there is nothing to install with sudo.");
+        if let Some(tool) = crate::commands::missing_injection_tool() {
+            match single_package_command(pkg_mgr, tool) {
+                Some(cmd) => println!("To type into other windows, install {tool}:\n    {cmd}"),
+                None => println!("To type into other windows, install {tool} with your package manager."),
+            }
+        }
+        return ensure_desktop_integration();
+    }
 
     let full_script = build_privileged_setup_script(pkg_mgr);
     println!("Preparing to run system setup command via sudo...");
@@ -229,7 +352,7 @@ pub fn run_cli_installer() -> Result<(), String> {
 
     // Setup desktop integration
     println!("Registering desktop entry and icon...");
-    setup_desktop_integration()?;
+    ensure_desktop_integration()?;
     println!("Desktop integration complete!");
 
     println!("\n==================================================");
@@ -245,13 +368,21 @@ pub fn run_cli_installer() -> Result<(), String> {
 }
 
 pub async fn run_gui_installer() -> Result<(), String> {
+    if voxctrl_update::install::is_package_managed() {
+        // The setup window no longer offers this button on a packaged install;
+        // this is the backstop if an older frontend or a script still asks.
+        return Err("VoxCtrl was installed by your package manager, so it won't install \
+                    packages itself. Install the missing helper with your package \
+                    manager; the command is shown under \"Install it manually\"."
+            .to_string());
+    }
     let pkg_mgr = detect_pkg_manager();
     let full_script = build_privileged_setup_script(pkg_mgr);
 
     if get_install_packages_command(pkg_mgr).is_none() {
         // Nothing to install on this distro; the desktop entry is all that is
         // left, and it needs no privileges.
-        return setup_desktop_integration();
+        return ensure_desktop_integration();
     }
 
     if !command_exists("pkexec") {
@@ -272,7 +403,7 @@ pub async fn run_gui_installer() -> Result<(), String> {
     }
 
     // Desktop integration
-    setup_desktop_integration()?;
+    ensure_desktop_integration()?;
 
     Ok(())
 }
@@ -507,5 +638,89 @@ mod tests {
         std::env::remove_var("VOXCTRL_PKG_MANAGER_MOCK");
         std::env::remove_var("VOXCTRL_INSTALLER_TEST_MOCK");
         std::env::remove_var("VOXCTRL_FAKE_COMMANDS");
+    }
+
+    #[test]
+    fn a_package_with_its_own_launcher_gets_no_user_launcher() {
+        assert!(!wants_user_launcher(true, true));
+        // A `.deb` that ships only `VoxCtrl.desktop` still needs the user entry,
+        // or the portal can't name the shortcuts.
+        assert!(wants_user_launcher(true, false));
+        // AppImages and dev builds always write their own.
+        assert!(wants_user_launcher(false, true));
+        assert!(wants_user_launcher(false, false));
+    }
+
+    fn write_user_launcher(home: &std::path::Path, exec: &str) -> std::path::PathBuf {
+        let apps = home.join(".local/share/applications");
+        let icons = home.join(".local/share/icons/hicolor/128x128/apps");
+        fs::create_dir_all(&apps).unwrap();
+        fs::create_dir_all(&icons).unwrap();
+        fs::write(icons.join("voxctrl.png"), b"png").unwrap();
+        let launcher = apps.join(DESKTOP_FILE_NAME);
+        fs::write(&launcher, format!("[Desktop Entry]\nName=VoxCtrl\nExec={exec}\nIcon=voxctrl\n")).unwrap();
+        launcher
+    }
+
+    #[test]
+    fn a_launcher_this_binary_wrote_is_removed_with_its_icon() {
+        let home = tempdir().unwrap();
+        let exe = home.path().join("voxctrl");
+        fs::write(&exe, b"").unwrap();
+        let launcher = write_user_launcher(home.path(), &exe.to_string_lossy());
+
+        assert!(remove_superseded_user_launcher(home.path(), &exe));
+        assert!(!launcher.exists());
+        assert!(!home.path().join(".local/share/icons/hicolor/128x128/apps/voxctrl.png").exists());
+    }
+
+    #[test]
+    fn a_launcher_for_a_deleted_appimage_is_removed() {
+        let home = tempdir().unwrap();
+        let exe = home.path().join("voxctrl");
+        fs::write(&exe, b"").unwrap();
+        let gone = home.path().join("Apps/VoxCtrl-linux-x86_64-vulkan.AppImage");
+        let launcher = write_user_launcher(home.path(), &gone.to_string_lossy());
+
+        assert!(remove_superseded_user_launcher(home.path(), &exe));
+        assert!(!launcher.exists());
+    }
+
+    #[test]
+    fn a_launcher_for_an_appimage_still_on_disk_is_kept() {
+        // The user runs an AppImage alongside the package; that entry is theirs.
+        let home = tempdir().unwrap();
+        let exe = home.path().join("voxctrl");
+        fs::write(&exe, b"").unwrap();
+        let appimage = home.path().join("VoxCtrl.AppImage");
+        fs::write(&appimage, b"").unwrap();
+        let launcher = write_user_launcher(home.path(), &appimage.to_string_lossy());
+
+        assert!(!remove_superseded_user_launcher(home.path(), &exe));
+        assert!(launcher.exists());
+    }
+
+    #[test]
+    fn a_launcher_for_some_other_program_is_kept() {
+        let home = tempdir().unwrap();
+        let exe = home.path().join("voxctrl");
+        fs::write(&exe, b"").unwrap();
+        let launcher = write_user_launcher(home.path(), "/usr/local/bin/my-voxctrl-wrapper --flag");
+
+        assert!(!remove_superseded_user_launcher(home.path(), &exe));
+        assert!(launcher.exists());
+    }
+
+    #[test]
+    fn no_user_launcher_means_nothing_to_remove() {
+        let home = tempdir().unwrap();
+        assert!(!remove_superseded_user_launcher(home.path(), std::path::Path::new("/usr/bin/voxctrl")));
+    }
+
+    #[test]
+    fn a_packaged_install_is_offered_one_package_and_no_sudo_script() {
+        assert_eq!(single_package_command("pacman", "wtype").as_deref(), Some("sudo pacman -S --needed wtype"));
+        assert_eq!(single_package_command("apt", "xdotool").as_deref(), Some("sudo apt-get install -y xdotool"));
+        assert_eq!(single_package_command("unknown", "wtype"), None);
     }
 }

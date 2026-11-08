@@ -49,8 +49,13 @@ pub struct SetupStatusPayload {
     /// Graphical privilege escalation is available for the one-click install.
     pub pkexec_available: bool,
     /// Commands that install the host packages by hand, for machines with no
-    /// polkit agent. Empty when the distro is unknown.
+    /// polkit agent. Empty when the distro is unknown. On a package-managed
+    /// install, just the one command for the missing helper.
     pub manual_package_commands: String,
+    /// A package manager owns this install (a `.deb`, the AUR). The window then
+    /// offers no one-click install: the package already brought its
+    /// dependencies, and the typing helpers are optional ones the user picks.
+    pub package_managed: bool,
     pub is_complete: bool,
 }
 
@@ -81,6 +86,15 @@ pub async fn get_setup_status(
         uses_whisper_model && voxctrl_inference::whisper_cpp::is_small_auto_downloadable(&model_size);
 
     let missing_tool = missing_injection_tool();
+    let package_managed = voxctrl_update::install::is_package_managed();
+    let pkg_mgr = crate::installer::detect_pkg_manager();
+    let manual_package_commands = if package_managed {
+        missing_tool
+            .and_then(|tool| crate::installer::single_package_command(pkg_mgr, tool))
+            .unwrap_or_default()
+    } else {
+        crate::installer::manual_setup_commands(pkg_mgr)
+    };
 
     Ok(SetupStatusPayload {
         is_complete: hotkeys_active && model_ready && missing_tool.is_none(),
@@ -90,10 +104,9 @@ pub async fn get_setup_status(
         model_size,
         model_auto_downloads,
         missing_injection_tool: missing_tool.map(str::to_string),
-        pkexec_available: crate::installer::command_exists("pkexec"),
-        manual_package_commands: crate::installer::manual_setup_commands(
-            crate::installer::detect_pkg_manager(),
-        ),
+        pkexec_available: !package_managed && crate::installer::command_exists("pkexec"),
+        manual_package_commands,
+        package_managed,
     })
 }
 

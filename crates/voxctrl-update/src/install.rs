@@ -131,6 +131,18 @@ pub fn classify_exe_path_with(exe: &Path, gpu_build: bool) -> InstallKind {
     InstallKind::Unmanaged
 }
 
+/// Whether a package manager owns this installation — a `.deb`, an AUR or other
+/// distro package, a Nix store path.
+///
+/// The one place the app asks "did something else install me?", so the updater,
+/// the desktop launcher and the setup window can't disagree about the answer.
+/// Never true for an AppImage, which sets `APPIMAGE` and is decided first.
+pub fn is_package_managed() -> bool {
+    // The GPU flag only changes which Windows or AppImage asset is chosen, never
+    // whether the install is package-managed, so any value gives the same answer.
+    matches!(detect(false), InstallKind::ManagedPackage)
+}
+
 fn is_build_dir(exe: &Path) -> bool {
     exe.components().any(|c| {
         let s = c.as_os_str().to_string_lossy();

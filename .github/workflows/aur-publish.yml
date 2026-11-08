@@ -1,0 +1,128 @@
+name: Publish to AUR
+
+# Pushes voxctrl-bin and voxctrl to the AUR when a GitHub release is published.
+# Never from a draft: drafts have no public download, so a PKGBUILD pointing at
+# one would fail for every user.
+#
+# Run it by hand (Actions → Publish to AUR → Run workflow) to re-push a
+# version — for example a packaging-only fix with pkgrel 2.
+#
+# Needs, once (docs/aur.md):
+#   secret   AUR_SSH_PRIVATE_KEY  private half of a key used for nothing else,
+#                                 its public half added to the AUR account
+#   variable AUR_USERNAME         name for the AUR commit
+#   variable AUR_EMAIL            email for the AUR commit
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.8.8)"
+        required: true
+        type: string
+      pkgrel:
+        description: "pkgrel (1 for a new version; raise it for a packaging-only fix)"
+        required: false
+        default: "1"
+        type: string
+      dry_run:
+        description: "Build the PKGBUILDs and .SRCINFO but don't push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Update the AUR packages
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    # Pre-releases are for testers; the AUR gets stable versions only.
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    env:
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      PKGREL: ${{ github.event_name == 'release' && '1' || inputs.pkgrel }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed base-devel pacman-contrib git openssh curl
+
+      # Packaging comes from the default branch, not the tag, so a fix to a
+      # PKGBUILD can be published for a release that is already out.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Fill version and checksums
+        run: |
+          set -euo pipefail
+          useradd -m builder
+          chown -R builder: packaging/aur
+          su builder -c "packaging/aur/update-pkgbuilds.sh '$TAG' '$PKGREL'"
+
+      # updpkgsums hashed what it downloaded; check that against the hash the
+      # release workflow recorded when it built the file, so a corrupted or
+      # replaced download can't reach the AUR.
+      - name: Check the .deb hash against the release's SHA256SUMS
+        run: |
+          set -euo pipefail
+          sums=$(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$TAG/SHA256SUMS" || true)
+          if [ -z "$sums" ]; then
+            echo "::warning::$TAG has no SHA256SUMS asset (releases before 0.8.8); skipping the cross-check."
+            exit 0
+          fi
+          want=$(awk '$2 == "VoxCtrl-linux-x86_64-vulkan-webgpu.deb" {print $1}' <<< "$sums")
+          got=$(sed -n "/^sha256sums=(/{s/^sha256sums=('\([0-9a-f]*\)'.*/\1/p;q}" packaging/aur/voxctrl-bin/PKGBUILD)
+          echo "SHA256SUMS: $want"
+          echo "PKGBUILD:   $got"
+          [ -n "$want" ] && [ "$want" = "$got" ] || { echo "::error::The .deb's hash doesn't match the release's SHA256SUMS."; exit 1; }
+
+      - name: Show the result
+        run: |
+          for pkg in voxctrl-bin voxctrl; do
+            echo "── $pkg/PKGBUILD"; cat "packaging/aur/$pkg/PKGBUILD"
+            echo "── $pkg/.SRCINFO"; cat "packaging/aur/$pkg/.SRCINFO"
+          done
+
+      - name: Push to the AUR
+        if: env.DRY_RUN != 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_USERNAME: ${{ vars.AUR_USERNAME }}
+          AUR_EMAIL: ${{ vars.AUR_EMAIL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ] || [ -z "$AUR_USERNAME" ] || [ -z "$AUR_EMAIL" ]; then
+            echo "::error::AUR_SSH_PRIVATE_KEY (secret), AUR_USERNAME and AUR_EMAIL (variables) must be set. See docs/aur.md."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur && chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > ~/.ssh/config
+
+          version="${TAG#v}"
+          for pkg in voxctrl-bin voxctrl; do
+            dir=$(mktemp -d)
+            git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$dir"
+            cp "packaging/aur/$pkg/PKGBUILD" "packaging/aur/$pkg/.SRCINFO" "$dir/"
+            cd "$dir"
+            git config user.name "$AUR_USERNAME"
+            git config user.email "$AUR_EMAIL"
+            git add PKGBUILD .SRCINFO
+            if git diff --cached --quiet; then
+              echo "$pkg: already at $version-$PKGREL, nothing to push"
+            else
+              git commit -m "Update to $version-$PKGREL"
+              git push origin HEAD:master
+              echo "$pkg: pushed $version-$PKGREL"
+            fi
+            cd - >/dev/null
+          done

@@ -33,6 +33,12 @@ PKG_MGR=$(detect_pkg_manager)
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+if [ "$PKG_MGR" = "pacman" ]; then
+    info "On Arch, the AUR package is the simpler route: 'paru -S voxctrl-bin' (or yay),"
+    info "updated with the rest of your system. See docs/installation.md#arch-linux-aur."
+    info "Continuing with the AppImage setup..."
+fi
+
 # Verify npm is installed as a dependency at start
 if ! command -v npm &>/dev/null; then
     fail "The Node Package Manager 'npm' is not installed, which is required as a dependency."

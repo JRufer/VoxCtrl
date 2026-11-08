@@ -24,14 +24,17 @@ fn main() {
     // (`libwebgpu_dawn.so`), which ort drops next to the binary in `target/`.
     // Nothing tells a packaged binary where to look for it, and a missing
     // NEEDED library fails the whole app at launch, not just the GPU path. So
-    // search next to the executable (a build tree) and in `../lib` (an
-    // AppImage's `usr/lib`, or a `.deb`'s `/usr/lib`) — packaging puts the
-    // library at whichever of those applies. `-bins` keeps the flags off test
-    // and doc binaries, which do not need them.
+    // search next to the executable (a build tree), in `../lib/voxctrl` (where
+    // the `.deb` and the AUR packages keep it, out of the shared `/usr/lib`
+    // namespace so it can't collide with any other package's Dawn) and in
+    // `../lib` (an AppImage's `usr/lib`, and `.deb`s up to 0.8.7) — packaging
+    // puts the library at whichever of those applies. `-bins` keeps the flags
+    // off test and doc binaries, which do not need them.
     let webgpu = std::env::var_os("CARGO_FEATURE_MOONSHINE_WEBGPU").is_some()
         || std::env::var_os("CARGO_FEATURE_PARAKEET_WEBGPU").is_some();
     if webgpu && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN");
+        println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../lib/voxctrl");
         println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../lib");
     }
 

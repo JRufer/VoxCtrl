@@ -105,6 +105,17 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
 
 ### Linux
 
+**Arch, Manjaro, EndeavourOS, CachyOS** — install from the AUR, then add `wtype` (Wayland) or `xdotool` (X11) so VoxCtrl can type into other windows:
+
+```
+paru -S voxctrl-bin        # or: yay -S voxctrl-bin
+sudo pacman -S --needed wtype
+```
+
+`voxctrl` (built from source) and `voxctrl-git` (latest `master`) are also available. See [Installation → Arch Linux](docs/installation.md#arch-linux-aur).
+
+**Any other distribution:**
+
 1. Download **`VoxCtrl-linux-x86_64-vulkan.AppImage`** or the **`.deb`** package from [Releases](https://github.com/JRufer/VoxCtrl/releases/latest).
 2. Make it executable and run:
    ```bash
