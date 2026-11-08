@@ -306,7 +306,7 @@ Returns recent dictations, newest first, as a JSON list of
 | Argument | Type | Description |
 |---|---|---|
 | `limit` | `number` | How many to return, 1–50. Default 10 |
-| `query` | `string` | Only dictations containing this text, ignoring case |
+| `query` | `string` | Only dictations containing every word of it, in any order, ignoring case. A phrase in double quotes matches as written. |
 
 **This tool is off by default.** What someone dictates can be private, and
 any program that can reach the socket could call it. It's listed in

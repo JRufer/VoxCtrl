@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/svelte";
+import { render, screen, fireEvent, within } from "@testing-library/svelte";
 
 const { invokeMock, handlers } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
@@ -50,11 +50,16 @@ function setConfig(history: Record<string, unknown> = {}, ttsEnabled = true) {
   }) as any);
 }
 
-function mockBackend(entries: Entry[] = ENTRIES, st = status(), speak?: () => Promise<unknown>) {
-  invokeMock.mockImplementation(async (cmd: string) => {
+function mockBackend(
+  entries: Entry[] = ENTRIES,
+  st = status(),
+  speak?: () => Promise<unknown>,
+  search?: (query: string) => Entry[],
+) {
+  invokeMock.mockImplementation(async (cmd: string, args?: { query?: string }) => {
     switch (cmd) {
       case "get_history":
-        return { entries, status: st };
+        return { entries: search ? search(args?.query ?? "") : entries, status: st };
       case "get_targets":
         return [];
       case "speak_history_entry":
@@ -132,6 +137,88 @@ describe("HistoryWindow", () => {
     await vi.waitFor(() => expect(screen.getByText(/History is off, so nothing/)).toBeTruthy());
     expect(screen.queryByText("second thought")).toBeNull();
     expect(screen.queryByLabelText("Search history")).toBeNull();
+  });
+
+  describe("Search", () => {
+    // Stands in for the backend's matching: every word, ignoring case.
+    const backendSearch = (q: string) =>
+      ENTRIES.filter((e) =>
+        q
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(Boolean)
+          .every((w) => e.text.toLowerCase().includes(w) || e.target_label.toLowerCase().includes(w)),
+      );
+
+    async function search(text: string) {
+      const box = screen.getByLabelText("Search history") as HTMLInputElement;
+      await fireEvent.input(box, { target: { value: text } });
+      await vi.waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith("get_history", { query: text }),
+      );
+      return box;
+    }
+
+    test("highlights what matched and says how many", async () => {
+      mockBackend(ENTRIES, status(), undefined, backendSearch);
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      await search("FIRST");
+      await vi.waitFor(() => expect(screen.queryByText("second thought")).toBeNull());
+      const marks = [...document.querySelectorAll(".entry mark")].map((m) => m.textContent);
+      expect(marks).toEqual(["first"]);
+      // The text itself is unchanged around the highlight.
+      expect(document.querySelector(".entry .text")?.textContent).toBe("first thought");
+      expect(screen.getByText(/1 of 2 dictations/)).toBeTruthy();
+    });
+
+    test("Escape clears the search", async () => {
+      mockBackend(ENTRIES, status(), undefined, backendSearch);
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      const box = await search("first");
+      await vi.waitFor(() => expect(screen.queryByText("second thought")).toBeNull());
+      await fireEvent.keyDown(box, { key: "Escape" });
+      expect(box.value).toBe("");
+      await vi.waitFor(() => expect(screen.getByText("second thought")).toBeTruthy());
+    });
+
+    test("no match offers to clear the search", async () => {
+      mockBackend(ENTRIES, status(), undefined, backendSearch);
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      await search("zebra");
+      expect(await screen.findByText("Nothing in history matches that.")).toBeTruthy();
+      await fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+    });
+
+    test("Ctrl+F jumps to the search box", async () => {
+      mockBackend();
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      await fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+      expect(document.activeElement).toBe(screen.getByLabelText("Search history"));
+    });
+
+    test("filters by target", async () => {
+      mockBackend();
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      const group = screen.getByRole("group", { name: "Filter by target" });
+      await fireEvent.click(group.querySelector(".custom-select-trigger") as HTMLElement);
+      await fireEvent.click(within(group.querySelector(".custom-dropdown-menu") as HTMLElement).getByText("Notes"));
+      await vi.waitFor(() => expect(screen.queryByText("second thought")).toBeNull());
+      expect(screen.getByText("first thought")).toBeTruthy();
+      expect(screen.getByText(/1 of 2 dictations/)).toBeTruthy();
+    });
+
+    test("groups entries under the day they're from", async () => {
+      mockBackend();
+      render(HistoryWindow);
+      await vi.waitFor(() => expect(screen.getByText("first thought")).toBeTruthy());
+      expect([...document.querySelectorAll("h2.day")].map((h) => h.textContent)).toEqual(["Today"]);
+    });
   });
 
   describe("Read aloud", () => {

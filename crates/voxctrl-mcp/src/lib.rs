@@ -402,12 +402,12 @@ fn get_tool_list(default_record_timeout: f64, history_access: bool) -> Value {
     if history_access {
         list["tools"].as_array_mut().expect("tools is an array").push(json!({
             "name": "get_recent_transcripts",
-            "description": "Returns the user's recent dictations from VoxCtrl's history, newest first, as a JSON list of {at, target, text}. Only available because the user allowed it in VoxCtrl's History window. Dictations can be private: use them only for what the user asked you to do.\n\nPARAMETERS:\n  limit (number, optional): How many to return, 1–50. Default 10.\n  query (string, optional): Only dictations containing this text (case-insensitive).",
+            "description": "Returns the user's recent dictations from VoxCtrl's history, newest first, as a JSON list of {at, target, text}. Only available because the user allowed it in VoxCtrl's History window. Dictations can be private: use them only for what the user asked you to do.\n\nPARAMETERS:\n  limit (number, optional): How many to return, 1–50. Default 10.\n  query (string, optional): Only dictations containing every word of this, in any order (case-insensitive); put a phrase in double quotes to match it as written.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "limit": { "type": "number", "description": "How many to return, 1–50. Default 10." },
-                    "query": { "type": "string", "description": "Only dictations containing this text." }
+                    "query": { "type": "string", "description": "Only dictations containing every word of this, in any order. Quote a phrase to match it as written." }
                 }
             }
         }));
