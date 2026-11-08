@@ -548,21 +548,53 @@ fn test_vox_cpm_2_serde() {
     assert_eq!(parsed3, TtsEngine::VoxCpm2);
 }
 
-/// A config written before the `updates` section was removed must still
-/// load. Without unknown fields being ignored by default, an old config
-/// carrying a leftover `"updates": {...}` key would fail to parse and the
-/// user would silently lose every setting they ever chose.
+/// Automatic update checks are an opt-in: a fresh config has them off.
 #[test]
-fn a_config_with_a_leftover_updates_section_still_loads() {
+fn automatic_update_checks_are_off_by_default() {
+    let cfg = AppConfig::default();
+    assert!(!cfg.updates.check_automatically);
+    assert!(cfg.updates.skipped_version.is_none());
+}
+
+/// A config written by 0.6.3 or earlier carries `"updates": {"auto_check": true}`,
+/// because that was the default then, not because the user chose it. It must
+/// still load, and it must not switch the new opt-in on.
+#[test]
+fn a_leftover_auto_check_from_an_old_config_does_not_opt_anyone_in() {
     let json = serde_json::to_string(&AppConfig::default()).unwrap();
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().insert(
         "updates".to_string(),
-        serde_json::json!({ "auto_check": false, "skipped_version": "0.4.0" }),
+        serde_json::json!({ "auto_check": true, "skipped_version": "0.4.0" }),
     );
     let with_leftover = serde_json::to_string(&value).unwrap();
 
-    serde_json::from_str::<AppConfig>(&with_leftover).expect("older configs must still load");
+    let parsed = serde_json::from_str::<AppConfig>(&with_leftover).expect("older configs must still load");
+    assert!(!parsed.updates.check_automatically, "the old default must not count as consent");
+}
+
+/// A config written before the section existed keeps every other setting.
+#[test]
+fn a_config_without_an_updates_section_still_loads() {
+    let json = serde_json::to_string(&AppConfig::default()).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    value.as_object_mut().unwrap().remove("updates");
+    let stripped = serde_json::to_string(&value).unwrap();
+
+    let parsed: AppConfig = serde_json::from_str(&stripped).expect("older configs must load");
+    assert_eq!(parsed.updates, UpdateConfig::default());
+}
+
+#[test]
+fn turning_automatic_checks_on_survives_a_round_trip() {
+    let mut cfg = AppConfig::default();
+    cfg.updates.check_automatically = true;
+    cfg.updates.skipped_version = Some("0.9.0".to_string());
+
+    let json = serde_json::to_string(&cfg).unwrap();
+    let parsed: AppConfig = serde_json::from_str(&json).unwrap();
+    assert!(parsed.updates.check_automatically);
+    assert_eq!(parsed.updates.skipped_version.as_deref(), Some("0.9.0"));
 }
 
 #[test]

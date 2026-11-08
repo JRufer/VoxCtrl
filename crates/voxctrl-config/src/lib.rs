@@ -20,6 +20,7 @@ mod openai;
 mod tts;
 mod mcp;
 mod history;
+mod updates;
 mod migrate;
 mod store;
 mod paths;
@@ -33,6 +34,7 @@ pub use openai::*;
 pub use tts::*;
 pub use mcp::*;
 pub use history::*;
+pub use updates::*;
 use migrate::*;
 pub use migrate::{canonical_key_name, canonicalize_key_names};
 pub use store::*;
@@ -53,6 +55,11 @@ pub struct AppConfig {
     /// Absent from configs written before history existed.
     #[serde(default)]
     pub history: HistoryConfig,
+    /// Absent from configs written before automatic update checks became an
+    /// opt-in. See `updates.rs` for why an older `updates` section's keys are
+    /// not read.
+    #[serde(default)]
+    pub updates: UpdateConfig,
 }
 
 #[cfg(test)]

@@ -931,3 +931,11 @@ fn history_respects_targets_that_opt_out() {
     assert_eq!(texts, vec!["both", "hello"]);
     assert_eq!(kept[0].target_label, "Focused Window", "only the targets that allow it are named");
 }
+
+/// The tray item names the version on offer, and reads as a plain
+/// "Check for updates" otherwise — so it is never a dead entry.
+#[test]
+fn the_tray_update_item_names_the_found_version() {
+    assert_eq!(crate::tray::update_item_text(None), crate::tray::TRAY_CHECK_FOR_UPDATES);
+    assert!(crate::tray::update_item_text(Some("0.9.0")).contains("Update to 0.9.0"));
+}

@@ -11,6 +11,7 @@ export interface AppConfig {
   tts: TtsConfig;
   mcp: McpConfig;
   history: HistoryConfig;
+  updates: UpdateConfig;
 }
 
 export interface S1MiniConfig {
@@ -188,6 +189,14 @@ export interface HistoryConfig {
   mcp_access: boolean;
 }
 
+/** Automatic update checks. Off unless the user turns them on. */
+export interface UpdateConfig {
+  /** Ask GitHub about a minute after launch, then once a day. */
+  check_automatically: boolean;
+  /** A version the user chose not to be told about again. */
+  skipped_version: string | null;
+}
+
 const defaultConfig: AppConfig = {
   engine: {
     backend: "whisper-cpp",
@@ -302,6 +311,7 @@ const defaultConfig: AppConfig = {
   },
   mcp: { server_enabled: false, record_timeout: 15.0, visual_feedback: true },
   history: { enabled: true, persist: false, max_entries: 50, max_age_hours: 24, mcp_access: false },
+  updates: { check_automatically: false, skipped_version: null },
 };
 
 export const config = writable<AppConfig>(defaultConfig);

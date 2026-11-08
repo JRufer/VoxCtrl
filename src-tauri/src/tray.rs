@@ -33,6 +33,33 @@ pub fn update_tray_for_setup(app: &tauri::AppHandle, ok: bool) {
     });
 }
 
+/// The tray entry that checks for updates, and names the new version once one
+/// has been found.
+static UPDATE_MENU_ITEM: OnceLock<tauri::menu::MenuItem<tauri::Wry>> = OnceLock::new();
+
+pub const TRAY_CHECK_FOR_UPDATES: &str = "🔄  Check for updates";
+
+/// The update item's text: the version on offer, or "Check for updates".
+pub fn update_item_text(version: Option<&str>) -> String {
+    match version {
+        Some(v) => format!("⬆️  Update to {v}"),
+        None => TRAY_CHECK_FOR_UPDATES.to_string(),
+    }
+}
+
+/// Show (or clear) a found update on the tray, which is always on screen —
+/// so a new release is there whenever the user is ready, without a window
+/// landing on top of whatever they are doing.
+pub fn show_pending_update(app: &tauri::AppHandle, version: Option<&str>) {
+    let text = update_item_text(version);
+    let app = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(item) = UPDATE_MENU_ITEM.get() {
+            let _ = item.set_text(&text);
+        }
+    });
+}
+
 /// The tray entry that mirrors (and toggles) the TTS memory mode.
 static TTS_MEMORY_MENU_ITEM: OnceLock<tauri::menu::CheckMenuItem<tauri::Wry>> = OnceLock::new();
 
@@ -103,6 +130,8 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
     let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
     let history_i = tauri::menu::MenuItem::with_id(app, "history", "🕘  History", true, None::<&str>)?;
     let setup_i = tauri::menu::MenuItem::with_id(app, "setup", TRAY_SETUP_OK, true, None::<&str>)?;
+    let update_i =
+        tauri::menu::MenuItem::with_id(app, "update", TRAY_CHECK_FOR_UPDATES, true, None::<&str>)?;
     let tts_memory_i = tauri::menu::CheckMenuItem::with_id(
         app,
         "tts_memory",
@@ -117,9 +146,10 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
     let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "Quit VoxCtrl", true, None::<&str>)?;
     let menu = tauri::menu::Menu::with_items(
         app,
-        &[&settings_i, &history_i, &setup_i, &tts_memory_i, &separator, &quit_i],
+        &[&settings_i, &history_i, &setup_i, &tts_memory_i, &update_i, &separator, &quit_i],
     )?;
     let _ = SETUP_MENU_ITEM.set(setup_i);
+    let _ = UPDATE_MENU_ITEM.set(update_i);
     let _ = TTS_MEMORY_MENU_ITEM.set(tts_memory_i);
 
     TrayIconBuilder::with_id("main-tray")
@@ -143,6 +173,14 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
                 }
                 "tts_memory" => {
                     toggle_tts_memory_mode(app);
+                }
+                "update" => {
+                    // The window shows what the last check found, or asks
+                    // GitHub itself when nothing has been found yet — so this
+                    // is also the tray's "Check for updates".
+                    if let Err(e) = crate::window::open_update_window(app) {
+                        tracing::error!("Could not open the update window: {e}");
+                    }
                 }
                 "quit" => {
                     // Best-effort: lets the TTS worker stop playback and shut

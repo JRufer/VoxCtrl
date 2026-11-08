@@ -138,11 +138,30 @@ pub fn start_mcp_server(callbacks: Arc<AppState>) {
     });
 }
 
+/// The D-Bus connection, kept for emitting signals from outside the service
+/// loop. Set once the name is owned; it lives as long as the process, as the
+/// connection must anyway (see `start_dbus_service`).
+#[cfg(target_os = "linux")]
+static DBUS_CONN: std::sync::OnceLock<zbus::Connection> = std::sync::OnceLock::new();
+
+/// Emit `UpdateAvailable` with the version a check found. A no-op until the
+/// D-Bus service is up, or when it never came up.
+#[cfg(target_os = "linux")]
+pub fn emit_update_available(version: String) {
+    let Some(conn) = DBUS_CONN.get().cloned() else { return };
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = voxctrl_dbus::emit_update_available(&conn, &version).await {
+            tracing::warn!("Could not emit UpdateAvailable on D-Bus: {e}");
+        }
+    });
+}
+
 #[cfg(target_os = "linux")]
 pub fn start_dbus_service(app_state: Arc<AppState>) {
     let dbus_state = Arc::new(tokio::sync::Mutex::new(voxctrl_dbus::AppState::default()));
     let (start_tx, mut start_rx) = tokio::sync::mpsc::channel::<String>(4);
     let (stop_tx, mut stop_rx) = tokio::sync::mpsc::channel::<()>(4);
+    let (update_tx, mut update_rx) = tokio::sync::mpsc::channel::<voxctrl_dbus::UpdateReply>(4);
     let app_state_dbus = app_state.clone();
     let dbus_state_clone = dbus_state.clone();
 
@@ -153,13 +172,14 @@ pub fn start_dbus_service(app_state: Arc<AppState>) {
         // here is why the name was never actually on the bus even though startup
         // logged it as registered — and why a Cinnamon/MATE native shortcut,
         // which can only reach VoxCtrl through `ToggleBinding`, did nothing.
-        let _conn = match voxctrl_dbus::start_service(dbus_state, start_tx, stop_tx).await {
+        let _conn = match voxctrl_dbus::start_service(dbus_state, start_tx, stop_tx, update_tx).await {
             Ok(conn) => conn,
             Err(e) => {
                 tracing::error!("DBus service error: {e}");
                 return;
             }
         };
+        let _ = DBUS_CONN.set(_conn.clone());
 
         loop {
             tokio::select! {
@@ -183,6 +203,19 @@ pub fn start_dbus_service(app_state: Arc<AppState>) {
                     } else {
                         break;
                     }
+                }
+                v = update_rx.recv() => {
+                    let Some(reply) = v else { break };
+                    // A script asking is the user asking, so this runs whatever
+                    // `updates.check_automatically` says. Off the loop, so a
+                    // slow GitHub does not hold up start/stop.
+                    let state = app_state_dbus.clone();
+                    tokio::spawn(async move {
+                        let result = crate::updater::check(&state)
+                            .await
+                            .map(|p| p.update.map(|u| u.version).unwrap_or_default());
+                        let _ = reply.send(result);
+                    });
                 }
             }
         }

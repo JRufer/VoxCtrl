@@ -194,8 +194,12 @@ interface SetupStatusPayload {
 
 ### Updates
 
-VoxCtrl never checks on its own; every command below only runs because the
-user triggered it from Settings → General or the update window.
+The commands below run because the user triggered them from Settings → General,
+the tray or the update window. Separately, if `updates.check_automatically` is
+on, `updater::spawn_automatic_checks` runs the same check about a minute after
+launch and then once a day, on installations where
+`InstallKind::checks_automatically()` is true; it updates the tray item and
+sends one notification, and never opens the update window by itself.
 
 #### `check_for_update() → UpdateCheckPayload`
 Asks GitHub for the latest published release and compares it with the running
@@ -247,6 +251,20 @@ await invoke('install_update');
 
 #### `open_update_window() → void` / `dismiss_update() → void`
 Opens the update window (building it if needed), and closes it.
+
+---
+
+#### `skip_update_version(version: string) → void`
+Stores `version` as `updates.skipped_version`, so automatic checks stay quiet
+about it, and puts the tray item back to "Check for updates". A newer release is
+still raised. Emits `config-changed`.
+
+---
+
+#### `automatic_update_checks_supported() → boolean`
+Whether automatic checks can run on this installation: true for the AppImage
+and the Windows installer, false for a package-manager or development install.
+Settings and the setup wizard hide the switch when it is false.
 
 ---
 

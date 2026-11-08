@@ -15,7 +15,7 @@ Everything below describes what the code does, with pointers to where it does it
 | Does my audio leave the machine? | **No by default.** Audio only leaves your machine if you explicitly configure the Remote Speech Engine pointing to an external or LAN server. |
 | Does it keep what I dictate? | **In memory only, by default**, shown in the History window (tray menu → History), and gone when VoxCtrl quits. Keeping it across restarts is opt-in and encrypted. [Details](#dictation-history). |
 | Does it send telemetry or analytics? | **No.** Nothing about you or your machine is transmitted unless you file a bug report and press Send — see [Bug reports](#bug-reports). |
-| Does it phone home at all? | **Only when you press "Check for updates."** VoxCtrl never checks on its own; that request carries no identifiers, nothing about you. [Details](#network). |
+| Does it phone home at all? | **Only to check for updates, and on its own only if you turn that on.** By default VoxCtrl asks GitHub only when you press "Check for updates." Automatic checks are off until you enable them, and never run on a package-manager install. The request carries no identifiers, nothing about you. [Details](#network). |
 | Can I send you diagnostics when something breaks? | **Yes, if you choose to.** Settings → Bug Report shows you the whole report before it goes anywhere. [Details](#bug-reports). |
 | Does it need root? | **No.** Administrator rights are requested once, optionally, to install packages. |
 | Can I verify all this? | Yes — see [Verifying it yourself](#verifying-it-yourself). |
@@ -145,11 +145,13 @@ Nothing is ever sent about what you dictate, what you type, what you have
 installed, or who you are.
 
 Every request it makes happens because you asked for it — including the
-update check:
+update check, which runs on its own only once you have turned automatic checks
+on:
 
 | Trigger | Destination | Sends |
 |---|---|---|
-| Pressing "Check for updates" in Settings → General | `api.github.com/repos/JRufer/VoxCtrl/releases/latest`, plus `.../releases?per_page=30` when a newer version exists (for the change log) | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
+| Pressing "Check for updates" (Settings → General, the tray, or the `CheckForUpdate` D-Bus method) | `api.github.com/repos/JRufer/VoxCtrl/releases/latest`, plus `.../releases?per_page=30` when a newer version exists (for the change log) | A `User-Agent` of `VoxCtrl/<version>`. Nothing else. |
+| Automatic update checks — **off by default**; once you turn them on, about a minute after launch and then once a day | The same two URLs | The same, and nothing else |
 | Installing an offered update | `github.com` release download (the file and its `.minisig` signature) | Nothing beyond the request for the files |
 | Downloading a speech model | HuggingFace / the model host, on demand | Nothing beyond the request for the file |
 | Downloading a TTS voice | HuggingFace / the Piper voice host, on demand | Nothing beyond the request for the file |
@@ -160,8 +162,16 @@ update check:
 
 ### The update check, in full
 
-VoxCtrl never checks for updates on its own — there is no launch-time check
-and nothing to turn off. Pressing "Check for updates" in Settings → General
+VoxCtrl does not check for updates on its own unless you ask it to.
+**Check for updates automatically** in Settings → General (also offered, unticked,
+on the setup wizard's last page) is off by default, and configs from before it
+existed are not opted in — not even ones that still carry the old `auto_check`
+key from 0.6.3 and earlier. When it is on, VoxCtrl checks about a minute after
+it starts and then once a day, and tells you about a new release once, with a
+notification and a tray menu item, never while you are dictating. It installs
+nothing by itself.
+
+Pressing "Check for updates" (or the automatic check, once enabled)
 sends a plain unauthenticated `GET` for the public release listing — the same
 URL anyone can open in a browser. When a newer version exists, one more `GET`
 for the recent release list fetches the change log for every version between
@@ -176,18 +186,21 @@ release signature made by VoxCtrl's release workflow, before it replaces
 anything. A file that is not signed with VoxCtrl's key is never installed. See
 [release signing](release-signing.md).
 
-On a distro-packaged install (anything under `/usr`, `/opt` or `/nix/store`),
-"Update and restart" is unavailable — VoxCtrl detects that its files belong to
-a package manager and points you at it instead of overwriting them. See
-`InstallKind::ManagedPackage` in `crates/voxctrl-update/src/install.rs`.
+On a distro-packaged install (anything under `/usr`, `/opt` or `/nix/store`,
+which covers the AUR package), "Update and restart" is unavailable — VoxCtrl
+detects that its files belong to a package manager and points you at it instead
+of overwriting them — and the automatic check never runs at all, whatever the
+setting says: your package manager decides when you update. The same goes for a
+development build. See `InstallKind::checks_automatically` in
+`crates/voxctrl-update/src/install.rs`.
 
 Once the app and its models are on disk, VoxCtrl runs fully air-gapped.
 
 **The code:** `crates/voxctrl-update/` is the whole of it — about 400 lines,
 with no dependency on the rest of the app. `release.rs` builds the (at most two) requests,
 `apply.rs` downloads and checks the digest, `signature.rs` checks the release
-signature, `src-tauri/src/updater.rs` is the manual
-check command and what it shows.
+signature, `src-tauri/src/updater.rs` is the check commands, the
+automatic schedule, and what they show.
 
 ---
 
@@ -327,8 +340,8 @@ updates" in Settings → General:
 sudo tcpdump -n -i any 'host api.github.com'   # one TLS connection, then nothing
 ```
 
-Leave VoxCtrl running without pressing it and the same command stays silent —
-nothing triggers this request on its own.
+Leave VoxCtrl running without pressing it and, unless you turned on automatic
+checks, the same command stays silent — nothing else triggers this request.
 
 **Read the code.** The hotkey crate is about 1,500 lines and self-contained:
 

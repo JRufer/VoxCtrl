@@ -41,6 +41,17 @@ impl InstallKind {
         matches!(self, Self::AppImage { .. } | Self::WindowsInstaller { .. })
     }
 
+    /// Whether the automatic daily check may run on this installation.
+    ///
+    /// Only where VoxCtrl can install what it finds. A package manager owns an
+    /// AUR, `.deb` or Nix install and updates it on its own schedule; an app
+    /// that phones home to say "update me" there fights that ownership, and is
+    /// why automatic checks were taken out after 0.6.3. A development build has
+    /// nothing to replace. A manual check still works on both.
+    pub fn checks_automatically(&self) -> bool {
+        self.can_self_update()
+    }
+
     /// Why self-updating is unavailable, phrased for the user. `None` when it
     /// is available.
     pub fn unsupported_reason(&self) -> Option<&'static str> {
@@ -424,6 +435,14 @@ mod tests {
             .unsupported_reason()
             .unwrap()
             .contains("package manager"));
+    }
+
+    #[test]
+    fn automatic_checks_skip_package_manager_and_development_installs() {
+        assert!(!InstallKind::ManagedPackage.checks_automatically());
+        assert!(!InstallKind::Unmanaged.checks_automatically());
+        assert!(InstallKind::AppImage { path: "/x.AppImage".into(), vulkan: true }.checks_automatically());
+        assert!(InstallKind::WindowsInstaller { webgpu: true }.checks_automatically());
     }
 
     #[test]

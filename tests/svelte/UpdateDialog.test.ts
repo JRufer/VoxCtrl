@@ -83,6 +83,18 @@ describe("Update dialog", () => {
     expect(invoke).not.toHaveBeenCalledWith("install_update", expect.anything());
   });
 
+  test("'Skip this version' records the version and closes", async () => {
+    mockPending(updateInfo());
+    render(UpdateDialog);
+
+    await fireEvent.click(await screen.findByText("Skip this version"));
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("skip_update_version", { version: "0.4.0" }),
+    );
+    expect(invoke).toHaveBeenCalledWith("dismiss_update", undefined);
+    expect(invoke).not.toHaveBeenCalledWith("install_update", undefined);
+  });
+
   test("shows download progress while installing", async () => {
     mockPending(updateInfo());
     render(UpdateDialog);

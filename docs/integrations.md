@@ -135,6 +135,7 @@ VoxCtrl registers on the session bus as:
 | `toggle_recording()` | `() → ()` | Toggle recording state |
 | `get_status()` | `() → s` | Returns `"idle"`, `"recording"`, or `"transcribing"` |
 | `get_word_count()` | `() → u` | Total words dictated this session |
+| `CheckForUpdate` | `() → s` | Ask GitHub now for a newer release. Returns its version (`0.9.0`), or `""` when this is the latest. Runs whatever `updates.check_automatically` says: a script calling it is you asking. Fails with the reason when GitHub can't be reached. |
 
 ### Signals
 
@@ -142,6 +143,7 @@ VoxCtrl registers on the session bus as:
 |---|---|---|
 | `status_changed` | `(s)` | Emitted when recording state changes |
 | `text_injected` | `(s)` | Emitted after text is delivered to a target |
+| `UpdateAvailable` | `(s)` | A check — manual, automatic or `CheckForUpdate` — found a newer release; carries its version. Automatic checks skip a version you chose to skip. |
 
 ### Example Usage
 
@@ -153,6 +155,10 @@ dbus-send --session --dest=ai.voxctrl.Dictation \
 
 # Watch for injected text
 dbus-monitor --session "type='signal',interface='ai.voxctrl.Dictation'"
+
+# Ask for a newer release ("" when up to date)
+dbus-send --session --print-reply --dest=ai.voxctrl.Dictation \
+  /ai/voxctrl/Dictation ai.voxctrl.Dictation.CheckForUpdate
 
 # Get current status ("idle", "recording", or "transcribing")
 dbus-send --session --print-reply \
