@@ -615,6 +615,7 @@ pub fn run() {
             // Setup system tray
             let _tray = tray::create_tray(app)?;
             tray::sync_tts_memory_item(app.handle().clone(), app_state.clone());
+            updater::init(app.handle());
 
             let record_on_icon =
                 tauri::image::Image::from_bytes(include_bytes!("../../assets/record_on.png"))
@@ -692,6 +693,11 @@ pub fn run() {
                 record_off_icon,
                 processing_frames,
             );
+
+            // Only does anything if the user turned on automatic update
+            // checks, and never on a package-manager or development install.
+            // It also waits until setup has been completed.
+            updater::spawn_automatic_checks(app_state.clone());
 
             startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
@@ -779,6 +785,8 @@ pub fn run() {
             updater::check_for_update,
             updater::get_pending_update,
             updater::install_update,
+            updater::skip_update_version,
+            updater::automatic_update_checks_supported,
             updater::dismiss_update,
             updater::open_update_window,
             bug_report::bug_report_context,

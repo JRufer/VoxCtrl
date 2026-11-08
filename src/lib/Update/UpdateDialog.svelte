@@ -87,6 +87,16 @@
     await invoke("dismiss_update");
   }
 
+  async function skip() {
+    if (!info) return;
+    try {
+      await invoke("skip_update_version", { version: info.version });
+    } catch (e) {
+      console.error("Could not record the skipped version:", e);
+    }
+    await notNow();
+  }
+
   async function openReleasePage() {
     try {
       await openExternal(info?.release_url ?? "https://github.com/JRufer/VoxCtrl/releases/latest");
@@ -128,7 +138,7 @@
         <p class="sub">Asking GitHub for the latest release…</p>
       </div>
     {:else if phase === "up-to-date"}
-      <p class="body">Nothing to install. Check again any time from Settings → General.</p>
+      <p class="body">Nothing to install. Check again any time from the tray or Settings → General.</p>
     {:else if info}
       {#if info.notes}
         <section class="notes-block">
@@ -194,6 +204,7 @@
         <button class="btn-primary" onclick={notNow}>Close</button>
       {:else if info}
         <div class="right-actions">
+          <button class="btn-secondary" onclick={skip}>Skip this version</button>
           <button class="btn-secondary" onclick={notNow}>Not now</button>
           {#if info.can_self_update}
             <button class="btn-primary" onclick={install}>Update and restart</button>

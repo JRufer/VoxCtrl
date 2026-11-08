@@ -402,12 +402,25 @@ The History window (tray menu → History). Private by default: memory only, clo
 
 ### Updates
 
-VoxCtrl never checks for updates on its own — there is nothing to configure.
-Settings → General → "Check for updates" sends the only network request
-VoxCtrl ever makes unasked: an unauthenticated `GET` to
-`api.github.com/repos/JRufer/VoxCtrl/releases/latest`, with a `User-Agent` of
-`VoxCtrl/<version>` and nothing else — no machine, user or install identifier.
-See [privacy.md](privacy.md#network).
+```json
+"updates": {
+  "check_automatically": false,
+  "skipped_version": null
+}
+```
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `check_automatically` | bool | `false` | Ask GitHub about a minute after launch, then once a day, whether a newer release is out. A new one shows in the tray menu with one notification; nothing installs until you choose to. Never runs on a package-manager install (`/usr`, `/opt`, `/nix/store`, so AUR too) or a development build. Read on every tick, so changing it needs no restart. |
+| `skipped_version` | string \| null | `null` | Set by **Skip this version** in the update window. Automatic checks stay quiet about this version; a newer one is still raised, and a manual check always shows what it finds. Cleared when an update installs. |
+
+Configs written by 0.6.3 or earlier may still hold `"updates": {"auto_check": true}`.
+That key is ignored: it defaulted to on, so it is not a choice the user made.
+
+Every check — manual, automatic or over D-Bus — is the same unauthenticated
+`GET` to `api.github.com/repos/JRufer/VoxCtrl/releases/latest`, with a
+`User-Agent` of `VoxCtrl/<version>` and nothing else: no machine, user or
+install identifier. See [privacy.md](privacy.md#network).
 
 ---
 

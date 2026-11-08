@@ -2,8 +2,8 @@
 //!
 //! One unauthenticated `GET` to the public releases API, sending nothing but a
 //! `User-Agent` (which GitHub requires) and carrying no identifier of any kind.
-//! It only ever runs because the user pressed "Check for updates" — see
-//! `docs/privacy.md`.
+//! It runs when the user presses "Check for updates", asks over D-Bus, or has
+//! turned on automatic checks — see `docs/privacy.md`.
 
 use std::time::Duration;
 

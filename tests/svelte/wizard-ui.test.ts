@@ -1348,6 +1348,33 @@ describe("DoneStep", () => {
     expect(screen.queryByText("Copy diagnostics")).toBeNull();
   });
 
+  test("offers automatic update checks, unticked, and ticking it sets the opt-in", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_setup_status") return setupStatus();
+      if (cmd === "automatic_update_checks_supported") return true;
+      return undefined;
+    });
+    render(DoneStep);
+    const box = (await screen.findByLabelText(/Check for updates automatically/)) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+
+    await fireEvent.click(box);
+    let current: any;
+    config.subscribe((c) => (current = c))();
+    expect(current.updates.check_automatically).toBe(true);
+  });
+
+  test("does not offer automatic update checks where they cannot run", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_setup_status") return setupStatus();
+      if (cmd === "automatic_update_checks_supported") return false;
+      return undefined;
+    });
+    render(DoneStep);
+    await waitFor(() => expect(screen.getByText("ready")).toBeTruthy());
+    expect(screen.queryByLabelText(/Check for updates automatically/)).toBeNull();
+  });
+
   test("a failure during the wizard is explained with its technical detail", async () => {
     wizard.recordIssue({
       id: "model-download",

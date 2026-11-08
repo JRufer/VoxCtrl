@@ -42,6 +42,17 @@
     update: UpdateInfo | null;
   };
 
+  // Null until the backend answers; false on a package-manager or development
+  // install, where automatic checks never run.
+  let autoSupported = $state<boolean | null>(null);
+
+  function setCheckAutomatically(on: boolean) {
+    // Older configs may predate the section; the backend fills it on load,
+    // but a config handed in from elsewhere might not have it yet.
+    cfg.updates = { check_automatically: on, skipped_version: cfg.updates?.skipped_version ?? null };
+    markDirty();
+  }
+
   let checking = $state(false);
   let checkResult = $state<UpdateCheckPayload | null>(null);
   let checkError = $state<string | null>(null);
@@ -72,6 +83,9 @@
   }
 
   onMount(() => {
+    invoke<boolean>("automatic_update_checks_supported")
+      .then((v) => (autoSupported = v === true))
+      .catch(() => (autoSupported = false));
     invoke<string | null>("hf_token_env")
       .then((t) => (envHfToken = t && t.trim() ? t.trim() : null))
       .catch(() => (envHfToken = null));
@@ -131,10 +145,31 @@
       {/if}
     </div>
     <p class="hint">
-      VoxCtrl never checks for updates on its own. Press "Check for updates" to ask GitHub whether a
-      newer release has been published — that request carries nothing about you or your machine. If
-      there is one, you'll see what changed since your version and can download it.
+      Press "Check for updates" to ask GitHub whether a newer release has been published — that
+      request carries nothing about you or your machine. If there is one, you'll see what changed
+      since your version and can download it.
     </p>
+    {#if autoSupported === false}
+      <p class="hint">
+        Automatic checks are not available here: this copy of VoxCtrl was installed by a package
+        manager, or is a development build, so updates come the way it was installed.
+      </p>
+    {:else}
+      <label class="field">
+        <span>Check for updates automatically</span>
+        <input
+          type="checkbox"
+          checked={cfg.updates?.check_automatically ?? false}
+          disabled={autoSupported === null}
+          onchange={(e) => setCheckAutomatically((e.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+      <p class="hint">
+        Off unless you turn it on. When on, VoxCtrl asks GitHub about a minute after it starts and
+        then once a day. A new release shows up in the tray menu with one notification, never while
+        you are dictating, and nothing is installed until you choose to.
+      </p>
+    {/if}
     <div class="field">
       <span>Look for a newer VoxCtrl release</span>
       <button class="btn-action" onclick={checkForUpdate} disabled={checking}>

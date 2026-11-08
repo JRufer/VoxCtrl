@@ -9,6 +9,9 @@
   let trayOpen = $state(false);
   let copied = $state(false);
   let unloadTtsIdle = $state(true);
+  // Automatic update checks: an opt-in, offered here only where they can run.
+  let autoUpdatesSupported = $state(false);
+  let checkUpdatesAutomatically = $state(false);
   let reportingLog = $state(false);
   let logActionStatus = $state<string | null>(null);
 
@@ -203,7 +206,19 @@
     if ($config.tts?.memory_mode !== undefined) {
       unloadTtsIdle = $config.tts.memory_mode === "on_demand";
     }
+    checkUpdatesAutomatically = $config.updates?.check_automatically ?? false;
+    invoke<boolean>("automatic_update_checks_supported")
+      .then((v) => (autoUpdatesSupported = v === true))
+      .catch(() => (autoUpdatesSupported = false));
   });
+
+  function setCheckUpdatesAutomatically(on: boolean) {
+    checkUpdatesAutomatically = on;
+    config.update((c) => {
+      c.updates = { check_automatically: on, skipped_version: c.updates?.skipped_version ?? null };
+      return c;
+    });
+  }
 
   function toggleUnloadTts() {
     unloadTtsIdle = !unloadTtsIdle;
@@ -245,6 +260,17 @@
         </div>
       {/each}
     </div>
+    {#if autoUpdatesSupported}
+      <label class="update-toggle-row">
+        <input
+          type="checkbox"
+          checked={checkUpdatesAutomatically}
+          onchange={(e) => setCheckUpdatesAutomatically((e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>Check for updates automatically</span>
+        <span class="update-toggle-hint">Once a day. Nothing installs until you choose to.</span>
+      </label>
+    {/if}
   </div>
 
   <div class="panel">
@@ -429,6 +455,21 @@
     border-radius: 14px;
     border: 1px solid var(--vx-line);
     background: linear-gradient(180deg, rgba(34, 212, 239, 0.04), transparent);
+  }
+
+  .update-toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12.5px;
+    color: var(--vx-txt-1);
+  }
+
+  .update-toggle-hint {
+    color: var(--vx-txt-3);
+    font-size: 11px;
   }
 
   .summary-value {

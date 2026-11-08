@@ -11,12 +11,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 const update = { version: "0.4.0", current_version: "0.3.10", can_self_update: true };
 
-function answer(result: unknown) {
+function answer(result: unknown, autoSupported = true) {
   invoke.mockImplementation(async (cmd: string) => {
     if (cmd === "check_for_update") {
       if (result instanceof Error) throw result;
       return result;
     }
+    if (cmd === "automatic_update_checks_supported") return autoSupported;
     return null;
   });
 }
@@ -52,5 +53,34 @@ describe("General tab update check", () => {
     render(GeneralTab, { cfg: get(config) });
     await fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     expect(await screen.findByText(/could not reach GitHub/)).toBeTruthy();
+  });
+});
+
+describe("General tab automatic update checks", () => {
+  beforeEach(() => invoke.mockReset());
+
+  test("are off by default", async () => {
+    answer({ current_version: "0.3.10", update: null });
+    render(GeneralTab, { cfg: structuredClone(get(config)) });
+    const box = (await screen.findByLabelText("Check for updates automatically")) as HTMLInputElement;
+    await vi.waitFor(() => expect(box.disabled).toBe(false));
+    expect(box.checked).toBe(false);
+  });
+
+  test("turning them on marks the setting for saving", async () => {
+    answer({ current_version: "0.3.10", update: null });
+    const cfg = structuredClone(get(config));
+    render(GeneralTab, { cfg });
+    const box = (await screen.findByLabelText("Check for updates automatically")) as HTMLInputElement;
+    await vi.waitFor(() => expect(box.disabled).toBe(false));
+    await fireEvent.click(box);
+    expect(get(config).updates.check_automatically).toBe(true);
+  });
+
+  test("are not offered on a package-manager install, which says why", async () => {
+    answer({ current_version: "0.3.10", update: null }, false);
+    render(GeneralTab, { cfg: structuredClone(get(config)) });
+    expect(await screen.findByText(/installed by a package\s+manager/)).toBeTruthy();
+    expect(screen.queryByLabelText("Check for updates automatically")).toBeNull();
   });
 });
