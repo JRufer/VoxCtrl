@@ -306,9 +306,11 @@ pub fn ensure_desktop_integration() -> Result<(), String> {
 /// The command that installs one missing package, for an install a package
 /// manager owns.
 ///
-/// There VoxCtrl doesn't offer to run anything with administrator rights: the
-/// typing helpers are optional dependencies of the package, so the user adds
-/// the one their session needs the same way they installed VoxCtrl.
+/// There VoxCtrl doesn't offer to run anything with administrator rights. The
+/// package already brought what it depends on (the AUR packages require
+/// `wtype`; the `.deb` wants `wtype` or `xdotool`), so a missing helper is the
+/// one for the other session type, and the user adds it the same way they
+/// installed VoxCtrl.
 pub fn single_package_command(pkg_mgr: &str, package: &str) -> Option<String> {
     match pkg_mgr {
         "pacman" => Some(format!("sudo pacman -S --needed {package}")),
@@ -325,8 +327,8 @@ pub fn run_cli_installer() -> Result<(), String> {
     println!("Detected Package Manager: {}", pkg_mgr);
 
     if voxctrl_update::install::is_package_managed() {
-        // The package already pulled in what VoxCtrl needs; the typing and
-        // clipboard helpers are optional dependencies the user chooses.
+        // The package already pulled in what it depends on; a helper that is
+        // still missing is an optional one for the user's session type.
         println!("VoxCtrl was installed by your package manager, so its dependencies");
         println!("are already handled and there is nothing to install with sudo.");
         if let Some(tool) = crate::commands::missing_injection_tool() {

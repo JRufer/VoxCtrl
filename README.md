@@ -105,11 +105,11 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
 
 ### Linux
 
-**Arch, Manjaro, EndeavourOS, CachyOS** — install from the AUR, then add `wtype` (Wayland) or `xdotool` (X11) so VoxCtrl can type into other windows:
+**Arch, Manjaro, EndeavourOS, CachyOS** — install from the AUR. That's all on Wayland; on X11, also add `xdotool` so VoxCtrl can type into other windows:
 
 ```
 paru -S voxctrl-bin        # or: yay -S voxctrl-bin
-sudo pacman -S --needed wtype
+sudo pacman -S --needed xdotool   # X11 sessions only
 ```
 
 `voxctrl` (built from source) and `voxctrl-git` (latest `master`) are also available. See [Installation → Arch Linux](docs/installation.md#arch-linux-aur).

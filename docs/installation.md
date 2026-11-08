@@ -56,13 +56,12 @@ from the AUR with your helper of choice:
 paru -S voxctrl-bin      # or: yay -S voxctrl-bin
 ```
 
-Then add the helper that types transcriptions into other windows: `wtype` on
-Wayland, `xdotool` on X11 (both if you use both). They are optional dependencies,
-so pacman lists them but doesn't install them for you:
+That also installs `wtype`, which types transcriptions into other windows on
+Wayland. On an X11 session, add `xdotool`; it's an optional dependency, so pacman
+lists it but doesn't install it for you:
 
 ```bash
-sudo pacman -S --needed wtype       # Wayland
-sudo pacman -S --needed xdotool     # X11
+sudo pacman -S --needed xdotool     # X11 only
 ```
 
 Three packages are available; they replace one another, so you can switch

@@ -16,10 +16,9 @@ url='https://jrufer.com/voxctrl'
 license=('MIT')
 depends=('alsa-lib' 'cairo' 'dbus' 'gcc-libs' 'gdk-pixbuf2' 'glib2' 'glibc' 'gtk3'
          'hicolor-icon-theme' 'libayatana-appindicator' 'libsoup3' 'openssl'
-         'vulkan-icd-loader' 'webkit2gtk-4.1' 'xdg-desktop-portal')
+         'vulkan-icd-loader' 'webkit2gtk-4.1' 'wtype' 'xdg-desktop-portal')
 makedepends=('cargo' 'clang' 'cmake' 'git' 'nodejs' 'npm' 'pkgconf' 'shaderc' 'vulkan-headers')
-optdepends=('wtype: type transcriptions into windows on Wayland'
-            'xdotool: type transcriptions into windows on X11'
+optdepends=('xdotool: type transcriptions into windows on X11'
             'wl-clipboard: clipboard delivery on Wayland'
             'xclip: clipboard delivery on X11'
             'espeak-ng: instant fallback text-to-speech voice'

@@ -54,7 +54,8 @@ pub struct SetupStatusPayload {
     pub manual_package_commands: String,
     /// A package manager owns this install (a `.deb`, the AUR). The window then
     /// offers no one-click install: the package already brought its
-    /// dependencies, and the typing helpers are optional ones the user picks.
+    /// dependencies, and a helper still missing is an optional one (for
+    /// example `xdotool` on X11) the user adds with their package manager.
     pub package_managed: bool,
     pub is_complete: bool,
 }
