@@ -2414,3 +2414,75 @@ target_id = "default"
     assert_eq!(loaded[0].keys, vec!["KEY_LEFTCTRL", "KEY_DOT", "KEY_SLASH"]);
     assert_eq!(loaded[1].keys, vec!["KEY_LEFTMETA", "KEY_SPACE"]);
 }
+
+/// A misheard wake word behind a lead-in word still fires the command (#186).
+///
+/// Speech engines differ in whether they write the lead-ins real speech is
+/// full of. One that does ("Okay, hey Fox, notes …") used to defeat the
+/// mishearing checks entirely, because they only looked at the first word or
+/// two — which showed up as voice commands working on one engine and the
+/// same words being typed out on another.
+#[test]
+fn a_misheard_wake_word_is_found_behind_a_lead_in() {
+    use crate::targets::parse_voice_command;
+
+    let targets = vec![
+        OutputTarget {
+            id: "notes".into(),
+            label: "Notes".into(),
+            delivery: DeliveryType::File,
+            ..OutputTarget::default_inject()
+        },
+    ];
+
+    for text in [
+        // No lead-in: these worked before and must keep working.
+        "hey fox notes buy milk",
+        "box control notes buy milk",
+        // One or more lead-in words in front of the same mishearing.
+        "Okay, hey Fox, notes buy milk.",
+        "So hey box notes buy milk",
+        "Well, walks control notes buy milk",
+        "Um, okay, hey fox notes buy milk",
+    ] {
+        let parsed = parse_voice_command(text, &targets)
+            .unwrap_or_else(|| panic!("should match: {text:?}"));
+        assert_eq!(parsed.matched_target_id, "notes", "{text:?}");
+        // The payload keeps the transcript's own punctuation; only the
+        // wake word and the target name are stripped.
+        assert_eq!(parsed.payload.trim_end_matches('.'), "buy milk", "{text:?}");
+    }
+}
+
+/// Widening where the wake word may start must not turn ordinary speech into
+/// a command. Away from the opening word the fuzzy match is deliberately
+/// stricter, because mid-sentence near-misses of "vox control" are common.
+#[test]
+fn a_lead_in_does_not_make_ordinary_speech_a_command() {
+    use crate::targets::parse_voice_command;
+
+    let targets = vec![
+        OutputTarget {
+            id: "notes".into(),
+            label: "Notes".into(),
+            delivery: DeliveryType::File,
+            ..OutputTarget::default_inject()
+        },
+    ];
+
+    for text in [
+        "I lost control notes about the meeting",
+        "we had to take control notes from the call",
+        "they voxelize notes and models",
+        "the box notes something",
+        "heavy box notes something",
+        "Hey folks, notes about the meeting",
+        // Far enough in that it is past the opening, whatever it sounds like.
+        "a quick summary of the whole thing hey fox notes buy milk",
+    ] {
+        assert!(
+            parse_voice_command(text, &targets).is_none(),
+            "should not match: {text:?}"
+        );
+    }
+}
