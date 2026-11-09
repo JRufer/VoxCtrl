@@ -323,6 +323,38 @@ pub fn register_speak_target(app_handle: &tauri::AppHandle) {
     }));
 }
 
+/// Re-send the command pill that is still due on screen, if any, to an
+/// overlay window that has only just become able to receive it (#187).
+///
+/// The pill is announced by a one-shot `command-executed` event the moment
+/// the command fires. Without a compositing manager the overlay window is
+/// built on first use and unmapped whenever it has nothing to show (#181),
+/// so that event can be emitted before there is a window listening for it —
+/// and nothing replays it, which left the window coming up blank.
+///
+/// Called by the status ticker when it builds or maps an overlay window. A
+/// window that already existed is listening and gets the pill straight away;
+/// one built from scratch here is not, so the other half of this is
+/// `commands::display::active_command_overlay`, which a freshly mounted
+/// overlay calls to ask for whatever it missed once its own listener is
+/// actually registered.
+///
+/// A no-op with a compositor (the window is mapped for the whole session, so
+/// the ticker never makes either transition) and once the pill's time is up.
+pub fn replay_command_overlay(app: &tauri::AppHandle, state: &AppState) {
+    let Some((command, summary, duration_secs)) = state.active_command_overlay() else {
+        return;
+    };
+    let _ = app.emit(
+        "command-executed",
+        serde_json::json!({
+            "command": command,
+            "summary": summary,
+            "duration_secs": duration_secs,
+        }),
+    );
+}
+
 pub fn register_command_trigger_target(app_handle: &tauri::AppHandle) {
     let state = app_handle.state::<Arc<AppState>>().inner().clone();
     let app_handle_clone = app_handle.clone();
@@ -348,7 +380,14 @@ pub fn register_command_trigger_target(app_handle: &tauri::AppHandle) {
             if show_overlay {
                 let cmd_name = command_name.to_string();
                 let summary = text_summary.to_string();
-                state.activate_command_overlay(std::time::Duration::from_secs(duration_secs as u64));
+                // Recorded before the emit below, so that if the overlay
+                // window is not up yet to receive the event the status
+                // ticker can replay it once the window is (#187).
+                state.activate_command_overlay(
+                    &cmd_name,
+                    &summary,
+                    std::time::Duration::from_secs(duration_secs as u64),
+                );
                 let _ = app_handle_clone.emit(
                     "command-executed",
                     serde_json::json!({

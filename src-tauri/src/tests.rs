@@ -77,7 +77,7 @@ fn make_test_state() -> AppState {
         speaking: Arc::new(AtomicBool::new(false)),
         overlay_enabled: Arc::new(AtomicBool::new(true)),
         mcp_recording: Arc::new(AtomicBool::new(false)),
-        command_overlay_until: Arc::new(std::sync::Mutex::new(None)),
+        command_overlay: Arc::new(std::sync::Mutex::new(None)),
         released_at: Arc::new(std::sync::Mutex::new(None)),
         hotkeys_inhibited: Arc::new(AtomicBool::new(false)),
         audio_ready: Arc::new(AtomicBool::new(false)),
