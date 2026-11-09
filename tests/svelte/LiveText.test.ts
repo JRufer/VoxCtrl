@@ -20,6 +20,8 @@ const CUSTOM_HTML = `
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string, args?: { name?: string }) => {
     if (cmd === "get_config") throw new Error("no backend in tests");
+    // No command pill is pending unless a test emits one.
+    if (cmd === "active_command_overlay") return null;
     if (cmd === "get_custom_overlay") {
       return args?.name === "Hooks" ? { name: "Hooks", html: CUSTOM_HTML, css: "" } : null;
     }

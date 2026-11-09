@@ -395,11 +395,16 @@ pub fn spawn_status_ticker(
                 .as_ref()
                 .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
                 .unwrap_or(("center", "primary"));
+            // Whether the overlay window went from "not there for an event"
+            // to "there" on this tick, which is when a command pill that was
+            // announced too early has to be replayed into it (#187).
+            let mut overlay_just_appeared = false;
             if should_show_overlay && !overlay_built {
                 match crate::window::open_overlay_window(&handle, position, monitor) {
                     Ok(_) => {
                         overlay_built = true;
                         overlay_mapped = true;
+                        overlay_just_appeared = true;
                     }
                     Err(e) => tracing::error!("Failed to open the dictation overlay: {e}"),
                 }
@@ -420,7 +425,10 @@ pub fn spawn_status_ticker(
                     overlay_mapped,
                 ) {
                     Some(true) => match crate::window::open_overlay_window(&handle, position, monitor) {
-                        Ok(_) => overlay_mapped = true,
+                        Ok(_) => {
+                            overlay_mapped = true;
+                            overlay_just_appeared = true;
+                        }
                         Err(e) => tracing::error!("Failed to show the dictation overlay: {e}"),
                     },
                     Some(false) => {
@@ -431,6 +439,25 @@ pub fn spawn_status_ticker(
                     }
                     None => {}
                 }
+            }
+
+            // A command pill is announced by a one-shot `command-executed`
+            // event the moment the command fires, which is up to a tick
+            // before this loop can build or map the overlay window — so
+            // without a compositor the window that finally appears never saw
+            // it and shows nothing (#187). Replay it here, with whatever is
+            // left of its duration, now that there is a window to receive it.
+            // Only ever fires on the no-compositor path: with a compositor
+            // the window is mapped for the whole session and neither
+            // transition above ever happens.
+            // This is the fix for a window that already existed and was only
+            // unmapped: it has been listening all along. A window built from
+            // scratch on this tick is not listening yet — its webview still
+            // has to load `/overlay` and mount — and catches up by asking,
+            // via `commands::display::active_command_overlay`, once its own
+            // listener is registered.
+            if overlay_just_appeared {
+                crate::services::replay_command_overlay(&handle, &state_for_ticker);
             }
 
             // On some WebKitGTK/compositor combinations the overlay's client

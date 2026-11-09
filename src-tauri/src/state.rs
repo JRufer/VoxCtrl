@@ -5,6 +5,39 @@ use tokio::sync::Mutex;
 use voxctrl_config::Config;
 use voxctrl_routing::OutputTargetRouter;
 
+/// A command-executed overlay pill that is currently due on screen.
+///
+/// The text is kept, not just the deadline, because the pill is delivered to
+/// the overlay as a one-shot `command-executed` event and the overlay window
+/// is not always there to receive it (#187). Without a compositing manager
+/// the window is built on first use and unmapped whenever it has nothing to
+/// show (#181), while the event is emitted the instant the command fires —
+/// up to a ticker tick before the window exists or is mapped. Keeping the
+/// pill here lets `tray::spawn_status_ticker` replay it once the window is
+/// actually up. With a compositor the window is mapped for the whole session,
+/// so nothing is ever replayed.
+#[derive(Clone, Debug)]
+pub struct ActiveCommandOverlay {
+    pub command: String,
+    pub summary: String,
+    pub until: std::time::Instant,
+}
+
+impl ActiveCommandOverlay {
+    /// The pill and the whole seconds it still has to run, or `None` once it
+    /// has expired. The remainder is rounded up so a pill with a fraction of
+    /// a second left is still shown rather than replayed with a zero duration
+    /// (which the frontend reads as "use the configured default").
+    pub fn replay(&self, now: std::time::Instant) -> Option<(String, String, u32)> {
+        let left = self.until.checked_duration_since(now)?;
+        if left.is_zero() {
+            return None;
+        }
+        let secs = left.as_secs_f64().ceil().max(1.0) as u32;
+        Some((self.command.clone(), self.summary.clone(), secs))
+    }
+}
+
 /// All shared mutable state, behind Arc so it can be handed to Tauri commands.
 pub struct AppState {
     pub config: Arc<Mutex<Config>>,
@@ -52,12 +85,16 @@ pub struct AppState {
     pub overlay_enabled: Arc<AtomicBool>,
     /// True while MCP server is actively recording/listening to the microphone
     pub mcp_recording: Arc<AtomicBool>,
-    /// When the command-executed overlay pill should stop showing, if it's
-    /// currently active. Set by `services::register_command_trigger_target`
-    /// and read by `tray::spawn_status_ticker`'s overlay-visibility decision —
-    /// see that function's doc comment for why this needs to live in shared
-    /// state rather than only being a frontend timer.
-    pub command_overlay_until: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    /// The command-executed overlay pill that should currently be showing, if
+    /// any. Set by `services::register_command_trigger_target` and read by
+    /// `tray::spawn_status_ticker`'s overlay-visibility decision — see that
+    /// function's doc comment for why this needs to live in shared state
+    /// rather than only being a frontend timer.
+    ///
+    /// It carries the pill's text, not just its deadline, because the overlay
+    /// window may not exist (or may be unmapped) at the moment the command
+    /// fires — see [`ActiveCommandOverlay`].
+    pub command_overlay: Arc<std::sync::Mutex<Option<ActiveCommandOverlay>>>,
     /// When the last recording stopped (the key was released). Only used to
     /// log how long the text then took to arrive.
     pub released_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
@@ -308,22 +345,45 @@ impl AppState {
         self.overlay_enabled.store(v, Ordering::SeqCst);
     }
 
-    /// Mark the command-executed overlay pill active for `duration` from now.
-    pub fn activate_command_overlay(&self, duration: std::time::Duration) {
-        *self.command_overlay_until.lock().unwrap() = Some(std::time::Instant::now() + duration);
+    /// Mark the command-executed overlay pill active for `duration` from now,
+    /// showing `command` and `summary`.
+    pub fn activate_command_overlay(
+        &self,
+        command: &str,
+        summary: &str,
+        duration: std::time::Duration,
+    ) {
+        *self.command_overlay.lock().unwrap() = Some(ActiveCommandOverlay {
+            command: command.to_string(),
+            summary: summary.to_string(),
+            until: std::time::Instant::now() + duration,
+        });
     }
 
     /// Stop showing the command-executed overlay pill now.
     pub fn clear_command_overlay(&self) {
-        *self.command_overlay_until.lock().unwrap() = None;
+        *self.command_overlay.lock().unwrap() = None;
     }
 
     /// Whether the command-executed overlay pill should still be showing.
     pub fn is_command_overlay_active(&self) -> bool {
-        self.command_overlay_until
+        self.command_overlay
             .lock()
             .unwrap()
-            .is_some_and(|until| std::time::Instant::now() < until)
+            .as_ref()
+            .is_some_and(|c| std::time::Instant::now() < c.until)
+    }
+
+    /// The command pill that is still due to be on screen, with however much
+    /// of its time is left — for replaying it to an overlay window that was
+    /// not there to receive the original event (see [`ActiveCommandOverlay`]).
+    /// `None` once it has expired.
+    pub fn active_command_overlay(&self) -> Option<(String, String, u32)> {
+        self.command_overlay
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|c| c.replay(std::time::Instant::now()))
     }
 
     /// Claim the right to run an update, returning false if one is already
@@ -438,5 +498,49 @@ impl AppState {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod command_overlay_tests {
+    use super::ActiveCommandOverlay;
+    use std::time::{Duration, Instant};
+
+    fn pill(until: Instant) -> ActiveCommandOverlay {
+        ActiveCommandOverlay {
+            command: "Notes".into(),
+            summary: "buy milk".into(),
+            until,
+        }
+    }
+
+    /// The replay carries the pill's own text, so the window that missed the
+    /// original event shows the same thing it would have (#187).
+    #[test]
+    fn a_live_pill_replays_with_its_text() {
+        let now = Instant::now();
+        let (command, summary, secs) = pill(now + Duration::from_secs(3))
+            .replay(now)
+            .expect("still live");
+        assert_eq!(command, "Notes");
+        assert_eq!(summary, "buy milk");
+        assert_eq!(secs, 3);
+    }
+
+    /// Rounded up, never to zero: the frontend reads a zero duration as "use
+    /// the configured default", which would outlast the pill it replaces.
+    #[test]
+    fn a_part_second_left_still_replays_for_a_second() {
+        let now = Instant::now();
+        assert_eq!(pill(now + Duration::from_millis(1200)).replay(now).unwrap().2, 2);
+        assert_eq!(pill(now + Duration::from_millis(50)).replay(now).unwrap().2, 1);
+    }
+
+    /// An expired pill is not put back on screen by a window appearing late.
+    #[test]
+    fn an_expired_pill_does_not_replay() {
+        let now = Instant::now();
+        assert!(pill(now).replay(now).is_none());
+        assert!(pill(now - Duration::from_secs(1)).replay(now).is_none());
     }
 }

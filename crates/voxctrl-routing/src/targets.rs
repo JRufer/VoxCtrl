@@ -1275,6 +1275,25 @@ fn fold_case(s: &str) -> String {
         .collect()
 }
 
+/// How many words a misheard wake word may start after. Speech engines that
+/// write fluent prose open with a lead-in ("Okay, …", "So …", "Well, …")
+/// where a terser one gives the wake word first, and the mishearing checks
+/// in [`parse_voice_command`] are anchored to the start of the transcript —
+/// so without this, one lead-in word was the difference between a command
+/// firing and being typed out (#186).
+const MAX_LEAD_IN_WORDS: usize = 3;
+
+/// The whitespace-separated words of `text` with each one's byte offset into
+/// it, so a match on a word that is not the first can still be turned back
+/// into a position in the original string. (Searching for the word's text
+/// would find an earlier occurrence of the same word instead.)
+fn words_with_offsets(text: &str) -> Vec<(usize, &str)> {
+    let base = text.as_ptr() as usize;
+    text.split_whitespace()
+        .map(|w| (w.as_ptr() as usize - base, w))
+        .collect()
+}
+
 /// True when `word` sounds like "vox" as speech recognition tends to mishear it
 /// ("box", "fox", "walks", "locks"): short and ending in an x/ks sound.
 fn sounds_like_vox(word: &str) -> bool {
@@ -1325,61 +1344,80 @@ pub fn parse_voice_command(
         }
     }
 
-    // 2. Misheard "vox control" at the very start ("box control", "walks control").
-    //    Only the leading two words count, and the first must sound like "vox":
-    //    "take control, say hello" or "I lost control" is ordinary dictation.
-    if found_pos.is_none() {
-        let words: Vec<&str> = lower_text.split_whitespace().collect();
-        if words.len() >= 2 {
-            let first = words[0].trim_matches(|c: char| c.is_ascii_punctuation());
-            let second = words[1].trim_matches(|c: char| c.is_ascii_punctuation());
-            if sounds_like_vox(first) && matches!(second, "control" | "ctrl" | "ctl" | "kontrol") {
-                let start_idx = lower_text.find(words[0]).unwrap_or(0);
-                let first_end = start_idx + words[0].len();
-                let second_end =
-                    first_end + lower_text[first_end..].find(words[1]).unwrap_or(0) + words[1].len();
-                found_pos = Some(start_idx);
-                trigger_len = second_end - start_idx;
-            }
+    // Steps 2 and 3 below recognise a *misheard* wake word, which — unlike
+    // the exact triggers above — cannot be searched for anywhere in the
+    // transcript without matching ordinary speech constantly. They are
+    // anchored near the start instead, where a wake word actually is.
+    //
+    // "Near" rather than "at": a recogniser that writes fluent prose puts a
+    // lead-in in front of it ("Okay, hey Fox, notes …", "So hey box notes …"),
+    // and anchoring at word 0 exactly meant one filler word was enough to
+    // stop a misheard wake word being recognised at all — reported as voice
+    // commands working on one speech engine and not another (#186), since
+    // engines differ in whether they emit those lead-ins. They are still
+    // anchored, just over the opening few words rather than the first one.
+    //
+    // This widens only where the trigger may *start*. What follows it must
+    // still name a target, or this function returns `None` and the text is
+    // dictated as usual, so a stray match mid-sentence stays harmless.
+    let words = words_with_offsets(&lower_text);
+    let starts = words.len().min(MAX_LEAD_IN_WORDS + 1);
+
+    // 2. Misheard "vox control" ("box control", "walks control"). Two
+    //    adjacent words, the first of which must sound like "vox": "take
+    //    control, say hello" or "I lost control" is ordinary dictation.
+    for skip in 0..starts {
+        if found_pos.is_some() {
+            break;
+        }
+        let Some([(first_at, first_w), (second_at, second_w)]) = words.get(skip..skip + 2) else {
+            break;
+        };
+        let first = first_w.trim_matches(|c: char| c.is_ascii_punctuation());
+        let second = second_w.trim_matches(|c: char| c.is_ascii_punctuation());
+        if sounds_like_vox(first) && matches!(second, "control" | "ctrl" | "ctl" | "kontrol") {
+            found_pos = Some(*first_at);
+            trigger_len = second_at + second_w.len() - first_at;
         }
     }
 
-    // 3. Dynamic Levenshtein fuzzy match on leading token(s)
-    if found_pos.is_none() {
-        let words: Vec<&str> = lower_text.split_whitespace().collect();
-        if !words.is_empty() {
-            for len in (1..=2.min(words.len())).rev() {
-                let candidate = words[..len].join(" ");
-                let clean_cand = candidate.trim_matches(|c: char| c.is_ascii_punctuation());
-                let dist1 = levenshtein_distance(clean_cand, "voxctrl");
-                let dist2 = levenshtein_distance(clean_cand, "vox control");
+    // 3. Dynamic Levenshtein fuzzy match on one or two words.
+    for skip in 0..starts {
+        if found_pos.is_some() {
+            break;
+        }
+        // Past the first word, demand a closer match. A transcript rarely
+        // *opens* with a near-miss of the wake word, so a loose match there
+        // is safe; mid-sentence it is not — "I lost control" is three edits
+        // from "vox control" and is ordinary dictation, not a command.
+        let (max_voxctrl, max_vox_control, max_hey_vox) =
+            if skip == 0 { (2, 3, 1) } else { (1, 1, 1) };
+        for len in (1..=2.min(words.len() - skip)).rev() {
+            let span = &words[skip..skip + len];
+            let candidate = span.iter().map(|(_, w)| *w).collect::<Vec<_>>().join(" ");
+            let clean_cand = candidate.trim_matches(|c: char| c.is_ascii_punctuation());
+            let dist1 = levenshtein_distance(clean_cand, "voxctrl");
+            let dist2 = levenshtein_distance(clean_cand, "vox control");
 
-                // Check "hey vox" fuzzy match (distance <= 1) on normalized tokens
-                let clean_tokens: Vec<&str> = words[..len]
-                    .iter()
-                    .map(|w| w.trim_matches(|c: char| c.is_ascii_punctuation()))
-                    .filter(|w| !w.is_empty())
-                    .collect();
-                let hey_vox_cand = clean_tokens.join(" ");
-                let dist_hey_vox = if !hey_vox_cand.is_empty() {
-                    levenshtein_distance(&hey_vox_cand, "hey vox")
-                } else {
-                    usize::MAX
-                };
+            // Check "hey vox" fuzzy match (distance <= 1) on normalized tokens
+            let clean_tokens: Vec<&str> = span
+                .iter()
+                .map(|(_, w)| w.trim_matches(|c: char| c.is_ascii_punctuation()))
+                .filter(|w| !w.is_empty())
+                .collect();
+            let hey_vox_cand = clean_tokens.join(" ");
+            let dist_hey_vox = if !hey_vox_cand.is_empty() {
+                levenshtein_distance(&hey_vox_cand, "hey vox")
+            } else {
+                usize::MAX
+            };
 
-                if dist1 <= 2 || dist2 <= 3 || dist_hey_vox <= 1 {
-                    let first_word = words[0];
-                    let last_word = words[len - 1];
-                    let start_idx = lower_text.find(first_word).unwrap_or(0);
-                    let last_pos = lower_text[start_idx..]
-                        .find(last_word)
-                        .map(|p| start_idx + p)
-                        .unwrap_or(start_idx);
-                    let end_idx = last_pos + last_word.len();
-                    found_pos = Some(start_idx);
-                    trigger_len = end_idx - start_idx;
-                    break;
-                }
+            if dist1 <= max_voxctrl || dist2 <= max_vox_control || dist_hey_vox <= max_hey_vox {
+                let (start_idx, _) = span[0];
+                let (last_at, last_w) = span[len - 1];
+                found_pos = Some(start_idx);
+                trigger_len = last_at + last_w.len() - start_idx;
+                break;
             }
         }
     }

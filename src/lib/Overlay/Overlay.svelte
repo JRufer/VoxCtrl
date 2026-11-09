@@ -364,18 +364,39 @@
       unlistenLiveTranscript = unlisten;
     });
 
-    listen<{ command: string; summary: string; duration_secs: number }>("command-executed", (event) => {
+    const showCommandPill = (payload: { command: string; summary: string; duration_secs: number }) => {
       if (!$config.ui.show_command_overlay) return;
-      commandOverlayName = event.payload.command;
-      commandOverlayText = event.payload.summary;
+      commandOverlayName = payload.command;
+      commandOverlayText = payload.summary;
       commandOverlayActive = true;
       if (commandTimerId) clearTimeout(commandTimerId);
-      const durationMs = (event.payload.duration_secs || $config.ui.command_overlay_duration_secs || 3) * 1000;
+      const durationMs = (payload.duration_secs || $config.ui.command_overlay_duration_secs || 3) * 1000;
       commandTimerId = setTimeout(() => {
         commandOverlayActive = false;
       }, durationMs);
+    };
+
+    listen<{ command: string; summary: string; duration_secs: number }>("command-executed", (event) => {
+      showCommandPill(event.payload);
     }).then((unlisten) => {
       unlistenCommandExecuted = unlisten;
+      // Catch up on a pill that fired before this window could hear about
+      // it. Without a compositing manager the overlay window is built on
+      // demand and unmapped whenever it has nothing to show (#181), so the
+      // one-shot `command-executed` event above can predate the window
+      // entirely — which left it coming up blank (#187). Asked for here,
+      // once the listener is actually registered, rather than pushed from
+      // the backend into a window that may not be listening yet.
+      invoke<{ command: string; summary: string; duration_secs: number } | null>(
+        "active_command_overlay",
+      )
+        .then((pill) => {
+          if (typeof pill?.command !== "string") return;
+          // A live event got here first: it is at least as fresh as this.
+          if (commandOverlayActive) return;
+          showCommandPill(pill);
+        })
+        .catch(() => {});
     });
 
     // A command recognised mid-speech that the final transcript didn't confirm.

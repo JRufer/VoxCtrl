@@ -66,3 +66,28 @@ pub async fn detect_focused_app(delay_ms: Option<u64>) -> Result<Option<String>,
     tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     Ok(voxctrl_inject::focused_app().await)
 }
+
+/// The command pill the overlay should be showing right now, if any, and the
+/// seconds it has left to run — `None` when there is none.
+///
+/// The overlay normally learns about a pill from the one-shot
+/// `command-executed` event, but that event is emitted the moment the
+/// command fires and the window is not always there to hear it: without a
+/// compositing manager it is built on demand and unmapped whenever it has
+/// nothing to show (#181, #187). A window that has just mounted asks for
+/// whatever it missed, rather than being pushed it and racing its own
+/// listener registration.
+#[tauri::command]
+pub fn active_command_overlay(
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+) -> Option<serde_json::Value> {
+    state
+        .active_command_overlay()
+        .map(|(command, summary, duration_secs)| {
+            serde_json::json!({
+                "command": command,
+                "summary": summary,
+                "duration_secs": duration_secs,
+            })
+        })
+}

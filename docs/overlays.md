@@ -133,6 +133,7 @@ When a voice command trigger is activated (e.g. saying *"VoxCtrl notes Help me!"
 - **Content**: Displays the executed command target name (e.g. `NOTES` or `MEETING JOURNAL`) and a summary of the text payload (`▸ Help me!`).
 - **Duration**: Auto-dismisses after a configurable duration (default: 3 seconds, configurable via `config.ui.command_overlay_duration_secs`).
 - **Toggle**: Controlled via **Settings → Visual Feedback → Show overlay on voice command trigger** (`config.ui.show_command_overlay`).
+- **Catch-up**: The pill is announced to the overlay as a one-shot `command-executed` event the moment the command fires. Where the overlay window is built on demand and unmapped while idle — a desktop with no compositing manager, see *Mapped on Startup* above — that event can predate the window listening for it, which left the pill missing ([#187](https://github.com/JRufer/VoxCtrl/issues/187)). A window that has just become able to receive it catches up: the status ticker re-sends the pill when it builds or maps one, and a freshly mounted overlay asks for whatever it missed via the `active_command_overlay` command. Either way the pill is shown with only the time it has left, and an expired one is not put back.
 
 ---
 

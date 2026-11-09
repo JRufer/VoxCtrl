@@ -8,6 +8,8 @@ vi.mock("@tauri-apps/api/core", () => ({
     // `get_config` has no backend here: failing it leaves the config store on
     // its defaults.
     if (cmd === "get_config") throw new Error("no backend in tests");
+    // No command pill is pending unless a test emits one.
+    if (cmd === "active_command_overlay") return null;
     // The status store falls back to polling `get_status` every second when
     // no status-tick events arrive, which in tests is always. Answer with
     // whatever status the test has set, so a poll landing mid-test changes
@@ -266,5 +268,65 @@ describe("Overlay.svelte (root layout)", () => {
     // ...and is gone once the outro has finished.
     await settle(500);
     expect(container.querySelector(".scope")).toBeNull();
+  });
+});
+
+describe("Overlay.svelte (command pill catch-up)", () => {
+  const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+
+  // These tests replace the file-wide `invoke` mock, so put it back
+  // afterwards rather than leaving it for whatever runs next.
+  afterEach(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as import("vitest").Mock).mockReset();
+    (invoke as unknown as import("vitest").Mock).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_config") throw new Error("no backend in tests");
+      if (cmd === "active_command_overlay") return null;
+      const { status } = await import("../../src/stores/status");
+      const { get } = await import("svelte/store");
+      return get(status);
+    });
+  });
+
+  /// Without a compositing manager the overlay window is built on demand and
+  /// unmapped whenever it has nothing to show (#181), so the one-shot
+  /// `command-executed` event can be emitted before this window exists to
+  /// hear it — which left the pill missing entirely (#187). A freshly
+  /// mounted overlay asks for whatever it missed.
+  test("asks for a pill that fired before it mounted, and shows it", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as import("vitest").Mock).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_config") throw new Error("no backend in tests");
+      if (cmd === "active_command_overlay") {
+        return { command: "Notes", summary: "buy milk", duration_secs: 3 };
+      }
+      const { status } = await import("../../src/stores/status");
+      const { get } = await import("svelte/store");
+      return get(status);
+    });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.textContent).toContain("NOTES");
+    expect(container.textContent).toContain("buy milk");
+  });
+
+  /// ...and an expired or absent one leaves the overlay blank, rather than
+  /// putting a stale pill back on screen every time the window appears.
+  test("shows nothing when no pill is pending", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as unknown as import("vitest").Mock).mockImplementation(async (cmd: string) => {
+      if (cmd === "get_config") throw new Error("no backend in tests");
+      if (cmd === "active_command_overlay") return null;
+      const { status } = await import("../../src/stores/status");
+      const { get } = await import("svelte/store");
+      return get(status);
+    });
+
+    const { container } = render(Overlay);
+    await settle();
+
+    expect(container.querySelector(".system-response-box.command")).toBeNull();
   });
 });
