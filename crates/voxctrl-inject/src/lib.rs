@@ -258,10 +258,20 @@ async fn paste_text(text: &str) -> Result<()> {
     debug!(elapsed = ?started.elapsed(), "text on the clipboard");
 
     // 3. Paste.
+    //
+    // The guard claims the shortcut's own keys for the duration (and a short
+    // grace afterwards) so the hotkey listener can recognise the signals this
+    // provokes as VoxCtrl's own. Pressing Ctrl here makes a compositor
+    // re-evaluate any Ctrl-based global shortcut and report it released; a
+    // user holding Ctrl+Space to dictate would otherwise have the recording
+    // ended mid-sentence by the *previous* dictation's paste.
     let mark = held.mark();
-    let sent = match tokio::time::timeout(SEND_TIMEOUT, send_paste(shortcut)).await {
-        Ok(r) => r,
-        Err(_) => Err(anyhow::anyhow!("sending the paste shortcut timed out")),
+    let sent = {
+        let _injecting = voxctrl_winput::begin_self_injection(shortcut.key_names());
+        match tokio::time::timeout(SEND_TIMEOUT, send_paste(shortcut)).await {
+            Ok(r) => r,
+            Err(_) => Err(anyhow::anyhow!("sending the paste shortcut timed out")),
+        }
     };
     tracing::info!(?shortcut, ok = sent.is_ok(), elapsed = ?started.elapsed(), "paste shortcut sent");
 
