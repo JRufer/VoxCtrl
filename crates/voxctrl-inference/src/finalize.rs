@@ -38,13 +38,62 @@ pub fn noise_gate_threshold(vad_threshold: f32) -> f32 {
     (1.0 - vad_threshold) * 0.006
 }
 
-/// The initial prompt for recognition: the trigger phrases plus the user's
-/// custom vocabulary, so both are spelled the way the user expects.
-pub fn initial_prompt(custom_vocabulary: &[String]) -> String {
-    if custom_vocabulary.is_empty() {
+/// How much of the prompt the vocabulary list may take, in characters.
+///
+/// whisper.cpp only reads the first few hundred tokens of an initial prompt
+/// and drops the rest, so an unbounded list would push out `BASE_PROMPT` —
+/// which is what teaches it to spell the wake word. Roughly 150 tokens.
+const VOCAB_PROMPT_BUDGET: usize = 600;
+
+/// The initial prompt for recognition: the trigger phrases, the user's custom
+/// vocabulary and their snippet triggers, so all of them are spelled the way
+/// the user expects.
+///
+/// Snippet triggers belong here for the same reason custom vocabulary does.
+/// A trigger is often a short, made-up word ("Booser") chosen precisely
+/// because it is not ordinary speech, and expansion matches it literally — so
+/// if the engine spells it even slightly differently the snippet silently
+/// does not fire. whisper.cpp decodes a short interim window and the whole
+/// utterance separately, and without a hint it can spell such a word one way
+/// in the interim pass and another in the final one, which showed up as a
+/// snippet expanding while the user spoke and then not expanding in the text
+/// that was actually delivered (#186). Naming the triggers here keeps the
+/// spelling stable across both passes.
+///
+/// Only engines that accept a prompt use this — whisper.cpp and the remote
+/// OpenAI-compatible ones. Moonshine and Parakeet ignore it and already
+/// transcribe these words consistently.
+pub fn initial_prompt(
+    custom_vocabulary: &[String],
+    snippets: &std::collections::HashMap<String, String>,
+) -> String {
+    // Triggers sorted, not taken in `HashMap` order: Rust re-seeds that every
+    // run, and a prompt that changed between runs would make the engine
+    // transcribe the same audio differently from one launch to the next.
+    let mut triggers: Vec<&str> = snippets.keys().map(String::as_str).collect();
+    triggers.sort_unstable();
+
+    let mut terms: Vec<&str> = Vec::with_capacity(custom_vocabulary.len() + triggers.len());
+    let mut budget = VOCAB_PROMPT_BUDGET;
+    // Custom vocabulary first: it is the longer-standing setting, so it keeps
+    // the room it has always had if the two together overrun the budget.
+    for term in custom_vocabulary.iter().map(String::as_str).chain(triggers) {
+        let term = term.trim();
+        if term.is_empty() || terms.iter().any(|t| t.eq_ignore_ascii_case(term)) {
+            continue;
+        }
+        // +2 for the ", " this term would add.
+        let Some(left) = budget.checked_sub(term.chars().count() + 2) else {
+            break;
+        };
+        budget = left;
+        terms.push(term);
+    }
+
+    if terms.is_empty() {
         BASE_PROMPT.to_string()
     } else {
-        format!("{BASE_PROMPT} Vocabulary: {}.", custom_vocabulary.join(", "))
+        format!("{BASE_PROMPT} Vocabulary: {}.", terms.join(", "))
     }
 }
 
@@ -164,12 +213,61 @@ mod tests {
         assert_eq!(rms(&[0.5, -0.5]), 0.5);
     }
 
+    fn snips(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
     #[test]
     fn prompt_carries_the_vocabulary_only_when_there_is_one() {
-        assert_eq!(initial_prompt(&[]), BASE_PROMPT);
+        assert_eq!(initial_prompt(&[], &snips(&[])), BASE_PROMPT);
         assert_eq!(
-            initial_prompt(&["Tauri".into(), "Svelte".into()]),
+            initial_prompt(&["Tauri".into(), "Svelte".into()], &snips(&[])),
             format!("{BASE_PROMPT} Vocabulary: Tauri, Svelte.")
+        );
+    }
+
+    /// Snippet triggers are named in the prompt for the same reason custom
+    /// vocabulary is: a made-up trigger the engine spells differently between
+    /// its interim and final passes is a snippet that silently stops firing
+    /// (#186).
+    #[test]
+    fn prompt_names_the_snippet_triggers() {
+        let prompt = initial_prompt(&[], &snips(&[("Booser", "VoxCtrl"), ("addr", "1 Main St")]));
+        assert_eq!(prompt, format!("{BASE_PROMPT} Vocabulary: Booser, addr."));
+    }
+
+    /// Vocabulary first, then triggers — and triggers in a fixed order, since
+    /// a prompt that changed between runs would have the engine transcribe
+    /// the same audio differently from one launch to the next.
+    #[test]
+    fn prompt_terms_are_in_a_fixed_order_every_run() {
+        let vocab = vec!["Svelte".to_string(), "Tauri".to_string()];
+        let snippets = snips(&[("zeta", "z"), ("alpha", "a"), ("mid", "m")]);
+        let first = initial_prompt(&vocab, &snippets);
+        assert_eq!(first, format!("{BASE_PROMPT} Vocabulary: Svelte, Tauri, alpha, mid, zeta."));
+        for _ in 0..50 {
+            assert_eq!(initial_prompt(&vocab, &snippets), first);
+        }
+    }
+
+    /// A term already in the vocabulary is not repeated as a trigger.
+    #[test]
+    fn prompt_does_not_repeat_a_term() {
+        let prompt = initial_prompt(&["Booser".into()], &snips(&[("booser", "VoxCtrl")]));
+        assert_eq!(prompt, format!("{BASE_PROMPT} Vocabulary: Booser."));
+    }
+
+    /// The engine reads only the start of a prompt, so the list is capped
+    /// rather than allowed to push out the wake-word spelling in BASE_PROMPT.
+    #[test]
+    fn prompt_vocabulary_is_capped() {
+        let vocab: Vec<String> = (0..500).map(|i| format!("term{i:04}")).collect();
+        let prompt = initial_prompt(&vocab, &snips(&[]));
+        assert!(prompt.starts_with(BASE_PROMPT), "base prompt must survive");
+        assert!(
+            prompt.chars().count() - BASE_PROMPT.chars().count() <= VOCAB_PROMPT_BUDGET + 16,
+            "vocabulary list ran past its budget: {} chars",
+            prompt.chars().count()
         );
     }
 

@@ -399,7 +399,10 @@ impl InferenceEngine {
             audio: req.audio,
             language,
             word_timestamps: false,
-            initial_prompt: Some(finalize::initial_prompt(&app_config.features.custom_vocabulary)),
+            initial_prompt: Some(finalize::initial_prompt(
+                &app_config.features.custom_vocabulary,
+                &app_config.features.snippets,
+            )),
             interim_session: is_interim.then_some(session_id),
         };
         let result = match self.backend.transcribe(&t_req) {
