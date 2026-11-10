@@ -49,9 +49,11 @@ pub fn ref_expand_snippets(text: &str, snippets: &HashMap<String, String>) -> St
         return text.to_string();
     }
     let mut result = text.to_string();
-    for (trigger, expansion) in snippets {
-        let pattern = format!(r"(?i)\b{}\b", regex::escape(trigger));
-        if let Ok(re) = Regex::new(&pattern) {
+    // Longest trigger first, like the real implementation: with overlapping
+    // triggers, iterating a HashMap directly would make the winner depend on
+    // this run's hash seed and the two would disagree at random.
+    for (trigger, expansion) in crate::longest_first(snippets) {
+        if let Ok(re) = Regex::new(&crate::trigger_pattern(trigger)) {
             result = re.replace_all(&result, expansion.as_str()).to_string();
         }
     }

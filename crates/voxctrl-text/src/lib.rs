@@ -115,12 +115,19 @@ fn distance_rows(
 /// Replaces short trigger words/phrases in `text` with their configured
 /// expansions (case-insensitive, word-boundary matched). Used for both
 /// dictation snippets (STT output) and spoken-text shortcuts (TTS input).
+///
+/// Triggers are applied longest first, so a specific phrase beats a shorter
+/// one nested inside it ("my address" wins over "address"). Without that the
+/// winner came down to `HashMap` iteration order, which Rust re-seeds every
+/// run — the same sentence expanded differently from one launch to the next.
+/// This matches [`correct_custom_vocabulary`] and the voice-command parser,
+/// which both already resolve longest-first.
 pub fn expand_snippets(text: &str, snippets: &HashMap<String, String>) -> String {
     if snippets.is_empty() {
         return text.to_string();
     }
     let mut result = std::borrow::Cow::Borrowed(text);
-    for (trigger, expansion) in snippets {
+    for (trigger, expansion) in longest_first(snippets) {
         with_trigger_regex(trigger, |re| {
             if let Some(re) = re {
                 if re.is_match(&result) {
@@ -132,6 +139,33 @@ pub fn expand_snippets(text: &str, snippets: &HashMap<String, String>) -> String
         });
     }
     result.into_owned()
+}
+
+/// `snippets` ordered longest trigger first, ties broken alphabetically so
+/// the order is fixed from one run to the next.
+pub(crate) fn longest_first(snippets: &HashMap<String, String>) -> Vec<(&String, &String)> {
+    let mut entries: Vec<(&String, &String)> = snippets.iter().collect();
+    entries.sort_by(|(a, _), (b, _)| b.chars().count().cmp(&a.chars().count()).then(a.cmp(b)));
+    entries
+}
+
+/// The match pattern for one trigger: case-insensitive, anchored on word
+/// boundaries, with the gaps between a multi-word trigger's words allowed to
+/// hold punctuation as well as spaces.
+///
+/// That tolerance is what makes a trigger behave the same on every speech
+/// backend. Whisper, Moonshine and the remote engines punctuate what they
+/// hear, Parakeet largely does not, so "my address" arrives as `my address`
+/// from one and can arrive as `my, address` from another — and a plain space
+/// in the pattern matched only the first. Single-word triggers are unchanged.
+pub(crate) fn trigger_pattern(trigger: &str) -> String {
+    let words: Vec<String> = trigger.split_whitespace().map(regex::escape).collect();
+    // Whitespace-only trigger: fall back to escaping it whole rather than
+    // building an empty pattern that would match everywhere.
+    if words.is_empty() {
+        return format!(r"(?i)\b{}\b", regex::escape(trigger));
+    }
+    format!(r"(?i)\b{}\b", words.join(r"[\s\p{P}]+"))
 }
 
 /// Hands `f` the compiled word-boundary regex for `trigger`, compiling it on
@@ -151,7 +185,7 @@ fn with_trigger_regex<R>(trigger: &str, f: impl FnOnce(Option<&Regex>) -> R) -> 
         }
     }
 
-    let compiled = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(trigger))).ok();
+    let compiled = Regex::new(&trigger_pattern(trigger)).ok();
     let mut map = match cache.write() {
         Ok(map) => map,
         // A poisoned lock only means some other thread panicked mid-write;
@@ -360,6 +394,80 @@ mod tests {
     fn snippet_expand_empty_map_is_noop() {
         let snips = HashMap::new();
         assert_eq!(expand_snippets("unchanged text", &snips), "unchanged text");
+    }
+
+    /// A multi-word trigger has to fire whichever speech backend produced the
+    /// transcript. Whisper, Moonshine and the remote engines punctuate and
+    /// capitalise what they hear and Parakeet largely does not, so the same
+    /// sentence reaches here in several shapes and all of them are the user
+    /// saying the same thing.
+    #[test]
+    fn a_multi_word_trigger_survives_any_backends_punctuation() {
+        let mut snips = HashMap::new();
+        snips.insert("my address".to_string(), "123 Main Street".to_string());
+
+        for text in [
+            "send my address now",      // unpunctuated, lowercase
+            "Send my address now.",     // capitalised and punctuated
+            "Send My Address now.",     // title-cased
+            "Send my, address now.",    // comma heard inside the phrase
+            "Send my  address now.",    // doubled space
+            "Send my. Address now.",    // sentence split inside the phrase
+        ] {
+            assert_eq!(
+                expand_snippets(text, &snips).contains("123 Main Street"),
+                true,
+                "should have expanded: {text:?}"
+            );
+        }
+    }
+
+    /// The tolerance above is for punctuation *between* a trigger's words, not
+    /// a licence to match loosely: the words must still be there, in order,
+    /// separated by something.
+    #[test]
+    fn snippet_triggers_still_need_the_whole_phrase() {
+        let mut snips = HashMap::new();
+        snips.insert("my address".to_string(), "123 Main Street".to_string());
+
+        for text in [
+            "send myaddress now",     // run together: not the phrase
+            "send my adress now",     // misspelt
+            "send address my now",    // out of order
+            "send my home address",   // other words in between
+        ] {
+            assert_eq!(expand_snippets(text, &snips), text, "should be left alone: {text:?}");
+        }
+    }
+
+    /// With one trigger nested inside another the longer, more specific one
+    /// wins — and wins on every run. Iterating the map directly left this to
+    /// the hash seed, which Rust re-randomises per process, so the same
+    /// sentence expanded differently from one launch to the next.
+    #[test]
+    fn the_longest_snippet_trigger_wins_and_does_so_every_run() {
+        let mut snips = HashMap::new();
+        snips.insert("addr".to_string(), "SHORT".to_string());
+        snips.insert("my addr".to_string(), "LONG".to_string());
+        snips.insert("my addr here".to_string(), "LONGEST".to_string());
+
+        assert_eq!(expand_snippets("send my addr here now", &snips), "send LONGEST now");
+        assert_eq!(expand_snippets("send my addr now", &snips), "send LONG now");
+        assert_eq!(expand_snippets("send addr now", &snips), "send SHORT now");
+    }
+
+    /// Equal-length triggers are ordered too, so a map holding several of them
+    /// cannot expand one sentence two ways on two runs.
+    #[test]
+    fn equal_length_snippet_triggers_have_a_fixed_order() {
+        let mut snips = HashMap::new();
+        for trigger in ["aa bb", "bb cc", "cc dd"] {
+            snips.insert(trigger.to_string(), trigger.to_uppercase());
+        }
+        let first = expand_snippets("say aa bb cc dd now", &snips);
+        for _ in 0..50 {
+            assert_eq!(expand_snippets("say aa bb cc dd now", &snips), first);
+        }
     }
 
     #[test]
