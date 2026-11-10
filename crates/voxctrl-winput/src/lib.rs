@@ -101,6 +101,22 @@ impl Shortcut {
             _ => None,
         }
     }
+
+    /// The keys this shortcut presses, under the evdev names bindings are
+    /// stored with.
+    ///
+    /// Used to tell whether a hotkey binding shares a key with the paste
+    /// VoxCtrl is in the middle of sending — see [`begin_self_injection`].
+    /// The names have to match `HotkeyBinding::keys` exactly, which is why
+    /// they live beside the shortcut rather than being derived at the call
+    /// site from the platform keycodes.
+    pub fn key_names(self) -> &'static [&'static str] {
+        match self {
+            Self::CtrlV => &["KEY_LEFTCTRL", "KEY_V"],
+            Self::CtrlShiftV => &["KEY_LEFTCTRL", "KEY_LEFTSHIFT", "KEY_V"],
+            Self::ShiftInsert => &["KEY_LEFTSHIFT", "KEY_INSERT"],
+        }
+    }
 }
 
 /// Window classes (Windows) whose paste shortcut is Shift+Insert.
@@ -118,6 +134,130 @@ pub fn windows_class_wants_shift_insert(class: &str) -> bool {
 /// Whether `text` is long enough to be worth pasting rather than typing.
 pub fn prefers_paste(text: &str) -> bool {
     text.chars().count() > PASTE_THRESHOLD_CHARS
+}
+
+// ── Self-injection window ─────────────────────────────────────────────────────
+
+/// How long after an injection finishes its keys are still treated as VoxCtrl's
+/// own.
+///
+/// The compositor's signal does not have to arrive while the keys are still
+/// being sent. In the report this was written for it landed 9ms *before* the
+/// send call returned, but nothing guarantees that ordering — the portal round
+/// trip is asynchronous and the signal is delivered on a different connection
+/// from the one sending the keys.
+///
+/// It cannot swallow a real release: a genuine one inside this window would
+/// mean a hold that started and ended entirely within a paste that VoxCtrl
+/// itself triggered.
+const SELF_INJECTION_GRACE: std::time::Duration = std::time::Duration::from_millis(250);
+
+#[derive(Default)]
+struct SelfInjectionState {
+    /// How many injections are in flight. A counter rather than a flag because
+    /// the window must not close while a second one is still sending.
+    depth: usize,
+    /// Keys claimed by the injections in this window, as evdev names.
+    keys: Vec<&'static str>,
+    /// When the window closes, once nothing is in flight.
+    expires: Option<std::time::Instant>,
+}
+
+static SELF_INJECTION: std::sync::Mutex<SelfInjectionState> =
+    std::sync::Mutex::new(SelfInjectionState {
+        depth: 0,
+        keys: Vec::new(),
+        expires: None,
+    });
+
+/// Open on drop: the window stays open for [`SELF_INJECTION_GRACE`] afterwards.
+#[must_use = "the window closes as soon as the guard is dropped"]
+pub struct SelfInjectionGuard {
+    _private: (),
+}
+
+impl Drop for SelfInjectionGuard {
+    fn drop(&mut self) {
+        let Ok(mut state) = SELF_INJECTION.lock() else {
+            return;
+        };
+        state.depth = state.depth.saturating_sub(1);
+        if state.depth == 0 {
+            state.expires = Some(std::time::Instant::now() + SELF_INJECTION_GRACE);
+        }
+    }
+}
+
+/// How long a binding's keys stay suspect after VoxCtrl stops pressing them.
+///
+/// Callers that defer a decision rather than making one immediately wait this
+/// long before concluding the signal was genuine.
+pub fn self_injection_grace() -> std::time::Duration {
+    SELF_INJECTION_GRACE
+}
+
+/// Declare that VoxCtrl is about to synthesise `keys` itself.
+///
+/// This is the Linux counterpart of [`INJECTED_TAG`]. On Windows the hook reads
+/// the tag off each keystroke, and the evdev and X11 backends recognise their
+/// own output by device — but the XDG `GlobalShortcuts` portal hands over whole
+/// shortcuts with no keystrokes to inspect, so the only thing that can tell a
+/// phantom signal from a real one is knowing what VoxCtrl was pressing at the
+/// time.
+///
+/// Why it is needed at all: pasting with Ctrl+V while the user holds a Ctrl+V
+/// binding — Ctrl+Space, say — makes the compositor re-evaluate that grab and
+/// report the shortcut released. The portal backend takes that at face value
+/// and ends the recording mid-sentence.
+pub fn begin_self_injection(keys: &[&'static str]) -> SelfInjectionGuard {
+    if let Ok(mut state) = SELF_INJECTION.lock() {
+        if state.depth == 0 {
+            state.keys.clear();
+        }
+        state.depth += 1;
+        state.expires = None;
+        for k in keys {
+            if !state.keys.contains(k) {
+                state.keys.push(k);
+            }
+        }
+    }
+    SelfInjectionGuard { _private: () }
+}
+
+/// The keys VoxCtrl is currently synthesising, if any.
+///
+/// `None` once the window has closed. Callers compare these against a
+/// binding's own keys and ignore the signal only when the two overlap, so an
+/// unrelated binding is never affected by a paste.
+pub fn self_injecting_keys() -> Option<Vec<&'static str>> {
+    let mut state = SELF_INJECTION.lock().ok()?;
+    let open = state.depth > 0
+        || state
+            .expires
+            .is_some_and(|e| std::time::Instant::now() < e);
+    if !open {
+        // Closed: drop the keys so a later caller is not comparing against a
+        // paste that finished minutes ago.
+        state.keys.clear();
+        state.expires = None;
+        return None;
+    }
+    Some(state.keys.clone())
+}
+
+/// True when `binding_keys` shares a key with an injection in flight.
+///
+/// The overlap test is the whole safety margin: a Super+Space binding is
+/// untouched by a Ctrl+V paste, so suppression can only ever hide a signal
+/// that the injection could plausibly have caused.
+pub fn injection_overlaps<S: AsRef<str>>(binding_keys: &[S]) -> bool {
+    let Some(injected) = self_injecting_keys() else {
+        return false;
+    };
+    binding_keys
+        .iter()
+        .any(|k| injected.contains(&k.as_ref()))
 }
 
 #[cfg(target_os = "windows")]
@@ -316,6 +456,104 @@ fn program_stem(path: &str) -> Option<String> {
     let file = path.rsplit(['\\', '/']).next()?;
     let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
     (!stem.is_empty()).then(|| stem.to_lowercase())
+}
+
+#[cfg(test)]
+mod self_injection_tests {
+    use super::*;
+
+    /// The window is a process global, and `cargo test` runs these in
+    /// parallel. Without this they would see each other's injections.
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn locked() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn nothing_is_claimed_when_no_injection_is_running() {
+        let _lock = locked();
+        // A test that ran before this one may have left a grace period
+        // running. Nothing can open a new window while the lock is held, so
+        // waiting it out here is enough to reach a genuinely idle state.
+        std::thread::sleep(SELF_INJECTION_GRACE + std::time::Duration::from_millis(50));
+
+        assert_eq!(self_injecting_keys(), None);
+        assert!(!injection_overlaps(&["KEY_LEFTCTRL", "KEY_SPACE"]));
+    }
+
+    #[test]
+    fn a_paste_claims_its_own_keys_while_it_runs() {
+        let _lock = locked();
+        let guard = begin_self_injection(Shortcut::CtrlV.key_names());
+
+        assert!(
+            injection_overlaps(&["KEY_LEFTCTRL", "KEY_SPACE"]),
+            "a Ctrl+Space binding shares Ctrl with a Ctrl+V paste"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn a_binding_that_shares_no_key_is_untouched() {
+        // The reason the overlap test exists: suppressing every signal during
+        // a paste would hide real releases on unrelated bindings.
+        let _lock = locked();
+        let guard = begin_self_injection(Shortcut::CtrlV.key_names());
+
+        assert!(
+            !injection_overlaps(&["KEY_LEFTMETA", "KEY_SPACE"]),
+            "Super+Space has nothing in common with Ctrl+V"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn the_window_closes_after_the_grace_period() {
+        let _lock = locked();
+        drop(begin_self_injection(Shortcut::CtrlV.key_names()));
+
+        assert!(
+            injection_overlaps(&["KEY_LEFTCTRL"]),
+            "the grace period keeps the window open past the send"
+        );
+        std::thread::sleep(SELF_INJECTION_GRACE + std::time::Duration::from_millis(50));
+        assert_eq!(self_injecting_keys(), None);
+    }
+
+    #[test]
+    fn an_overlapping_second_paste_holds_the_window_open() {
+        // Dropping the first guard must not close a window the second one is
+        // still inside, or its keys stop being recognised mid-send.
+        let _lock = locked();
+        let first = begin_self_injection(Shortcut::CtrlV.key_names());
+        let second = begin_self_injection(Shortcut::ShiftInsert.key_names());
+
+        drop(first);
+        let claimed = self_injecting_keys().expect("still injecting");
+        assert!(claimed.contains(&"KEY_INSERT"));
+        assert!(
+            claimed.contains(&"KEY_LEFTCTRL"),
+            "the first paste's keys stay claimed until the window closes"
+        );
+
+        drop(second);
+    }
+
+    #[test]
+    fn stale_keys_are_not_carried_into_the_next_paste() {
+        let _lock = locked();
+        drop(begin_self_injection(Shortcut::CtrlV.key_names()));
+        std::thread::sleep(SELF_INJECTION_GRACE + std::time::Duration::from_millis(50));
+
+        let guard = begin_self_injection(Shortcut::ShiftInsert.key_names());
+        let claimed = self_injecting_keys().expect("injecting");
+        assert!(
+            !claimed.contains(&"KEY_LEFTCTRL"),
+            "a finished paste's keys must not leak into the next window"
+        );
+        drop(guard);
+    }
 }
 
 #[cfg(test)]

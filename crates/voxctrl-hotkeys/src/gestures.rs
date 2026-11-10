@@ -246,6 +246,17 @@ impl BindingState {
     }
 
     fn on_activate(&mut self, at: Instant, tx: &GestureSender) {
+        // The trigger is satisfied again, so any release waiting out its grace
+        // period was not the end of this gesture: a dropped or duplicated key
+        // event, or a compositor re-evaluating the grab. Letting it fire would
+        // stop a recording whose key never came up.
+        if let Some(cancel) = self.hold_release_cancel.take() {
+            cancel.cancel();
+        }
+        if let Some(cancel) = self.double_tap_hold_release_cancel.take() {
+            cancel.cancel();
+        }
+
         match self.binding.gesture {
             GestureType::Hold => self.start_hold_timer(tx),
             GestureType::Toggle => {
@@ -988,6 +999,60 @@ mod tests {
         assert!(rx.try_recv().is_err(), "must not stop while a key is held");
 
         engine.apply("h", Transition::Released, &tx);
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+    }
+
+    #[tokio::test]
+    async fn a_hold_survives_a_deactivate_that_is_taken_back() {
+        // The grace period in `on_deactivate` exists so a combo released in
+        // two events does not stop before every key is up. Nothing used to
+        // cancel it when the trigger came *back*, so one spurious deactivate
+        // — a dropped key event, or a compositor re-evaluating the grab while
+        // VoxCtrl synthesised a keystroke — ended a recording whose key the
+        // user was still holding.
+        let (tx, mut rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "h",
+            GestureType::Hold,
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+        )]);
+
+        engine.apply("h", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+
+        engine.apply("h", Transition::Deactivated, &tx);
+        engine.apply("h", Transition::Activated, &tx);
+        sleep(200).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "the key never came up, so the recording must still be running"
+        );
+
+        // And the real release still ends it.
+        engine.apply("h", Transition::Deactivated, &tx);
+        engine.apply("h", Transition::Released, &tx);
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+    }
+
+    #[tokio::test]
+    async fn a_double_tap_hold_survives_a_deactivate_that_is_taken_back() {
+        let (tx, mut rx) = crate::channel();
+        let mut engine =
+            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTALT"])]);
+
+        tap(&mut engine, "dth", &tx);
+        sleep(60).await;
+        engine.apply("dth", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+
+        engine.apply("dth", Transition::Deactivated, &tx);
+        engine.apply("dth", Transition::Activated, &tx);
+        sleep(200).await;
+        assert!(rx.try_recv().is_err(), "the hold must survive a retracted deactivate");
+
+        engine.apply("dth", Transition::Released, &tx);
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
     }
 

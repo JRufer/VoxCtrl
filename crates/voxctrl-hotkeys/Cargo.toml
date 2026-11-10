@@ -6,6 +6,13 @@ edition.workspace = true
 [dependencies]
 voxctrl-config  = { workspace = true }
 voxctrl-routing = { workspace = true }
+# `INJECTED_TAG`: the marker on VoxCtrl's own synthesised keystrokes, so the
+# Windows hook can ignore them instead of re-firing bindings from the app's
+# output. And the self-injection window, which is how the portal backend
+# answers the same question on Linux: it is handed whole shortcuts rather than
+# keystrokes, so there is nothing to carry a marker and it has to ask what
+# VoxCtrl was pressing at the time instead.
+voxctrl-winput  = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -48,6 +55,3 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
-# `INJECTED_TAG`: the marker on VoxCtrl's own synthesised keystrokes, so the
-# hook can ignore them instead of re-firing bindings from the app's output.
-voxctrl-winput = { workspace = true }

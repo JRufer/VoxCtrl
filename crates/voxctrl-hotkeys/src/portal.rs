@@ -543,6 +543,23 @@ fn describe(groups: &[ShortcutGroup], shortcuts: &[Shortcut]) -> Vec<BoundShortc
         .collect()
 }
 
+/// Is VoxCtrl itself currently pressing one of this binding's keys?
+///
+/// The portal reports a shortcut as a whole and never says which key moved, so
+/// a signal provoked by VoxCtrl's own paste is indistinguishable from the user
+/// letting go — except by knowing what VoxCtrl was pressing at the time. The
+/// evdev and X11 backends answer the same question per keystroke, by device.
+///
+/// Keys are compared rather than suppressing everything during an injection:
+/// a Super+Space binding has nothing to do with a Ctrl+V paste, and its
+/// releases must keep working normally throughout one.
+fn injection_overlaps(engine: &GestureEngine, binding_id: &str) -> bool {
+    engine
+        .bindings()
+        .find(|b| b.id == binding_id)
+        .is_some_and(|b| voxctrl_winput::injection_overlaps(&b.keys))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run(
     portal: GlobalShortcuts,
@@ -581,7 +598,23 @@ async fn run(
         }
     };
 
+    // Releases that arrived while VoxCtrl was synthesising one of the
+    // binding's own keys, with the moment they stop being suspect.
+    //
+    // Deferred rather than dropped. If the signal really was provoked by
+    // VoxCtrl's keystroke, the grab comes back as soon as the synthetic key
+    // goes up and the `activated` branch cancels the entry — the hold
+    // survives, which is the bug this fixes. If no such reactivation arrives,
+    // the user genuinely did let go and the release is applied late instead of
+    // never. Dropping it outright would leave a recording running until
+    // `gestures::STUCK_HOLD_MAX` whenever the guess went the wrong way.
+    let mut deferred: Vec<(String, tokio::time::Instant)> = Vec::new();
+
     loop {
+        // Read before the select so the branch below borrows nothing: its
+        // handler needs `deferred` mutably.
+        let next_deferred = deferred.iter().map(|(_, at)| *at).min();
+
         tokio::select! {
             // Matched as Option rather than `Some(..) = ..` on purpose: a
             // stream that ends means the portal session is gone, and a pattern
@@ -597,6 +630,11 @@ async fn run(
                             ids.join(", ")
                         );
                         for id in ids {
+                            // The grab came back while a release for it was
+                            // being held: that release was the compositor
+                            // re-evaluating VoxCtrl's own keystroke, and the
+                            // user never let go.
+                            deferred.retain(|(d, _)| d != id);
                             engine.apply(id, Transition::Activated, &tx);
                         }
                     }
@@ -622,6 +660,25 @@ async fn run(
                         // release to distinguish, so the combo ending and
                         // every key being up are the same moment.
                         for id in ids {
+                            if injection_overlaps(&engine, id) {
+                                // VoxCtrl is pressing one of this binding's
+                                // own keys right now, so this may be the
+                                // compositor re-evaluating the grab rather
+                                // than anything the user did. Held rather
+                                // than dropped — see `deferred`.
+                                tracing::debug!(
+                                    "portal hotkeys: holding `{}` released for {id} — \
+                                     VoxCtrl is synthesising its keys",
+                                    event.shortcut_id()
+                                );
+                                deferred.retain(|(d, _)| d != id);
+                                deferred.push((
+                                    id.clone(),
+                                    tokio::time::Instant::now()
+                                        + voxctrl_winput::self_injection_grace(),
+                                ));
+                                continue;
+                            }
                             engine.apply(id, Transition::Deactivated, &tx);
                             engine.apply(id, Transition::Released, &tx);
                         }
@@ -636,6 +693,27 @@ async fn run(
                         "portal hotkeys: `{}` released but matches no binding",
                         event.shortcut_id()
                     ),
+                }
+            }
+            _ = async {
+                match next_deferred {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    // Nothing held: park this branch forever rather than
+                    // spinning the loop.
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                let now = tokio::time::Instant::now();
+                let (due, waiting): (Vec<_>, Vec<_>) =
+                    std::mem::take(&mut deferred).into_iter().partition(|(_, at)| *at <= now);
+                deferred = waiting;
+                for (id, _) in due {
+                    tracing::debug!(
+                        "portal hotkeys: applying the held release for {id} — the grab \
+                         never came back, so the user did let go"
+                    );
+                    engine.apply(&id, Transition::Deactivated, &tx);
+                    engine.apply(&id, Transition::Released, &tx);
                 }
             }
             event = changed.next() => {
@@ -664,6 +742,8 @@ async fn run(
                 let transient_changed = !same_groups(&new_transient, &transient_groups);
 
                 engine.reset(&tx);
+                // The bindings these belong to may not survive the reload.
+                deferred.clear();
                 engine.reload(new_bindings.clone());
                 groups = new_standing;
                 transient_groups = new_transient;
@@ -910,6 +990,62 @@ mod tests {
             standing[0].binding_ids,
             vec!["__tts_stop__", "dictate-on-escape"]
         );
+    }
+
+    /// The self-injection window is a process global, so these cannot run
+    /// alongside each other.
+    static INJECTION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn a_binding_sharing_a_key_with_a_live_paste_is_self_inflicted() {
+        let _lock = INJECTION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let engine = GestureEngine::new(vec![
+            binding("ctrl-space", &["KEY_LEFTCTRL", "KEY_SPACE"], GestureType::Hold),
+            binding("super-space", &["KEY_LEFTMETA", "KEY_SPACE"], GestureType::Hold),
+        ]);
+
+        let guard = voxctrl_winput::begin_self_injection(
+            voxctrl_winput::Shortcut::CtrlV.key_names(),
+        );
+        assert!(
+            injection_overlaps(&engine, "ctrl-space"),
+            "Ctrl+V and Ctrl+Space share Ctrl, so a release during the paste is suspect"
+        );
+        assert!(
+            !injection_overlaps(&engine, "super-space"),
+            "a paste must never suppress releases on an unrelated binding"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn nothing_is_self_inflicted_once_the_paste_is_over() {
+        let _lock = INJECTION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let engine = GestureEngine::new(vec![binding(
+            "ctrl-space",
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+            GestureType::Hold,
+        )]);
+
+        drop(voxctrl_winput::begin_self_injection(
+            voxctrl_winput::Shortcut::CtrlV.key_names(),
+        ));
+        std::thread::sleep(
+            voxctrl_winput::self_injection_grace() + std::time::Duration::from_millis(50),
+        );
+
+        assert!(!injection_overlaps(&engine, "ctrl-space"));
+    }
+
+    #[test]
+    fn an_unknown_binding_is_never_self_inflicted() {
+        let _lock = INJECTION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let engine = GestureEngine::new(Vec::new());
+        let guard = voxctrl_winput::begin_self_injection(
+            voxctrl_winput::Shortcut::CtrlV.key_names(),
+        );
+        assert!(!injection_overlaps(&engine, "gone"));
+        drop(guard);
     }
 
     #[test]
