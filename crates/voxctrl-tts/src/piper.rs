@@ -3,9 +3,7 @@
 //! spawns the `piper` binary resolved here and calls back into
 //! [`get_voice_path`] / [`sample_rate_for_voice`].
 
-#[cfg(unix)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use tracing::{info, warn};
