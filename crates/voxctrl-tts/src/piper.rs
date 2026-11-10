@@ -65,6 +65,70 @@ fn resolve_voices_dir(voice_dir: &str) -> PathBuf {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PiperVoiceOption {
+    pub id: String,
+    pub label: String,
+}
+
+/// Every `.onnx` in `voice_dir` that has the `.onnx.json` config beside it and
+/// is not one of the catalogue's own files, as (id, label) pairs.
+///
+/// The id is the model's filename without `.onnx`, which is what
+/// [`get_voice_path`] falls back to when a name is not in the catalogue, so a
+/// voice found here resolves without any further mapping.
+fn scan_custom_piper_voices(voice_dir: &str) -> Vec<PiperVoiceOption> {
+    let dir = resolve_voices_dir(voice_dir);
+    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+
+    let mut found: Vec<PiperVoiceOption> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("onnx"))
+            != Some(true)
+        {
+            continue;
+        }
+        // Piper cannot load a model without its config, so a lone .onnx is not
+        // an offerable voice.
+        let mut config = path.as_os_str().to_os_string();
+        config.push(".json");
+        if !PathBuf::from(config).exists() {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        // A catalogue voice already in the list under its own id: its file is
+        // named differently from its id ("en_US-ryan-high.onnx" against
+        // "en-us-ryan-high"), so match on the filename rather than the stem.
+        let filename = format!("{stem}.onnx");
+        if PIPER_VOICES.iter().any(|v| v.filename.eq_ignore_ascii_case(&filename)) {
+            continue;
+        }
+        if found.iter().any(|o| o.id.eq_ignore_ascii_case(stem)) {
+            continue;
+        }
+        found.push(PiperVoiceOption { id: stem.to_string(), label: format!("{stem} (Custom)") });
+    }
+    found.sort_by(|a, b| a.id.cmp(&b.id));
+    found
+}
+
+/// The catalogue's voices followed by any the user dropped into `voice_dir`,
+/// for the voice picker.
+///
+/// Piper's voice list was a fixed catalogue, so a voice added to the folder
+/// could not be chosen at all and the only way to use one was to overwrite a
+/// catalogue voice's files (#190). Anything with a model and its config beside
+/// it is offered now.
+pub fn piper_voice_catalogue(voice_dir: &str) -> Vec<PiperVoiceOption> {
+    let mut options: Vec<PiperVoiceOption> = PIPER_VOICES
+        .iter()
+        .map(|v| PiperVoiceOption { id: v.name.to_string(), label: v.name.to_string() })
+        .collect();
+    options.extend(scan_custom_piper_voices(voice_dir));
+    options
+}
+
 pub fn piper_binary() -> Option<PathBuf> {
     let exe = if cfg!(target_os = "windows") { "piper.exe" } else { "piper" };
     let local_dir = dirs::data_local_dir()
@@ -102,6 +166,34 @@ pub(crate) fn sample_rate_for_voice(name: &str) -> u32 {
         .find(|v| v.name == name)
         .map(|v| v.sample_rate)
         .unwrap_or(22050)
+}
+
+/// The playback sample rate for the voice loaded from `voice_path`, taken from
+/// the voice's own `.onnx.json` where it has one.
+///
+/// Piper writes raw PCM at whatever rate the model was trained for and says
+/// which that is in `audio.sample_rate` in the config file beside the model.
+/// Reading it from the catalogue instead meant any voice the catalogue does
+/// not know got 22.05 kHz whatever it really was — and a voice dropped in
+/// under a catalogue name got that entry's rate, which is how swapping in a
+/// 16 kHz voice made it play back fast and wrong-pitched (#190). Falls back to
+/// the catalogue, and then to 22.05 kHz, when there is no usable config.
+pub(crate) fn sample_rate_for_voice_at(name: &str, voice_path: &Path) -> u32 {
+    voice_sample_rate_from_config(voice_path).unwrap_or_else(|| sample_rate_for_voice(name))
+}
+
+/// `audio.sample_rate` from the `.onnx.json` beside `voice_path`.
+fn voice_sample_rate_from_config(voice_path: &Path) -> Option<u32> {
+    // Piper's config sits next to the model with `.json` appended to the whole
+    // filename: `en_US-ryan-high.onnx` -> `en_US-ryan-high.onnx.json`.
+    let mut config = voice_path.as_os_str().to_os_string();
+    config.push(".json");
+    let text = std::fs::read_to_string(PathBuf::from(config)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let rate = value.get("audio")?.get("sample_rate")?.as_u64()?;
+    // Guard against a malformed config: a nonsense rate would play as noise,
+    // where the catalogue's guess is at least audible.
+    (8000..=48000).contains(&rate).then_some(rate as u32)
 }
 
 pub fn is_voice_downloaded(voice_name: &str, voice_dir: &str) -> bool {
@@ -647,5 +739,162 @@ mod tests {
             assert!(result.is_some(), "voice_name_to_filename should resolve {}", v.name);
             assert_eq!(result.unwrap(), v.filename);
         }
+    }
+}
+
+#[cfg(test)]
+mod voice_sample_rate_tests {
+    use super::*;
+
+    fn voice_with_config(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let model = dir.join(format!("{name}.onnx"));
+        std::fs::write(&model, b"not a real model").unwrap();
+        std::fs::write(dir.join(format!("{name}.onnx.json")), body).unwrap();
+        model
+    }
+
+    /// The voice's own config decides the playback rate. Piper emits raw PCM
+    /// at the model's trained rate, so taking the rate from the catalogue
+    /// played a 16 kHz voice dropped in under a 22.05 kHz catalogue name too
+    /// fast and a semitone-and-a-bit sharp (#190).
+    #[test]
+    fn the_voices_own_config_sets_the_rate() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = voice_with_config(
+            dir.path(),
+            "en_US-ryan-high",
+            r#"{"audio": {"sample_rate": 16000}, "espeak": {"voice": "en-us"}}"#,
+        );
+        // The catalogue says 22050 for this name; the file says otherwise.
+        assert_eq!(sample_rate_for_voice("en-us-ryan-high"), 22050);
+        assert_eq!(sample_rate_for_voice_at("en-us-ryan-high", &model), 16000);
+    }
+
+    /// A voice the catalogue has never heard of is read from its config too,
+    /// rather than getting a blanket 22.05 kHz.
+    #[test]
+    fn an_unknown_voice_is_read_from_its_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = voice_with_config(
+            dir.path(),
+            "pl_PL-gosia-medium",
+            r#"{"audio": {"sample_rate": 22050}}"#,
+        );
+        assert_eq!(sample_rate_for_voice_at("pl-pl-gosia-medium", &model), 22050);
+
+        let model16 = voice_with_config(
+            dir.path(),
+            "pl_PL-darkman-low",
+            r#"{"audio": {"sample_rate": 16000}}"#,
+        );
+        assert_eq!(sample_rate_for_voice_at("pl-pl-darkman-low", &model16), 16000);
+    }
+
+    /// Missing, unparseable or nonsensical configs fall back to the catalogue
+    /// rather than playing noise.
+    #[test]
+    fn a_bad_config_falls_back_to_the_catalogue() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let no_config = dir.path().join("en_US-amy-low.onnx");
+        std::fs::write(&no_config, b"model").unwrap();
+        assert_eq!(sample_rate_for_voice_at("en-us-amy-low", &no_config), 16000);
+
+        let bad = voice_with_config(dir.path(), "broken", "{ not json");
+        assert_eq!(sample_rate_for_voice_at("en-us-amy-low", &bad), 16000);
+
+        let missing_field = voice_with_config(dir.path(), "nofield", r#"{"espeak": {}}"#);
+        assert_eq!(sample_rate_for_voice_at("en-us-amy-low", &missing_field), 16000);
+
+        let absurd = voice_with_config(dir.path(), "absurd", r#"{"audio": {"sample_rate": 3}}"#);
+        assert_eq!(sample_rate_for_voice_at("en-us-amy-low", &absurd), 16000);
+    }
+}
+
+#[cfg(test)]
+mod voice_catalogue_tests {
+    use super::*;
+
+    fn write_voice(dir: &Path, filename: &str, with_config: bool) {
+        std::fs::write(dir.join(filename), b"model").unwrap();
+        if with_config {
+            std::fs::write(
+                dir.join(format!("{filename}.json")),
+                br#"{"audio": {"sample_rate": 22050}}"#,
+            )
+            .unwrap();
+        }
+    }
+
+    /// A voice dropped into the folder is offered by the picker. Before this
+    /// the list was a fixed catalogue, so the only way to use your own voice
+    /// was to overwrite a catalogue voice's files (#190).
+    #[test]
+    fn a_dropped_in_voice_is_offered() {
+        let dir = tempfile::tempdir().unwrap();
+        write_voice(dir.path(), "pl_PL-gosia-medium.onnx", true);
+
+        let options = piper_voice_catalogue(dir.path().to_str().unwrap());
+        let custom = options
+            .iter()
+            .find(|o| o.id == "pl_PL-gosia-medium")
+            .expect("the dropped-in voice should be offered");
+        assert_eq!(custom.label, "pl_PL-gosia-medium (Custom)");
+        // And the catalogue is still all there.
+        for v in PIPER_VOICES {
+            assert!(options.iter().any(|o| o.id == v.name), "missing built-in {}", v.name);
+        }
+    }
+
+    /// Its id is the model's filename without the extension, which is what
+    /// `get_voice_path` falls back to — so the voice the picker offers is one
+    /// that can actually be loaded.
+    #[test]
+    fn an_offered_voice_resolves_to_its_files() {
+        let dir = tempfile::tempdir().unwrap();
+        write_voice(dir.path(), "pl_PL-gosia-medium.onnx", true);
+
+        let voice_dir = dir.path().to_str().unwrap();
+        let options = piper_voice_catalogue(voice_dir);
+        let custom = options.iter().find(|o| o.id == "pl_PL-gosia-medium").unwrap();
+        assert!(
+            get_voice_path(&custom.id, voice_dir).is_some(),
+            "a voice the picker offers must resolve"
+        );
+    }
+
+    /// Piper cannot load a model without its config, so a lone .onnx is not
+    /// offered rather than being offered and then failing to speak.
+    #[test]
+    fn a_voice_without_its_config_is_not_offered() {
+        let dir = tempfile::tempdir().unwrap();
+        write_voice(dir.path(), "pl_PL-lonely-medium.onnx", false);
+
+        let options = piper_voice_catalogue(dir.path().to_str().unwrap());
+        assert!(!options.iter().any(|o| o.id == "pl_PL-lonely-medium"));
+    }
+
+    /// A downloaded catalogue voice is listed once, under its catalogue id,
+    /// not again under its filename.
+    #[test]
+    fn a_downloaded_catalogue_voice_is_not_listed_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        write_voice(dir.path(), "en_US-ryan-high.onnx", true);
+
+        let options = piper_voice_catalogue(dir.path().to_str().unwrap());
+        assert!(options.iter().any(|o| o.id == "en-us-ryan-high"));
+        assert!(
+            !options.iter().any(|o| o.id == "en_US-ryan-high"),
+            "catalogue voice listed a second time under its filename"
+        );
+        let ids: std::collections::HashSet<&str> = options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids.len(), options.len(), "duplicate ids in the picker list");
+    }
+
+    /// A missing or unreadable folder leaves the catalogue intact.
+    #[test]
+    fn a_missing_folder_still_gives_the_catalogue() {
+        let options = piper_voice_catalogue("/definitely/not/a/real/voices/dir");
+        assert_eq!(options.len(), PIPER_VOICES.len());
     }
 }

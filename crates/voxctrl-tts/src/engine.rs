@@ -16,7 +16,7 @@ use voxctrl_text::{correct_custom_vocabulary, expand_snippets};
 use crate::audiocpp::AudioCppSession;
 use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2};
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
-use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice};
+use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice_at};
 use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
 use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2};
 
@@ -555,7 +555,9 @@ impl TtsEngineWorker {
             }
         }
 
-        play_raw_audio(sink, &output.stdout, sample_rate_for_voice(voice_name))?;
+        // Rate from the voice's own config where it has one, so a voice the
+        // built-in catalogue does not know still plays at its real pitch.
+        play_raw_audio(sink, &output.stdout, sample_rate_for_voice_at(voice_name, &voice_path))?;
         Ok(())
     }
 

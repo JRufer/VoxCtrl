@@ -171,6 +171,8 @@ CUDA and DirectML providers, which VoxCtrl does not currently select.
 
 Voices are downloaded as `.tar.gz` archives from the Piper GitHub release (`v0.0.2`). Extracted `.onnx` and `.onnx.json` files are stored in the configured voice directory (see [Configuration Options](#configuration-options) below). The default is `~/.local/share/voxctrl/piper-voices/`.
 
+**Adding your own voices.** Any Piper voice placed in that directory is offered in the voice picker, marked *(Custom)*, alongside the catalogue below — there is no need to overwrite a catalogue voice to use one. Drop in both files the voice ships with, the model and its config (for example `pl_PL-gosia-medium.onnx` and `pl_PL-gosia-medium.onnx.json`); a model without its config is skipped, because Piper cannot load one without the other. The picker reads the folder when the TTS settings open and whenever the voice directory is changed. Playback uses the sample rate in each voice's own `.onnx.json`, so a voice at any rate plays at its proper pitch; the table below is only the fallback for a catalogue voice whose config is missing. Community voices can be found at [piperhub.org](https://piperhub.org/voices/).
+
 | Voice name | Quality | Sample rate |
 |---|---|---|
 | `en-us-libritts-high` | high | 22050 Hz |
