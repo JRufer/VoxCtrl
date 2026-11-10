@@ -142,3 +142,12 @@ pub async fn inflect_micro_inspect(model_dir: String) -> Result<serde_json::Valu
 pub fn get_cloned_tts_voices_dir() -> String {
     voxctrl_tts::cloned_tts_voices_dir().display().to_string()
 }
+
+/// The Piper voices the picker should offer: the built-in catalogue plus any
+/// model the user dropped into the voices folder (#190).
+#[tauri::command]
+pub async fn list_piper_voices(
+    voice_dir: String,
+) -> Result<Vec<voxctrl_tts::PiperVoiceOption>, String> {
+    Ok(voxctrl_tts::piper_voice_catalogue(&voice_dir))
+}

@@ -746,6 +746,7 @@ pub fn run() {
             check_pocket_tts_ready,
             download_pocket_tts,
             list_pocket_tts_voices,
+            list_piper_voices,
             inflect_micro_available,
             check_inflect_micro_downloaded,
             download_inflect_micro,

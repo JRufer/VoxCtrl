@@ -173,6 +173,14 @@ Short codes in transcribed text are replaced with their expansions (case-insensi
 }
 ```
 
+A trigger must appear as whole words, so `addr` expands in `send addr now` but not inside `address`.
+
+**Multi-word triggers tolerate punctuation between their words.** A trigger of `my address` matches `my address`, `my, address` and even `my. Address`, because the speech backends disagree about punctuation: whisper.cpp, Moonshine and the remote engines punctuate and capitalise what they hear, while Parakeet largely does not. The same sentence therefore reaches this stage in different shapes depending on the selected backend, and a trigger fires on all of them. The words themselves must still be present and in order — `myaddress` and `my home address` do not match.
+
+**Triggers are applied longest first**, so a specific phrase beats a shorter one nested inside it: with both `addr` and `my addr` configured, "send my addr" expands using `my addr`. Ties are broken alphabetically, so the result never depends on which run it is.
+
+> **Note:** a trigger has to begin and end with a letter or digit. One written as `;addr` or `/sig` never matches, because the word boundary has nothing to anchor against.
+
 ### Custom Vocabulary Correction
 Enabled whenever `features.custom_vocabulary` is non-empty.
 

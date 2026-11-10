@@ -70,7 +70,10 @@
 
   // ── Piper ──────────────────────────────────────────────────────────────────
 
-  const PIPER_VOICES = [
+  // The built-in catalogue, used until the backend answers with that plus any
+  // voice the user dropped into the voices folder (#190). Kept as a fallback
+  // so the picker is never empty if that call fails.
+  const BUILT_IN_PIPER_VOICES = [
     "en-us-libritts-high",
     "en-us-amy-low",
     "en-us-kathleen-low",
@@ -84,6 +87,21 @@
     "en-gb-alan-low"
   ];
 
+  let piperVoices = $state<{ id: string; label: string }[]>(
+    BUILT_IN_PIPER_VOICES.map(v => ({ id: v, label: v }))
+  );
+
+  async function loadPiperVoices() {
+    try {
+      const found = await invoke<{ id: string; label: string }[]>("list_piper_voices", {
+        voiceDir: cfg.tts.voice_dir ?? "",
+      });
+      if (found.length > 0) piperVoices = found;
+    } catch (e) {
+      console.error("list_piper_voices:", e);
+    }
+  }
+
   let downloadedMap = $state<Record<string, boolean>>({});
   let checking = $state(false);
   let downloading = $state(false);
@@ -93,7 +111,7 @@
   async function checkAllVoicesDownloaded() {
     checking = true;
     const newMap: Record<string, boolean> = {};
-    for (const v of PIPER_VOICES) {
+    for (const { id: v } of piperVoices) {
       try {
         newMap[v] = await invoke<boolean>("check_voice_downloaded", {
           voiceName: v,
@@ -133,6 +151,7 @@
     const exists = await invoke<boolean>("check_directory_exists", { path });
     voiceDirError = exists ? null : "This folder does not exist. Please create it first or leave blank for the default location.";
     if (!voiceDirError) {
+      await loadPiperVoices();
       await checkAllVoicesDownloaded();
     }
   }
@@ -351,9 +370,9 @@
   }
 
   let piperVoiceOptions = $derived(
-    PIPER_VOICES.map(v => ({
-      value: v,
-      label: `${v}${downloadedMap[v] ? " ✔" : ""}`
+    piperVoices.map(v => ({
+      value: v.id,
+      label: `${v.label}${downloadedMap[v.id] ? " ✔" : ""}`
     }))
   );
 
@@ -656,11 +675,15 @@
       .then((t) => (envHfToken = t && t.trim() ? t.trim() : null))
       .catch(() => (envHfToken = null));
 
-    if (cfg.tts.voice_dir) {
-      validateVoiceDir();
-    } else {
-      checkAllVoicesDownloaded();
-    }
+    // Voices the user added to the folder are discovered first, so the
+    // picker lists them and the download check covers them too (#190).
+    loadPiperVoices().then(() => {
+      if (cfg.tts.voice_dir) {
+        validateVoiceDir();
+      } else {
+        checkAllVoicesDownloaded();
+      }
+    });
 
     // Always load pocket TTS voices so they are ready for any cloning engine
     loadPocketTtsVoices();

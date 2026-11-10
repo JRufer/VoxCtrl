@@ -230,6 +230,7 @@ pub fn spawn_audio_coordinator(
                         is_remote_backend = true;
                         let prompt = Some(voxctrl_inference::finalize::initial_prompt(
                             &cfg.features.custom_vocabulary,
+                            &cfg.features.snippets,
                         ));
                         let session = voxctrl_inference::RemoteStreamingSession::start(
                             cfg.engine.remote_openai.clone(),

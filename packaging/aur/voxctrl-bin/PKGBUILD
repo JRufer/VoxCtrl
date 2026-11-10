@@ -9,7 +9,7 @@
 # https://github.com/JRufer/VoxCtrl/issues
 
 pkgname=voxctrl-bin
-pkgver=0.8.9
+pkgver=0.8.10
 pkgrel=1
 pkgdesc='Private, on-device voice dictation and voice command router for Linux (Wayland and X11)'
 arch=('x86_64')
@@ -18,8 +18,13 @@ license=('MIT')
 # From the NEEDED entries of usr/bin/voxctrl, voxctrl-llm-sidecar and
 # libwebgpu_dawn.so in the release .deb, plus the tray library Tauri loads at
 # run time and the portal that delivers global shortcuts.
+#
+# openssl-3, not openssl: the release binary is built on Ubuntu and links
+# libssl.so.3 / libcrypto.so.3. Arch moved its `openssl` package to OpenSSL 4
+# and ships 3.x as `openssl-3`, so depending on `openssl` installs a library the
+# binary cannot load and VoxCtrl fails to start.
 depends=('alsa-lib' 'cairo' 'dbus' 'gcc-libs' 'gdk-pixbuf2' 'glib2' 'glibc' 'gtk3'
-         'hicolor-icon-theme' 'libayatana-appindicator' 'libsoup3' 'openssl'
+         'hicolor-icon-theme' 'libayatana-appindicator' 'libsoup3' 'openssl-3'
          'vulkan-icd-loader' 'webkit2gtk-4.1' 'wtype' 'xdg-desktop-portal')
 optdepends=('xdotool: type transcriptions into windows on X11'
             'wl-clipboard: clipboard delivery on Wayland'

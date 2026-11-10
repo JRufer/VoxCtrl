@@ -47,7 +47,7 @@ pub use inflect::{
 };
 pub use piper::{
     download_piper_binary, download_voice, get_voice_path, is_voice_downloaded, piper_binary,
-    piper_voices_dir, VoiceInfo, PIPER_VOICES,
+    piper_voice_catalogue, piper_voices_dir, PiperVoiceOption, VoiceInfo, PIPER_VOICES,
 };
 pub use pocket::{
     cloned_tts_voices_dir, download_pocket_tts_assets, is_pocket_tts_ready, pocket_tts_voice,
