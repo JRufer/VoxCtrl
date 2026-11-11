@@ -176,6 +176,21 @@ impl GestureEngine {
         if state.binding.disabled {
             return;
         }
+        // Kept for text injection, which must not synthesise a keystroke
+        // while a hold-to-talk key is down (see `held`). From the press, not
+        // from Start: a keystroke inside the hold threshold stops the
+        // recording from ever beginning.
+        if matches!(
+            state.binding.gesture,
+            GestureType::Hold | GestureType::DoubleTapHold
+        ) {
+            match transition {
+                Transition::Activated => crate::held::pressed(&state.binding.id),
+                Transition::Deactivated | Transition::Released => {
+                    crate::held::released(&state.binding.id)
+                }
+            }
+        }
         match transition {
             Transition::Activated => state.on_activate(at, tx),
             Transition::Deactivated => state.on_deactivate(tx),
@@ -348,12 +363,21 @@ impl BindingState {
                 if let Some(cancel) = self.hold_release_cancel.take() {
                     cancel.cancel();
                 }
-                if self.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
-                    self.hold_cancel.take();
-                    self.emit(GestureKind::Stop, tx);
-                } else if let Some(cancel) = self.hold_cancel.take() {
-                    // Released inside the hold threshold — Start never fired.
+                let was_recording =
+                    self.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst);
+                // Cancelled whether or not Start had fired. Before the
+                // threshold this stops the recording from ever starting; after
+                // it, it retires the hold's `STUCK_HOLD_MAX` timeout. Dropping
+                // the token is not enough — the timer task holds its own clone
+                // and would sleep on, then clear `hold_active` two minutes
+                // after this hold *started*. That flag is shared with every
+                // later hold on the binding, so the stale timeout ended
+                // whichever dictation was running by then, key still down.
+                if let Some(cancel) = self.hold_cancel.take() {
                     cancel.cancel();
+                }
+                if was_recording {
+                    self.emit(GestureKind::Stop, tx);
                 }
             }
             GestureType::Toggle => {}
@@ -398,6 +422,7 @@ impl BindingState {
 
     /// Tear down without waiting for a release that is never coming.
     fn abort(&mut self, tx: &GestureSender) {
+        crate::held::released(&self.binding.id);
         if let Some(cancel) = self.hold_cancel.take() {
             cancel.cancel();
         }
@@ -436,6 +461,7 @@ impl BindingState {
         let start = self.pending_event(GestureKind::Start);
         let stop = self.pending_event(GestureKind::Stop);
         let tx = tx.clone();
+        let id = self.binding.id.clone();
         let threshold = Duration::from_millis(self.binding.hold_threshold_ms as u64);
         tokio::spawn(async move {
             tokio::select! {
@@ -450,6 +476,9 @@ impl BindingState {
             // must not leave the microphone open indefinitely.
             tokio::select! {
                 _ = tokio::time::sleep(STUCK_HOLD_MAX) => {
+                    // Given up on: whatever is waiting for this key to come
+                    // up must not wait on a release that is not coming.
+                    crate::held::released(&id);
                     if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
                         let _ = tx.send(stop);
                     }
@@ -479,6 +508,7 @@ impl BindingState {
         let start = self.pending_event(GestureKind::Start);
         let stop = self.pending_event(GestureKind::Stop);
         let tx = tx.clone();
+        let id = self.binding.id.clone();
         let threshold = Duration::from_millis(self.binding.hold_threshold_ms as u64);
         tokio::spawn(async move {
             tokio::select! {
@@ -490,6 +520,9 @@ impl BindingState {
 
             tokio::select! {
                 _ = tokio::time::sleep(STUCK_HOLD_MAX) => {
+                    // Given up on: whatever is waiting for this key to come
+                    // up must not wait on a release that is not coming.
+                    crate::held::released(&id);
                     if active.swap(false, std::sync::atomic::Ordering::SeqCst) {
                         let _ = tx.send(stop);
                     }
@@ -511,6 +544,7 @@ impl BindingState {
 
 impl Drop for BindingState {
     fn drop(&mut self) {
+        crate::held::released(&self.binding.id);
         if let Some(cancel) = self.hold_cancel.take() {
             cancel.cancel();
         }
@@ -1054,6 +1088,126 @@ mod tests {
 
         engine.apply("dth", Transition::Released, &tx);
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+    }
+
+    /// Every hold arms a safety timeout (`STUCK_HOLD_MAX`) in case its release
+    /// never arrives. That timeout has to die with the hold it belongs to. It
+    /// shares the binding's "recording" flag with every later hold, so one that
+    /// outlived its own recording fired two minutes after that recording
+    /// *started* and stopped whichever dictation was running by then — with
+    /// the key still down, and nothing to say why.
+    #[tokio::test(start_paused = true)]
+    async fn a_finished_holds_safety_timeout_does_not_stop_a_later_hold() {
+        let (tx, mut rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "h",
+            GestureType::Hold,
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+        )]);
+
+        // One ordinary dictation, released the way the portal reports it.
+        engine.apply("h", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+        engine.apply("h", Transition::Deactivated, &tx);
+        engine.apply("h", Transition::Released, &tx);
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+
+        // A little under two minutes later the user is dictating again...
+        sleep(110_000).await;
+        engine.apply("h", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+
+        // ...and is still holding the key when the first dictation's timeout
+        // would have come due.
+        sleep(15_000).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "the key is still down: an earlier dictation's timeout must not end this one"
+        );
+
+        engine.apply("h", Transition::Deactivated, &tx);
+        engine.apply("h", Transition::Released, &tx);
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Text injection waits on this (see `held`): a hold-style key counts as
+    /// down from the press — before the threshold, so before Start — until
+    /// its release.
+    #[tokio::test]
+    async fn a_hold_key_is_down_from_the_press_until_the_release() {
+        let (tx, mut rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "held-hold",
+            GestureType::Hold,
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+        )]);
+        assert!(!crate::held::is_down("held-hold"));
+
+        engine.apply("held-hold", Transition::Activated, &tx);
+        assert!(
+            crate::held::is_down("held-hold"),
+            "down from the press, while the hold threshold is still running"
+        );
+        assert!(crate::hold_key_down());
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+        assert!(crate::held::is_down("held-hold"));
+
+        engine.apply("held-hold", Transition::Deactivated, &tx);
+        engine.apply("held-hold", Transition::Released, &tx);
+        assert!(!crate::held::is_down("held-hold"));
+    }
+
+    /// A toggle is pressed and let go; nothing is held while it records, so
+    /// it must never make injection wait.
+    #[tokio::test]
+    async fn a_toggle_key_is_never_counted_as_held() {
+        let (tx, _rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "held-toggle",
+            GestureType::Toggle,
+            &["KEY_LEFTMETA", "KEY_SPACE"],
+        )]);
+        engine.apply("held-toggle", Transition::Activated, &tx);
+        assert!(!crate::held::is_down("held-toggle"));
+    }
+
+    /// A release that never arrives must not leave injection waiting for
+    /// good: the hold's own safety timeout lets go of the key too.
+    #[tokio::test(start_paused = true)]
+    async fn a_hold_given_up_on_is_no_longer_down() {
+        let (tx, mut rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "held-stuck",
+            GestureType::Hold,
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+        )]);
+        engine.apply("held-stuck", Transition::Activated, &tx);
+        sleep(150).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
+        assert!(crate::held::is_down("held-stuck"));
+
+        sleep(121_000).await;
+        assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
+        assert!(!crate::held::is_down("held-stuck"));
+    }
+
+    /// Reloading the bindings or losing the key source abandons every hold.
+    #[tokio::test]
+    async fn an_abandoned_hold_is_no_longer_down() {
+        let (tx, _rx) = crate::channel();
+        let mut engine = GestureEngine::new(vec![binding(
+            "held-reset",
+            GestureType::Hold,
+            &["KEY_LEFTCTRL", "KEY_SPACE"],
+        )]);
+        engine.apply("held-reset", Transition::Activated, &tx);
+        assert!(crate::held::is_down("held-reset"));
+        engine.reset(&tx);
+        assert!(!crate::held::is_down("held-reset"));
     }
 
     #[tokio::test]
