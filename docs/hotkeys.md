@@ -446,6 +446,12 @@ For `hold` and `double_tap_hold` gestures, VoxCtrl incorporates a 50ms release g
 - If a modifier key-up event is delayed, swallowed by the OS/compositor, or held down by a resting finger past 50ms, the grace timer automatically fires and stops recording cleanly.
 - This ensures the recording session never gets stuck open while avoiding accidental recording cutoffs during rapid key releases.
 
+### Stuck-Hold Safety Timeout (2 minutes)
+
+A `hold` or `double_tap_hold` whose release never arrives — the compositor dropped the portal's `Deactivated`, or the key is physically stuck — would otherwise record forever, so each one stops itself 120 seconds after it starts.
+
+The timeout belongs to the one hold that armed it and is cancelled the moment that hold is released. It never carries over: a dictation is only ever stopped by its own release, or by its own timeout if it really has been held for two minutes.
+
 ---
 
 ## Hot-Reload
