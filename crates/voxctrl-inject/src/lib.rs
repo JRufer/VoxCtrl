@@ -140,6 +140,88 @@ pub async fn focused_app() -> Option<String> {
     }
 }
 
+// ── Waiting for the dictation key ─────────────────────────────────────────────
+
+type HoldGate = Box<dyn Fn() -> bool + Send + Sync>;
+
+static HOLD_GATE: std::sync::OnceLock<HoldGate> = std::sync::OnceLock::new();
+
+/// Tell injection how to ask whether keystrokes have to wait: `held` returns
+/// true while the user is holding a dictation key that a synthetic keystroke
+/// would disturb. Set once, at startup; later calls are ignored.
+///
+/// Why injection waits at all: where the compositor owns the key grab, a
+/// keystroke sent while a hold-to-talk key is down ends that recording. KDE
+/// reports a held shortcut released the moment any key is released — the `V`
+/// of VoxCtrl's own paste included — and does not report it active again, so
+/// the dictation the user is in the middle of is cut off and the rest of it
+/// is never recorded. Starting the next dictation before the previous one has
+/// been delivered is all it takes. The modifier being held does damage in the
+/// other direction too: a paste sent under a held Super arrives as
+/// Super+Ctrl+V and pastes nothing.
+///
+/// So the finished text waits until the key is up. Nothing is lost and the
+/// order is kept — injections already run one at a time — it just appears
+/// when the user lets go rather than part-way through their next sentence.
+pub fn set_hold_gate(held: impl Fn() -> bool + Send + Sync + 'static) {
+    let _ = HOLD_GATE.set(Box::new(held));
+}
+
+fn key_held() -> bool {
+    HOLD_GATE.get().is_some_and(|held| held())
+}
+
+/// The longest injection waits for a held key. Past the two minutes after
+/// which a hold is stopped anyway, so this only ends a wait that something
+/// has gone wrong with; the text is then sent rather than kept for ever.
+const HOLD_WAIT_MAX: Duration = Duration::from_secs(130);
+/// How often the key is looked at while waiting.
+const HOLD_POLL: Duration = Duration::from_millis(15);
+/// How long the key has to have been up before a keystroke is sent, once
+/// there has been a wait. A combination is reported released when its first
+/// key comes up; the modifier follows a moment later, and a paste sent under
+/// it is a different shortcut.
+const HOLD_SETTLE: Duration = Duration::from_millis(150);
+
+/// Wait until no dictation key is held. Returns at once when none is.
+async fn wait_for_key_up() {
+    wait_until_clear(key_held, HOLD_WAIT_MAX, HOLD_POLL, HOLD_SETTLE).await;
+}
+
+/// Wait until `held` has been false for `settle`, or `max` has passed.
+/// Returns how long it waited — zero when nothing was held to begin with.
+async fn wait_until_clear(
+    held: impl Fn() -> bool,
+    max: Duration,
+    poll: Duration,
+    settle: Duration,
+) -> Duration {
+    if !held() {
+        return Duration::ZERO;
+    }
+    let started = tokio::time::Instant::now();
+    debug!("a dictation key is held; keeping the text until it is released");
+    let mut clear_since: Option<tokio::time::Instant> = None;
+    loop {
+        tokio::time::sleep(poll).await;
+        if started.elapsed() >= max {
+            warn!(
+                "a dictation key has been held for {max:?}; sending the text anyway rather \
+                 than keeping it any longer"
+            );
+            break;
+        }
+        if held() {
+            clear_since = None;
+        } else if clear_since.get_or_insert_with(tokio::time::Instant::now).elapsed() >= settle {
+            break;
+        }
+    }
+    let waited = started.elapsed();
+    tracing::info!(?waited, "text was kept until the dictation key was released");
+    waited
+}
+
 /// Inject text into the currently focused window using the best available
 /// method for the current platform and display server, honouring
 /// [`paste_mode`].
@@ -163,6 +245,9 @@ pub async fn inject_text_with(text: &str, paste: bool) -> Result<()> {
     let paste = (paste || voxctrl_winput::prefers_paste(text)) && paste_unsupported_reason().is_none();
 
     let _one_at_a_time = INJECT_LOCK.lock().await;
+    // Inside the lock, so text that is waiting keeps its place: a dictation
+    // finished behind it is delivered after it, not past it.
+    wait_for_key_up().await;
     if paste {
         match paste_text(text).await {
             Ok(()) => return Ok(()),
@@ -265,6 +350,10 @@ async fn paste_text(text: &str) -> Result<()> {
     // re-evaluate any Ctrl-based global shortcut and report it released; a
     // user holding Ctrl+Space to dictate would otherwise have the recording
     // ended mid-sentence by the *previous* dictation's paste.
+    //
+    // Looked at once more, because backing up and setting the clipboard took
+    // time the user may have used to start the next dictation.
+    wait_for_key_up().await;
     let mark = held.mark();
     let sent = {
         let _injecting = voxctrl_winput::begin_self_injection(shortcut.key_names());
@@ -443,6 +532,69 @@ pub fn show_notification(summary: &str, body: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn flag() -> (std::sync::Arc<AtomicBool>, impl Fn() -> bool) {
+        let held = std::sync::Arc::new(AtomicBool::new(false));
+        let h = held.clone();
+        (held, move || h.load(Ordering::SeqCst))
+    }
+
+    const MAX: Duration = Duration::from_secs(130);
+    const POLL: Duration = Duration::from_millis(15);
+    const SETTLE: Duration = Duration::from_millis(150);
+
+    /// The ordinary dictation: the key is already up, so nothing is delayed.
+    #[tokio::test(start_paused = true)]
+    async fn text_is_sent_at_once_when_no_key_is_held() {
+        let (_held, is_held) = flag();
+        assert_eq!(wait_until_clear(is_held, MAX, POLL, SETTLE).await, Duration::ZERO);
+    }
+
+    /// The next dictation was started before this one was delivered: the text
+    /// is kept until that key comes up, however long the user talks.
+    #[tokio::test(start_paused = true)]
+    async fn text_is_kept_until_the_held_key_is_released() {
+        let (held, is_held) = flag();
+        held.store(true, Ordering::SeqCst);
+        let release = held.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(8)).await;
+            release.store(false, Ordering::SeqCst);
+        });
+
+        let waited = wait_until_clear(is_held, MAX, POLL, SETTLE).await;
+        assert!(waited >= Duration::from_secs(8) + SETTLE, "sent while the key was down: {waited:?}");
+        assert!(waited < Duration::from_secs(9), "kept long after the release: {waited:?}");
+    }
+
+    /// A key that comes up and goes straight back down is not "released":
+    /// the keystroke would land in the new hold.
+    #[tokio::test(start_paused = true)]
+    async fn a_key_pressed_again_inside_the_settle_time_restarts_the_wait() {
+        let (held, is_held) = flag();
+        held.store(true, Ordering::SeqCst);
+        let key = held.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            key.store(false, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            key.store(true, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            key.store(false, Ordering::SeqCst);
+        });
+
+        let waited = wait_until_clear(is_held, MAX, POLL, SETTLE).await;
+        assert!(waited >= Duration::from_secs(4), "sent into the second hold: {waited:?}");
+    }
+
+    /// A release that is never reported must not keep the text for ever.
+    #[tokio::test(start_paused = true)]
+    async fn text_is_sent_anyway_once_the_wait_has_run_out() {
+        let (held, is_held) = flag();
+        held.store(true, Ordering::SeqCst);
+        let waited = wait_until_clear(is_held, MAX, POLL, SETTLE).await;
+        assert!(waited >= MAX && waited < MAX + Duration::from_secs(1), "{waited:?}");
+    }
 
     #[test]
     fn paste_mode_defaults_on_and_can_be_switched() {

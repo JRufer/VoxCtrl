@@ -35,6 +35,16 @@ quick succession cannot share the clipboard.
 Text longer than 2,000 characters is pasted on Windows even when the setting is
 off (typing it makes the target process one message per character).
 
+### Waiting for the dictation key
+
+Where the compositor delivers VoxCtrl's shortcuts (the XDG `GlobalShortcuts` portal — KDE, GNOME), no keystroke is sent while a `hold` or `double_tap_hold` key is down. A dictation that finishes transcribing while you are already holding the key for the next one is kept, and delivered about 150ms after you let go. Dictations are still delivered one at a time and in order.
+
+This is because a synthetic keystroke ends a held portal shortcut. KDE reports a held shortcut released as soon as *any* key is released, the paste's own `V` included, and does not report it active again — so the recording you were in the middle of would stop, and the rest of the sentence would never be recorded. A paste sent under a held modifier is also a different shortcut (`Super+Ctrl+V`) and pastes nothing.
+
+The key counts as down from the moment it is pressed, before the hold threshold has passed, until its release — or until the hold's two-minute safety timeout gives up on it (see [hotkeys](hotkeys.md)). As a last resort text is sent anyway after 130 seconds. The wait is logged: `text was kept until the dictation key was released`.
+
+Toggle bindings never cause a wait: nothing is held while they record. Neither do the X11, evdev and Windows backends, which see individual keys and ignore VoxCtrl's own.
+
 ## Settings
 
 **Settings → Features → Text Delivery**, or `config.json` (see

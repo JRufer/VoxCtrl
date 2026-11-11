@@ -355,6 +355,18 @@ pub fn run() {
     let (audio_wake_tx, audio_wake_rx) = crossbeam_channel::bounded::<()>(1);
 
     let hotkey_health = Arc::new(voxctrl_hotkeys::ListenerHealth::default());
+    // Finished text waits for the dictation key to come up before any
+    // keystroke is synthesised (see `voxctrl_inject::set_hold_gate`). Only
+    // where the compositor owns the grab: the backends that watch the keys
+    // themselves recognise VoxCtrl's own keystrokes and are not disturbed by
+    // them, so there the text keeps appearing the moment it is ready.
+    {
+        let health = hotkey_health.clone();
+        voxctrl_inject::set_hold_gate(move || {
+            health.backend() == voxctrl_hotkeys::Backend::Portal
+                && voxctrl_hotkeys::hold_key_down()
+        });
+    }
 
     // The TTS worker is started in Tauri's setup (`services::setup_tts_and_fifos`),
     // once the app handle its playback callbacks need exists. Starting one here

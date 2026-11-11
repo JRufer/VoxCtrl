@@ -1,5 +1,6 @@
 pub mod gestures;
 mod health;
+mod held;
 mod keys;
 pub mod trigger;
 /// The Windows key table and suppression rules. Compiled everywhere, not just
@@ -28,6 +29,7 @@ use voxctrl_routing::HotkeyBinding;
 
 pub use gestures::{GestureEvent, GestureKind};
 pub use health::{Backend, BoundShortcut, ListenerHealth};
+pub use held::hold_key_down;
 pub use trigger::{accelerator, is_modifier, is_reserved_for_the_desktop, TriggerProblem};
 
 /// Callback channel: the listener sends GestureEvents to the app coordinator.
