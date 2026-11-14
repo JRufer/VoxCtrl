@@ -140,10 +140,29 @@ class WizardState {
     this.issues = this.issues.filter((i) => i.id !== id);
   }
 
+  /**
+   * Stop listening for a shortcut, and let the app's hotkeys work again.
+   *
+   * Starting the recorder tells the backend to ignore every hotkey, so that
+   * pressing keys for a new binding does not start a dictation. Whatever ends
+   * the recording has to undo that, or the hotkeys stay dead until VoxCtrl is
+   * restarted. Clearing `recording` on its own is exactly how that happened:
+   * the step saw nothing left to stop when it was torn down.
+   */
+  endCapture() {
+    const wasRecording = this.recording;
+    this.recording = false;
+    this.held = [];
+    if (wasRecording) {
+      // Best effort: there is nothing useful to do here if the call fails.
+      void Promise.resolve(invoke("set_hotkeys_inhibited", { inhibited: false })).catch(() => {});
+    }
+  }
+
   goTo(n: number) {
     if (n === this.step || this.leaving || n < 0 || n >= STEP_LABELS.length) return;
     this.leaving = true;
-    this.recording = false;
+    this.endCapture();
     setTimeout(() => {
       this.step = n;
       this.visited = Math.max(this.visited, n);
@@ -242,8 +261,7 @@ class WizardState {
     this.leaving = false;
     this.gesture = "hold";
     this.combo = null;
-    this.recording = false;
-    this.held = [];
+    this.endCapture();
     this.captureHint = null;
     this.issues = [];
     this.engineChosen = false;

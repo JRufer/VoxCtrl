@@ -296,4 +296,31 @@ describe("step navigation", () => {
     vi.advanceTimersByTime(250);
     vi.useRealTimers();
   });
+
+  // Starting the recorder tells the backend to ignore every hotkey. Leaving
+  // the step used to clear `recording` without telling the backend, and the
+  // step's own teardown then saw nothing to stop: every hotkey stayed dead
+  // until VoxCtrl was restarted.
+  test("leaving a step mid-recording gives the app its hotkeys back", () => {
+    vi.useFakeTimers();
+    wizard.recording = true;
+    wizard.held = ["KEY_LEFTCTRL"];
+    wizard.goTo(3);
+    expect(invoke).toHaveBeenCalledWith("set_hotkeys_inhibited", { inhibited: false });
+    expect(wizard.held).toEqual([]);
+    vi.advanceTimersByTime(250);
+    vi.useRealTimers();
+  });
+
+  test("resetting the wizard mid-recording gives the app its hotkeys back", () => {
+    wizard.recording = true;
+    wizard.reset();
+    expect(wizard.recording).toBe(false);
+    expect(invoke).toHaveBeenCalledWith("set_hotkeys_inhibited", { inhibited: false });
+  });
+
+  test("ending a capture that never started sends nothing", () => {
+    wizard.endCapture();
+    expect(invoke).not.toHaveBeenCalledWith("set_hotkeys_inhibited", expect.anything());
+  });
 });

@@ -134,6 +134,39 @@ pub fn open_settings_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWind
         .map_err(|e| format!("Could not open Settings: {e}"))
 }
 
+/// Whether `label` is a window with a keybind recorder in it: Settings (the
+/// Hotkeys tab) or the setup wizard (its shortcut step).
+pub fn hosts_keybind_recorder(label: &str) -> bool {
+    label == "settings" || label == WIZARD_WINDOW
+}
+
+/// Let the hotkeys work again when a window that was recording a shortcut
+/// goes away.
+///
+/// While a recorder is listening it asks the gesture handler to ignore every
+/// hotkey (`set_hotkeys_inhibited`), and asks again to undo that when it
+/// stops. A window that is closed mid-recording takes its webview with it, and
+/// the request to undo may never be sent: the hotkeys would then stay dead
+/// until VoxCtrl was restarted, with nothing on screen to say why. The window
+/// closing is itself the proof that nobody is recording any more.
+pub fn release_hotkeys_when_recorder_closes(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if !matches!(event, tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed) {
+        return;
+    }
+    if !hosts_keybind_recorder(window.label()) {
+        return;
+    }
+    if let Some(state) = window.try_state::<Arc<AppState>>() {
+        if state.is_hotkeys_inhibited() {
+            state.set_hotkeys_inhibited(false);
+            tracing::info!(
+                "Hotkeys released: the '{}' window closed while a shortcut was being recorded",
+                window.label()
+            );
+        }
+    }
+}
+
 /// Show the first-run wizard, building its window if it is no longer there.
 ///
 /// The wizard closes itself when the user finishes, and a closed Tauri window
