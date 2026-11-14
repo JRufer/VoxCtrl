@@ -468,7 +468,11 @@ fn run_llm_rewrite(client: voxctrl_llm::OpenAiClient, text: String) -> String {
 
 // ── Backend selection ─────────────────────────────────────────────────────────
 
-fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
+/// Build the transcription backend `config.engine` selects, not yet loaded.
+///
+/// Public for `voxctrl-server`, which drives a backend directly: it serves raw
+/// transcripts and leaves post-processing to the client that asked for them.
+pub fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
     match config.engine.backend {
         BackendChoice::WhisperCpp => {
             Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))

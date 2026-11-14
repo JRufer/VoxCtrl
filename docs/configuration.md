@@ -10,6 +10,10 @@ VoxCtrl uses three configuration files, all stored under `~/.config/voxctrl/`.
 
 All files are **hot-reloaded** — the app watches for external changes and applies them without restart.
 
+`voxctrl-server`, the optional headless speech server, has its own file,
+`server.toml`, in the same directory. It is documented in
+[VoxCtrl Server](./server.md#configuration-reference).
+
 ---
 
 ## config.json

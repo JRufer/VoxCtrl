@@ -25,6 +25,7 @@ Global shortcuts are registered with your desktop through the XDG `GlobalShortcu
 | [API Reference](./api.md) | Tauri IPC commands and frontend events |
 | [Configuration](./configuration.md) | All config files, schemas, and options |
 | [Installation & Setup](./installation.md) | Dependencies, building, running |
+| [VoxCtrl Server](./server.md) | Run the speech models on another machine: Docker and systemd setup, connecting the app, configuration, security, troubleshooting |
 | [AUR packages](./aur.md) | How the Arch packages are built, checked and published, and the one-time AUR setup |
 | [Development Guide](./development.md) | Dev environment, build system, crate structure |
 | [Windows Build](./windows_build.md) | Building VoxCtrl on Windows |
@@ -55,7 +56,7 @@ Microphone → Audio Capture → Speech Inference (whisper.cpp / Moonshine / Par
 **Tech Stack:**
 - **Frontend:** Svelte 5 + Tailwind CSS 4 + Vite 5
 - **Desktop Shell:** Tauri 2 (Rust + WebView); the dictation overlay is a second `WebviewWindow`, not a separate process
-- **Backend:** Rust (Tokio async), 15 specialized workspace crates
+- **Backend:** Rust (Tokio async), 16 specialized workspace crates
 - **Speech Recognition:** whisper.cpp (GGUF, CPU/Vulkan/CUDA), Moonshine (ONNX, optional WebGPU), Parakeet TDT (ONNX, optional WebGPU), Remote Speech Engine (OpenAI-compatible)
 - **Dictation Cleanup:** S1-mini (Qwen3-0.6B) via `voxctrl-llm-sidecar` (llama.cpp, Vulkan GPU offload with CPU fallback)
 - **Text-to-Speech:** Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, eSpeak-NG (with on-demand idle unload)

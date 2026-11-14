@@ -1,0 +1,52 @@
+[package]
+name = "voxctrl-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Headless VoxCtrl speech server: runs the models so a VoxCtrl client doesn't have to"
+
+[[bin]]
+name = "voxctrl-server"
+path = "src/main.rs"
+
+[dependencies]
+voxctrl-config    = { workspace = true }
+voxctrl-inference = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dirs = { workspace = true }
+# `multipart` is how OpenAI-compatible clients (the VoxCtrl app's "Remote
+# OpenAI" engine among them) upload audio.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "multipart", "tokio"] }
+futures-util = { workspace = true }
+# Random bytes for the API key generated on first start.
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+
+[features]
+# The same two ONNX engines the desktop app ships by default, so a server can
+# run whatever model a client was using locally. ONNX Runtime is fetched at
+# build time; use `--no-default-features` for a whisper.cpp-only build that
+# needs no network access to compile.
+default = ["moonshine", "parakeet"]
+moonshine = ["voxctrl-inference/moonshine"]
+parakeet = ["voxctrl-inference/parakeet"]
+# GPU offload, mirroring the app's feature names. `vulkan` accelerates
+# whisper.cpp on any vendor's GPU with only the host Vulkan driver; `cuda`
+# needs the CUDA toolkit at build and run time.
+vulkan = ["voxctrl-inference/vulkan"]
+cuda = ["voxctrl-inference/cuda"]
+moonshine-cuda = ["voxctrl-inference/moonshine-cuda"]
+parakeet-cuda = ["voxctrl-inference/parakeet-cuda"]
+moonshine-webgpu = ["voxctrl-inference/moonshine-webgpu"]
+parakeet-webgpu = ["voxctrl-inference/parakeet-webgpu"]

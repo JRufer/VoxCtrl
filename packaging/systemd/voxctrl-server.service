@@ -1,0 +1,37 @@
+# systemd unit for voxctrl-server. Full guide: docs/server.md
+#
+#   sudo install -m 755 voxctrl-server /usr/local/bin/voxctrl-server
+#   sudo useradd --system --create-home --home-dir /var/lib/voxctrl --shell /usr/sbin/nologin voxctrl
+#   sudo install -m 644 packaging/systemd/voxctrl-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now voxctrl-server
+#   sudo journalctl -u voxctrl-server -f     # the generated API key is printed here once
+
+[Unit]
+Description=VoxCtrl speech server
+Documentation=https://github.com/JRufer/VoxCtrl/blob/master/docs/server.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voxctrl
+Group=voxctrl
+# Config:  /var/lib/voxctrl/.config/voxctrl/server.toml
+# Models:  /var/lib/voxctrl/.local/share/voxctrl/models/
+Environment=HOME=/var/lib/voxctrl
+ExecStart=/usr/local/bin/voxctrl-server
+Restart=on-failure
+RestartSec=5
+# A first start downloads the model before the server is up.
+TimeoutStartSec=infinity
+
+# The server needs the network and its own home directory, nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/voxctrl
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

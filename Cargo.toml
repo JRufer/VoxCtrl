@@ -17,12 +17,13 @@ members = [
     "crates/voxctrl-update",
     "crates/voxctrl-bugreport",
     "crates/voxctrl-llm-sidecar",
+    "crates/voxctrl-server",
     "src-tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.11"
+version = "0.9.0"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"

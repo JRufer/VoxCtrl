@@ -316,6 +316,15 @@ npm run tauri build -- --features cuda
 Once running a CUDA build, set `engine.whisper_cpp.device = "auto"` (or `"cuda"`) and VoxCtrl will use the GPU automatically. The "CUDA (NVIDIA)" option in Settings → Engine is only shown when the binary was compiled with CUDA support.
 
 
+### Running the Speech Model on Another Machine
+
+VoxCtrl can send audio to a server on your network instead of transcribing it
+locally, which frees the RAM and GPU the model would use on this computer.
+`voxctrl-server` is that server: it runs whisper.cpp, Moonshine or Parakeet in
+Docker or as a systemd service, and the app connects to it through
+**Settings → Engine → Backend → Remote Speech Engine (OpenAI API)**. The full
+walkthrough is in [VoxCtrl Server](./server.md).
+
 ### LLM Post-Processing (OpenAI-compatible API)
 If you want LLM grammar correction, point VoxCtrl at any OpenAI-compatible API
 server. For a fully local setup using [Ollama](https://ollama.ai/):

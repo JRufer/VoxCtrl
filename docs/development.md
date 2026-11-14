@@ -65,7 +65,7 @@ VoxCtrl/
 │       ├── commands.rs     # IPC command handlers
 │       └── state.rs        # AppState definition
 │
-├── crates/                 # Backend library crates (15 workspace crates)
+├── crates/                 # Backend library crates (16 workspace crates)
 │   ├── voxctrl-config/
 │   ├── voxctrl-audio/
 │   ├── voxctrl-hotkeys/
@@ -81,9 +81,12 @@ VoxCtrl/
 │   ├── voxctrl-text/       # Shared text-processing (snippets, fuzzy vocab correction)
 │   ├── voxctrl-update/     # Self-updating engine and release asset installer
 │   ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
-│   └── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
+│   ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
+│   └── voxctrl-server/     # Headless speech server binary (docs/server.md)
 │
 ├── packaging/aur/          # AUR PKGBUILDs, publish + smoke-test scripts (docs/aur.md)
+├── packaging/docker/       # Dockerfile + Compose files for voxctrl-server (docs/server.md)
+├── packaging/systemd/      # systemd unit for voxctrl-server (docs/server.md)
 ├── Cargo.toml              # Workspace definition
 ├── package.json            # Frontend deps
 ├── vite.config.ts

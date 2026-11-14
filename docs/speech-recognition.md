@@ -332,6 +332,10 @@ Moonshine and Parakeet default to the CPU: they run part of their work on the CP
 
 The **Remote Speech Engine** (`backend = "remote-openai"`) allows you to decouple VoxCtrl's desktop UI and hotkey management from local model inference. Instead of running weights locally, VoxCtrl streams captured audio directly to an external, network-accessible speech-to-text service that implements the OpenAI-compatible `/v1/audio/transcriptions` API.
 
+To run VoxCtrl's own engines on another machine of yours, use
+[`voxctrl-server`](./server.md): it serves whisper.cpp, Moonshine or Parakeet
+over this same API, and its guide covers installing it and connecting the app.
+
 ### Why "Bring Your Own Voice Engine"?
 
 - **Zero Local Footprint**: Requires **0 MB RAM** and **0 MB VRAM** locally. Perfect for battery-constrained laptops, mini-PCs, or development environments where system memory and GPU resources are reserved for compilers, IDEs, or LLMs.
