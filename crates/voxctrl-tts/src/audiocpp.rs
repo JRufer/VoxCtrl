@@ -44,6 +44,25 @@ use crate::piper::expand_tilde;
 /// same ones v0.8.0 accepted.
 pub const AUDIOCPP_RELEASE_VERSION: &str = "v0.9.4";
 
+/// Which of the release's Linux builds VoxCtrl installs.
+///
+/// Upstream publishes two Vulkan builds. The plain one is compiled for the
+/// machine that built it and, as of v0.9.4, is full of AVX-512 code: on a CPU
+/// without AVX-512 the server starts, then dies with SIGILL ("Illegal
+/// instruction") on the first speech request, whichever backend was asked
+/// for. The `-portable` build ships a ggml CPU backend per processor
+/// generation as shared libraries and picks one at run time, so it runs on any
+/// x86-64 CPU. It is also the smaller download.
+const AUDIOCPP_LINUX_BUILD: &str = "ubuntu-x64-vulkan-portable";
+
+/// What the version marker holds for the install VoxCtrl wants: the release
+/// and the build. An install of the right release but the other build (the
+/// non-portable one earlier VoxCtrl versions fetched) reads as out of date,
+/// which is what gets it replaced.
+fn wanted_install_id() -> String {
+    format!("{AUDIOCPP_RELEASE_VERSION}-portable")
+}
+
 /// Written next to the managed binaries after a successful install, holding
 /// the [`AUDIOCPP_RELEASE_VERSION`] that was installed. Installs from before
 /// this marker existed have no file, which reads as out of date — so the next
@@ -113,7 +132,7 @@ fn installed_marker_version(dir: &Path) -> Option<String> {
 fn classify_runtime(managed_dir: &Path, on_path: bool) -> AudioCppRuntime {
     let exe = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
     if managed_dir.join(exe).exists() {
-        if installed_marker_version(managed_dir).as_deref() == Some(AUDIOCPP_RELEASE_VERSION) {
+        if installed_marker_version(managed_dir).as_deref() == Some(wanted_install_id().as_str()) {
             AudioCppRuntime::Current
         } else {
             AudioCppRuntime::Outdated
@@ -135,11 +154,48 @@ pub fn audiocpp_runtime() -> AudioCppRuntime {
 /// here, so asking for any of those models is what brings an older install
 /// up to date.
 pub async fn ensure_audiocpp_runtime() -> Result<()> {
+    // One install at a time: startup, a model download and the first speech
+    // request can all ask at once, and two would unpack over each other. The
+    // state is read after the wait, so the second caller finds it done.
+    static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _installing = INSTALLING.lock().await;
     match audiocpp_runtime() {
         AudioCppRuntime::Current | AudioCppRuntime::System => Ok(()),
         AudioCppRuntime::Outdated | AudioCppRuntime::Missing => {
             download_audiocpp_binary().await.context("download audio.cpp runtime")
         }
+    }
+}
+
+/// [`ensure_audiocpp_runtime`] for the synchronous TTS worker thread, run
+/// before a server is started. A model download brings the runtime up to date,
+/// but someone whose models are already on disk never downloads one; without
+/// this, an install that a VoxCtrl update has made out of date (and that may
+/// not run at all on their CPU) would be started as it is, forever.
+///
+/// Best effort: offline, the old runtime is still better than none.
+pub(crate) fn upgrade_outdated_runtime_blocking() {
+    if audiocpp_runtime() != AudioCppRuntime::Outdated {
+        return;
+    }
+    info!("The installed audio.cpp runtime is out of date; updating it before starting the speech engine");
+    // On a thread of its own: a runtime cannot be started from a thread that
+    // is already inside one, and this must not depend on who is calling.
+    let result = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("start a runtime for the download")
+                    .and_then(|rt| rt.block_on(ensure_audiocpp_runtime()))
+            })
+            .join()
+    });
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => warn!("Could not update the audio.cpp runtime ({e:#}); using the installed one"),
+        Err(_) => warn!("Updating the audio.cpp runtime stopped unexpectedly; using the installed one"),
     }
 }
 
@@ -156,7 +212,7 @@ pub async fn download_audiocpp_binary() -> Result<()> {
     let dest_dir = audiocpp_dir();
     tokio::fs::create_dir_all(&dest_dir).await?;
 
-    let asset = format!("audio-{AUDIOCPP_RELEASE_VERSION}-bin-ubuntu-x64-vulkan.tar.gz");
+    let asset = format!("audio-{AUDIOCPP_RELEASE_VERSION}-bin-{AUDIOCPP_LINUX_BUILD}.tar.gz");
     let url = format!(
         "https://github.com/0xShug0/audio.cpp/releases/download/{AUDIOCPP_RELEASE_VERSION}/{asset}"
     );
@@ -170,7 +226,7 @@ pub async fn download_audiocpp_binary() -> Result<()> {
         .await
         .context("extract_audiocpp_archive task join")??;
     // Last, so an interrupted install never claims to be current.
-    tokio::fs::write(dest_dir.join(AUDIOCPP_VERSION_MARKER), AUDIOCPP_RELEASE_VERSION)
+    tokio::fs::write(dest_dir.join(AUDIOCPP_VERSION_MARKER), wanted_install_id())
         .await
         .context("write audio.cpp version marker")?;
 
@@ -723,6 +779,7 @@ impl AudioCppSession {
             return Ok(());
         }
         *slot = None; // drop first: frees the old port before the new server binds one
+        upgrade_outdated_runtime_blocking();
         info!("Starting audio.cpp server session (family={family}, gpu={gpu})");
         *slot = Some(AudioCppSession { server: AudioCppServer::spawn(family, model_dir, gpu)? });
         Ok(())
@@ -840,7 +897,12 @@ mod tests {
         std::fs::write(dir.path().join("audiocpp_server"), b"").unwrap();
         std::fs::write(dir.path().join(AUDIOCPP_VERSION_MARKER), "v0.8.0\n").unwrap();
         assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Outdated);
+        // The right release, but the non-portable build earlier versions
+        // installed: it must be replaced, so it is out of date too.
         std::fs::write(dir.path().join(AUDIOCPP_VERSION_MARKER), format!("{AUDIOCPP_RELEASE_VERSION}\n")).unwrap();
+        assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Outdated);
+
+        std::fs::write(dir.path().join(AUDIOCPP_VERSION_MARKER), format!("{}\n", wanted_install_id())).unwrap();
         assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Current);
     }
 

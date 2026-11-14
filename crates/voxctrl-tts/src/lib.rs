@@ -78,3 +78,23 @@ pub use pocket::{
 // Shared with voxctrl-inference, which applies the same logic to STT output.
 // See voxctrl-text for the implementation.
 pub use voxctrl_text::{correct_custom_vocabulary, expand_snippets};
+
+/// Bring VoxCtrl's own audio.cpp runtime up to date if an update has left it
+/// behind, when the configured engine is one that runs on it. For app
+/// startup: someone whose models are already downloaded would otherwise keep
+/// an out-of-date runtime until they next downloaded a model.
+///
+/// A missing runtime is left missing (it is installed with a model), and one
+/// the user installed system-wide is never touched.
+pub async fn update_audiocpp_runtime_if_outdated(config: &voxctrl_config::TtsConfig) -> anyhow::Result<bool> {
+    use voxctrl_config::TtsEngine;
+    let uses_audiocpp = matches!(
+        config.engine,
+        TtsEngine::PocketTts | TtsEngine::BreezeTts2 | TtsEngine::VoxCpm2 | TtsEngine::KittenTts2
+    );
+    if !uses_audiocpp || audiocpp::audiocpp_runtime() != audiocpp::AudioCppRuntime::Outdated {
+        return Ok(false);
+    }
+    audiocpp::ensure_audiocpp_runtime().await?;
+    Ok(true)
+}

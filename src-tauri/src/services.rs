@@ -266,6 +266,20 @@ pub fn start_tts_worker(
     state: &Arc<AppState>,
     cfg: &voxctrl_config::AppConfig,
 ) -> voxctrl_tts::TtsEngineHandle {
+    // An update can leave the installed audio.cpp runtime behind (a newer
+    // release, or a build that runs on more CPUs). Models already on disk
+    // never trigger the download that would replace it, so do it here. The
+    // worker does the same before starting a helper; whichever asks first
+    // does the work.
+    let tts_cfg = cfg.tts.clone();
+    tauri::async_runtime::spawn(async move {
+        match voxctrl_tts::update_audiocpp_runtime_if_outdated(&tts_cfg).await {
+            Ok(true) => tracing::info!("Updated the audio.cpp runtime"),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Could not update the audio.cpp runtime: {e:#}"),
+        }
+    });
+
     let (app_start, app_end, app_err) = (app_handle.clone(), app_handle.clone(), app_handle.clone());
     let (state_start, state_end) = (state.clone(), state.clone());
     voxctrl_tts::TtsEngineWorker::start(

@@ -27,14 +27,26 @@ manages: dropping it (idle-unload, an engine switch, or a GPU-setting change)
 kills the child process outright.
 
 **Runtime version and upgrades.** VoxCtrl installs audio.cpp into
-`~/.local/share/voxctrl/audiocpp/` and records the release it installed in a
-`VOXCTRL_AUDIOCPP_VERSION` file there. An install whose marker is missing (every
-install made before the marker existed) or names an older release counts as
-outdated, and the next **Download** of any audio.cpp-backed model replaces it in
-place — files a still-running `audiocpp_server` is using are unlinked first, so
-the swap doesn't fail on a busy executable. Until then, the older runtime keeps
-serving the engines it already supports. An `audiocpp_server` you installed
-yourself on `PATH` (with no managed install) is never touched.
+`~/.local/share/voxctrl/audiocpp/` and records what it installed (release and
+build, e.g. `v0.9.4-portable`) in a `VOXCTRL_AUDIOCPP_VERSION` file there. An
+install whose marker is missing or names anything else counts as outdated and
+is replaced in place, at whichever of these comes first: app start (when the
+selected TTS engine runs on audio.cpp), the first speech request, or the
+**Download** of any audio.cpp-backed model. Files a still-running
+`audiocpp_server` is using are unlinked first, so the swap doesn't fail on a
+busy executable. If the download fails (offline, say) the installed runtime is
+used as it is and the update is tried again next time. An `audiocpp_server` you
+installed yourself on `PATH` (with no managed install) is never touched.
+
+**Which build.** Of the two Linux Vulkan builds upstream publishes, VoxCtrl
+installs the `-portable` one (`AUDIOCPP_LINUX_BUILD`). The plain build is
+compiled for the machine that built it: v0.9.4's uses AVX-512 throughout, and
+on a CPU without it `audiocpp_server` starts normally and then dies with
+`SIGILL` ("Illegal instruction") on the first speech request, on the CPU and
+Vulkan backends alike. The portable build carries a ggml CPU backend per
+processor generation as shared libraries next to the binary and picks one at
+run time. VoxCtrl 0.9.4 to 0.9.9 installed the plain build; 0.9.10 replaces it
+automatically.
 
 **Model downloads** stream straight into the engine's model directory through a
 `<file>.part` file that is renamed into place only once complete, so a
