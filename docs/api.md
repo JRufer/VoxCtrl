@@ -446,6 +446,41 @@ Whether the saved Remote Speech Engine's server is reachable right now, and
 which fallback engine is set. Changes afterwards arrive as
 [`remote-status`](#remote-status) events, which carry the same type.
 
+#### `plan_model_cleanup(fallback) → CleanupPlan`
+Lists every downloaded model with its size and whether it is in use.
+`fallback` (`"none" | "whisper-cpp" | "moonshine" | "parakeet"`) is the
+fallback engine to plan for, which need not be saved yet; it only matters when
+the saved backend is a Remote Speech Engine. Deletes nothing.
+
+```ts
+interface CleanupPlan {
+  items: {
+    id: string;                          // e.g. "whisper:base", "piper:en-us-amy-low", "s1-mini"
+    kind: 'speech' | 'cleanup' | 'voice';
+    label: string;                       // e.g. "Whisper.cpp base"
+    bytes: number;
+    kept_because: string | null;         // why it is in use; null when it can be removed
+  }[];
+  removable_bytes: number;               // total of the items not in use
+}
+```
+
+#### `run_model_cleanup(ids) → CleanupResult`
+Deletes the listed models. Takes ids from `plan_model_cleanup`, never paths.
+The plan is rebuilt from the **saved** settings before anything is removed, so
+save a changed fallback first. An id that is unknown, or whose model the saved
+settings still use, is refused and reported in `errors`; the rest go ahead.
+See [Cleaning up downloaded models](./speech-recognition.md#cleaning-up-downloaded-models)
+for what counts as in use.
+
+```ts
+interface CleanupResult {
+  removed: string[];     // labels of the models removed
+  freed_bytes: number;
+  errors: string[];      // one line per model refused or not fully removed
+}
+```
+
 ---
 
 ### Audio Monitoring

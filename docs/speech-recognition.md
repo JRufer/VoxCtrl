@@ -475,3 +475,50 @@ The **S1-mini Dictation Cleanup Processor** provides optional on-device intellig
 - **Trigger & Command Preservation**: S1-mini runs *after* voice command extraction, ensuring trigger words and command routing are never distorted by grammar normalization.
 - **Per-Keybind Granularity**: Enable globally in **Settings → Engine**, and toggle on or off per individual shortcut in **Settings → Hotkeys**.
 
+
+
+## Cleaning up downloaded models
+
+Every model VoxCtrl downloads stays on disk until something removes it, and
+trying out engines and voices adds up to gigabytes. **Settings → Engine →
+Downloaded Models → Clean up models…** lists every downloaded model with its
+size and removes the ones you confirm. It is most useful after moving
+transcription to a [server](./server.md), when the local models stop being
+used at all.
+
+**What is kept** (shown under *Kept*, with the reason, and never removable):
+
+| Model | Kept when |
+|-------|-----------|
+| The selected speech engine's model | A local engine (Whisper.cpp, Moonshine, Parakeet) is the backend |
+| The fallback engine's model | The backend is a Remote Speech Engine and a fallback is set |
+| S1-mini | Dictation cleanup is on, overall or for any one hotkey |
+| The selected text-to-speech model or Piper voice | Text-to-speech is on and that engine is selected |
+
+Everything else that VoxCtrl downloaded is listed under *Not in use*, ticked
+for removal. Untick anything you want to keep for later.
+
+With a Remote Speech Engine the dialog asks which fallback engine you want
+before it lists anything, and saves your answer as the
+[fallback](#fallback-when-the-server-is-unreachable). The fallback runs the
+model set in that engine's own settings, so that is the model kept. With **None**
+no speech model is kept, and dictation fails with an error while the server is
+unreachable.
+
+**What is never touched:**
+
+- **Custom voices**: the `cloned-tts-voices` folder, and any folder you set as
+  a voice-cloning engine's voice folder. A model whose folder contains your
+  custom voices folder is kept whole.
+- **Engine programs**: the Piper binary and the audio.cpp runtime. They are
+  small, and are not models.
+- **Files VoxCtrl did not download.** In a Whisper model folder or Piper voice
+  folder you chose yourself, only files with the exact names VoxCtrl downloads
+  are listed; your own converted models and voices are left alone. A
+  Breeze-TTS-2, VoxCPM2 or Inflect-Micro model you moved to a folder of your
+  own is not listed at all.
+- **Symbolic links.** A link is never followed: what it points to is neither
+  counted nor deleted.
+
+A removed model can be downloaded again at any time by selecting it in
+Settings.
