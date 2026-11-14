@@ -484,9 +484,43 @@ jobs:
 
       # Split from the step above rather than interpolating a possibly-empty
       # `--features`, which passes tauri a bare flag and fails the build.
+      #
+      # ort-sys downloads the WebGPU ONNX Runtime prebuilt during the build and
+      # drops webgpu_dawn.dll, dxcompiler.dll and dxil.dll into target/release.
+      # Tauri bundles the app and externalBin only, and voxctrl.exe has a
+      # load-time import on webgpu_dawn.dll, so an NSIS installer without them
+      # cannot start on a machine that never ran a WebGPU build. Build once so
+      # ort stages the DLLs, then add them to the bundle as resources.
+      - name: Stage Dawn DLLs (Windows, GPU)
+        if: runner.os == 'Windows' && matrix.features != ''
+        shell: pwsh
+        run: |
+          npm run build
+          cargo build --release -p voxctrl-app --features ${{ matrix.features }}
+
+          $dlls = @("webgpu_dawn.dll", "dxcompiler.dll", "dxil.dll")
+          New-Item -ItemType Directory -Force -Path "src-tauri/dawn" | Out-Null
+          foreach ($name in $dlls) {
+            $src = Join-Path "target/release" $name
+            if (-not (Test-Path -LiteralPath $src)) {
+              throw "$name was not staged into target/release by the WebGPU build"
+            }
+            Copy-Item -LiteralPath $src -Destination (Join-Path "src-tauri/dawn" $name) -Force
+          }
+
+          @{
+            bundle = @{
+              resources = @{
+                "dawn/webgpu_dawn.dll" = "webgpu_dawn.dll"
+                "dawn/dxcompiler.dll"  = "dxcompiler.dll"
+                "dawn/dxil.dll"        = "dxil.dll"
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content -Path "tauri-webgpu.conf.json" -Encoding utf8
+
       - name: Build installer (Windows, GPU)
         if: runner.os == 'Windows' && matrix.features != ''
-        run: npx tauri build --bundles nsis --features ${{ matrix.features }}
+        run: npx tauri build --bundles nsis --features ${{ matrix.features }} --config tauri-webgpu.conf.json
 
       # ── Collect and rename Linux artifacts ──────────────────────────────────
       # Search the whole workspace so the path is correct regardless of whether
