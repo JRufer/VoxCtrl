@@ -182,6 +182,9 @@ fn ensure_session<'a>(config: &TtsConfig, session: &'a mut Option<AudioCppSessio
     if !model_file(&cfg.model_dir).exists() {
         anyhow::bail!("Kitten TTS 2 model not found. Download it from TTS settings.");
     }
+    // Before the check below, so an out-of-date runtime is replaced rather
+    // than reported, whenever it can be.
+    audiocpp::upgrade_outdated_runtime_blocking();
     if audiocpp::audiocpp_runtime() == AudioCppRuntime::Outdated {
         anyhow::bail!(
             "Kitten TTS 2 needs a newer audio.cpp runtime ({}). Click Download in TTS \
