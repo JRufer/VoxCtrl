@@ -1042,6 +1042,8 @@ fn the_status_payload_names_the_fallback_engine_and_its_model() {
         serde_json::to_value(&payload).unwrap(),
         serde_json::json!({ "state": "offline", "reason": "down", "fallback": "Parakeet tdt-0.6b-v3" })
     );
+}
+
 #[test]
 fn only_windows_with_a_keybind_recorder_release_the_hotkeys_on_close() {
     use crate::window::{hosts_keybind_recorder, WIZARD_WINDOW};
