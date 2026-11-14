@@ -95,6 +95,29 @@ describe("model cleanup helpers", () => {
 });
 
 describe("ModelCleanupDialog", () => {
+  test("opens as a native modal dialog, and Escape closes it through the parent", async () => {
+    // jsdom has no showModal; the app's webview does. The dialog must use it:
+    // a fixed-position overlay inside the tab was drawn offset from the window.
+    const showModal = vi.fn();
+    (HTMLDialogElement.prototype as any).showModal = showModal;
+    const onClose = vi.fn();
+    try {
+      const { container } = render(ModelCleanupDialog, {
+        cfg: config("parakeet", "none"),
+        fallbackChoices: choices,
+        onClose,
+      });
+      await screen.findByTestId("cleanup-run");
+      expect(showModal).toHaveBeenCalledTimes(1);
+      expect(container.querySelector(".modal-backdrop")).toBeNull();
+
+      await fireEvent(container.querySelector("dialog")!, new Event("cancel", { cancelable: true }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (HTMLDialogElement.prototype as any).showModal;
+    }
+  });
+
   test("with a local engine there is no fallback question, and everything removable starts ticked", async () => {
     render(ModelCleanupDialog, { cfg: config("parakeet", "none"), fallbackChoices: choices, onClose: () => {} });
 
