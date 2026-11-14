@@ -20,6 +20,7 @@ mod live_text;
 mod history;
 mod host_env;
 mod mint_shortcuts;
+mod model_cleanup;
 mod pipeline;
 mod remote_monitor;
 pub mod render_env;
@@ -727,6 +728,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_status,
             get_remote_status,
+            plan_model_cleanup,
+            run_model_cleanup,
             get_available_monitors,
             start_recording,
             stop_recording,

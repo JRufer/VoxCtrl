@@ -116,3 +116,56 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     }
     std::path::PathBuf::from(path)
 }
+
+// ── Model cleanup ─────────────────────────────────────────────────────────────
+
+use std::sync::Arc;
+
+use tauri::State;
+
+use crate::model_cleanup::{self, CleanupPlan, CleanupResult, Layout};
+use crate::state::AppState;
+
+/// Every downloaded model, and which of them this machine still uses.
+///
+/// `fallback` is the fallback engine chosen in the dialog, which may not be
+/// saved yet: the list shows what would be kept with that choice.
+#[tauri::command]
+pub async fn plan_model_cleanup(
+    state: State<'_, Arc<AppState>>,
+    fallback: voxctrl_config::FallbackChoice,
+) -> Result<CleanupPlan, String> {
+    let cfg = state.config.lock().await.data.clone();
+    let bindings = state.bindings.lock().await.clone();
+    tokio::task::spawn_blocking(move || model_cleanup::plan(&cfg, &bindings, fallback, &Layout::system()))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete the listed models. Only ids are accepted, never paths.
+///
+/// Goes by the saved settings, which the dialog writes before calling this,
+/// so a model is kept if the saved fallback needs it even when the dialog
+/// asked for it to go.
+#[tauri::command]
+pub async fn run_model_cleanup(
+    state: State<'_, Arc<AppState>>,
+    ids: Vec<String>,
+) -> Result<CleanupResult, String> {
+    let cfg = state.config.lock().await.data.clone();
+    let bindings = state.bindings.lock().await.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let fallback = cfg.engine.remote_openai.fallback;
+        let plan = model_cleanup::plan(&cfg, &bindings, fallback, &Layout::system());
+        model_cleanup::execute(&plan, &ids)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    tracing::info!(
+        removed = ?result.removed,
+        freed_bytes = result.freed_bytes,
+        errors = ?result.errors,
+        "model cleanup"
+    );
+    Ok(result)
+}
