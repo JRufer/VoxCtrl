@@ -13,10 +13,36 @@ pub const TRAY_SETUP_OK: &str = "🩺  Setup & Diagnostics";
 #[cfg(target_os = "linux")]
 pub const TRAY_SETUP_BROKEN: &str = "⚠️  Global shortcuts unavailable";
 
+/// The two things the tray tooltip reports, kept here so that either one
+/// changing rewrites the tooltip without losing the other.
+static SETUP_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static REMOTE_OFFLINE_REASON: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The tray tooltip: the app's name, then whatever is currently wrong.
+pub fn tooltip_text(setup_ok: bool, remote_offline_reason: Option<&str>) -> String {
+    let mut text = String::from("VoxCtrl");
+    if !setup_ok {
+        text.push_str(" — global shortcuts are unavailable");
+    }
+    if let Some(reason) = remote_offline_reason {
+        text.push_str(" — speech server unreachable");
+        if !reason.trim().is_empty() {
+            text.push_str(&format!(" ({})", reason.trim()));
+        }
+    }
+    text
+}
+
+fn current_tooltip() -> String {
+    let reason = REMOTE_OFFLINE_REASON.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    tooltip_text(SETUP_OK.load(std::sync::atomic::Ordering::SeqCst), reason.as_deref())
+}
+
 /// Reflect setup state in the tray, which is the one piece of VoxCtrl UI that
 /// is always on screen.
 #[cfg(target_os = "linux")]
 pub fn update_tray_for_setup(app: &tauri::AppHandle, ok: bool) {
+    SETUP_OK.store(ok, std::sync::atomic::Ordering::SeqCst);
     let app = app.clone();
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -24,11 +50,20 @@ pub fn update_tray_for_setup(app: &tauri::AppHandle, ok: bool) {
             let _ = item.set_text(if ok { TRAY_SETUP_OK } else { TRAY_SETUP_BROKEN });
         }
         if let Some(tray) = handle.tray_by_id("main-tray") {
-            let _ = tray.set_tooltip(Some(if ok {
-                "VoxCtrl"
-            } else {
-                "VoxCtrl — global shortcuts are unavailable"
-            }));
+            let _ = tray.set_tooltip(Some(current_tooltip()));
+        }
+    });
+}
+
+/// Say in the tray tooltip why the remote speech server is unreachable, or
+/// clear that once it is back (`None`). The icon itself is switched by
+/// `spawn_status_ticker`, which owns every icon change.
+pub fn update_tray_for_remote(app: &tauri::AppHandle, offline_reason: Option<String>) {
+    *REMOTE_OFFLINE_REASON.lock().unwrap_or_else(|e| e.into_inner()) = offline_reason;
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = handle.tray_by_id("main-tray") {
+            let _ = tray.set_tooltip(Some(current_tooltip()));
         }
     });
 }
@@ -251,11 +286,32 @@ pub fn sync_tts_memory_item(app: tauri::AppHandle, state: Arc<AppState>) {
 /// `status-tick`, and it is a plain sequential loop, so it can own the
 /// window without any locking of its own: it is the only thing that ever
 /// creates the overlay window, by construction.
+/// Which still icon the tray shows when nothing is being processed.
+#[derive(Debug, PartialEq, Eq)]
+pub enum IdleIcon {
+    Recording,
+    Offline,
+    Ready,
+}
+
+/// Recording wins over the offline badge: while the key is held, the icon's
+/// job is to say the microphone is live.
+pub fn idle_icon(is_recording: bool, is_offline: bool) -> IdleIcon {
+    if is_recording {
+        IdleIcon::Recording
+    } else if is_offline {
+        IdleIcon::Offline
+    } else {
+        IdleIcon::Ready
+    }
+}
+
 pub fn spawn_status_ticker(
     handle: tauri::AppHandle,
     state_for_ticker: Arc<AppState>,
     record_on_icon: tauri::image::Image<'static>,
     record_off_icon: tauri::image::Image<'static>,
+    record_offline_icon: tauri::image::Image<'static>,
     processing_frames: [tauri::image::Image<'static>; 6],
 ) {
     tokio::spawn(async move {
@@ -267,6 +323,7 @@ pub fn spawn_status_ticker(
         const HEARTBEAT: Duration = Duration::from_millis(900);
 
         let mut last_recording = false;
+        let mut last_offline = false;
         let mut was_animating = false;
         let mut frame_idx = 0;
         let mut last_pos: Option<(String, String, String)> = None;
@@ -305,6 +362,9 @@ pub fn spawn_status_ticker(
             startup_tick_count = startup_tick_count.saturating_add(1);
             let is_recording = state_for_ticker.is_recording();
             let is_processing = state_for_ticker.is_processing();
+            // A remote speech engine is selected and its server cannot be
+            // reached: the resting icon carries an offline badge until it can.
+            let is_offline = voxctrl_inference::remote_status::is_offline();
 
             // Decide whether the tray icon needs updating this tick and,
             // if so, which frame to show. The actual `set_icon` call must
@@ -319,9 +379,13 @@ pub fn spawn_status_ticker(
                 frame_idx = (frame_idx + 1) % 6;
                 was_animating = true;
                 Some(icon)
-            } else if was_animating || is_recording != last_recording {
+            } else if was_animating || is_recording != last_recording || is_offline != last_offline {
                 was_animating = false;
-                Some(if is_recording { record_on_icon.clone() } else { record_off_icon.clone() })
+                Some(match idle_icon(is_recording, is_offline) {
+                    IdleIcon::Recording => record_on_icon.clone(),
+                    IdleIcon::Offline => record_offline_icon.clone(),
+                    IdleIcon::Ready => record_off_icon.clone(),
+                })
             } else {
                 None
             };
@@ -336,6 +400,7 @@ pub fn spawn_status_ticker(
             }
 
             last_recording = is_recording;
+            last_offline = is_offline;
 
             // Overlay placement follows the user's config, which is compared
             // under the lock so an unchanged setting costs no allocation.

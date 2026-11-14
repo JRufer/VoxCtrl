@@ -27,6 +27,19 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
     })
 }
 
+/// Whether the remote speech server is reachable, for a window that has just
+/// opened. Changes after that arrive as `remote-status` events.
+#[tauri::command]
+pub async fn get_remote_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::remote_monitor::RemoteStatusPayload, String> {
+    let cfg = state.config.lock().await;
+    Ok(crate::remote_monitor::RemoteStatusPayload::new(
+        voxctrl_inference::remote_status::current(),
+        &cfg.data,
+    ))
+}
+
 #[derive(serde::Serialize)]
 pub struct StatusPayload {
     pub recording: bool,
@@ -125,6 +138,8 @@ pub async fn save_config(
 
     // Hot-reload inference engine configuration
     let _ = state.inference_config_tx.send(Arc::new(new_config.clone()));
+    // A remote server's address or key may just have changed: ask it now.
+    crate::remote_monitor::recheck();
 
     let (overlay_position, overlay_monitor) = (
         guard.data.ui.overlay_position.clone(),
