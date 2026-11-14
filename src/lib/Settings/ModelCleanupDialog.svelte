@@ -59,6 +59,17 @@
     }
   }
 
+  // A native modal <dialog>: the browser draws it in its top layer, centred on
+  // the window whatever the tab around it is doing. A fixed-position overlay
+  // inside the tab was not reliable in the app's webview, where it was drawn
+  // offset from the window.
+  let dialogEl: HTMLDialogElement;
+
+  onMount(() => {
+    if (typeof dialogEl.showModal === "function") dialogEl.showModal();
+    else dialogEl.setAttribute("open", "");
+  });
+
   onMount(async () => {
     // The list is worked out from the saved settings, so write any change
     // still waiting on the auto-save before asking for it.
@@ -100,108 +111,120 @@
   }
 </script>
 
-<div class="modal-backdrop">
-  <div class="modal glass animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">
-    <div class="modal-header">
-      <h3 id="cleanup-title">Clean up models</h3>
-      <button class="close-btn" onclick={onClose} aria-label="Close">✕</button>
-    </div>
-
-    <div class="modal-body">
-      <p class="hint lead">
-        Removes downloaded models this computer no longer uses. Custom voices are never removed, and
-        neither is anything in use.
-      </p>
-
-      {#if usesServer}
-        <label class="field">
-          <span>Fallback engine</span>
-          <CustomSelect bind:value={fallback} options={fallbackChoices} onchange={loadPlan} disabled={running} />
-        </label>
-        {#if fallback === "none"}
-          <div class="status-pill error" data-testid="cleanup-no-fallback">
-            ⚠️ With no fallback, dictation fails with an error whenever the server can't be reached.
-          </div>
-        {:else}
-          <p class="hint">
-            This engine's model is kept so dictation still works when the server can't be reached.
-          </p>
-        {/if}
-      {/if}
-
-      {#if summary}
-        <div class="status-pill" class:success={summary.ok} class:error={!summary.ok} data-testid="cleanup-result">
-          {summary.text}
-        </div>
-      {/if}
-      {#if error}
-        <div class="status-pill error" data-testid="cleanup-error">⚠️ {error}</div>
-      {/if}
-
-      {#if loading}
-        <p class="hint">Looking for downloaded models…</p>
-      {:else if plan}
-        {#if removable.length > 0}
-          <h5>Not in use</h5>
-          <ul class="items" data-testid="cleanup-removable">
-            {#each removable as item (item.id)}
-              <li>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onchange={() => toggle(item.id)}
-                    disabled={running}
-                  />
-                  <span class="name">{item.label}</span>
-                  <span class="size">{formatBytes(item.bytes)}</span>
-                </label>
-              </li>
-            {/each}
-          </ul>
-        {:else if !result}
-          <p class="hint" data-testid="cleanup-nothing">Nothing to remove: every downloaded model is in use.</p>
-        {/if}
-
-        {#if kept.length > 0}
-          <h5>Kept</h5>
-          <ul class="items kept" data-testid="cleanup-kept">
-            {#each kept as item (item.id)}
-              <li>
-                <span class="name">{item.label}</span>
-                <span class="why">{item.kept_because}</span>
-                <span class="size">{formatBytes(item.bytes)}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      {/if}
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn-action secondary" onclick={onClose}>{result ? "Done" : "Cancel"}</button>
-      {#if removable.length > 0}
-        <button
-          class="btn-action danger"
-          onclick={run}
-          disabled={running || loading || selected.size === 0}
-          data-testid="cleanup-run"
-        >
-          {running ? "Removing…" : `Remove ${selected.size} and free ${formatBytes(freeing)}`}
-        </button>
-      {/if}
-    </div>
+<!-- Escape fires `cancel`; closing goes through the parent so its state follows. -->
+<dialog
+  class="modal"
+  bind:this={dialogEl}
+  aria-labelledby="cleanup-title"
+  oncancel={(e) => {
+    e.preventDefault();
+    onClose();
+  }}
+>
+  <div class="modal-header">
+    <h3 id="cleanup-title">Clean up models</h3>
+    <button class="close-btn" onclick={onClose} aria-label="Close">✕</button>
   </div>
-</div>
+
+  <div class="modal-body">
+    <p class="hint lead">
+      Removes downloaded models this computer no longer uses. Custom voices are never removed, and
+      neither is anything in use.
+    </p>
+
+    {#if usesServer}
+      <label class="field">
+        <span>Fallback engine</span>
+        <CustomSelect bind:value={fallback} options={fallbackChoices} onchange={loadPlan} disabled={running} />
+      </label>
+      {#if fallback === "none"}
+        <div class="status-pill error" data-testid="cleanup-no-fallback">
+          ⚠️ With no fallback, dictation fails with an error whenever the server can't be reached.
+        </div>
+      {:else}
+        <p class="hint">
+          This engine's model is kept so dictation still works when the server can't be reached.
+        </p>
+      {/if}
+    {/if}
+
+    {#if summary}
+      <div class="status-pill" class:success={summary.ok} class:error={!summary.ok} data-testid="cleanup-result">
+        {summary.text}
+      </div>
+    {/if}
+    {#if error}
+      <div class="status-pill error" data-testid="cleanup-error">⚠️ {error}</div>
+    {/if}
+
+    {#if loading}
+      <p class="hint">Looking for downloaded models…</p>
+    {:else if plan}
+      {#if removable.length > 0}
+        <h5>Not in use</h5>
+        <ul class="items" data-testid="cleanup-removable">
+          {#each removable as item (item.id)}
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.id)}
+                  onchange={() => toggle(item.id)}
+                  disabled={running}
+                />
+                <span class="name">{item.label}</span>
+                <span class="size">{formatBytes(item.bytes)}</span>
+              </label>
+            </li>
+          {/each}
+        </ul>
+      {:else if !result}
+        <p class="hint" data-testid="cleanup-nothing">Nothing to remove: every downloaded model is in use.</p>
+      {/if}
+
+      {#if kept.length > 0}
+        <h5>Kept</h5>
+        <ul class="items kept" data-testid="cleanup-kept">
+          {#each kept as item (item.id)}
+            <li>
+              <span class="name">{item.label}</span>
+              <span class="why">{item.kept_because}</span>
+              <span class="size">{formatBytes(item.bytes)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </div>
+
+  <div class="modal-footer">
+    <button class="btn-action secondary" onclick={onClose}>{result ? "Done" : "Cancel"}</button>
+    {#if removable.length > 0}
+      <button
+        class="btn-action danger"
+        onclick={run}
+        disabled={running || loading || selected.size === 0}
+        data-testid="cleanup-run"
+      >
+        {running ? "Removing…" : `Remove ${selected.size} and free ${formatBytes(freeing)}`}
+      </button>
+    {/if}
+  </div>
+</dialog>
 
 <style lang="postcss">
   @reference "../../app.css";
 
-  .modal-backdrop {
-    @apply fixed inset-0 bg-black/60 backdrop-blur-[4px] flex items-center justify-center z-[1000];
-  }
   .modal {
-    @apply w-[90%] max-w-[520px] max-h-[85vh] rounded-[var(--radius)] border border-[var(--border)] flex flex-col shadow-[0_10px_30px_rgba(0,0,0,0.5)] bg-[#1e2436];
+    @apply m-auto p-0 w-[90%] max-w-[520px] max-h-[85vh] overflow-hidden rounded-[var(--radius)] border border-[var(--border)] shadow-[0_10px_30px_rgba(0,0,0,0.5)] bg-[#1e2436] text-[var(--text)];
+  }
+  /* Only while open: `display` on a closed dialog would show it. */
+  .modal[open] {
+    @apply flex flex-col;
+  }
+  /* A plain dim, no blur: blurred backdrops are what the webview misdraws. */
+  .modal::backdrop {
+    background: rgba(0, 0, 0, 0.6);
   }
   .modal-header {
     @apply flex justify-between items-center p-4 px-5 border-b border-[var(--border)];
