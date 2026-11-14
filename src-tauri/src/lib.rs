@@ -730,6 +730,7 @@ pub fn run() {
             get_remote_status,
             plan_model_cleanup,
             run_model_cleanup,
+            check_server_cleanup,
             get_available_monitors,
             start_recording,
             stop_recording,

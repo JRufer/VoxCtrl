@@ -169,3 +169,14 @@ pub async fn run_model_cleanup(
     );
     Ok(result)
 }
+
+/// Whether the speech server at `endpoint` offers dictation cleanup, in words
+/// for the Settings window. Takes the endpoint and key as typed, which may
+/// not be saved yet.
+#[tauri::command]
+pub async fn check_server_cleanup(
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<voxctrl_inference::remote_cleanup::ServerCleanupStatus, String> {
+    Ok(voxctrl_inference::remote_cleanup::check_server_cleanup(&endpoint, api_key.as_deref()).await)
+}

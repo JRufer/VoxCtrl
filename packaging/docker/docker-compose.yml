@@ -23,6 +23,9 @@ services:
       VOXCTRL_SERVER_MODEL: ${VOXCTRL_SERVER_MODEL:-tdt-0.6b-v3}
       VOXCTRL_SERVER_LANGUAGE: ${VOXCTRL_SERVER_LANGUAGE:-}
       VOXCTRL_SERVER_DEVICE: ${VOXCTRL_SERVER_DEVICE:-}
+      # true = also clean up dictation for clients that ask (S1-mini, ~470 MB).
+      VOXCTRL_SERVER_CLEANUP: ${VOXCTRL_SERVER_CLEANUP:-}
+      VOXCTRL_SERVER_CLEANUP_GPU: ${VOXCTRL_SERVER_CLEANUP_GPU:-}
       # Left blank, the server generates a key on first start, saves it in the
       # volume, and prints it once in the log.
       VOXCTRL_SERVER_API_KEY: ${VOXCTRL_SERVER_API_KEY:-}

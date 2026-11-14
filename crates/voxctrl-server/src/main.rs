@@ -6,6 +6,7 @@
 //! device: it runs on a machine nobody is sitting at. See `docs/server.md`.
 
 mod audio;
+mod cleanup;
 #[cfg(test)]
 mod client_contract_tests;
 mod config;
@@ -49,6 +50,9 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_DEVICE            auto | cpu
     VOXCTRL_SERVER_LANGUAGE          Language code, or auto
     VOXCTRL_SERVER_MAX_UPLOAD_MB     Largest upload accepted
+    VOXCTRL_SERVER_CLEANUP           true = clean up dictation for clients
+                                     (downloads the S1-mini model, ~470 MB)
+    VOXCTRL_SERVER_CLEANUP_GPU       false = keep the cleanup model on the CPU
 
 Full guide: docs/server.md
 ";
@@ -196,8 +200,19 @@ async fn run(cli: Cli) -> Result<()> {
     let engine = engine::Engine::prepare(&effective).await?;
     let model_id = engine.info().model_id();
 
+    let cleaner: Option<Arc<dyn cleanup::Cleaner>> = if effective.cleanup.enabled {
+        Some(Arc::new(cleanup::S1MiniCleaner::prepare(effective.cleanup.gpu).await?))
+    } else {
+        None
+    };
+    let cleanup_line = match &cleaner {
+        Some(c) => format!("on ({})", c.model()),
+        None => "off (set cleanup.enabled or VOXCTRL_SERVER_CLEANUP to offer it)".to_string(),
+    };
+
     let state = Arc::new(http::AppState {
         engine,
+        cleanup: cleaner,
         api_key: effective.require_api_key.then(|| effective.api_key.clone()),
         max_upload_bytes: usize::try_from(effective.max_upload_mb.saturating_mul(1024 * 1024)).unwrap_or(usize::MAX),
     });
@@ -210,6 +225,7 @@ async fn run(cli: Cli) -> Result<()> {
 
     info!("voxctrl-server {} is ready", env!("CARGO_PKG_VERSION"));
     info!("  Model:    {model_id}");
+    info!("  Cleanup:  {cleanup_line}");
     info!("  Endpoint: http://{addr}/v1  (use this machine's address from a client)");
     if generated_key {
         // The one time the key is shown: nobody has seen it yet, and on a
@@ -364,7 +380,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn healthcheck_passes_against_a_running_server_and_fails_without_one() {
         let (engine, _) = engine::test_support::fake_engine("x", false);
-        let state = Arc::new(http::AppState { engine, api_key: Some("vx_key".into()), max_upload_bytes: 1024 });
+        let state = Arc::new(http::AppState {
+            engine,
+            cleanup: None,
+            api_key: Some("vx_key".into()),
+            max_upload_bytes: 1024,
+        });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, http::router(state)).await });
@@ -392,6 +413,8 @@ mod tests {
             "VOXCTRL_SERVER_DEVICE",
             "VOXCTRL_SERVER_LANGUAGE",
             "VOXCTRL_SERVER_MAX_UPLOAD_MB",
+            "VOXCTRL_SERVER_CLEANUP",
+            "VOXCTRL_SERVER_CLEANUP_GPU",
         ] {
             assert!(HELP.contains(name), "--help does not mention {name}");
         }

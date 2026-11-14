@@ -50,6 +50,11 @@ export interface RemoteOpenAiConfig {
    * Absent in configs written before 0.9.0, which means "none".
    */
   fallback?: "none" | "whisper-cpp" | "moonshine" | "parakeet";
+  /**
+   * Send dictation cleanup to this server instead of running S1-mini here.
+   * Absent in configs written before 0.9.5, which means off.
+   */
+  cleanup_on_server?: boolean;
 }
 
 export interface WhisperCppConfig {

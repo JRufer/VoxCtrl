@@ -161,6 +161,42 @@
     fallbackOptions(cfg.engine, { moonshine: moonshineAvailable, parakeet: parakeetAvailable }),
   );
   let cleanupOpen = $state(false);
+
+  // Whether the server at the typed address offers dictation cleanup. Asked
+  // when the option is on, and again when it is switched on or retested.
+  interface ServerCleanupStatus {
+    available: boolean;
+    model: string | null;
+    message: string;
+  }
+  let serverCleanup = $state<ServerCleanupStatus | null>(null);
+  let serverCleanupChecking = $state(false);
+
+  async function checkServerCleanup() {
+    const remote = cfg.engine.remote_openai;
+    if (!remote?.endpoint) return;
+    serverCleanupChecking = true;
+    try {
+      serverCleanup = await invoke<ServerCleanupStatus>("check_server_cleanup", {
+        endpoint: remote.endpoint,
+        apiKey: remote.api_key || null,
+      });
+    } catch (e) {
+      serverCleanup = { available: false, model: null, message: String(e) };
+    } finally {
+      serverCleanupChecking = false;
+    }
+  }
+
+  // Set from the event rather than through a binding: a change handler runs
+  // before the binding has written the new value.
+  function onServerCleanupToggle(e: Event) {
+    const on = (e.currentTarget as HTMLInputElement).checked;
+    cfg.engine.remote_openai.cleanup_on_server = on;
+    markDirty();
+    if (on) checkServerCleanup();
+    else serverCleanup = null;
+  }
   let remoteFallbackModel = $derived(fallbackModel(cfg.engine, cfg.engine.remote_openai?.fallback));
   // The fallback runs the model set in its engine's own section; if that model
   // is not on disk the fallback cannot start, and the user should hear it here
@@ -334,6 +370,9 @@
         remoteStatus = status as RemoteStatus;
       }
     };
+    if (cfg.engine.backend === "remote-openai" && cfg.engine.remote_openai?.cleanup_on_server) {
+      checkServerCleanup();
+    }
     invoke<RemoteStatus>("get_remote_status")
       .then(accept)
       .catch((e) => console.error("Failed to read the remote server status", e));
@@ -831,6 +870,41 @@
         </div>
       {/if}
 
+      <label class="field">
+        <div class="field-title-col">
+          <span>Run dictation cleanup on the server</span>
+          <p class="hint">
+            Sends each transcript to the server for S1-mini cleanup, so this computer loads no cleanup
+            model. Needs a VoxCtrl server with cleanup enabled. Whether a dictation is cleaned, and in
+            which style, is still set here under <strong>Features</strong> and per hotkey. If the server
+            can't clean a dictation, it is typed as it was said.
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          checked={cfg.engine.remote_openai.cleanup_on_server ?? false}
+          onchange={onServerCleanupToggle}
+          data-testid="cleanup-on-server"
+        />
+      </label>
+      <!-- Shown while there is an answer to show; switching the option off
+           clears it. -->
+      {#if serverCleanupChecking}
+        <div class="status-pill" data-testid="server-cleanup-status">Checking the server…</div>
+      {:else if serverCleanup}
+        <div
+          class="status-pill"
+          class:success={serverCleanup.available}
+          class:error={!serverCleanup.available}
+          data-testid="server-cleanup-status"
+        >
+          {serverCleanup.available ? "✔" : "⚠️"} {serverCleanup.message}
+          {#if !serverCleanup.available}
+            <button type="button" class="btn-test" onclick={checkServerCleanup}>Check again</button>
+          {/if}
+        </div>
+      {/if}
+
       {#if remoteSummary}
         <div
           class="status-pill"
@@ -933,6 +1007,15 @@
   }
   .btn-test {
     @apply bg-[var(--accent)] hover:bg-[var(--accent2)] text-white text-xs font-semibold py-2 px-4 rounded-[var(--radius)] border-none cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .field-title-col {
+    @apply flex flex-col flex-1 mr-4;
+  }
+  .field-title-col span {
+    @apply text-[13px] font-medium text-[var(--color-obsidian-100)];
+  }
+  .field-title-col .hint {
+    @apply text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed;
   }
   .status-pill {
     @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;

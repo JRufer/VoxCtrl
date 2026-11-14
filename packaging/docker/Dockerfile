@@ -17,7 +17,7 @@ ARG DEBIAN_RELEASE=trixie
 FROM rust:1-${DEBIAN_RELEASE} AS build
 ARG FEATURES=""
 
-# cmake + clang build whisper.cpp and generate its bindings; libssl-dev is for
+# cmake + clang build whisper.cpp and llama.cpp and generate their bindings; libssl-dev is for
 # the HTTPS client that downloads models. The Vulkan headers and shader
 # compiler are only needed for a Vulkan build.
 RUN apt-get update \
@@ -32,12 +32,23 @@ COPY . .
 
 # Only the server and the crates it depends on are compiled; the desktop app
 # and its GTK/WebKit dependencies are never built here. The cache mounts keep
-# rebuilds short, which is why the binary is copied out of the cached target
+# rebuilds short, which is why the binaries are copied out of the cached target
 # directory in the same step.
+#
+# voxctrl-llm-sidecar is the llama.cpp helper that runs the dictation cleanup
+# model. The server looks for it beside its own binary; without it cleanup
+# still works, on a much slower built-in engine. It is a separate build
+# because the two packages do not share feature names: of FEATURES, only
+# `vulkan` applies to it.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p voxctrl-server ${FEATURES:+--features "${FEATURES}"} \
-    && cp target/release/voxctrl-server /usr/local/bin/voxctrl-server
+    && if echo ",${FEATURES}," | grep -q ",vulkan,"; then \
+         cargo build --release --locked -p voxctrl-llm-sidecar --features vulkan; \
+       else \
+         cargo build --release --locked -p voxctrl-llm-sidecar; \
+       fi \
+    && cp target/release/voxctrl-server target/release/voxctrl-llm-sidecar /usr/local/bin/
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM debian:${DEBIAN_RELEASE}-slim
@@ -62,7 +73,7 @@ ENV HOME=/var/lib/voxctrl \
     XDG_DATA_HOME=/var/lib/voxctrl/data \
     VOXCTRL_SERVER_BIND=0.0.0.0:8787
 
-COPY --from=build /usr/local/bin/voxctrl-server /usr/local/bin/voxctrl-server
+COPY --from=build /usr/local/bin/voxctrl-server /usr/local/bin/voxctrl-llm-sidecar /usr/local/bin/
 
 USER voxctrl
 VOLUME /var/lib/voxctrl

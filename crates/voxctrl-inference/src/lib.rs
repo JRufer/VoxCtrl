@@ -6,6 +6,7 @@ pub mod moonshine;
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
 pub mod postprocess;
+pub mod remote_cleanup;
 pub mod remote_openai;
 pub mod remote_status;
 pub mod s1_mini;

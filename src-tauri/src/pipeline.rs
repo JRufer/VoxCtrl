@@ -571,8 +571,9 @@ pub fn spawn_text_delivery_worker(
                 let slot = state.focused_app.lock().unwrap_or_else(|e| e.into_inner());
                 (slot.0 == output.session_id).then(|| slot.1.clone()).flatten()
             };
-            let (global_s1_mini_enabled, s1_mini_styling, s1_mini_gpu, show_notif) = {
+            let (global_s1_mini_enabled, s1_mini_styling, s1_mini_gpu, show_notif, cleanup_server) = {
                 let cfg_lock = state.config.blocking_lock();
+                let cleanup_server = cfg_lock.data.engine.server_cleanup().cloned();
                 let s1 = &cfg_lock.data.engine.s1_mini;
                 let styling = s1.styling_for(focused_app.as_deref()).to_string();
                 if styling != s1.styling {
@@ -581,7 +582,7 @@ pub fn spawn_text_delivery_worker(
                         focused_app.as_deref().unwrap_or_default()
                     );
                 }
-                (s1.enabled, styling, s1.gpu, cfg_lock.data.ui.show_notification)
+                (s1.enabled, styling, s1.gpu, cfg_lock.data.ui.show_notification, cleanup_server)
             };
 
             let s1_mini_enabled = output
@@ -613,10 +614,32 @@ pub fn spawn_text_delivery_worker(
             let transcript_after_release = state.ms_since_release();
             let cleanup_started = std::time::Instant::now();
             let cleaned = !is_speak_target && s1_mini_enabled && !raw_text.trim().is_empty();
-            let text = if cleaned {
-                voxctrl_inference::s1_mini::clean_dictation(&raw_text, &s1_mini_styling, None, s1_mini_gpu)
-            } else {
-                raw_text
+            let text = match (cleaned, cleanup_server) {
+                (false, _) => raw_text,
+                (true, None) => {
+                    voxctrl_inference::s1_mini::clean_dictation(&raw_text, &s1_mini_styling, None, s1_mini_gpu)
+                }
+                // Cleanup has been handed to the server. When the server
+                // can't do it the transcript goes out as it was said: this
+                // machine is not meant to load a cleanup model of its own.
+                (true, Some(server)) => {
+                    if voxctrl_inference::remote_status::is_offline() {
+                        tracing::info!("Server is unreachable: delivering this dictation without cleanup");
+                        raw_text
+                    } else {
+                        match rt_handle.block_on(voxctrl_inference::remote_cleanup::clean_on_server(
+                            &server,
+                            &raw_text,
+                            &s1_mini_styling,
+                        )) {
+                            Ok(cleaned_text) => cleaned_text,
+                            Err(e) => {
+                                tracing::warn!("Server cleanup failed ({e:#}); delivering the transcript as it was");
+                                raw_text
+                            }
+                        }
+                    }
+                }
             };
             // Where the wait between releasing the key and the text appearing
             // goes. Counts only, never the text. "Transcript ready" includes
@@ -820,9 +843,12 @@ async fn run_gesture_loop(
                 // Same for the cleanup model, when this hotkey's dictation will
                 // be cleaned: otherwise its first use loads it after the key
                 // is released, and that load is what the user waits through.
-                let (s1_enabled_globally, s1_gpu) = {
+                // Not when cleanup runs on the server: there is no local
+                // model to have ready.
+                let (s1_enabled_globally, s1_gpu, s1_local) = {
                     let cfg = state_for_gesture.config.lock().await;
-                    (cfg.data.engine.s1_mini.enabled, cfg.data.engine.s1_mini.gpu)
+                    let engine = &cfg.data.engine;
+                    (engine.s1_mini.enabled, engine.s1_mini.gpu, engine.server_cleanup().is_none())
                 };
                 // The async lock: `AppState::binding` blocks, which this
                 // runtime thread must not.
@@ -834,7 +860,7 @@ async fn run_gesture_loop(
                     .find(|b| !event.binding_id.is_empty() && b.id == event.binding_id)
                     .and_then(|b| b.s1_mini_enabled)
                     .unwrap_or(s1_enabled_globally);
-                if s1_enabled {
+                if s1_enabled && s1_local {
                     tokio::task::spawn_blocking(move || voxctrl_inference::s1_mini::preload(None, s1_gpu));
                 }
 

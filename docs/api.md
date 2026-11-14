@@ -455,6 +455,19 @@ Whether the saved Remote Speech Engine's server is reachable right now, and
 which fallback engine is set. Changes afterwards arrive as
 [`remote-status`](#remote-status) events, which carry the same type.
 
+#### `check_server_cleanup(endpoint, apiKey) → ServerCleanupStatus`
+Asks the speech server at `endpoint` whether it offers dictation cleanup
+(`GET /v1/cleanup`). Takes the endpoint and key as typed, which need not be
+saved. Never rejects: every outcome is a status to show.
+
+```ts
+interface ServerCleanupStatus {
+  available: boolean;
+  model: string | null;   // the server's cleanup model, e.g. "s1-mini"
+  message: string;        // what to tell the user, including how to fix "not available"
+}
+```
+
 #### `plan_model_cleanup(fallback) → CleanupPlan`
 Lists every downloaded model with its size and whether it is in use.
 `fallback` (`"none" | "whisper-cpp" | "moonshine" | "parakeet"`) is the
