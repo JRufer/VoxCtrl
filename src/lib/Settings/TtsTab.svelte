@@ -216,6 +216,9 @@
     } else if (cfg.tts.engine === "espeak") {
       engineName = "eSpeak-NG";
       voice = null;
+    } else if (cfg.tts.engine === "server") {
+      engineName = "your VoxCtrl server";
+      voice = null;
     }
     
     const textToSpeak = `Hi this is ${engineName} speaking from VoxCtrl`;
@@ -447,8 +450,38 @@
     { value: "pocket_tts", label: "Pocket-TTS (neural, voice cloning)" },
     { value: "piper", label: "Piper (neural, high quality)" },
     { value: "inflect_micro", label: "Inflect Micro (neural, 38 MB)" },
-    { value: "espeak", label: "eSpeak-NG (lightweight)" }
+    { value: "espeak", label: "eSpeak-NG (lightweight)" },
+    { value: "server", label: "VoxCtrl server (speaks on your speech server)" }
   ];
+
+  // ── VoxCtrl server ─────────────────────────────────────────────────────────
+  //
+  // The server set as the Remote Speech Engine synthesizes with the engine and
+  // voice chosen there, and this computer only plays the audio. There is
+  // nothing to download or pick here; the panel reports what the server says.
+  interface ServerTtsStatus {
+    available: boolean;
+    engine: string | null;
+    voice: string | null;
+    message: string;
+  }
+  let serverTts = $state<ServerTtsStatus | null>(null);
+  let serverTtsChecking = $state(false);
+
+  async function checkServerTts() {
+    const remote = cfg.engine.remote_openai;
+    serverTtsChecking = true;
+    try {
+      serverTts = await invoke<ServerTtsStatus>("check_server_tts", {
+        endpoint: remote?.endpoint ?? "",
+        apiKey: remote?.api_key || null,
+      });
+    } catch (e) {
+      serverTts = { available: false, engine: null, voice: null, message: String(e) };
+    } finally {
+      serverTtsChecking = false;
+    }
+  }
 
   // ── Inflect-Micro-v2 ───────────────────────────────────────────────────────
   //
@@ -734,6 +767,10 @@
     markDirty();
     engineSwitching = true;
     try {
+      if (cfg.tts.engine === "server") {
+        await checkServerTts();
+        return;
+      }
       if (cfg.tts.engine === "vox_cpm_2") {
         // Voice Design doesn't work for VoxCPM2 in the current audio.cpp
         // build (the prompt is silently ignored) — Voice Cloning is the
@@ -781,6 +818,8 @@
   }
 
   onMount(async () => {
+    if (cfg.tts.engine === "server") checkServerTts();
+
     invoke<string | null>("hf_token_env")
       .then((t) => (envHfToken = t && t.trim() ? t.trim() : null))
       .catch(() => (envHfToken = null));
@@ -921,6 +960,29 @@
       <p class="hint">Test TTS unavailable: {testTtsDisabledReason()}</p>
     {/if}
   </div>
+
+  <!-- ── VoxCtrl server section ─────────────────────────────────────────── -->
+  {#if cfg.tts.engine === "server"}
+  <div class="field-group" data-testid="server-tts-panel">
+    <h3>VoxCtrl Server</h3>
+    <p class="hint">
+      Speech is made on the server set under <strong>Engine → Remote Speech Engine Settings</strong>, with
+      the engine and voice chosen on that server, and played here. Nothing is downloaded or loaded on this
+      computer. Speed and the stop key above still apply. If the server can't be reached, nothing is spoken
+      and an error is shown.
+    </p>
+    {#if serverTtsChecking}
+      <p class="hint" data-testid="server-tts-status">Checking the server…</p>
+    {:else if serverTts}
+      <p class={serverTts.available ? "hint" : "field-error-msg"} data-testid="server-tts-status">
+        {serverTts.available ? "✔" : "⚠️"} {serverTts.message}
+      </p>
+    {/if}
+    <div class="row">
+      <button class="btn-preview" onclick={checkServerTts} disabled={serverTtsChecking}>Check the server</button>
+    </div>
+  </div>
+  {/if}
 
   <!-- ── Piper section ──────────────────────────────────────────────────── -->
   {#if cfg.tts.engine === "piper"}

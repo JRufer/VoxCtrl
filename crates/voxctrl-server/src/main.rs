@@ -12,6 +12,7 @@ mod client_contract_tests;
 mod config;
 mod engine;
 mod http;
+mod speech;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,6 +54,10 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_CLEANUP           true = clean up dictation for clients
                                      (downloads the S1-mini model, ~470 MB)
     VOXCTRL_SERVER_CLEANUP_GPU       false = keep the cleanup model on the CPU
+    VOXCTRL_SERVER_TTS               true = speak for clients (text-to-speech)
+    VOXCTRL_SERVER_TTS_ENGINE        piper, espeak, pocket_tts, breeze_tts_2,
+                                     vox_cpm_2 or kitten_tts_2
+    VOXCTRL_SERVER_TTS_VOICE         Voice name for the engine chosen
 
 Full guide: docs/server.md
 ";
@@ -170,6 +175,10 @@ async fn run(cli: Cli) -> Result<()> {
         if !shown.api_key.is_empty() {
             shown.api_key = "(set)".into();
         }
+        // The Hugging Face token is a secret too.
+        if shown.tts.hf_token.as_deref().is_some_and(|t| !t.is_empty()) {
+            shown.tts.hf_token = Some("(set)".into());
+        }
         println!("# Effective settings: {} plus environment and flags", path.display());
         print!("{}", toml::to_string_pretty(&shown).context("Could not print the config")?);
         return Ok(());
@@ -210,9 +219,23 @@ async fn run(cli: Cli) -> Result<()> {
         None => "off (set cleanup.enabled or VOXCTRL_SERVER_CLEANUP to offer it)".to_string(),
     };
 
+    let speaker: Option<Arc<dyn speech::Speaker>> = if effective.tts.enabled {
+        Some(Arc::new(speech::EngineSpeaker::prepare(effective.tts.clone()).await?))
+    } else {
+        None
+    };
+    let speech_line = match &speaker {
+        Some(s) => match s.voice() {
+            Some(voice) => format!("on ({}, voice {voice})", s.engine()),
+            None => format!("on ({})", s.engine()),
+        },
+        None => "off (set tts.enabled or VOXCTRL_SERVER_TTS to offer it)".to_string(),
+    };
+
     let state = Arc::new(http::AppState {
         engine,
         cleanup: cleaner,
+        speech: speaker,
         api_key: effective.require_api_key.then(|| effective.api_key.clone()),
         max_upload_bytes: usize::try_from(effective.max_upload_mb.saturating_mul(1024 * 1024)).unwrap_or(usize::MAX),
     });
@@ -226,6 +249,7 @@ async fn run(cli: Cli) -> Result<()> {
     info!("voxctrl-server {} is ready", env!("CARGO_PKG_VERSION"));
     info!("  Model:    {model_id}");
     info!("  Cleanup:  {cleanup_line}");
+    info!("  Speech:   {speech_line}");
     info!("  Endpoint: http://{addr}/v1  (use this machine's address from a client)");
     if generated_key {
         // The one time the key is shown: nobody has seen it yet, and on a
@@ -383,6 +407,7 @@ mod tests {
         let state = Arc::new(http::AppState {
             engine,
             cleanup: None,
+            speech: None,
             api_key: Some("vx_key".into()),
             max_upload_bytes: 1024,
         });
@@ -415,6 +440,9 @@ mod tests {
             "VOXCTRL_SERVER_MAX_UPLOAD_MB",
             "VOXCTRL_SERVER_CLEANUP",
             "VOXCTRL_SERVER_CLEANUP_GPU",
+            "VOXCTRL_SERVER_TTS",
+            "VOXCTRL_SERVER_TTS_ENGINE",
+            "VOXCTRL_SERVER_TTS_VOICE",
         ] {
             assert!(HELP.contains(name), "--help does not mention {name}");
         }

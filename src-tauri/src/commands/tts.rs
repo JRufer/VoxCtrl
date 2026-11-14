@@ -169,3 +169,18 @@ pub async fn list_piper_voices(
 ) -> Result<Vec<voxctrl_tts::PiperVoiceOption>, String> {
     Ok(voxctrl_tts::piper_voice_catalogue(&voice_dir))
 }
+
+/// Whether the speech server at `endpoint` offers text-to-speech, and with
+/// which engine and voice, in words for the Settings window. Takes the
+/// endpoint and key as typed, which may not be saved yet.
+#[tauri::command]
+pub async fn check_server_tts(
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<voxctrl_tts::remote::ServerTtsStatus, String> {
+    let link = voxctrl_tts::remote::ServerLink { endpoint, api_key };
+    // The client is blocking, for the TTS worker thread's sake.
+    tokio::task::spawn_blocking(move || voxctrl_tts::remote::check_server_tts(&link))
+        .await
+        .map_err(|e| e.to_string())
+}

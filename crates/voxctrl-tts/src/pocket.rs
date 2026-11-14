@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use tracing::info;
 
 use crate::audiocpp::{self, resolve_hf_reference, AudioCppSession, SpeakRequest, SpeakerRef};
-use crate::engine::PlaybackCallback;
+use crate::utterance::PlaybackCallback;
 use crate::piper::expand_tilde;
 
 // ── Pocket-TTS voice catalogue ────────────────────────────────────────────────
@@ -289,16 +289,11 @@ pub(crate) fn ensure_pocket_tts_loaded(
 /// TtsEngine::PocketTts`. Takes the worker's audio.cpp session by mutable
 /// reference so it persists (and the underlying model stays loaded) across
 /// calls for the worker's lifetime, or until idle-unload drops it.
-pub(crate) fn speak_pocket_tts(
+pub(crate) fn synth_pocket_tts(
     config: &voxctrl_config::TtsConfig,
-    u: &crate::engine::Utterance,
+    u: &crate::utterance::Utterance,
     session: &mut Option<AudioCppSession>,
-    on_playback_start: &Option<PlaybackCallback>,
-    sink: &rodio::Sink,
-    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
-    _generation: u32,
-) -> Result<()> {
-    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
+) -> Result<Vec<u8>> {
     let voice = u.voice.as_deref().unwrap_or(&config.pocket_tts.voice);
     let cfg = &config.pocket_tts;
 
@@ -319,6 +314,23 @@ pub(crate) fn speak_pocket_tts(
         options: &[],
     })?;
 
+    Ok(audio)
+}
+
+/// [`synth_pocket_tts`], then played on `sink`. A pre-warm utterance is
+/// synthesized, to load the model, and not played.
+#[cfg(feature = "playback")]
+pub(crate) fn speak_pocket_tts(
+    config: &voxctrl_config::TtsConfig,
+    u: &crate::utterance::Utterance,
+    session: &mut Option<AudioCppSession>,
+    on_playback_start: &Option<PlaybackCallback>,
+    sink: &rodio::Sink,
+    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
+    _generation: u32,
+) -> Result<()> {
+    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
+    let audio = synth_pocket_tts(config, u, session)?;
     if is_prewarm {
         return Ok(());
     }

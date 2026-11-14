@@ -48,7 +48,7 @@ VoxCtrl/
     ├── voxctrl-inject/     # Text delivery: paste (with clipboard restore) or type; key sending per platform
     ├── voxctrl-clipboard/  # Full-format clipboard backup/restore (Windows / X11 / Wayland)
     ├── voxctrl-winput/     # Windows SendInput: Unicode typing, paste shortcuts, window class
-    ├── voxctrl-tts/        # Neural & local TTS (Kitten/Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak)
+    ├── voxctrl-tts/        # Neural & local TTS (Kitten/Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak). `playback` feature = the app's worker; without it, synthesis only (`synth`) for the server; `remote` = the client of a server's speech
     ├── voxctrl-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
     ├── voxctrl-dbus/       # DBus service (Linux session bus)
     ├── voxctrl-llm/        # OpenAI-compatible LLM HTTP client
@@ -56,7 +56,7 @@ VoxCtrl/
     ├── voxctrl-update/     # GitHub release check, download, verify, self-replace
     ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
     ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
-    └── voxctrl-server/     # Headless speech server: OpenAI-compatible HTTP API over voxctrl-inference, plus S1-mini cleanup (`/v1/cleanup`)
+    └── voxctrl-server/     # Headless speech server: OpenAI-compatible HTTP API over voxctrl-inference, plus S1-mini cleanup (`/v1/cleanup`) and text-to-speech (`/v1/audio/speech`)
 ```
 
 `voxctrl-server` is a separate binary, not part of the desktop app. It depends

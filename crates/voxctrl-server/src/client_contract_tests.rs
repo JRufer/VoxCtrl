@@ -42,7 +42,17 @@ async fn serve_with(
     seen: Arc<std::sync::Mutex<Seen>>,
     cleanup: Option<Arc<dyn crate::cleanup::Cleaner>>,
 ) -> (String, Arc<std::sync::Mutex<Seen>>) {
-    let state = Arc::new(AppState { engine, cleanup, api_key: Some(KEY.into()), max_upload_bytes: 64 * 1024 * 1024 });
+    serve_all(engine, seen, cleanup, None).await
+}
+
+async fn serve_all(
+    engine: crate::engine::Engine,
+    seen: Arc<std::sync::Mutex<Seen>>,
+    cleanup: Option<Arc<dyn crate::cleanup::Cleaner>>,
+    speech: Option<Arc<dyn crate::speech::Speaker>>,
+) -> (String, Arc<std::sync::Mutex<Seen>>) {
+    let state =
+        Arc::new(AppState { engine, cleanup, speech, api_key: Some(KEY.into()), max_upload_bytes: 64 * 1024 * 1024 });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, router(state)).await });
@@ -198,4 +208,76 @@ async fn a_cleanup_the_server_cannot_do_is_an_error_carrying_its_reason() {
 
     let nobody = clean_on_server(&client_config("http://127.0.0.1:1/v1", Some(KEY)), "hello", "casual").await;
     assert!(nobody.is_err());
+}
+
+// ── Speech ────────────────────────────────────────────────────────────────────
+
+use voxctrl_tts::remote::{check_server_tts, fetch_speech, ServerLink};
+
+/// A valid, tiny WAV whose samples spell out how long the text was.
+struct CountingSpeaker;
+
+impl crate::speech::Speaker for CountingSpeaker {
+    fn speak(&self, text: &str) -> anyhow::Result<Vec<u8>> {
+        let samples: Vec<u8> = (0..text.chars().count() as i16).flat_map(|s| s.to_le_bytes()).collect();
+        Ok(voxctrl_tts::synth::pcm16_to_wav(&samples, 16000))
+    }
+
+    fn engine(&self) -> String {
+        "piper".into()
+    }
+
+    fn voice(&self) -> Option<String> {
+        Some("en-us-amy-low".into())
+    }
+}
+
+async fn serve_speech(enabled: bool) -> String {
+    let (engine, seen) = fake_engine("unused", false);
+    let speaker: Option<Arc<dyn crate::speech::Speaker>> = enabled.then(|| Arc::new(CountingSpeaker) as _);
+    serve_all(engine, seen, None, speaker).await.0
+}
+
+fn link(endpoint: &str, key: &str) -> ServerLink {
+    ServerLink { endpoint: endpoint.to_string(), api_key: Some(key.to_string()) }
+}
+
+// The app's speech client is blocking (it runs on the TTS worker thread), so
+// these drive it from a blocking task, as the worker would.
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_gets_a_wav_it_can_play() {
+    let endpoint = serve_speech(true).await;
+    let wav = tokio::task::spawn_blocking(move || fetch_speech(&link(&endpoint, KEY), "Hello there")).await.unwrap().unwrap();
+    assert_eq!(&wav[0..4], b"RIFF");
+    // 11 characters, one 2-byte sample each, after the 44-byte header.
+    assert_eq!(wav.len(), 44 + 22);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_learns_whether_and_how_the_server_speaks() {
+    let (on, off) = (serve_speech(true).await, serve_speech(false).await);
+    let (on, off, wrong_key) = tokio::task::spawn_blocking(move || {
+        (check_server_tts(&link(&on, KEY)), check_server_tts(&link(&off, KEY)), check_server_tts(&link(&on, "vx_wrong")))
+    })
+    .await
+    .unwrap();
+    assert!(on.available, "{}", on.message);
+    assert_eq!(on.message, "This server speaks with piper, voice en-us-amy-low.");
+    assert!(!off.available);
+    assert!(off.message.contains("turned off"), "{}", off.message);
+    assert!(wrong_key.message.contains("API key"), "{}", wrong_key.message);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn speech_the_server_cannot_give_is_an_error_the_user_can_act_on() {
+    let (on, off) = (serve_speech(true).await, serve_speech(false).await);
+    let (disabled, wrong_key) = tokio::task::spawn_blocking(move || {
+        (fetch_speech(&link(&off, KEY), "hi"), fetch_speech(&link(&on, "vx_wrong"), "hi"))
+    })
+    .await
+    .unwrap();
+    let message = disabled.unwrap_err().to_string();
+    assert!(message.contains("HTTP 501") && message.contains("not enabled"), "{message}");
+    assert!(wrong_key.unwrap_err().to_string().contains("API key"));
 }

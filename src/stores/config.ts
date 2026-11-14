@@ -177,7 +177,16 @@ export interface KittenTts2Config {
 
 export interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2" | "kitten_tts_2";
+  /** "server" speaks on the VoxCtrl server set as the Remote Speech Engine. */
+  engine:
+    | "piper"
+    | "espeak"
+    | "pocket_tts"
+    | "inflect_micro"
+    | "breeze_tts_2"
+    | "vox_cpm_2"
+    | "kitten_tts_2"
+    | "server";
   voice: string;
   voice_dir: string;
   stop_key: string[];

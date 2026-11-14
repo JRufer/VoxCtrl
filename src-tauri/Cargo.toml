@@ -32,7 +32,7 @@ voxctrl-hotkeys   = { workspace = true }
 # toggle has something to switch on.
 voxctrl-audio     = { workspace = true, features = ["noisereduce"] }
 voxctrl-inference = { workspace = true }
-voxctrl-tts       = { workspace = true }
+voxctrl-tts       = { workspace = true, features = ["playback"] }
 voxctrl-inject    = { workspace = true }
 voxctrl-dbus      = { workspace = true }
 voxctrl-mcp       = { workspace = true }

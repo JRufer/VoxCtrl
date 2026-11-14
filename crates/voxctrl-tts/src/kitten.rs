@@ -24,7 +24,7 @@ use crate::audiocpp::{
     self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppRuntime, AudioCppSession,
     SpeakRequest, SpeakerRef,
 };
-use crate::engine::{PlaybackCallback, Utterance};
+use crate::utterance::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
 
 pub const KITTEN_TTS_2_SAMPLE_RATE: u32 = 24_000;
@@ -222,17 +222,12 @@ pub(crate) fn ensure_kitten_tts_2_loaded(config: &TtsConfig, session: &mut Optio
 /// Called from `TtsEngineWorker::run` when `config.engine ==
 /// TtsEngine::KittenTts2`. The session persists across calls (keeping the
 /// model loaded) for the worker's lifetime, or until idle-unload drops it.
-pub(crate) fn speak_kitten_tts_2(
+pub(crate) fn synth_kitten_tts_2(
     config: &TtsConfig,
     u: &Utterance,
     session: &mut Option<AudioCppSession>,
-    on_playback_start: &Option<PlaybackCallback>,
-    sink: &rodio::Sink,
-    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
-    _generation: u32,
-) -> Result<()> {
+) -> Result<Vec<u8>> {
     let cfg = &config.kitten_tts_2;
-    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
     let s = ensure_session(config, session)?;
 
     info!(
@@ -246,6 +241,23 @@ pub(crate) fn speak_kitten_tts_2(
     let text = if text.trim().is_empty() { "Hi.".to_string() } else { text };
     let audio = synthesize(config, s, &text)?;
 
+    Ok(audio)
+}
+
+/// [`synth_kitten_tts_2`], then played on `sink`. A pre-warm utterance is
+/// synthesized, to load the model, and not played.
+#[cfg(feature = "playback")]
+pub(crate) fn speak_kitten_tts_2(
+    config: &TtsConfig,
+    u: &Utterance,
+    session: &mut Option<AudioCppSession>,
+    on_playback_start: &Option<PlaybackCallback>,
+    sink: &rodio::Sink,
+    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
+    _generation: u32,
+) -> Result<()> {
+    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
+    let audio = synth_kitten_tts_2(config, u, session)?;
     if is_prewarm {
         return Ok(());
     }

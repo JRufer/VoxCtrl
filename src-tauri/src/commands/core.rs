@@ -116,6 +116,7 @@ pub async fn save_config(
         let mut handle = state.tts_handle.lock().await;
         if let Some(ref tts) = *handle {
             tts.update_config(new_config.tts.clone());
+            tts.set_server(crate::services::tts_server_link(&new_config));
         } else if new_config.tts.enabled {
             *handle = Some(crate::services::start_tts_worker(&app, state.inner(), &new_config));
         }

@@ -16,6 +16,9 @@ pub enum TtsEngine {
     VoxCpm2,
     #[serde(rename = "kitten_tts_2", alias = "kitten_tts2", alias = "kittentts2")]
     KittenTts2,
+    /// Speak on the VoxCtrl server set as the Remote Speech Engine, with the
+    /// engine and voice chosen there; this machine only plays the audio.
+    Server,
 }
 
 /// How the TTS engine manages the memory of model-backed engines (currently
@@ -59,7 +62,7 @@ fn default_tts_speed() -> f32 {
     1.0
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PocketTtsConfig {
     /// Bundled reference voice name, e.g. "alba", "anna", "vera", "charles", "michael",
     /// or the filename stem of a custom clip dropped into `voice_dir`.
@@ -98,7 +101,7 @@ impl Default for PocketTtsConfig {
 /// Breeze-TTS-2 (BreezeBlue) — bilingual neural text-to-speech with natural-language
 /// voice design speaker prompts. Model weights are gated on HuggingFace under a
 /// non-commercial research license.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BreezeTts2Config {
     /// Voice selection mode: "prompt" (Voice Design) or "clone" (Cloned Voice Clip)
     #[serde(default = "default_breeze_voice_mode")]
@@ -154,7 +157,7 @@ impl Default for BreezeTts2Config {
 
 /// VoxCPM2 — neural text-to-speech with natural-language voice design speaker
 /// prompts and reference voice cloning (including Ultimate Cloning with paired audio + transcript).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VoxCpm2Config {
     /// Voice selection mode: "prompt" (Voice Design) or "clone" (Voice Cloning)
     #[serde(default = "default_vox_cpm_2_voice_mode")]
@@ -216,7 +219,7 @@ impl Default for VoxCpm2Config {
 /// has built-in preset voices (named in the GGUF) and clones from a 1–30 s
 /// reference clip plus its exact transcript. Weights are under the Stellon
 /// Labs Community License, not VoxCtrl's MIT license.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KittenTts2Config {
     /// Voice selection mode: "preset" (a voice built into the model) or
     /// "clone" (a reference clip from the shared voice folder).
@@ -292,7 +295,7 @@ fn default_inflect_micro_noise_scale() -> f32 {
 /// unlike Piper and Pocket-TTS there is no voice to pick. Speaking rate comes
 /// from the shared [`TtsConfig::speed`]; what remains model-specific is the
 /// sampling seed and the two VITS noise scales.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InflectMicroConfig {
     /// Directory holding the ONNX graphs and phoneme vocabulary. Empty = platform
     /// default (`~/.local/share/voxctrl/models/inflect-micro/`).
@@ -323,7 +326,8 @@ impl Default for InflectMicroConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct TtsConfig {
     pub enabled: bool,
     pub engine: TtsEngine,

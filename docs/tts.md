@@ -46,6 +46,29 @@ two minutes is abandoned.
 
 ## Engines
 
+### VoxCtrl server
+
+Set **Engine** to **VoxCtrl server** (`tts.engine = "server"`) to have a
+[VoxCtrl server](./server.md) do the speaking. The server synthesizes with the
+engine and voice set on the server and sends the audio back; this computer only
+plays it, so it downloads and loads no TTS model.
+
+- The server is the one under **Settings → Engine → Remote Speech Engine
+  Settings** (`engine.remote_openai.endpoint` and `api_key`). It is used for
+  speech even when a local speech engine is selected.
+- The panel under the engine picker shows which engine and voice the server
+  speaks with, or what to change on the server when it does not.
+- **Speed**, the stop key, pronunciation snippets and custom vocabulary are
+  applied here as with any other engine. Pre-warming and the model memory mode
+  have nothing to act on.
+- The voice is the server's: voices cloned on this computer are not used.
+- The whole passage is synthesized before playback starts. If the server can't
+  be reached nothing is spoken and the reason is shown; there is no local
+  fallback.
+
+Setting up the server side is covered in
+[Text-to-speech on the server](./server.md#text-to-speech-on-the-server).
+
 ### Breeze-TTS-2 (Neural, Voice Cloning)
 [Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is an open-weight, bilingual (English/Chinese) speech generation model by BreezeBlue, designed specifically for ultra-low latency real-time interaction. VoxCtrl runs it through audio.cpp's `breeze_tts` model family.
 

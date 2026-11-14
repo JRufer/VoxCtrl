@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 voxctrl-config    = { workspace = true }
+# Synthesis only: without `playback` no sound-card library is linked.
+voxctrl-tts       = { workspace = true }
 voxctrl-inference = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

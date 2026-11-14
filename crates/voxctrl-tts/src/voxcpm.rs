@@ -19,7 +19,7 @@ use crate::audiocpp::{
     self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
     SpeakRequest, SpeakerRef,
 };
-use crate::engine::{PlaybackCallback, Utterance};
+use crate::utterance::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
 
 pub const VOX_CPM_2_SAMPLE_RATE: u32 = 24_000;
@@ -161,17 +161,12 @@ pub(crate) fn ensure_vox_cpm_2_loaded(
 /// TtsEngine::VoxCpm2`. Takes the worker's audio.cpp session by mutable
 /// reference so it persists (and the underlying model stays loaded) across
 /// calls for the worker's lifetime, or until idle-unload drops it.
-pub(crate) fn speak_vox_cpm_2(
+pub(crate) fn synth_vox_cpm_2(
     config: &TtsConfig,
     u: &Utterance,
     session: &mut Option<AudioCppSession>,
-    on_playback_start: &Option<PlaybackCallback>,
-    sink: &rodio::Sink,
-    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
-    _generation: u32,
-) -> Result<()> {
+) -> Result<Vec<u8>> {
     let cfg = &config.vox_cpm_2;
-    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
     let model_dir = resolve_vox_cpm_2_dir(&cfg.model_dir);
     if !model_dir.join(VOX_CPM_2_MODEL_FILENAME).exists() {
         anyhow::bail!("VoxCPM2 model not found. Download it from TTS settings.");
@@ -194,6 +189,23 @@ pub(crate) fn speak_vox_cpm_2(
         options: &[],
     })?;
 
+    Ok(audio)
+}
+
+/// [`synth_vox_cpm_2`], then played on `sink`. A pre-warm utterance is
+/// synthesized, to load the model, and not played.
+#[cfg(feature = "playback")]
+pub(crate) fn speak_vox_cpm_2(
+    config: &TtsConfig,
+    u: &Utterance,
+    session: &mut Option<AudioCppSession>,
+    on_playback_start: &Option<PlaybackCallback>,
+    sink: &rodio::Sink,
+    _generation_counter: &Arc<std::sync::atomic::AtomicU32>,
+    _generation: u32,
+) -> Result<()> {
+    let is_prewarm = u.source_label.as_deref() == Some("prewarm");
+    let audio = synth_vox_cpm_2(config, u, session)?;
     if is_prewarm {
         return Ok(());
     }

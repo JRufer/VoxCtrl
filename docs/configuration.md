@@ -324,7 +324,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS subsystem |
-| `engine` | string | `"espeak"` | Synthesis engine: `"kitten_tts_2"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, or `"espeak"` |
+| `engine` | string | `"espeak"` | Synthesis engine: `"kitten_tts_2"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"espeak"`, or `"server"`. `"server"` has the VoxCtrl server at `engine.remote_openai.endpoint` synthesize with its own engine and voice, and plays the result here; see [VoxCtrl server](./tts.md#voxctrl-server) |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |

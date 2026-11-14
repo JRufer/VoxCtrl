@@ -34,7 +34,8 @@ that listens on a network port.
 
 ## What runs where
 
-The server runs speech recognition and, from 0.9.5, S1-mini dictation cleanup.
+The server runs speech recognition, S1-mini dictation cleanup (from 0.9.5) and
+text-to-speech (from 0.9.7).
 
 | | Where it runs |
 |---|---|
@@ -43,15 +44,13 @@ The server runs speech recognition and, from 0.9.5, S1-mini dictation cleanup.
 | Filler removal, spoken punctuation, snippets, custom vocabulary | Client |
 | **S1-mini dictation cleanup** | **Server**, when turned on at both ends (see [Dictation cleanup on the server](#dictation-cleanup-on-the-server)); otherwise client |
 | The OpenAI-compatible LLM step | Wherever the endpoint in the client's AI settings points |
-| Text-to-speech | Client |
+| **Text-to-speech** | **Server**, when turned on there and the client's TTS engine is "VoxCtrl server" (see [Text-to-speech on the server](#text-to-speech-on-the-server)); otherwise client. The audio is always played on the client |
 
-So a client using the server still loads its TTS voice locally if you have
-text-to-speech turned on, and S1-mini too unless you hand cleanup to the
-server.
+Cleanup and text-to-speech are each off until you turn them on at both ends,
+so a client keeps loading its own S1-mini and TTS voice until then.
 
 Not in this release, and planned for later ones:
 
-- text-to-speech running on the server;
 - sending custom voices from the client to the server;
 - pairing with a code, and encrypted connections built in;
 
@@ -504,6 +503,89 @@ Things to know:
 - The server logs how long each cleanup took and how many characters went in
   and out, never the text.
 
+### Text-to-speech on the server
+
+The server can do the speaking for its clients: it synthesizes the speech with
+an engine and voice you set on the server, and the client plays the audio. A
+client then loads no TTS model. It needs VoxCtrl 0.9.7 or newer at both ends,
+and has to be turned on at both.
+
+**On the server**, choose an engine and voice, turn it on, and restart.
+
+- Docker: in `packaging/docker/.env`, then `docker compose up -d --build`
+  (an image built before 0.9.7 has to be rebuilt):
+
+  ```bash
+  VOXCTRL_SERVER_TTS=true
+  VOXCTRL_SERVER_TTS_ENGINE=piper
+  VOXCTRL_SERVER_TTS_VOICE=en-us-lessac-medium
+  ```
+
+- System service: in `server.toml`, then `sudo systemctl restart voxctrl-server`:
+
+  ```toml
+  [tts]
+  enabled = true
+  engine = "piper"
+  voice = "en-us-lessac-medium"
+  ```
+
+The `[tts]` section takes the same keys as the `tts` section of the app's own
+config file, so anything you can set for an engine in the app you can set here;
+see [Text-to-speech configuration](./configuration.md#tts-section). The keys
+that only concern playing audio (`stop_key`, `response_overlay`, `speed`) do
+nothing on a server.
+
+| `engine` | What the server downloads on the next start | Voice setting |
+|---|---|---|
+| `piper` | The Piper program and the chosen voice (20 to 120 MB) | `voice` |
+| `espeak` | Nothing. Needs `espeak-ng` installed; the Docker image includes it | none |
+| `pocket_tts` | The audio.cpp runtime and the Pocket-TTS model | `[tts.pocket_tts] voice` |
+| `kitten_tts_2` | The audio.cpp runtime and the Kitten TTS 2 model | `[tts.kitten_tts_2] voice` |
+| `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
+| `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
+
+Inflect-Micro is not available on the server yet. `VOXCTRL_SERVER_TTS_VOICE`
+sets the voice of whichever engine is chosen, for the three engines with named
+voices.
+
+At startup the server logs `Speech:   on (piper, voice en-us-lessac-medium)`.
+Check it from the server:
+
+```bash
+curl -H "Authorization: Bearer $KEY" http://localhost:8787/v1/audio/speech
+# {"available":true,"engine":"piper","voice":"en-us-lessac-medium"}
+
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"input": "Hello from the server."}' \
+     http://localhost:8787/v1/audio/speech -o hello.wav
+```
+
+**On each client**, in **Settings → TTS**, set **Engine** to **VoxCtrl server**.
+The panel under it says which engine and voice the server speaks with, or what
+to change on the server if it does not speak. The server used is the one under
+**Settings → Engine → Remote Speech Engine Settings**; its address and key are
+used even if the client transcribes with a local engine.
+
+Things to know:
+
+- **The server chooses the voice.** Every client of a server hears the same
+  engine and voice. Voices cloned on a client can't be used through the server
+  yet.
+- **Speed, the stop key and what gets spoken stay on the client.** The client
+  applies its pronunciation snippets and custom vocabulary to the text before
+  sending it, plays the audio at its own **Speed**, and its stop key stops
+  playback.
+- **Speech arrives all at once.** The server synthesizes the whole passage
+  before the client starts playing, so a long passage has a longer pause before
+  it than a local engine that plays as it goes. At most 5,000 characters are
+  spoken per request.
+- **If the server can't be reached, nothing is spoken** and the client shows
+  the reason. There is no local fallback for speech.
+- **Memory on the server:** the model stays loaded for as long as the server
+  runs.
+- The server logs how long each request took and its size, never the text.
+
 ### Free the disk space your local models used
 
 If this computer ran everything itself before you set up the server, its speech,
@@ -597,7 +679,19 @@ enabled = false
 # Run the cleanup model on the GPU when the cleanup helper was built with GPU
 # support (the `vulkan` build). No effect otherwise.
 gpu = true
+
+[tts]
+# true = speak for clients whose TTS engine is "VoxCtrl server".
+enabled = false
+# "piper", "espeak", "pocket_tts", "breeze_tts_2", "vox_cpm_2" or "kitten_tts_2"
+engine = "espeak"
+# The Piper voice. Other engines keep their voice in their own sub-section,
+# with the same keys as the app's config: [tts.pocket_tts], [tts.kitten_tts_2],
+# [tts.breeze_tts_2], [tts.vox_cpm_2].
+voice = "en-us-lessac-medium"
 ```
+
+A `server.toml` the server writes itself leaves `[tts]` out until you add it.
 
 Only the `[engine.*]` section for the selected `backend` is used. You can leave out any key,
 and any whole section, that you don't want to change.
@@ -620,6 +714,9 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_LANGUAGE` | `language` of the selected backend | `en` |
 | `VOXCTRL_SERVER_CLEANUP` | `cleanup.enabled` | `true` |
 | `VOXCTRL_SERVER_CLEANUP_GPU` | `cleanup.gpu` | `false` |
+| `VOXCTRL_SERVER_TTS` | `tts.enabled` | `true` |
+| `VOXCTRL_SERVER_TTS_ENGINE` | `tts.engine` | `piper` |
+| `VOXCTRL_SERVER_TTS_VOICE` | The voice of the chosen engine (`piper`, `pocket_tts`, `kitten_tts_2`) | `en-us-lessac-medium` |
 
 A variable that is set but empty is ignored. Environment variables are never
 written into `server.toml`.
@@ -760,8 +857,10 @@ use, so tools other than VoxCtrl can use it too.
 | `POST /v1/audio/transcriptions` | Yes | Transcribe audio |
 | `GET /v1/cleanup` | Yes | Whether cleanup is enabled: `{"available": true, "model": "s1-mini"}` |
 | `POST /v1/cleanup` | Yes | Clean up a transcript |
+| `GET /v1/audio/speech` | Yes | Whether text-to-speech is enabled: `{"available": true, "engine": "piper", "voice": "…"}` |
+| `POST /v1/audio/speech` | Yes | Speak text; returns a WAV file |
 
-`GET /health` also reports `"cleanup": true` or `false`. `/v1/cleanup` is
+`GET /health` also reports `"cleanup"` and `"tts"` as `true` or `false`. `/v1/cleanup` is
 VoxCtrl's own and not part of the OpenAI API.
 
 Send the key as `Authorization: Bearer <key>`.
@@ -828,9 +927,47 @@ Errors use the same envelope as the rest of the API. A server with cleanup
 turned off answers HTTP 501 with `"type": "not_enabled"`. Empty text returns
 empty text without running the model.
 
+### `POST /v1/audio/speech`
+
+The same path and request shape as OpenAI's speech endpoint, so OpenAI clients
+can use it. JSON in, `audio/wav` out.
+
+| Field | Required | Meaning |
+|---|---|---|
+| `input` | Yes | The text to speak, at most 5,000 characters |
+| `response_format` | No | `wav` or left out. Anything else is refused: the server only makes WAV |
+| `model`, `voice`, `speed` | No | Accepted and ignored. The server speaks with the engine and voice it was set up with |
+
+```bash
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"input": "The build finished."}' \
+     http://server:8787/v1/audio/speech -o speech.wav
+```
+
+A server with text-to-speech turned off answers HTTP 501 with
+`"type": "not_enabled"`. An OpenAI client that asks for its default format
+(`mp3`) gets HTTP 400; set its format to `wav`.
+
 ---
 
 ## Troubleshooting
+
+### Nothing is spoken with the "VoxCtrl server" engine
+
+The client shows the reason when speech fails. In **Settings → TTS** on the
+client, with **Engine** set to **VoxCtrl server**, press **Check the server**:
+
+- *Text-to-speech is turned off on this server*: set `VOXCTRL_SERVER_TTS=true`
+  or `[tts] enabled = true` on the server and restart it.
+- *This server does not offer text-to-speech*: the server is older than 0.9.7
+  (rebuild it), or the address is not a `voxctrl-server`.
+- *No server address is set*: enter it under **Engine → Remote Speech Engine
+  Settings**. It is used for speech even with a local speech engine selected.
+
+If the server will not start with text-to-speech on, its log says what could
+not be downloaded or loaded. The engines' programs and models are fetched from
+GitHub and Hugging Face on the first start, so the server needs internet access
+then.
 
 ### Dictation arrives uncleaned although cleanup is on
 

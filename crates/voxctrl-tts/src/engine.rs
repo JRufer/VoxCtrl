@@ -2,7 +2,6 @@
 //! synthesis lives in `pocket.rs` (called from [`TtsEngineWorker::run`]) since
 //! it needs no access to this module's private fields.
 
-use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,7 +16,6 @@ use crate::audiocpp::AudioCppSession;
 use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2};
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
 use crate::kitten::{ensure_kitten_tts_2_loaded, speak_kitten_tts_2};
-use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice_at};
 use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
 use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2};
 
@@ -35,12 +33,7 @@ type InflectModelSlot = Option<()>;
 
 // ── Utterance queue ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct Utterance {
-    pub text: String,
-    pub voice: Option<String>,
-    pub source_label: Option<String>,
-}
+pub use crate::utterance::{ErrorCallback, PlaybackCallback, Utterance};
 
 #[derive(Debug, Clone)]
 pub enum TtsCommand {
@@ -58,6 +51,8 @@ pub enum TtsCommand {
     /// Sent as soon as VoxCtrl knows speech is likely — e.g. the moment a
     /// recording starts — so the load overlaps with the user still talking.
     Preload,
+    /// Where the `Server` engine sends text, or `None` when no server is set.
+    SetServer(Option<crate::remote::ServerLink>),
     Shutdown,
 }
 
@@ -117,6 +112,13 @@ impl TtsEngineHandle {
         stop_current_playback();
     }
 
+    /// Tell the worker which server the `Server` engine speaks through. Sent
+    /// alongside every config update, since the address lives outside the
+    /// TTS settings.
+    pub fn set_server(&self, server: Option<crate::remote::ServerLink>) {
+        let _ = self.tx.try_send(TtsCommand::SetServer(server));
+    }
+
     pub fn update_config(&self, config: TtsConfig) {
         let _ = self.tx.send(TtsCommand::UpdateConfig(Box::new(config)));
     }
@@ -164,12 +166,9 @@ fn load_selected_engine(
 
 // ── TTS engine worker ─────────────────────────────────────────────────────────
 
-pub type PlaybackCallback = Arc<dyn Fn() + Send + Sync + 'static>;
-/// Called with a human-readable message whenever an utterance fails to play
-/// (engine missing, voice not downloaded, audio device unavailable, ...).
-pub type ErrorCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
-
 pub struct TtsEngineWorker {
+    /// The server the `Server` engine speaks through, as of startup.
+    server: Option<crate::remote::ServerLink>,
     config: TtsConfig,
     custom_vocabulary: Vec<String>,
     rx: Receiver<TtsCommand>,
@@ -183,6 +182,7 @@ pub struct TtsEngineWorker {
 impl TtsEngineWorker {
     pub fn start(
         config: TtsConfig,
+        server: Option<crate::remote::ServerLink>,
         custom_vocabulary: Vec<String>,
         on_playback_start: Option<PlaybackCallback>,
         on_playback_end: Option<PlaybackCallback>,
@@ -215,6 +215,7 @@ impl TtsEngineWorker {
 
         let worker = Self {
             config,
+            server,
             custom_vocabulary,
             rx,
             generation,
@@ -237,6 +238,7 @@ impl TtsEngineWorker {
             self.config.engine, self.config.memory_mode
         );
         let mut current_config = self.config.clone();
+        let mut current_server = self.server.clone();
 
         // Inflect-Micro-v2 ONNX sessions, cached for the worker's lifetime.
         let mut inflect_model: InflectModelSlot = None;
@@ -430,6 +432,14 @@ impl TtsEngineWorker {
                             &self.generation,
                             generation,
                         ),
+                        TtsEngine::Server => speak_on_server(
+                            current_server.as_ref(),
+                            &utterance,
+                            &self.on_playback_start,
+                            &sink,
+                            &self.generation,
+                            generation,
+                        ),
                         TtsEngine::KittenTts2 => speak_kitten_tts_2(
                             &current_config,
                             &utterance,
@@ -480,6 +490,9 @@ impl TtsEngineWorker {
                     // A long utterance must not count against the idle window.
                     last_used = Instant::now();
                 }
+                TtsCommand::SetServer(server) => {
+                    current_server = server;
+                }
                 TtsCommand::Preload => {
                     // Speculative: failures are logged, not surfaced. The same
                     // error is reported properly (with a toast) if an utterance
@@ -507,61 +520,7 @@ impl TtsEngineWorker {
     }
 
     fn speak_piper(&self, u: &Utterance, sink: &rodio::Sink) -> Result<()> {
-        let binary = piper_binary().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Piper binary not found. Download a voice from TTS settings (this \
-                 also installs the standalone Piper engine), or install piper \
-                 system-wide."
-            )
-        })?;
-        let voice_name = u.voice.as_deref().unwrap_or(&self.config.voice);
-
-        let voice_path =
-            get_voice_path(voice_name, &self.config.voice_dir).ok_or_else(|| {
-                anyhow::anyhow!("Piper voice files not found for: {}", voice_name)
-            })?;
-
-        let length_scale = 1.0 / self.config.speed;
-        let mut cmd = std::process::Command::new(&binary);
-        cmd.arg("--model")
-            .arg(&voice_path)
-            .arg("--length-scale")
-            .arg(length_scale.to_string())
-            .arg("--output-raw");
-
-        if self.config.gpu {
-            cmd.arg("--cuda");
-        }
-
-        let mut piper = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("spawn piper")?;
-
-        use std::io::Write;
-        piper
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(u.text.as_bytes())
-            .context("write to piper stdin")?;
-
-        let output = piper.wait_with_output().context("wait piper")?;
-
-        if !output.status.success() {
-            let err_msg = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!(
-                "piper process failed with exit code {:?}: {}",
-                output.status.code(),
-                err_msg.trim()
-            );
-        }
-
-        if output.stdout.is_empty() {
-            anyhow::bail!("piper produced empty stdout");
-        }
+        let (raw, sample_rate) = crate::synth::synth_piper(&self.config, u)?;
 
         if u.source_label.as_deref() != Some("prewarm") {
             if let Some(ref cb) = self.on_playback_start {
@@ -569,9 +528,7 @@ impl TtsEngineWorker {
             }
         }
 
-        // Rate from the voice's own config where it has one, so a voice the
-        // built-in catalogue does not know still plays at its real pitch.
-        play_raw_audio(sink, &output.stdout, sample_rate_for_voice_at(voice_name, &voice_path))?;
+        play_raw_audio(sink, &raw, sample_rate)?;
         Ok(())
     }
 
@@ -602,6 +559,35 @@ impl TtsEngineWorker {
         }
         Ok(())
     }
+}
+
+/// The `Server` engine: the server synthesizes, this machine plays.
+fn speak_on_server(
+    server: Option<&crate::remote::ServerLink>,
+    u: &Utterance,
+    on_playback_start: &Option<PlaybackCallback>,
+    sink: &rodio::Sink,
+    generation_counter: &Arc<AtomicU32>,
+    generation: u32,
+) -> Result<()> {
+    // Nothing to warm up on this machine.
+    if u.source_label.as_deref() == Some("prewarm") {
+        return Ok(());
+    }
+    let server = server.ok_or_else(|| {
+        anyhow::anyhow!("No server is set. Enter its address under Settings → Engine → Remote Speech Engine Settings.")
+    })?;
+    let audio = crate::remote::fetch_speech(server, &u.text)?;
+    // Stopped while the server was still working: `stop()` had no audio to
+    // stop then, so it must not start now.
+    if generation_counter.load(Ordering::SeqCst) != generation {
+        debug!("Discarding server speech that was stopped before it arrived");
+        return Ok(());
+    }
+    if let Some(ref cb) = on_playback_start {
+        cb();
+    }
+    crate::audiocpp::play_wav_bytes(sink, audio)
 }
 
 // ── Audio playback ────────────────────────────────────────────────────────────
