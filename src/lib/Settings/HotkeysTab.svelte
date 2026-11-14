@@ -320,9 +320,17 @@
   // Suppress all hotkey gestures while the recorder is active so the user
   // cannot accidentally trigger dictation while pressing keys for a new binding.
   $effect(() => {
-    invoke("set_hotkeys_inhibited", { inhibited: recordingTarget === "keys" }).catch(
+    const recording = recordingTarget === "keys";
+    invoke("set_hotkeys_inhibited", { inhibited: recording }).catch(
       (e: unknown) => console.error("Failed to set hotkeys inhibited:", e),
     );
+    // Leaving the tab (or Settings) mid-recording tears this effect down
+    // without running it again, so the release has to happen here.
+    return () => {
+      if (recording) {
+        invoke("set_hotkeys_inhibited", { inhibited: false }).catch(() => {});
+      }
+    };
   });
 
   // Result of validating the last captured combination (see `KeysCheck`).

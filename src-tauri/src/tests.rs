@@ -1042,4 +1042,13 @@ fn the_status_payload_names_the_fallback_engine_and_its_model() {
         serde_json::to_value(&payload).unwrap(),
         serde_json::json!({ "state": "offline", "reason": "down", "fallback": "Parakeet tdt-0.6b-v3" })
     );
+#[test]
+fn only_windows_with_a_keybind_recorder_release_the_hotkeys_on_close() {
+    use crate::window::{hosts_keybind_recorder, WIZARD_WINDOW};
+    assert!(hosts_keybind_recorder("settings"));
+    assert!(hosts_keybind_recorder(WIZARD_WINDOW));
+    // The overlay and history windows come and go while a recorder may be
+    // open in Settings; they must not end its hold on the hotkeys.
+    assert!(!hosts_keybind_recorder(crate::window::OVERLAY_WINDOW));
+    assert!(!hosts_keybind_recorder(crate::window::HISTORY_WINDOW));
 }
