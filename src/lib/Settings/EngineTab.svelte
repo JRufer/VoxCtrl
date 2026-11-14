@@ -10,6 +10,7 @@
   import GpuToggle from "./GpuToggle.svelte";
   import DeviceChip from "./DeviceChip.svelte";
   import BenchmarkPanel from "./BenchmarkPanel.svelte";
+  import ModelCleanupDialog from "./ModelCleanupDialog.svelte";
   import { gpuLabel } from "./gpu";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
@@ -159,6 +160,7 @@
   let remoteFallbackOptions = $derived(
     fallbackOptions(cfg.engine, { moonshine: moonshineAvailable, parakeet: parakeetAvailable }),
   );
+  let cleanupOpen = $state(false);
   let remoteFallbackModel = $derived(fallbackModel(cfg.engine, cfg.engine.remote_openai?.fallback));
   // The fallback runs the model set in its engine's own section; if that model
   // is not on disk the fallback cannot start, and the user should hear it here
@@ -870,7 +872,24 @@
       </div>
     </div>
   {/if}
+
+  <div class="field-group">
+    <h3>Downloaded Models</h3>
+    <p class="hint">
+      Speech, cleanup and voice models you downloaded but no longer use still take up disk space, for
+      example after moving transcription to a server. Custom voices and anything in use are kept.
+    </p>
+    <div class="test-row">
+      <button type="button" class="btn-test" onclick={() => (cleanupOpen = true)} data-testid="open-model-cleanup">
+        🧹 Clean up models…
+      </button>
+    </div>
+  </div>
 </section>
+
+{#if cleanupOpen}
+  <ModelCleanupDialog bind:cfg fallbackChoices={remoteFallbackOptions} onClose={() => (cleanupOpen = false)} />
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";

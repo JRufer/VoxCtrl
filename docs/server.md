@@ -430,6 +430,35 @@ in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unre
 
 ---
 
+### Free the disk space your local models used
+
+If this computer ran everything itself before you set up the server, its speech,
+cleanup and voice models are still on disk, often several gigabytes of them,
+and with a server doing the work most will never be loaded again.
+
+**Settings → Engine → Downloaded Models → Clean up models…** lists them and
+removes the ones you confirm:
+
+1. **Pick the fallback engine.** The dialog asks first, because the fallback's
+   model is the one speech model worth keeping on a client. Whatever you pick
+   is saved as your fallback and its model is kept. Pick **None** and no speech
+   model is kept: dictation then fails with an error whenever the server can't
+   be reached, and the dialog says so.
+2. **Review the two lists.** *Not in use* is what can go, each with its size
+   and a checkbox, all ticked to start with. *Kept* is what stays, with the
+   reason: the fallback engine, dictation cleanup being on, or the selected
+   voice.
+3. **Remove.** The button shows how many models go and how much space comes
+   back.
+
+Custom voices are never removed. Neither are the Piper and audio.cpp programs,
+or files in a model folder of your own choosing that VoxCtrl did not download.
+The full rules are in
+[Cleaning up downloaded models](./speech-recognition.md#cleaning-up-downloaded-models).
+
+A removed model is not gone for good: select it again in Settings and VoxCtrl
+offers to download it.
+
 ## Configuration reference
 
 Settings come from four places. Later ones win:

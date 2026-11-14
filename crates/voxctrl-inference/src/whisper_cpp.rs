@@ -276,6 +276,13 @@ fn transcribe_with_state(
     })
 }
 
+/// Every Whisper model VoxCtrl can download: its size name and the file names
+/// it may be stored under. For code that has to recognise VoxCtrl's own
+/// downloads in a folder that may hold other files too.
+pub fn known_model_files() -> &'static [(&'static str, &'static [&'static str])] {
+    GGUF_MAP
+}
+
 pub fn is_model_downloaded(size: &str, model_dir: &str) -> bool {
     let candidates = match GGUF_MAP.iter().find(|(name, _)| *name == size) {
         Some((_, files)) => *files,
