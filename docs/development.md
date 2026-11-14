@@ -247,14 +247,22 @@ GPU support is decided at compile time and differs by engine — which is why th
 
 The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.
 
-### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 on the GPU
+### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 on the GPU
 
-These three engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s
-prebuilt `audiocpp_cli` binary, which already ships a Vulkan backend — no
-VoxCtrl build feature is needed. Toggling `gpu` in Settings for any of them
-just switches the `--backend` flag passed to that subprocess between `vulkan`
-and `cpu`. If no usable Vulkan device is found, `audiocpp_cli` reports the
-failure as a normal TTS error rather than silently downgrading.
+These four engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s
+prebuilt `audiocpp_server` binary (Linux Vulkan release, pinned by
+`AUDIOCPP_RELEASE_VERSION` in `crates/voxctrl-tts/src/audiocpp.rs`), which already
+ships a Vulkan backend — no VoxCtrl build feature is needed. Toggling `gpu` in
+Settings for any of them just switches the `backend` the resident server is
+started with between `vulkan` and `cpu`. If no usable Vulkan device is found,
+the server reports the failure as a normal TTS error rather than silently
+downgrading. audio.cpp has validated Kitten TTS 2 on CPU and CUDA only, so its
+Vulkan path is the least tested of the four.
+
+When bumping `AUDIOCPP_RELEASE_VERSION`, check the release still ships
+`audio-<tag>-bin-ubuntu-x64-vulkan.tar.gz` and that each family VoxCtrl drives
+accepts the same `/v1/audio/speech` fields. Existing installs upgrade on their
+next audio.cpp model download (see the version marker in [tts.md](tts.md#overview)).
 
 ### Noise suppression
 

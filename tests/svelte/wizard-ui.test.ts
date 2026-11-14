@@ -69,6 +69,7 @@ function baseConfig(): any {
       inflect_micro: { model_dir: "" },
       breeze_tts_2: { model_dir: "" },
       vox_cpm_2: { model_dir: "" },
+      kitten_tts_2: { model_dir: "" },
     },
     mcp: {},
   };
@@ -1234,6 +1235,31 @@ describe("VoiceStep", () => {
     await waitFor(() => {
       const call = invoke.mock.calls.find(([c]) => c === "download_vox_cpm_2");
       expect(call).toBeTruthy();
+    });
+  });
+
+  test("Kitten TTS 2 is offered, shows its licence, and downloads", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "inflect_micro_available") return true;
+      if (cmd === "check_kitten_tts_2_ready") return false;
+      if (cmd === "download_kitten_tts_2") return undefined;
+      return false;
+    });
+    render(VoiceStep, { setBlocker: noopBlocker });
+
+    const card = (await screen.findByText("Kitten TTS 2")).closest(".card") as HTMLElement;
+    expect(card.textContent).toContain("neural · multilingual · 1.7B");
+    // Not gated: nothing about a token on the card.
+    expect(card.textContent).not.toContain("Needs a HuggingFace access token");
+
+    await fireEvent.click(card);
+    await waitFor(() => expect(screen.getByText(/Stellon Labs Community License/)).toBeTruthy());
+
+    await fireEvent.click(within(card).getByText(/Download 3.3 GB/));
+    await waitFor(() => {
+      const call = invoke.mock.calls.find(([c]) => c === "download_kitten_tts_2");
+      expect(call).toBeTruthy();
+      expect(call?.[1]).toEqual({ modelDir: "", hfToken: null });
     });
   });
 

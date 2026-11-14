@@ -6,10 +6,11 @@
 
 VoxCtrl includes a neural TTS engine for voice output. This is useful for reading back transcriptions, confirming commands, or building conversational voice interactions via the MCP server.
 
-Three of the neural engines — Pocket-TTS, Breeze-TTS-2, and VoxCPM2 — run through
-[audio.cpp](https://github.com/0xShug0/audio.cpp), a ggml-based, Apache-2.0-licensed
-C++ inference engine with a Vulkan GPU backend. VoxCtrl downloads audio.cpp's
-prebuilt binaries — no C++ toolchain, no Python, and no proprietary
+Four of the neural engines — Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2 —
+run through [audio.cpp](https://github.com/0xShug0/audio.cpp), a ggml-based,
+Apache-2.0-licensed C++ inference engine with a Vulkan GPU backend. VoxCtrl
+downloads audio.cpp's prebuilt binaries (release `v0.9.4`, pinned as
+`AUDIOCPP_RELEASE_VERSION` in `audiocpp.rs`) — no C++ toolchain, no Python, and no proprietary
 dependencies (this replaced an earlier pure-Rust/Candle implementation that
 pulled in `intel-mkl-src`, a proprietary-licensed Intel MKL redistribution
 incompatible with VoxCtrl's MIT license).
@@ -25,6 +26,22 @@ spawn time. This session is exactly what [Model Memory](#model-memory-on-demand-
 manages: dropping it (idle-unload, an engine switch, or a GPU-setting change)
 kills the child process outright.
 
+**Runtime version and upgrades.** VoxCtrl installs audio.cpp into
+`~/.local/share/voxctrl/audiocpp/` and records the release it installed in a
+`VOXCTRL_AUDIOCPP_VERSION` file there. An install whose marker is missing (every
+install made before the marker existed) or names an older release counts as
+outdated, and the next **Download** of any audio.cpp-backed model replaces it in
+place — files a still-running `audiocpp_server` is using are unlinked first, so
+the swap doesn't fail on a busy executable. Until then, the older runtime keeps
+serving the engines it already supports. An `audiocpp_server` you installed
+yourself on `PATH` (with no managed install) is never touched.
+
+**Model downloads** stream straight into the engine's model directory through a
+`<file>.part` file that is renamed into place only once complete, so a
+half-finished GGUF is never loaded or mistaken for a ready model. There is no
+overall time limit (the files run to several GB); a connection that stalls for
+two minutes is abandoned.
+
 ---
 
 ## Engines
@@ -32,7 +49,7 @@ kills the child process outright.
 ### Breeze-TTS-2 (Neural, Voice Cloning)
 [Breeze-TTS-2](https://huggingface.co/BreezeBlue/Breeze-TTS-2) is an open-weight, bilingual (English/Chinese) speech generation model by BreezeBlue, designed specifically for ultra-low latency real-time interaction. VoxCtrl runs it through audio.cpp's `breeze_tts` model family.
 
-> **Known limitation (audio.cpp v0.8.0):** the model family also advertises **Voice Design**
+> **Known limitation (observed on audio.cpp v0.8.0; not yet re-checked on v0.9.4):** the model family also advertises **Voice Design**
 > (natural-language prompts, no reference clip needed — passed as `request_options.instruction`,
 > the family's own request-option name; the generic `--instruct`/`instruct` field does not work
 > for `breeze_tts`). In practice it does not reliably apply the described voice and the output
@@ -120,11 +137,78 @@ Test button cannot distinguish.
 
 **Key Features:**
 - **Voice Design**: Generate speech using a natural-language description of the speaker voice (`speaker_prompt`), e.g. *"A calm young female voice speaking clearly with a gentle tone."* — passed through as `--instruct <prompt>`.
-  > **Known limitation (audio.cpp v0.8.0):** `--instruct` is accepted for `voxcpm2`'s `tts` task but currently has no effect — synthesis always uses the model's default voice regardless of the prompt (confirmed: identical output for contradictory prompts, with or without `--instruct` at all). This is an upstream audio.cpp gap, not a VoxCtrl setting; use Voice Cloning for a specific voice until it's fixed. Breeze-TTS-2's Voice Design has a similar problem (see above) — Voice Cloning is the only mode either engine exposes in the UI.
+  > **Known limitation (observed on audio.cpp v0.8.0; not yet re-checked on v0.9.4):** `--instruct` is accepted for `voxcpm2`'s `tts` task but currently has no effect — synthesis always uses the model's default voice regardless of the prompt (confirmed: identical output for contradictory prompts, with or without `--instruct` at all). This is an upstream audio.cpp gap, not a VoxCtrl setting; use Voice Cloning for a specific voice until it's fixed. Breeze-TTS-2's Voice Design has a similar problem (see above) — Voice Cloning is the only mode either engine exposes in the UI.
 - **Voice Cloning**: Clone a voice using reference `.wav` audio clips stored in the shared voices directory (`~/.local/share/voxctrl/cloned-tts-voices/`).
 - **Ultimate Cloning**: When a paired reference audio and matching transcript file exist in the same directory, the transcript is forwarded as a `reference_text` load option for higher-fidelity cloned synthesis.
 - **Model download**: The GGUF package is hosted on the (ungated) `audio-cpp/audio.cpp-gguf` mirror — no HuggingFace token required. Assets are stored in `~/.local/share/voxctrl/models/voxcpm2/` (configurable via `tts.vox_cpm_2.model_dir`).
 - **GPU Acceleration**: Optional Vulkan acceleration (`tts.vox_cpm_2.gpu`) with seamless CPU fallback.
+
+### Kitten TTS 2 (Neural, Multilingual, Voice Cloning)
+[Kitten TTS 2](https://huggingface.co/KittenML/kitten-tts-2) by KittenML is a
+1.7B-parameter speech language model. It is a different model from the original
+15–80M-parameter Kitten TTS: much larger, multilingual, with voice cloning and
+expression tags. VoxCtrl runs it through audio.cpp's `kitten_tts2` family
+(`crates/voxctrl-tts/src/kitten.rs`), producing 24 kHz mono audio.
+
+> **License:** the weights are under the **Stellon Labs Community License**, not
+> VoxCtrl's MIT license. Personal, research and non-commercial use are free.
+> Commercial use requires registering with Stellon Labs, and the free grant ends
+> once you or your affiliates pass USD $1M in annual revenue or total funding.
+> The model and audio it produces may not be used to train, distill or improve
+> other models. Apps that ship with the model must show "Powered by Stellon
+> Labs"; VoxCtrl shows it in the TTS settings, the setup wizard, and the About
+> tab's credits. The license can be revoked.
+
+- **Voices** (`tts.kitten_tts_2.voice_mode`):
+  - `"preset"` (default) — a voice built into the model, by name
+    (`tts.kitten_tts_2.voice`, default `"Bruno"`, case-sensitive). Settings
+    lists the 38 named English voices and nine language voices of the default
+    package (`KITTEN_TTS_2_VOICES`); any other name can be typed in, and
+    audio.cpp answers an unknown one with `unknown Kitten TTS 2 voice: <name>`.
+  - `"clone"` — a 1–30 second clip of one speaker from the shared voice folder
+    (`tts.kitten_tts_2.cloned_voice`). Like Breeze-TTS-2, cloning **requires**
+    the clip's exact transcript in `<id>.txt` next to `<id>.wav`; audio.cpp
+    refuses a clone without one, and VoxCtrl says so before sending the
+    request. Use a clean clip with no long pauses — upstream reports that
+    pauses in the reference make the cloned voice stop and start.
+- **Languages:** there is no language switch. Pick a language-named preset
+  (Arabic, Chinese, French, German, Hindi, Italian, Portuguese, Russian,
+  Spanish) and write the text in that language, or clone from a clip in the
+  target language.
+- **Numbers and symbols:** audio.cpp's port leaves out Kitten's upstream text
+  normalizer, so VoxCtrl spells out digits, money, percentages, ordinals and
+  clock times as English words first (`voxctrl_text::spell_out_numbers_en`:
+  "$4.50" → "four dollars and fifty cents", "3rd" → "third", "14:30" →
+  "fourteen thirty"). It is skipped for the language presets, whose text isn't
+  English.
+- **Delivery** (`tts.kitten_tts_2.preset`): `"stable"` (default) or
+  `"expressive"`, audio.cpp's two sampling presets, sent as the `preset`
+  request option. Text can begin with an emotion tag — `[angry]`,
+  `[contemplative]`, `[excited]`, `[joyful]`, `[mundane]`, `[nervous]`,
+  `[sad]`, `[stern]`, `[surprised]`, `[tender]` — and include vocal events such
+  as `<sigh>`, `<laugh>`, `<pause>` or `<um>`, and `(((emphasis)))`. These pass
+  through to the model unchanged; upstream calls them beta and treats them as
+  hints, not guarantees.
+- **Model download:** `KittenTTS2-GGUF/kitten-tts2-20261021-q8_0.gguf` (3.3 GB,
+  Q8_0 body with a BF16 embedding — audio.cpp's default and recommended
+  package) from the ungated `audio-cpp/audio.cpp-gguf` mirror, into
+  `~/.local/share/voxctrl/models/kitten-tts-2/` (configurable via
+  `tts.kitten_tts_2.model_dir`). Downloading also installs or upgrades the
+  audio.cpp runtime, since releases before v0.9.4 don't have this family. The
+  engine reports itself not ready — and the **Download** button stays active —
+  while VoxCtrl's runtime is missing or older than v0.9.4, even if the model
+  file is present; pressing it then upgrades the runtime without re-fetching the model.
+- **Memory:** budget several GB. On an RTX 4060 Ti, audio.cpp measured about
+  4.7 GiB above baseline for preset speech and 5.9 GiB for cloning (CUDA). The
+  file size is not a RAM estimate.
+- **GPU acceleration** (`tts.kitten_tts_2.gpu`, off by default): Vulkan, as for
+  the other audio.cpp engines. audio.cpp has validated `kitten_tts2` on CPU and
+  NVIDIA CUDA only; VoxCtrl's runtime is the Vulkan build, so treat the GPU
+  path as experimental and turn it off if synthesis fails or sounds wrong.
+- **Limitations:** no streaming — each request is generated in chunks of about
+  380 characters, and audio starts only after the whole utterance is done. The
+  global `tts.speed` slider has no effect on this engine (audio.cpp has no speed
+  control for it).
 
 ### Espeak-ng (Lightweight)
 If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
@@ -133,19 +217,19 @@ If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. 
 
 ## GPU Acceleration
 
-Four engines can run on the GPU, each through its own mechanism:
+Five engines can run on the GPU, each through its own mechanism:
 
 *   **Piper** (`tts.gpu`): appends the `--cuda` CLI flag to the spawned `piper`
     subprocess at runtime. Needs the app built with the `cuda` feature.
 *   **Pocket-TTS** (`tts.pocket_tts.gpu`), **Breeze-TTS-2**
-    (`tts.breeze_tts_2.gpu`), and **VoxCPM2** (`tts.vox_cpm_2.gpu`): each pass
-    `--backend vulkan` to the `audiocpp_cli` subprocess instead of `--backend
-    cpu`. No special build feature is needed — audio.cpp's prebuilt Linux
+    (`tts.breeze_tts_2.gpu`), **VoxCPM2** (`tts.vox_cpm_2.gpu`), and **Kitten
+    TTS 2** (`tts.kitten_tts_2.gpu`): each starts its `audiocpp_server` with
+    `"backend": "vulkan"` instead of `"cpu"`. No special build feature is needed — audio.cpp's prebuilt Linux
     release already ships a Vulkan backend alongside CPU.
 
 If a Vulkan device cannot be opened (no compatible GPU, missing driver, or a
-build without a Vulkan-capable release), `audiocpp_cli` reports the failure as
-an ordinary command error rather than silently falling back — VoxCtrl surfaces
+build without a Vulkan-capable release), `audiocpp_server` reports the failure as
+an ordinary request error rather than silently falling back — VoxCtrl surfaces
 it as a TTS error rather than downgrading automatically. Turn the setting back
 off to run on the CPU.
 
@@ -154,14 +238,14 @@ Inflect-Micro-v2 runs on ONNX Runtime's CPU provider. Inflect is small enough
 CUDA and DirectML providers, which VoxCtrl does not currently select.
 
 ### Requirements & Setup:
-1.  A Vulkan-capable GPU and drivers, for the three audio.cpp-backed engines
+1.  A Vulkan-capable GPU and drivers, for the four audio.cpp-backed engines
     (or a CUDA-compatible NVIDIA GPU, for Piper's separate `cuda` feature).
 2.  Build with the feature for the engine you want:
     ```bash
     cargo tauri dev --features cuda           # Piper
     ```
-    Pocket-TTS, Breeze-TTS-2, and VoxCPM2 need no VoxCtrl build feature —
-    Vulkan support lives entirely in the downloaded `audiocpp_cli` binary.
+    Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2 need no VoxCtrl build
+    feature — Vulkan support lives entirely in the downloaded audio.cpp runtime.
 
 ---
 
@@ -191,7 +275,7 @@ The default voice is **`en-us-lessac-medium`**.
 
 ### Pocket-TTS Voices
 
-VoxCtrl bundles a small catalogue of named voices, each backed by a precomputed embedding shipped in audio.cpp's PocketTTS GGUF package. Selecting a built-in voice passes `--voice-id <id>` straight to `audiocpp_cli` — no live cloning step.
+VoxCtrl bundles a small catalogue of named voices, each backed by a precomputed embedding shipped in audio.cpp's PocketTTS GGUF package. Selecting a built-in voice sends its id as `voice` to the resident `audiocpp_server` — no live cloning step.
 
 | ID | Name |
 |---|---|
@@ -211,7 +295,7 @@ Drop a `.wav` reference clip into the configured `pocket_tts.voice_dir` (default
 
 - The filename (without extension) becomes the voice's id, e.g. `narrator.wav` adds a voice listed as "Narrator (Custom)".
 - Naming a clip after a built-in voice (e.g. `alba.wav`) overrides that voice's bundled embedding, cloning from the clip instead (`--voice-ref`).
-- Custom clips are read directly from disk and passed to `audiocpp_cli` as-is; they don't require `download_pocket_tts`.
+- Custom clips are read directly from disk and passed to `audiocpp_server` as `voice_ref` as-is; they don't require `download_pocket_tts`.
 
 ---
 
@@ -266,7 +350,7 @@ const voices = await invoke<{ id: string; label: string }[]>('list_pocket_tts_vo
 After synthesis, audio is played using `rodio` (cross-platform):
 
 - **Piper** produces raw 16-bit signed LE PCM; rodio plays it directly via `SamplesBuffer`.
-- **Pocket-TTS, Breeze-TTS-2, and VoxCPM2** each synthesize the whole utterance in one `POST /v1/audio/speech` request to their resident `audiocpp_server` session; the WAV bytes come back in the response body and VoxCtrl decodes them in memory with `rodio::Decoder` (no temp file). Unlike the earlier in-process Candle implementation, playback cannot be interrupted mid-generation — only once the request completes — the same limitation Piper already has.
+- **Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2** each synthesize the whole utterance in one `POST /v1/audio/speech` request to their resident `audiocpp_server` session; the WAV bytes come back in the response body and VoxCtrl decodes them in memory with `rodio::Decoder` (no temp file). Unlike the earlier in-process Candle implementation, playback cannot be interrupted mid-generation — only once the request completes — the same limitation Piper already has.
 
 The TTS engine queues requests in a bounded channel (capacity 32). Utterances play sequentially — subsequent calls are queued and played in order without overlapping.
 
@@ -299,8 +383,8 @@ echo "Recording started" > /tmp/voxctrl-tts.fifo
 
 ## Pre-warming
 
-`pocket_tts.prewarm`, `breeze_tts_2.prewarm`, `vox_cpm_2.prewarm`, and
-`inflect_micro.prewarm` all do the same thing for their respective engine:
+`pocket_tts.prewarm`, `breeze_tts_2.prewarm`, `vox_cpm_2.prewarm`,
+`kitten_tts_2.prewarm`, and `inflect_micro.prewarm` all do the same thing for their respective engine:
 load its model at startup instead of on first use.
 
 ```json
@@ -310,7 +394,7 @@ load its model at startup instead of on first use.
 }
 ```
 
-When `prewarm` is `true`, `TtsEngineWorker::start()` enqueues a silent synthesis immediately after spawning the worker thread. The worker processes this short request (a single space) at startup — for Pocket-TTS, Breeze-TTS-2, and VoxCPM2 this spawns their `audiocpp_server` session and sends it that request, which is what actually forces the (lazily-loaded) GGUF model to load; for Inflect-Micro-v2 it loads the ONNX session directly. Subsequent user-triggered syntheses are faster because the model is already warm. This adds startup latency depending on model size and disk speed — several seconds for Breeze-TTS-2's ~5 GB GGUF.
+When `prewarm` is `true`, `TtsEngineWorker::start()` enqueues a silent synthesis immediately after spawning the worker thread. The worker processes this short request (a single space) at startup — for Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2 (which is sent a short "Hi." instead, since it rejects blank text) this spawns their `audiocpp_server` session and sends it that request, which is what actually forces the (lazily-loaded) GGUF model to load; for Inflect-Micro-v2 it loads the ONNX session directly. Subsequent user-triggered syntheses are faster because the model is already warm. This adds startup latency depending on model size and disk speed — several seconds for Breeze-TTS-2's ~5 GB GGUF.
 
 Pre-warming is ignored when `memory_mode` is `"on_demand"` — the two settings want opposite things, and the memory mode wins.
 
@@ -321,7 +405,7 @@ Pre-warming is ignored when `memory_mode` is `"on_demand"` — the two settings 
 Piper and eSpeak-NG run a subprocess per utterance and hold nothing in
 between, so `memory_mode` has nothing to do for them. Every other engine
 keeps a resident model between utterances — Inflect-Micro-v2 in-process,
-Pocket-TTS/Breeze-TTS-2/VoxCPM2 as a resident `audiocpp_server` session (see
+Pocket-TTS/Breeze-TTS-2/VoxCPM2/Kitten TTS 2 as a resident `audiocpp_server` session (see
 [Overview](#overview)) — and `memory_mode` decides whether that residency
 survives being idle:
 
@@ -348,7 +432,7 @@ In `"on_demand"` mode TTS itself stays enabled the whole time — only the weigh
   worker's `last_used`, so a back-and-forth conversation never reloads mid-flow. A long utterance
   does not count against the window either — the clock restarts when playback ends.
 * **Unloading drops the model** — for Inflect-Micro-v2 that means the in-process ONNX session; for
-  Pocket-TTS/Breeze-TTS-2/VoxCPM2 it means killing the resident `audiocpp_server` child process
+  Pocket-TTS/Breeze-TTS-2/VoxCPM2/Kitten TTS 2 it means killing the resident `audiocpp_server` child process
   outright, not just asking it to free weights, so nothing about the model stays resident. The
   worker thread, its audio device, and the utterance queue stay up, so nothing else about TTS
   changes.
@@ -387,12 +471,12 @@ Under `tts` in `config.json`:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS functionality |
-| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, `"vox_cpm_2"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
+| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"kitten_tts_2"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
 | `voice` | string | `"en-us-lessac-medium"` | Default voice for Piper (hyphen-delimited) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/` |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
-| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper. Pocket-TTS, Breeze-TTS-2, and VoxCPM2 have their own Vulkan GPU settings |
+| `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper. Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2 have their own Vulkan GPU settings |
 | `hf_token` | string or null | `null` | An optional HuggingFace access token. Not required by any of the audio.cpp-backed engines today (their GGUF mirror is ungated) — kept for parity in case a future model needs it. An exported `HF_TOKEN` takes precedence and is never saved here |
 | `pocket_tts.voice` | string | `"alba"` | Default Pocket-TTS voice ID: `"alba"`, `"anna"`, `"vera"`, `"charles"`, `"michael"` |
 | `pocket_tts.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
@@ -413,6 +497,14 @@ Under `tts` in `config.json`:
 | `vox_cpm_2.model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
 | `vox_cpm_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
 | `vox_cpm_2.gpu` | bool | `false` | Enable Vulkan GPU acceleration |
+| `kitten_tts_2.voice_mode` | string | `"preset"` | `"preset"` for a built-in voice, `"clone"` for a reference clip + transcript |
+| `kitten_tts_2.voice` | string | `"Bruno"` | Built-in voice name (case-sensitive), used in `"preset"` mode |
+| `kitten_tts_2.cloned_voice` | string | `""` | Voice id from the shared clip folder, used in `"clone"` mode; needs `<id>.txt` |
+| `kitten_tts_2.voice_dir` | string | `""` | Shared clip folder; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
+| `kitten_tts_2.preset` | string | `"stable"` | `"stable"` or `"expressive"` sampling |
+| `kitten_tts_2.model_dir` | string | `""` | GGUF model directory; empty = `~/.local/share/voxctrl/models/kitten-tts-2/` |
+| `kitten_tts_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
+| `kitten_tts_2.gpu` | bool | `false` | Enable Vulkan GPU acceleration (experimental for this family) |
 | `memory_mode` | string | `"always_loaded"` | `"always_loaded"` or `"on_demand"` — see [Model Memory](#model-memory-on-demand-loading) |
 | `idle_unload_secs` | int | `900` | Idle seconds before the model is unloaded in `"on_demand"` mode (minimum 30) |
 | `snippets` | object | *(VoxCtrl pronunciations)* | Word → spoken expansion map, applied to speech only |
@@ -476,13 +568,16 @@ The handle is `Clone` — multiple callers can hold a copy and enqueue utterance
 
 ---
 
-## Pocket-TTS / Breeze-TTS-2 / VoxCPM2 Architecture
+## Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 Architecture
 
-All three audio.cpp-backed engines share one session type (`AudioCppSession`
+All four audio.cpp-backed engines share one session type (`AudioCppSession`
 in `crates/voxctrl-tts/src/audiocpp.rs`), differing only in their model
-family name and how their speaker is resolved (a `voice`/`voice_ref`, or a
-Voice Design prompt — `instruct` for `voxcpm2`, `request_options.instruction`
-for `breeze_tts` specifically; see the per-engine notes above).
+family name, how their speaker is resolved (a `voice` preset, a `voice_ref`
+clip with optional or required `reference_text`, or a Voice Design prompt in the
+top-level `instruct` field), and any family-specific `options` — today only
+Kitten TTS 2's `preset`. Before audio.cpp v0.9.4, VoxCtrl sent Breeze-TTS-2's
+Voice Design prompt in a `request_options` object the server never read; it now
+goes in `instruct`, the field audio.cpp documents for both families.
 
 ```
 User speaks → transcription → speak_text IPC
@@ -491,7 +586,7 @@ User speaks → transcription → speak_text IPC
                                     │
                          (bounded channel, cap 32)
                                     │
-              speak_pocket_tts() / speak_breeze_tts_2() / speak_vox_cpm_2()
+      speak_pocket_tts() / speak_breeze_tts_2() / speak_vox_cpm_2() / speak_kitten_tts_2()
                                     │
               ┌─────────────────────┴──────────────────────┐
               │                                             │

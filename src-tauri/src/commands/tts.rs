@@ -77,6 +77,24 @@ pub async fn download_vox_cpm_2(model_dir: String, hf_token: Option<String>) -> 
 }
 
 #[tauri::command]
+pub async fn check_kitten_tts_2_ready(model_dir: String) -> Result<bool, String> {
+    Ok(voxctrl_tts::is_kitten_tts_2_ready(&model_dir))
+}
+
+#[tauri::command]
+pub async fn download_kitten_tts_2(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
+    voxctrl_tts::download_kitten_tts_2_assets(&model_dir, hf_token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Kitten TTS 2's built-in preset voice names, for the Settings voice picker.
+#[tauri::command]
+pub fn list_kitten_tts_2_voices() -> Vec<&'static str> {
+    voxctrl_tts::KITTEN_TTS_2_VOICES.to_vec()
+}
+
+#[tauri::command]
 pub async fn check_pocket_tts_ready(voice: String, voice_dir: String) -> Result<bool, String> {
     Ok(voxctrl_tts::is_pocket_tts_ready(&voice, &voice_dir))
 }
@@ -137,7 +155,7 @@ pub async fn inflect_micro_inspect(model_dir: String) -> Result<serde_json::Valu
 }
 
 /// The resolved, absolute path to the shared voice-cloning reference-clip
-/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2), for display in Settings.
+/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2), for display in Settings.
 #[tauri::command]
 pub fn get_cloned_tts_voices_dir() -> String {
     voxctrl_tts::cloned_tts_voices_dir().display().to_string()

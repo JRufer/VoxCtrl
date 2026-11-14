@@ -3,10 +3,12 @@
 //! Split by concern:
 //! - [`piper`]    — Piper voice catalogue, path resolution, binary/voice download
 //! - [`audiocpp`] — shared audio.cpp runtime: binary management, GGUF asset
-//!   download, subprocess synthesis (Pocket-TTS, Breeze-TTS-2, VoxCPM2)
+//!   download, subprocess synthesis (Pocket-TTS, Breeze-TTS-2, VoxCPM2,
+//!   Kitten TTS 2)
 //! - [`pocket`]   — Pocket-TTS voice catalogue + audio.cpp synthesis
 //! - [`breeze`]   — Breeze-TTS-2 asset management + audio.cpp synthesis
 //! - [`voxcpm`]   — VoxCPM2 asset management + audio.cpp synthesis
+//! - [`kitten`]   — Kitten TTS 2 asset management + audio.cpp synthesis
 //! - [`inflect`]  — Inflect-Micro-v2 (ONNX VITS) phoneme frontend + synthesis
 //! - [`engine`]   — utterance queue, worker thread, Piper/eSpeak synthesis
 //! - [`fifo`]     — named-pipe responder for external speak triggers
@@ -21,6 +23,7 @@ mod engine;
 pub mod hf;
 mod fifo;
 pub mod inflect;
+pub mod kitten;
 mod piper;
 mod pocket;
 pub mod voxcpm;
@@ -32,6 +35,10 @@ pub use voxcpm::{
     download_vox_cpm_2_assets, is_vox_cpm_2_ready, vox_cpm_2_model_dir,
 };
 pub use voxcpm::is_vox_cpm_2_ready as is_vox_cpm_2_downloaded;
+pub use kitten::{
+    download_kitten_tts_2_assets, is_kitten_tts_2_ready, kitten_tts_2_model_dir,
+    KITTEN_TTS_2_LICENSE_NOTE, KITTEN_TTS_2_VOICES,
+};
 pub use engine::{
     stop_current_playback, ErrorCallback, PlaybackCallback, TtsCommand, TtsEngineHandle,
     TtsEngineWorker, Utterance,

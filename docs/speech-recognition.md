@@ -515,7 +515,7 @@ unreachable.
 - **Files VoxCtrl did not download.** In a Whisper model folder or Piper voice
   folder you chose yourself, only files with the exact names VoxCtrl downloads
   are listed; your own converted models and voices are left alone. A
-  Breeze-TTS-2, VoxCPM2 or Inflect-Micro model you moved to a folder of your
+  Breeze-TTS-2, VoxCPM2, Kitten TTS 2 or Inflect-Micro model you moved to a folder of your
   own is not listed at all.
 - **Symbolic links.** A link is never followed: what it points to is neither
   counted nor deleted.

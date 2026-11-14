@@ -138,6 +138,16 @@ Full schema with defaults:
       "prewarm": false,
       "gpu": false
     },
+    "kitten_tts_2": {
+      "voice_mode": "preset",
+      "voice": "Bruno",
+      "cloned_voice": "",
+      "voice_dir": "",
+      "preset": "stable",
+      "model_dir": "",
+      "prewarm": false,
+      "gpu": false
+    },
     "memory_mode": "always_loaded",
     "idle_unload_secs": 900,
     "snippets": {
@@ -312,15 +322,16 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS subsystem |
-| `engine` | string | `"espeak"` | Synthesis engine: `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, or `"espeak"` |
+| `engine` | string | `"espeak"` | Synthesis engine: `"kitten_tts_2"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, or `"espeak"` |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
-| `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0); not used by Pocket-TTS |
+| `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0); not used by Pocket-TTS or Kitten TTS 2 |
 | `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper |
 | `breeze_tts_2` | object | | Breeze-TTS-2 engine sub-configuration (see below) |
 | `vox_cpm_2` | object | | VoxCPM2 engine sub-configuration (see below) |
+| `kitten_tts_2` | object | | Kitten TTS 2 engine sub-configuration (see below) |
 | `pocket_tts` | object | | Pocket-TTS engine sub-configuration (see below) |
 | `inflect_micro` | object | | Inflect-Micro-v2 engine sub-configuration (see below) |
 | `memory_mode` | string | `"always_loaded"` | `"always_loaded"` keeps the model resident for the session; `"on_demand"` loads it when it is needed and unloads it again after `idle_unload_secs` of no use. Affects the model-backed engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Inflect-Micro-v2) — Piper and eSpeak hold no model between utterances. |
@@ -355,6 +366,21 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/voxcpm2/` |
 | `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
 | `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
+
+**`kitten_tts_2` sub-object:**
+
+[Kitten TTS 2](https://huggingface.co/KittenML/kitten-tts-2) is a 1.7B-parameter multilingual speech model by KittenML, released under the **Stellon Labs Community License** (free for personal, research and non-commercial use; commercial use needs registration with Stellon Labs and ends above USD $1M revenue or funding). See [tts.md](tts.md#kitten-tts-2-neural-multilingual-voice-cloning).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voice_mode` | string | `"preset"` | `"preset"` for a voice built into the model, `"clone"` for a reference clip from `voice_dir` |
+| `voice` | string | `"Bruno"` | Built-in voice name, case-sensitive (e.g. `"Luna"`, `"German"`) |
+| `cloned_voice` | string | `""` | Reference clip ID from `voice_dir`; needs a matching `<id>.txt` transcript |
+| `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
+| `preset` | string | `"stable"` | Sampling preset: `"stable"` or `"expressive"` |
+| `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/kitten-tts-2/` |
+| `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
+| `gpu` | bool | `false` | Enable Vulkan GPU acceleration (experimental for this model) |
 
 **`pocket_tts` sub-object:**
 

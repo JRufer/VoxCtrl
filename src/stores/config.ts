@@ -156,9 +156,23 @@ export interface VoxCpm2Config {
   gpu: boolean;
 }
 
+export interface KittenTts2Config {
+  /** "preset" (a voice built into the model) or "clone" (a voice-folder clip). */
+  voice_mode: "preset" | "clone";
+  /** Built-in voice name, case-sensitive, e.g. "Bruno" or "German". */
+  voice: string;
+  cloned_voice: string;
+  voice_dir: string;
+  /** audio.cpp sampling preset. */
+  preset: "stable" | "expressive";
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
 export interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2";
+  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2" | "kitten_tts_2";
   voice: string;
   voice_dir: string;
   stop_key: string[];
@@ -171,6 +185,7 @@ export interface TtsConfig {
   inflect_micro: InflectMicroConfig;
   breeze_tts_2: BreezeTts2Config;
   vox_cpm_2: VoxCpm2Config;
+  kitten_tts_2: KittenTts2Config;
   memory_mode: TtsMemoryMode;
   idle_unload_secs: number;
   snippets: Record<string, string>;
@@ -305,6 +320,16 @@ const defaultConfig: AppConfig = {
       voice_dir: "",
       speaker_prompt: "A calm young female voice speaking clearly with a gentle tone.",
       ultimate_cloning: false,
+      model_dir: "",
+      prewarm: false,
+      gpu: false,
+    },
+    kitten_tts_2: {
+      voice_mode: "preset",
+      voice: "Bruno",
+      cloned_voice: "",
+      voice_dir: "",
+      preset: "stable",
       model_dir: "",
       prewarm: false,
       gpu: false,

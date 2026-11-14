@@ -14,7 +14,7 @@ use tracing::info;
 use voxctrl_config::TtsConfig;
 
 use crate::audiocpp::{
-    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
+    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
     SpeakRequest, SpeakerRef,
 };
 use crate::engine::{PlaybackCallback, Utterance};
@@ -51,9 +51,7 @@ pub fn is_breeze_tts_2_ready(model_dir: &str) -> bool {
 /// mirror is not gated, so `hf_token` is accepted for parity with the other
 /// engines but not required.
 pub async fn download_breeze_tts_2_assets(model_dir: &str, hf_token: Option<String>) -> Result<()> {
-    if audiocpp::audiocpp_binary().is_none() {
-        audiocpp::download_audiocpp_binary().await.context("download audio.cpp runtime")?;
-    }
+    audiocpp::ensure_audiocpp_runtime().await?;
 
     let dir = resolve_breeze_tts_2_dir(model_dir);
     tokio::fs::create_dir_all(&dir)
@@ -63,13 +61,13 @@ pub async fn download_breeze_tts_2_assets(model_dir: &str, hf_token: Option<Stri
     let dest = dir.join(BREEZE_TTS_2_MODEL_FILENAME);
     if !dest.exists() {
         info!("Downloading Breeze-TTS-2 model ({BREEZE_TTS_2_GGUF_FILE})...");
-        let downloaded = resolve_hf_reference(
+        audiocpp::download_hf_file(
             &format!("hf://{BREEZE_TTS_2_GGUF_REPO}/{BREEZE_TTS_2_GGUF_FILE}"),
+            &dest,
             hf_token.as_deref(),
         )
         .await
         .context("download breeze-tts-2 model")?;
-        tokio::fs::copy(&downloaded, &dest).await.context("place breeze-tts-2 model")?;
     }
 
     info!("Breeze-TTS-2 assets ready in {}", dir.display());
@@ -158,6 +156,7 @@ pub(crate) fn ensure_breeze_tts_2_loaded(
         text: " ",
         speaker: Some(speaker),
         reference_text: clone_ref.as_ref().map(|(_, t)| t.as_str()),
+        options: &[],
     })?;
     Ok(())
 }
@@ -196,6 +195,7 @@ pub(crate) fn speak_breeze_tts_2(
         text: &u.text,
         speaker: Some(speaker),
         reference_text: clone_ref.as_ref().map(|(_, t)| t.as_str()),
+        options: &[],
     })?;
 
     if is_prewarm {
