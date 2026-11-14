@@ -47,7 +47,15 @@ jobs:
             pkg-config \
             build-essential
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned, not `stable`: Rust 1.100.0 changed cargo's build directory from
+      # `target/<profile>/build/<pkg>-<hash>/out` to `.../build/<pkg>/<hash>/out`.
+      # tauri-build 2.6.2 (the newest 2.x) finds the target directory by walking
+      # three levels up from OUT_DIR, so on 1.100 it lands in `build/` and tries
+      # to copy the sidecar over `build/voxctrl-llm-sidecar`, which is that
+      # crate's own build directory: the build script panics with IsADirectory.
+      # Go back to `stable` once a tauri-build release handles the new layout.
+      # Keep the version the same in ci.yml and release.yml.
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       # whisper-rs builds whisper.cpp through the `cmake` crate, so the check
       # now needs a C++ toolchain that the excluded-crates version did not. The
@@ -144,7 +152,8 @@ jobs:
             espeak-ng \
             xvfb
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: see the note on the first toolchain step in this file.
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -178,7 +187,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned: see the note on the first toolchain step in this file.
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       - uses: Swatinem/rust-cache@v2
         with:
