@@ -354,6 +354,57 @@ Under `engine.remote_openai` in `config.json`:
 | `model` | string | `"whisper-1"` | Model identifier expected by the server (e.g. `whisper-1`, `Systran/faster-whisper-large-v3`, `large-v3`). |
 | `language` | string | `""` | Optional ISO language code (e.g. `en`, `es`, `fr`, or blank for automatic detection). |
 | `timeout_secs` | integer | `30` | Request timeout in seconds (5–300). |
+| `fallback` | string | `"none"` | On-device engine used while the server is unreachable: `none`, `whisper-cpp`, `moonshine` or `parakeet`. |
+
+### Fallback when the server is unreachable
+
+A remote engine depends on a network and a second machine, so VoxCtrl can keep
+an on-device engine in reserve. Choose it under **Settings → Engine → Remote
+Speech Engine Settings → Fallback engine**.
+
+- **Which model it runs.** The fallback uses the model, language and device set
+  in that engine's own settings. To change them, switch **Backend** to that
+  engine, make the change (and download the model), then switch back. Settings
+  warns, and offers the download, if the fallback's model is not on disk.
+- **What it costs.** Nothing while the server is reachable: the fallback model
+  is not loaded at startup. It is loaded by the first dictation the server
+  could not take, and unloaded again within a few seconds of the server
+  answering, or after ten minutes without use during a long outage. It does
+  take disk space.
+- **What happens to a dictation when the server fails.** The whole recording is
+  kept in memory until a transcript exists, so nothing you said is lost: it is
+  transcribed by the fallback engine and delivered as usual, a little later
+  than normal the first time, while the model loads.
+- **During an outage.** VoxCtrl asks the server every 15 seconds whether it is
+  there. While it is known to be down, dictations go straight to the fallback
+  without trying the server first; when it answers again, the next dictation
+  goes back to it. A switch never happens in the middle of a dictation.
+- **With no fallback.** A dictation fails with a notification that says the
+  server could not be used and that no fallback engine is set. The recording is
+  not kept.
+- **What "unreachable" covers.** No connection, no answer within the timeout, a
+  server error, or a rejected API key. The reason is shown with the offline
+  indicator.
+
+Post-processing is unaffected: snippets, vocabulary, cleanup and routing run in
+the app on whichever engine's transcript arrives. A fallback's transcript can
+differ in punctuation and accuracy from the server's, because it is a different
+model.
+
+### Offline indicator
+
+While a remote engine is selected and its server is unreachable:
+
+- the tray icon carries an amber badge with a slash, and its tooltip gives the
+  reason;
+- one notification says the server is unreachable and whether dictation is
+  using the fallback or will fail;
+- **Settings → Engine** shows the same status under the fallback setting, and
+  shows "Connected to the server." when all is well.
+
+The badge clears by itself when the server answers again. Saving the settings
+re-checks the server immediately, so a corrected address or key shows its
+effect at once.
 
 ### Connection Testing & Model Discovery
 

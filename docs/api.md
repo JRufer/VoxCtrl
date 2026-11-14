@@ -441,6 +441,11 @@ interface RemoteSttTestResult {
 }
 ```
 
+#### `get_remote_status() → RemoteStatus`
+Whether the saved Remote Speech Engine's server is reachable right now, and
+which fallback engine is set. Changes afterwards arrive as
+[`remote-status`](#remote-status) events, which carry the same type.
+
 ---
 
 ### Audio Monitoring
@@ -690,6 +695,26 @@ staleness fallback ever tripping.
 ```typescript
 await listen<AppStatus>('status-tick', (event) => {
   console.log(event.payload.recording);
+});
+```
+
+### `remote-status`
+
+Emitted when the reachability of the remote speech server changes (and when the
+reason it is unreachable does). The same payload is returned by the
+`get_remote_status` command, for a window that has just opened.
+
+```ts
+interface RemoteStatus {
+  // "not_in_use": the saved backend is a local engine
+  // "unknown":    a remote backend was just selected and has not answered yet
+  state: 'not_in_use' | 'unknown' | 'online' | 'offline';
+  reason: string | null;    // why it is offline, worded for the user
+  fallback: string | null;  // the saved fallback engine and model, e.g. "Parakeet tdt-0.6b-v3"
+}
+
+await listen<RemoteStatus>('remote-status', (event) => {
+  console.log(event.payload.state);
 });
 ```
 

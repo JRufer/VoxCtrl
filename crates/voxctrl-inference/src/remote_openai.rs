@@ -9,6 +9,13 @@ use voxctrl_config::RemoteOpenAiConfig;
 
 use crate::backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResult};
 
+/// How long to wait for the server to accept a connection, separately from
+/// how long a transcription may take. A server that is switched off or on
+/// another network does not refuse the connection, it just never answers, and
+/// without this the whole request timeout (30 s by default) passes before a
+/// dictation can be handed to the fallback engine or reported as failed.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+
 /// Normalizes an endpoint into the full `/v1/audio/transcriptions` URL.
 pub fn normalize_transcription_url(endpoint: &str) -> String {
     let trimmed = endpoint.trim().trim_end_matches('/');
@@ -290,6 +297,7 @@ impl RemoteStreamingSession {
             });
 
             let client = reqwest::Client::builder()
+                .connect_timeout(CONNECT_TIMEOUT)
                 .timeout(Duration::from_secs(cfg_clone.timeout_secs))
                 .build();
 
@@ -325,6 +333,17 @@ impl RemoteStreamingSession {
                     let _ = result_tx.send(result);
                 }
                 err => {
+                    // The server could not be reached at all. Uploading the
+                    // same audio a second time would only wait out a second
+                    // connection timeout before the caller hears about it.
+                    let err = match err {
+                        Err(e) if e.is_connect() => {
+                            let _ = result_tx.send(Err(anyhow::Error::new(e)
+                                .context(format!("Could not connect to the speech server at {url}"))));
+                            return;
+                        }
+                        other => other,
+                    };
                     // Fallback path: If the streaming upload failed (e.g. server doesn't support
                     // chunked multipart or HTTP 411 Length Required), retry with standard
                     // buffered multipart upload.
@@ -452,6 +471,7 @@ pub struct RemoteOpenAiBackend {
 impl RemoteOpenAiBackend {
     pub fn new(config: RemoteOpenAiConfig) -> Self {
         let client = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
@@ -594,6 +614,67 @@ pub async fn test_remote_speech_engine(
     }
 }
 
+/// Ask the server whether it is there, without sending any audio.
+///
+/// A `GET` of `/v1/models` with the configured key: cheap enough to repeat
+/// every few seconds, and it exercises the same address and key a dictation
+/// would. `Err` carries the reason, worded for the user.
+///
+/// A server that answers but has no such route (404, 405) counts as reachable:
+/// not every OpenAI-compatible server lists its models, and what this is for
+/// is noticing a server that has gone away.
+pub async fn probe_remote_speech_engine(endpoint: &str, api_key: Option<&str>) -> std::result::Result<(), String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(Duration::from_secs(6))
+        .build()
+        .map_err(|e| format!("Could not set up the connection: {e}"))?;
+    let request = attach_auth(client.get(normalize_models_url(endpoint)), api_key);
+    match request.send().await {
+        Ok(response) => probe_status_reason(response.status().as_u16()).map_or(Ok(()), Err),
+        Err(e) => Err(request_failure_reason(&e)),
+    }
+}
+
+/// Why a server that answered a probe with `status` is not usable, or `None`
+/// if it is.
+fn probe_status_reason(status: u16) -> Option<String> {
+    match status {
+        401 | 403 => Some(format!("The server rejected the API key (HTTP {status})")),
+        500..=599 => Some(format!("The server reported an error (HTTP {status})")),
+        _ => None,
+    }
+}
+
+fn request_failure_reason(e: &reqwest::Error) -> String {
+    if e.is_connect() {
+        "Could not connect to the server".into()
+    } else if e.is_timeout() {
+        "The server did not answer in time".into()
+    } else {
+        "The request to the server failed".into()
+    }
+}
+
+/// A short, user-facing reason for a failed transcription request, for the
+/// offline indicator. The full error still goes to the log and, when there is
+/// no fallback engine, to the failure notification.
+pub fn failure_reason(err: &anyhow::Error) -> String {
+    if let Some(e) = err.chain().find_map(|cause| cause.downcast_ref::<reqwest::Error>()) {
+        return request_failure_reason(e);
+    }
+    let message = err.to_string();
+    for status in [401u16, 403] {
+        if message.contains(&format!("HTTP {status}")) {
+            return format!("The server rejected the API key (HTTP {status})");
+        }
+    }
+    if message.contains("HTTP 5") {
+        return "The server reported an error".into();
+    }
+    "The server did not return a transcript".into()
+}
+
 fn rand_u64() -> u64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -604,6 +685,56 @@ fn rand_u64() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An address nothing is listening on: bind a port, note it, release it.
+    fn closed_endpoint() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{addr}/v1")
+    }
+
+    #[test]
+    fn probe_status_reasons() {
+        assert_eq!(probe_status_reason(200), None);
+        // No models route, but something answered: the server is there.
+        assert_eq!(probe_status_reason(404), None);
+        assert_eq!(probe_status_reason(405), None);
+        assert!(probe_status_reason(401).unwrap().contains("API key"));
+        assert!(probe_status_reason(403).unwrap().contains("API key"));
+        assert!(probe_status_reason(503).unwrap().contains("HTTP 503"));
+    }
+
+    #[tokio::test]
+    async fn probing_a_server_that_is_not_there_says_so() {
+        let reason = probe_remote_speech_engine(&closed_endpoint(), None).await.unwrap_err();
+        assert_eq!(reason, "Could not connect to the server");
+    }
+
+    #[test]
+    fn failure_reasons_are_short_and_name_the_cause() {
+        let rejected = anyhow!("Remote speech engine returned HTTP 401 Unauthorized: {{\"error\":…}}");
+        assert_eq!(failure_reason(&rejected), "The server rejected the API key (HTTP 401)");
+        let broken = anyhow!("Remote speech engine returned HTTP 500 Internal Server Error: boom");
+        assert_eq!(failure_reason(&broken), "The server reported an error");
+        let odd = anyhow!("Unexpected response format from remote speech engine: <html>");
+        assert_eq!(failure_reason(&odd), "The server did not return a transcript");
+    }
+
+    /// The path a dictation takes when the server has gone away: the streamed
+    /// upload fails to connect, and that is reported at once — as a connection
+    /// failure the caller can recognize — instead of being retried.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_streamed_upload_to_a_server_that_is_not_there_fails_fast() {
+        let cfg = RemoteOpenAiConfig { endpoint: closed_endpoint(), ..Default::default() };
+        let started = Instant::now();
+        let session = RemoteStreamingSession::start(cfg, None, &tokio::runtime::Handle::current());
+        session.send_chunk(vec![0.2; 1600]);
+        let err = session.finish().await.unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(3), "took {:?}", started.elapsed());
+        assert!(format!("{err:#}").contains("Could not connect to the speech server"), "{err:#}");
+        assert_eq!(failure_reason(&err), "Could not connect to the server");
+    }
 
     #[test]
     fn test_normalize_transcription_url() {

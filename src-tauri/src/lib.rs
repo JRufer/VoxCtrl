@@ -21,6 +21,7 @@ mod history;
 mod host_env;
 mod mint_shortcuts;
 mod pipeline;
+mod remote_monitor;
 pub mod render_env;
 mod services;
 mod startup_log;
@@ -638,6 +639,9 @@ pub fn run() {
             let record_off_icon =
                 tauri::image::Image::from_bytes(include_bytes!("../../assets/record_off.png"))
                     .expect("Failed to load record_off icon");
+            let record_offline_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../../assets/record_offline.png"))
+                    .expect("Failed to load record_offline icon");
             let processing_frames = [
                 tauri::image::Image::from_bytes(include_bytes!("../../assets/processing_1.png"))
                     .expect("Failed to load processing_1 icon"),
@@ -706,8 +710,11 @@ pub fn run() {
                 app_state.clone(),
                 record_on_icon,
                 record_off_icon,
+                record_offline_icon,
                 processing_frames,
             );
+
+            remote_monitor::spawn(app.handle().clone(), app_state.clone());
 
             // Only does anything if the user turned on automatic update
             // checks, and never on a package-manager or development install.
@@ -719,6 +726,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_remote_status,
             get_available_monitors,
             start_recording,
             stop_recording,

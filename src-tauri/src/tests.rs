@@ -940,6 +940,110 @@ fn the_tray_update_item_names_the_found_version() {
     assert!(crate::tray::update_item_text(Some("0.9.0")).contains("Update to 0.9.0"));
 }
 
+// ── Remote speech server: fallback and offline indicator ──────────────────────
+
+fn remote_cfg(fallback: voxctrl_config::FallbackChoice) -> voxctrl_config::AppConfig {
+    let mut cfg = voxctrl_config::AppConfig::default();
+    cfg.engine.backend = voxctrl_config::BackendChoice::RemoteOpenAi;
+    cfg.engine.remote_openai.fallback = fallback;
+    cfg
+}
+
+#[test]
+fn a_failed_remote_dictation_goes_to_the_fallback_or_is_reported() {
+    use crate::pipeline::{remote_failure_action, RemoteFailure};
+    use voxctrl_config::FallbackChoice;
+    assert_eq!(remote_failure_action(&remote_cfg(FallbackChoice::Parakeet)), RemoteFailure::UseFallback);
+    assert_eq!(remote_failure_action(&remote_cfg(FallbackChoice::None)), RemoteFailure::Report);
+}
+
+#[test]
+fn the_server_is_skipped_only_when_known_offline_and_a_fallback_exists() {
+    use crate::pipeline::skip_server_for;
+    use voxctrl_config::FallbackChoice;
+    let backed = remote_cfg(FallbackChoice::WhisperCpp);
+    let bare = remote_cfg(FallbackChoice::None);
+    assert!(skip_server_for(&backed, true));
+    // Reachable, or not yet known to be down: the server gets the dictation.
+    assert!(!skip_server_for(&backed, false));
+    // No fallback: the server is the only way to get a transcript, so it is
+    // always tried, and its failure is what the user is told about.
+    assert!(!skip_server_for(&bare, true));
+    // A local backend has no server to skip.
+    assert!(!skip_server_for(&voxctrl_config::AppConfig::default(), true));
+}
+
+#[test]
+fn the_tray_tooltip_reports_whatever_is_wrong() {
+    use crate::tray::tooltip_text;
+    assert_eq!(tooltip_text(true, None), "VoxCtrl");
+    assert_eq!(tooltip_text(false, None), "VoxCtrl — global shortcuts are unavailable");
+    assert_eq!(
+        tooltip_text(true, Some("Could not connect to the server")),
+        "VoxCtrl — speech server unreachable (Could not connect to the server)"
+    );
+    assert_eq!(tooltip_text(true, Some("")), "VoxCtrl — speech server unreachable");
+    // Both problems at once: neither hides the other.
+    let both = tooltip_text(false, Some("down"));
+    assert!(both.contains("global shortcuts are unavailable") && both.contains("speech server unreachable (down)"));
+}
+
+#[test]
+fn the_resting_tray_icon_shows_offline_unless_recording() {
+    use crate::tray::{idle_icon, IdleIcon};
+    assert_eq!(idle_icon(false, false), IdleIcon::Ready);
+    assert_eq!(idle_icon(false, true), IdleIcon::Offline);
+    assert_eq!(idle_icon(true, false), IdleIcon::Recording);
+    assert_eq!(idle_icon(true, true), IdleIcon::Recording);
+}
+
+#[test]
+fn losing_the_server_notifies_once_and_says_what_happens_next() {
+    use crate::remote_monitor::{offline_notification, should_notify};
+    use voxctrl_inference::remote_status::RemoteState::*;
+
+    assert!(should_notify(Online, Offline));
+    assert!(should_notify(Unknown, Offline), "down when the app started");
+    assert!(should_notify(NotInUse, Offline));
+    assert!(!should_notify(Offline, Offline), "still down is not news");
+    assert!(!should_notify(Offline, Online));
+    assert!(!should_notify(Online, NotInUse));
+
+    let (title, body) = offline_notification(Some("Could not connect to the server"), Some("Parakeet tdt-0.6b-v3"));
+    assert!(title.contains("speech server unreachable"));
+    assert_eq!(
+        body,
+        "Could not connect to the server. Dictation will use the fallback engine (Parakeet tdt-0.6b-v3) until it is back."
+    );
+
+    let (_, body) = offline_notification(None, None);
+    assert!(body.starts_with("The server could not be reached. Dictation will fail"), "{body}");
+    assert!(body.contains("no fallback engine is set"));
+}
+
+#[test]
+fn the_status_payload_names_the_fallback_engine_and_its_model() {
+    use crate::remote_monitor::{fallback_label, RemoteStatusPayload};
+    use voxctrl_config::FallbackChoice;
+    use voxctrl_inference::remote_status::{RemoteState, RemoteStatus};
+
+    let mut cfg = remote_cfg(FallbackChoice::Parakeet);
+    cfg.engine.parakeet.model_size = "tdt-0.6b-v3".into();
+    cfg.engine.whisper_cpp.model_size = "small".into();
+    assert_eq!(fallback_label(FallbackChoice::Parakeet, &cfg).as_deref(), Some("Parakeet tdt-0.6b-v3"));
+    assert_eq!(fallback_label(FallbackChoice::WhisperCpp, &cfg).as_deref(), Some("Whisper.cpp small"));
+    assert_eq!(fallback_label(FallbackChoice::None, &cfg), None);
+
+    let payload = RemoteStatusPayload::new(
+        RemoteStatus { state: RemoteState::Offline, reason: Some("down".into()) },
+        &cfg,
+    );
+    assert_eq!(
+        serde_json::to_value(&payload).unwrap(),
+        serde_json::json!({ "state": "offline", "reason": "down", "fallback": "Parakeet tdt-0.6b-v3" })
+    );
+}
+
 #[test]
 fn only_windows_with_a_keybind_recorder_release_the_hotkeys_on_close() {
     use crate::window::{hosts_keybind_recorder, WIZARD_WINDOW};

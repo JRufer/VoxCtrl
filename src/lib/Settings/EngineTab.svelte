@@ -3,6 +3,8 @@
   import { config, configDirty } from "../../stores/config";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { fallbackModel, fallbackOptions, statusSummary, type RemoteStatus } from "./remote-fallback";
 
   import CustomSelect from "./CustomSelect.svelte";
   import GpuToggle from "./GpuToggle.svelte";
@@ -144,7 +146,49 @@
         model: "whisper-1",
         language: "",
         timeout_secs: 30,
+        fallback: "none",
       };
+    }
+  }
+
+  // Whether the saved server is reachable right now: asked once when the tab
+  // opens, then kept current by the backend's `remote-status` events.
+  let remoteStatus = $state<RemoteStatus | null>(null);
+  let remoteSummary = $derived(statusSummary(remoteStatus));
+
+  let remoteFallbackOptions = $derived(
+    fallbackOptions(cfg.engine, { moonshine: moonshineAvailable, parakeet: parakeetAvailable }),
+  );
+  let remoteFallbackModel = $derived(fallbackModel(cfg.engine, cfg.engine.remote_openai?.fallback));
+  // The fallback runs the model set in its engine's own section; if that model
+  // is not on disk the fallback cannot start, and the user should hear it here
+  // rather than in the middle of an outage.
+  let remoteFallbackMissing = $derived.by(() => {
+    const model = remoteFallbackModel;
+    if (!model) return false;
+    switch (cfg.engine.remote_openai?.fallback) {
+      case "whisper-cpp":
+        return !checking && downloadedMap[model] === false;
+      case "moonshine":
+        return !moonshineChecking && moonshineDownloadedMap[model] === false;
+      case "parakeet":
+        return !parakeetChecking && parakeetDownloadedMap[model] === false;
+      default:
+        return false;
+    }
+  });
+  let remoteFallbackDownloading = $derived(downloading || moonshineDownloading || parakeetDownloading);
+
+  async function downloadRemoteFallback() {
+    const model = remoteFallbackModel;
+    if (!model) return;
+    switch (cfg.engine.remote_openai?.fallback) {
+      case "whisper-cpp":
+        return triggerDownload(model);
+      case "moonshine":
+        return triggerMoonshineDownload(model);
+      case "parakeet":
+        return triggerParakeetDownload(model);
     }
   }
 
@@ -279,6 +323,29 @@
       (e.currentTarget as HTMLInputElement).blur();
     }
   }
+
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    const accept = (status: unknown) => {
+      if (status && typeof status === "object" && typeof (status as RemoteStatus).state === "string") {
+        remoteStatus = status as RemoteStatus;
+      }
+    };
+    invoke<RemoteStatus>("get_remote_status")
+      .then(accept)
+      .catch((e) => console.error("Failed to read the remote server status", e));
+    listen<RemoteStatus>("remote-status", (e) => accept(e.payload))
+      .then((stop) => {
+        if (gone) stop();
+        else unlisten = stop;
+      })
+      .catch((e) => console.error("Failed to listen for remote server status", e));
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  });
 
   onMount(async () => {
     checkAllModelsDownloaded();
@@ -728,6 +795,50 @@
           onchange={markDirty}
         />
       </label>
+
+      <label class="field">
+        <span>Fallback engine</span>
+        <!-- Read through a getter: a config from before the fallback existed
+             has no such key, and that means "none" without being a change. -->
+        <CustomSelect
+          bind:value={
+            () => cfg.engine.remote_openai.fallback ?? "none",
+            (choice) => (cfg.engine.remote_openai.fallback = choice)
+          }
+          options={remoteFallbackOptions}
+          onchange={markDirty}
+        />
+      </label>
+      <p class="hint">
+        What transcribes your dictation when the server can't be reached. The fallback is loaded only
+        while the server is unreachable, so it uses no memory the rest of the time. It runs the model
+        chosen in that engine's own settings: to change it, switch <strong>Backend</strong> to that
+        engine, pick the model, then switch back.
+      </p>
+      {#if remoteFallbackMissing}
+        <div class="status-pill error" data-testid="remote-fallback-missing">
+          ⚠️ The fallback model ({remoteFallbackModel}) is not downloaded, so the fallback can't run yet.
+          <button
+            type="button"
+            class="btn-test"
+            onclick={downloadRemoteFallback}
+            disabled={remoteFallbackDownloading}
+          >
+            {remoteFallbackDownloading ? "⏳ Downloading…" : "⬇ Download"}
+          </button>
+        </div>
+      {/if}
+
+      {#if remoteSummary}
+        <div
+          class="status-pill"
+          class:success={remoteSummary.tone === "ok"}
+          class:error={remoteSummary.tone === "warn"}
+          data-testid="remote-status"
+        >
+          {remoteSummary.text}
+        </div>
+      {/if}
 
       <div class="test-row">
         <button
