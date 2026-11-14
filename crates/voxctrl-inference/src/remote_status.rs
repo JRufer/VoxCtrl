@@ -92,6 +92,11 @@ pub fn set_offline(reason: impl Into<String>) {
     set(RemoteStatus { state: RemoteState::Offline, reason: Some(reason.into()) });
 }
 
+/// Held by every test in this crate that writes the status: it is one value
+/// for the whole process, and tests run in parallel.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +105,7 @@ mod tests {
     /// in parallel would see each other's values.
     #[test]
     fn status_is_shared_and_listeners_wake_only_on_change() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut rx = subscribe();
         rx.mark_unchanged();
 

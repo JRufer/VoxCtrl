@@ -24,6 +24,7 @@ pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload
         active_target_id,
         active_target_label: target_label,
         live_text_capable: state.is_live_text_capable(),
+        remote_offline: voxctrl_inference::remote_status::is_offline(),
     })
 }
 
@@ -53,6 +54,9 @@ pub struct StatusPayload {
     /// Whether the current speech engine can produce live text, so built-in
     /// overlays only make room for it when it can arrive.
     pub live_text_capable: bool,
+    /// A remote speech engine is selected and its server is unreachable.
+    /// Overlays read this as `--voxctrl-offline`.
+    pub remote_offline: bool,
 }
 
 #[tauri::command]

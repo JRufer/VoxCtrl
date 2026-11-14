@@ -122,6 +122,10 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
             let status = changes.borrow_and_update().clone();
             let payload = {
                 let cfg = state.config.lock().await;
+                // Whether live text can be produced follows the server, and the
+                // overlays choose their layout by it: without this they would
+                // keep an empty text area through an outage.
+                state.set_live_text_capable(crate::pipeline::live_text_capable(&cfg.data));
                 RemoteStatusPayload::new(status, &cfg.data)
             };
 

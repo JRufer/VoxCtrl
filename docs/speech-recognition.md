@@ -391,6 +391,28 @@ the app on whichever engine's transcript arrives. A fallback's transcript can
 differ in punctuation and accuracy from the server's, because it is a different
 model.
 
+### Live text with a remote engine
+
+Overlays show words as you speak with a remote engine as they do with a local
+one. The scheduling is the same; only where each pass runs differs:
+
+- While the server answers, each live pass (the uncommitted tail of what you
+  have said) is sent to it as an ordinary transcription request, with a short
+  timeout of its own. The dictation's final transcript still comes from the
+  separate upload that streams while you speak, so a slow or failed live pass
+  costs the overlay one update and never the dictation.
+- With the server unreachable, live passes run on the fallback engine, if one
+  is set and is fast enough for live text (not a CPU-only medium or large
+  Whisper model).
+- With the server unreachable and no such fallback, there is no live text, and
+  overlays show their layout without the text area until the server is back.
+
+Early command detection ("Hey Vox…" recognised while you are still talking)
+rides on the same passes and now works with a remote engine as well.
+
+A live pass the server refuses to connect for also marks the server offline at
+once, without waiting for the next 15-second check.
+
 ### Offline indicator
 
 While a remote engine is selected and its server is unreachable:
@@ -400,7 +422,9 @@ While a remote engine is selected and its server is unreachable:
 - one notification says the server is unreachable and whether dictation is
   using the fallback or will fail;
 - **Settings → Engine** shows the same status under the fallback setting, and
-  shows "Connected to the server." when all is well.
+  shows "Connected to the server." when all is well;
+- overlays can read it as `--voxctrl-offline` (see
+  [Overlays → Offline state](./overlays.md#offline-state)).
 
 The badge clears by itself when the server answers again. Saving the settings
 re-checks the server immediately, so a corrected address or key shows its

@@ -155,6 +155,40 @@ describe("Overlay.svelte live-transcript events", () => {
     expect(root.getPropertyValue("--voxctrl-live-final")).toBe("0");
   });
 
+  test("tell overlays when the remote server is unreachable", async () => {
+    render(Overlay);
+    await tick();
+    const root = document.documentElement.style;
+    // A local engine, or a server that answers: nothing to show.
+    expect(root.getPropertyValue("--voxctrl-offline")).toBe("0");
+
+    setStatus({ remote_offline: true });
+    await tick();
+    expect(root.getPropertyValue("--voxctrl-offline")).toBe("1");
+
+    setStatus({ remote_offline: false });
+    await tick();
+    expect(root.getPropertyValue("--voxctrl-offline")).toBe("0");
+  });
+
+  test("drop the live-text area while the server is lost, and bring it back", async () => {
+    // What an outage with no fallback engine looks like to a built-in style:
+    // the backend reports that live text cannot be produced, and the style
+    // goes back to the layout it had before live text existed.
+    setStatus({ live_text_capable: true });
+    const { container } = render(VoiceCard, { recording: true, active: true });
+    expect(container.querySelector(".lt")).not.toBeNull();
+
+    setStatus({ live_text_capable: false, remote_offline: true });
+    await tick();
+    expect(container.querySelector(".lt")).toBeNull();
+    expect(container.querySelector(".card")?.classList.contains("live")).toBe(false);
+
+    setStatus({ live_text_capable: true, remote_offline: false });
+    await tick();
+    expect(container.querySelector(".lt")).not.toBeNull();
+  });
+
   test("mark the final transcript and ignore a stale session", async () => {
     render(Overlay);
     emit("live-transcript", { session_id: 5, committed: "Final words.", tentative: "", final: true });

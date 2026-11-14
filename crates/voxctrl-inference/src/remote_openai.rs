@@ -656,6 +656,14 @@ fn request_failure_reason(e: &reqwest::Error) -> String {
     }
 }
 
+/// Whether a request failed because the server could not be connected to at
+/// all, as opposed to answering late or with an error.
+pub fn is_connect_failure(err: &anyhow::Error) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .any(reqwest::Error::is_connect)
+}
+
 /// A short, user-facing reason for a failed transcription request, for the
 /// offline indicator. The full error still goes to the log and, when there is
 /// no fallback engine, to the failure notification.
@@ -733,6 +741,8 @@ mod tests {
         let err = session.finish().await.unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(3), "took {:?}", started.elapsed());
         assert!(format!("{err:#}").contains("Could not connect to the speech server"), "{err:#}");
+        assert!(is_connect_failure(&err));
+        assert!(!is_connect_failure(&anyhow!("Remote speech engine returned HTTP 500: boom")));
         assert_eq!(failure_reason(&err), "Could not connect to the server");
     }
 

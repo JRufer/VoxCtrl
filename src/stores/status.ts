@@ -13,6 +13,8 @@ export interface AppStatus {
   active_target_label?: string;
   /** Whether the current speech engine can produce live text mid-recording. */
   live_text_capable?: boolean;
+  /** A remote speech engine is selected and its server is unreachable. */
+  remote_offline?: boolean;
 }
 
 export const status = writable<AppStatus>({

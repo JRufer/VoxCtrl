@@ -242,6 +242,9 @@ pub fn interim_cancelled(session: u64) -> bool {
 /// error as "this pass produced nothing", which is exactly right here.
 const CANCELLED: &str = "live pass cancelled: the recording ended";
 
+/// The error a live pass reports when there is nothing to run it on.
+const NO_LIVE_ENGINE: &str = "live pass skipped: the server is unreachable and no fallback engine is set";
+
 // ── Inference request ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -322,12 +325,67 @@ impl InferenceOutput {
 pub struct InferenceEngine {
     config: Arc<AppConfig>,
     backend: Box<dyn TranscriptionBackend>,
+    /// The remote server, for live passes only (live text, early command
+    /// detection). `Some` exactly when a remote backend is selected. The final
+    /// pass of a remote dictation does not come through this engine at all —
+    /// the recording pipeline streams it to the server itself — so without
+    /// this a remote backend had no live text.
+    live_remote: Option<Box<dyn TranscriptionBackend>>,
+}
+
+/// Which engine transcribes one pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassRoute {
+    /// The on-device backend this engine holds.
+    Local,
+    /// The remote server.
+    Remote,
+    /// Nothing: a live pass with the server unreachable and no fallback.
+    Skip,
+}
+
+/// Decide where a pass goes.
+///
+/// A local backend transcribes everything itself. With a remote backend, a
+/// final pass that reaches this engine is one the server could not take, so it
+/// belongs to the fallback; a live pass goes to the server while it answers,
+/// to the fallback while it does not, and nowhere if there is no fallback —
+/// the overlay then simply shows no live text.
+pub fn pass_route(config: &AppConfig, is_interim: bool, server_offline: bool) -> PassRoute {
+    if config.engine.backend != BackendChoice::RemoteOpenAi || !is_interim {
+        PassRoute::Local
+    } else if !server_offline {
+        PassRoute::Remote
+    } else if is_standby_config(config) {
+        PassRoute::Local
+    } else {
+        PassRoute::Skip
+    }
+}
+
+/// A live pass is only useful while the user is still talking, so it gets far
+/// less time than a whole dictation: one that has not come back by then is
+/// stale, and waiting longer would hold up the passes behind it.
+const LIVE_PASS_TIMEOUT_SECS: u64 = 6;
+
+fn build_live_remote(config: &AppConfig) -> Option<Box<dyn TranscriptionBackend>> {
+    (config.engine.backend == BackendChoice::RemoteOpenAi).then(|| {
+        let mut remote = config.engine.remote_openai.clone();
+        remote.timeout_secs = remote.timeout_secs.clamp(1, LIVE_PASS_TIMEOUT_SECS);
+        Box::new(remote_openai::RemoteOpenAiBackend::new(remote)) as Box<dyn TranscriptionBackend>
+    })
 }
 
 impl InferenceEngine {
     pub fn new(config: Arc<AppConfig>) -> Self {
         let backend = build_backend(&config);
-        Self { config, backend }
+        let live_remote = build_live_remote(&config);
+        Self { config, backend, live_remote }
+    }
+
+    /// Where a pass would go right now. See [`pass_route`].
+    pub fn route(&self, is_interim: bool) -> PassRoute {
+        pass_route(&self.config, is_interim, remote_status::is_offline())
     }
 
     /// Load the selected backend model. Blocks until ready.
@@ -364,6 +422,14 @@ impl InferenceEngine {
                 _ => self.config.engine.remote_openai != new_config.engine.remote_openai,
             };
 
+        // The live-pass client follows the server's address and key, which the
+        // check above deliberately ignores when a fallback is configured.
+        if self.config.engine.backend != new_config.engine.backend
+            || self.config.engine.remote_openai != new_config.engine.remote_openai
+        {
+            self.live_remote = build_live_remote(&new_config);
+        }
+
         self.config = new_config.clone();
 
         if backend_changed {
@@ -381,8 +447,25 @@ impl InferenceEngine {
 
     /// Transcribe and post-process. Returns the final text.
     pub fn process(&self, req: InferenceRequest) -> Result<InferenceOutput> {
+        let route = self.route(req.is_interim);
+        self.process_routed(req, route)
+    }
+
+    /// [`process`](Self::process) with the route already decided, for a caller
+    /// that had to know it first (the worker, to decide whether to load a model).
+    pub fn process_routed(&self, req: InferenceRequest, route: PassRoute) -> Result<InferenceOutput> {
         let is_interim = req.is_interim;
         let session_id = req.session_id;
+
+        if route == PassRoute::Skip {
+            return Ok(InferenceOutput::failed(
+                req.target_id,
+                req.binding_id,
+                &anyhow::anyhow!(NO_LIVE_ENGINE),
+                is_interim,
+                session_id,
+            ));
+        }
 
         // The in-memory config: no disk I/O on the hot path, and it is current —
         // `save_config` pushes every change here through `update_config`.
@@ -419,8 +502,30 @@ impl InferenceEngine {
             )),
             interim_session: is_interim.then_some(session_id),
         };
-        let result = match self.backend.transcribe(&t_req) {
-            Ok(r) => r,
+        let remote = match (route, self.live_remote.as_deref()) {
+            (PassRoute::Remote, Some(remote)) => Some(remote),
+            _ => None,
+        };
+        let result = match remote.unwrap_or(&*self.backend).transcribe(&t_req) {
+            Ok(r) => {
+                if remote.is_some() {
+                    // An answer is the freshest proof there is that the server is up.
+                    remote_status::set_online();
+                }
+                r
+            }
+            // A live pass the server did not answer costs the overlay one
+            // update and nothing else: the dictation itself is streamed to the
+            // server separately. So this is not an error worth a log line per
+            // pass — but a refused connection is worth knowing about at once,
+            // rather than at the next probe.
+            Err(e) if remote.is_some() => {
+                if remote_openai::is_connect_failure(&e) {
+                    remote_status::set_offline(remote_openai::failure_reason(&e));
+                }
+                tracing::debug!("Live pass to the remote server failed: {e:#}");
+                return Ok(InferenceOutput::failed(req.target_id, req.binding_id, &e, is_interim, session_id));
+            }
             // Stopped part-way because the recording ended: not a failure.
             Err(_) if is_interim && interim_cancelled(session_id) => {
                 return Ok(InferenceOutput::failed(
@@ -664,7 +769,10 @@ pub fn run_worker_with_config(
                             continue;
                         }
 
-                        if !loaded {
+                        // A pass bound for the server needs no local model: a
+                        // fallback on standby must stay unloaded for it.
+                        let route = engine.route(is_interim);
+                        if !loaded && route == PassRoute::Local {
                             match engine.load() {
                                 Ok(()) => {
                                     info!("Inference engine ready (loaded on demand)");
@@ -683,11 +791,13 @@ pub fn run_worker_with_config(
                         // Kept for the error report, which would otherwise lose
                         // which target and hotkey the failed utterance was for.
                         let (target_id, binding_id) = (req.target_id.clone(), req.binding_id.clone());
-                        let output = engine.process(req).unwrap_or_else(|e| {
+                        let output = engine.process_routed(req, route).unwrap_or_else(|e| {
                             error!("Inference error: {e:?}");
                             InferenceOutput::failed(target_id, binding_id, &e, is_interim, session_id)
                         });
-                        last_used = std::time::Instant::now();
+                        if route == PassRoute::Local {
+                            last_used = std::time::Instant::now();
+                        }
                         let _ = tx.send(output);
                     }
                     recv(ticker) -> _ => {
@@ -771,6 +881,7 @@ mod tests {
         let engine = InferenceEngine {
             config: Arc::new(cfg),
             backend: Box::new(RecordingBackend { transcript, requests: requests.clone() }),
+            live_remote: None,
         };
         (engine, requests)
     }
@@ -871,6 +982,106 @@ mod tests {
         assert_eq!(requests.lock().unwrap()[0].language, None);
     }
 
+    #[test]
+    fn where_each_pass_goes() {
+        use voxctrl_config::FallbackChoice;
+        let local = AppConfig::default();
+        let bare = remote_config(FallbackChoice::None);
+        let backed = remote_config(FallbackChoice::Parakeet);
+
+        // A local backend does everything, whatever a server elsewhere is doing.
+        for offline in [false, true] {
+            assert_eq!(pass_route(&local, true, offline), PassRoute::Local);
+            assert_eq!(pass_route(&local, false, offline), PassRoute::Local);
+        }
+        // Live passes go to the server while it answers.
+        assert_eq!(pass_route(&bare, true, false), PassRoute::Remote);
+        assert_eq!(pass_route(&backed, true, false), PassRoute::Remote);
+        // With the server down they go to the fallback, or nowhere.
+        assert_eq!(pass_route(&backed, true, true), PassRoute::Local);
+        assert_eq!(pass_route(&bare, true, true), PassRoute::Skip);
+        // A final pass only reaches this engine as a fallback request.
+        assert_eq!(pass_route(&backed, false, false), PassRoute::Local);
+        assert_eq!(pass_route(&backed, false, true), PassRoute::Local);
+    }
+
+    /// An engine with a remote backend, a recording local backend and a
+    /// recording stand-in for the server.
+    #[allow(clippy::type_complexity)]
+    fn remote_engine(
+        fallback: voxctrl_config::FallbackChoice,
+    ) -> (
+        InferenceEngine,
+        Arc<std::sync::Mutex<Vec<TranscribeRequest>>>,
+        Arc<std::sync::Mutex<Vec<TranscribeRequest>>>,
+    ) {
+        let local = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let server = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let engine = InferenceEngine {
+            config: Arc::new(remote_config(fallback)),
+            backend: Box::new(RecordingBackend { transcript: "from the fallback", requests: local.clone() }),
+            live_remote: Some(Box::new(RecordingBackend { transcript: "from the server", requests: server.clone() })),
+        };
+        (engine, local, server)
+    }
+
+    #[test]
+    fn a_live_pass_routed_to_the_server_is_transcribed_there() {
+        // A pass the server answers marks it online, which is process-wide.
+        let _guard = remote_status::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (engine, local, server) = remote_engine(voxctrl_config::FallbackChoice::Parakeet);
+        let live = InferenceRequest { is_interim: true, session_id: 9_100, ..request(speech()) };
+        let out = engine.process_routed(live, PassRoute::Remote).unwrap();
+        assert_eq!(out.raw_text, "from the server");
+        assert!(out.is_interim);
+        assert_eq!(server.lock().unwrap().len(), 1);
+        assert!(local.lock().unwrap().is_empty(), "the fallback was used for a live pass the server could take");
+        assert!(remote_status::is_online(), "an answered pass is proof the server is up");
+        remote_status::set_not_in_use();
+    }
+
+    #[test]
+    fn a_pass_routed_locally_uses_the_fallback() {
+        let (engine, local, server) = remote_engine(voxctrl_config::FallbackChoice::Parakeet);
+        let out = engine.process_routed(request(speech()), PassRoute::Local).unwrap();
+        assert_eq!(out.raw_text, "from the fallback");
+        assert_eq!(local.lock().unwrap().len(), 1);
+        assert!(server.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_skipped_live_pass_runs_nothing_and_reports_no_text() {
+        let (engine, local, server) = remote_engine(voxctrl_config::FallbackChoice::None);
+        let live = InferenceRequest { is_interim: true, session_id: 9_101, ..request(speech()) };
+        let out = engine.process_routed(live, PassRoute::Skip).unwrap();
+        assert!(out.error.is_some());
+        assert!(out.text.is_empty());
+        assert!(local.lock().unwrap().is_empty() && server.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_live_client_exists_only_for_a_remote_backend_and_follows_its_address() {
+        use voxctrl_config::FallbackChoice;
+        assert!(InferenceEngine::new(Arc::new(AppConfig::default())).live_remote.is_none());
+
+        let mut engine = InferenceEngine::new(Arc::new(remote_config(FallbackChoice::WhisperCpp)));
+        assert_eq!(engine.live_remote.as_ref().map(|b| b.name()), Some("remote-openai"));
+
+        // Back to a local backend: there is no server to send live passes to.
+        engine.update_config(Arc::new(AppConfig::default()));
+        assert!(engine.live_remote.is_none());
+    }
+
+    #[test]
+    fn a_live_pass_gets_a_short_timeout_however_long_dictations_are_allowed() {
+        let mut cfg = remote_config(voxctrl_config::FallbackChoice::None);
+        cfg.engine.remote_openai.timeout_secs = 120;
+        assert!(build_live_remote(&cfg).is_some());
+        // The clamp itself, since the client does not expose its timeout.
+        assert_eq!(120u64.clamp(1, LIVE_PASS_TIMEOUT_SECS), LIVE_PASS_TIMEOUT_SECS);
+        assert_eq!(3u64.clamp(1, LIVE_PASS_TIMEOUT_SECS), 3);
+    }
+
     /// A fallback engine is left unloaded at startup and loaded by the first
     /// dictation handed to it. With no model on disk that load fails, and the
     /// failure reaches the user as that dictation's error, naming the model.
@@ -957,7 +1168,11 @@ mod tests {
         cancel_interim_passes(3); // an older id never moves it back
         assert!(interim_cancelled(41));
 
-        let engine = InferenceEngine { config: Arc::new(AppConfig::default()), backend: Box::new(AbortingBackend) };
+        let engine = InferenceEngine {
+            config: Arc::new(AppConfig::default()),
+            backend: Box::new(AbortingBackend),
+            live_remote: None,
+        };
         let live = |session| InferenceRequest { is_interim: true, session_id: session, ..request(speech()) };
 
         let stopped = engine.process(live(41)).expect("a cancelled pass is not an error");

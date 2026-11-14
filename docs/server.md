@@ -54,8 +54,6 @@ Not in this release, and planned for later ones:
 - cleanup (LLM) and text-to-speech running on the server;
 - sending custom voices from the client to the server;
 - pairing with a code, and encrypted connections built in;
-- live text in overlays while using a server (see
-  [Limitations](#limitations-on-the-client)).
 
 ---
 
@@ -381,9 +379,11 @@ The same settings in `~/.config/voxctrl/config.json`:
 
 ### Limitations on the client
 
-- **No live text.** Overlays that show words as you speak need a local engine;
-  with a remote engine the text appears when you finish. This is an existing
-  limit of the Remote Speech Engine, not something the server adds.
+- **Live text needs VoxCtrl 0.9.1 or newer on the client.** From 0.9.1 the
+  overlay shows words as you speak with a remote engine too: while you talk,
+  the app sends the server short clips of what you have said so far, a few
+  times a second, alongside the dictation itself. Older clients show the text
+  only when you finish. See [Live text and server load](#live-text-and-server-load).
 - **A server outage needs a fallback to ride through.** Without one, dictation
   fails with an error until the server is back. See the next section.
 - **Vocabulary and snippets still work.** The client sends your custom
@@ -423,7 +423,8 @@ To change which model the fallback runs: switch **Backend** to that engine,
 pick the model, switch **Backend** back to **Remote Speech Engine (OpenAI
 API)**, and save.
 
-The fallback needs a client that has it (VoxCtrl 0.9.0 or newer). Details are
+The fallback needs a client that has it (VoxCtrl 0.9.1 or newer; 0.9.0 gained
+it only after its first publication, so an early 0.9.0 does not). Details are
 in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unreachable).
 
 ---
@@ -615,6 +616,20 @@ longer use stay on disk until you delete them from the models directory.
 The server handles one transcription at a time. Requests that arrive while one
 is running wait their turn, so several clients can share a server; they just
 don't run in parallel.
+
+### Live text and server load
+
+A client with live text on sends the server a short clip a few times a second
+while its user is speaking, on top of the one request per dictation. Each is
+small and the client waits for one to finish before sending the next, so the
+load follows how fast the server answers. With a fast model it is unnoticeable.
+With a slow one (a large Whisper model on a CPU) live text lags, and a live
+clip that is still being transcribed when the user stops can delay the final
+transcript by up to that clip's time.
+
+To stop it, turn off **Settings → Visual & Feedback → Show live transcript in
+overlay** on the client. The server log shows these as ordinary
+`Transcribed 1.4s of audio in … ms` lines.
 
 ---
 
