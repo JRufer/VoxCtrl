@@ -104,6 +104,35 @@ pub struct RemoteOpenAiConfig {
     pub language: String,
     /// Request timeout in seconds
     pub timeout_secs: u64,
+    /// The on-device engine to transcribe with when the server cannot be
+    /// reached. It uses that engine's own section of the config (model,
+    /// language, device), and is loaded only while the server is unreachable.
+    #[serde(default)]
+    pub fallback: FallbackChoice,
+}
+
+/// Which on-device engine stands in for an unreachable remote server.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FallbackChoice {
+    /// No fallback: a dictation fails with an error while the server is down.
+    #[default]
+    None,
+    WhisperCpp,
+    Moonshine,
+    Parakeet,
+}
+
+impl FallbackChoice {
+    /// The backend this choice runs, or `None` for no fallback.
+    pub fn backend(self) -> Option<BackendChoice> {
+        match self {
+            Self::None => None,
+            Self::WhisperCpp => Some(BackendChoice::WhisperCpp),
+            Self::Moonshine => Some(BackendChoice::Moonshine),
+            Self::Parakeet => Some(BackendChoice::Parakeet),
+        }
+    }
 }
 
 impl Default for RemoteOpenAiConfig {
@@ -114,6 +143,7 @@ impl Default for RemoteOpenAiConfig {
             model: "whisper-1".into(),
             language: "".into(),
             timeout_secs: 30,
+            fallback: FallbackChoice::None,
         }
     }
 }

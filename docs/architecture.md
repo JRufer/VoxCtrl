@@ -35,6 +35,7 @@ VoxCtrl/
 │       ├── lib.rs     # Pipeline coordinator
 │       ├── commands.rs# Tauri #[command] handlers
 │       ├── live_text.rs # Live transcript: pass scheduling, commit cuts, committed/tentative words
+│       ├── remote_monitor.rs # Probes the remote speech server; offline tooltip, notification, `remote-status` event
 │       └── state.rs   # Shared AppState
 │
 └── crates/

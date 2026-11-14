@@ -20,23 +20,75 @@ use voxctrl_inference::InferenceOutput;
 /// Finish a remote (streamed) transcription the way the local worker finishes
 /// its own — same noise gate, post-processing and per-hotkey rewrite, from the
 /// shared `voxctrl_inference::finalize` — and hand the result to delivery.
+/// What to do with a dictation the remote server did not transcribe.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RemoteFailure {
+    /// Hand the recording to the on-device fallback engine.
+    UseFallback,
+    /// There is no fallback: report the failure to the user.
+    Report,
+}
+
+pub(crate) fn remote_failure_action(cfg: &voxctrl_config::AppConfig) -> RemoteFailure {
+    if voxctrl_inference::is_standby_config(cfg) {
+        RemoteFailure::UseFallback
+    } else {
+        RemoteFailure::Report
+    }
+}
+
+/// Whether a recording that is just starting should skip the server and go
+/// straight to the fallback engine: one is configured, and the server is
+/// already known to be unreachable. Asking it anyway would make the user wait
+/// out a connection attempt on every dictation of an outage.
+pub(crate) fn skip_server_for(cfg: &voxctrl_config::AppConfig, server_offline: bool) -> bool {
+    server_offline && voxctrl_inference::is_standby_config(cfg)
+}
+
 async fn process_remote_transcription(
     res: anyhow::Result<voxctrl_inference::backend::TranscriptionResult>,
     audio: Vec<f32>,
     ctx: RecordingContext,
+    session_id: u64,
     state: Arc<AppState>,
+    inference_tx: crossbeam_channel::Sender<voxctrl_inference::InferenceRequest>,
     text_tx: crossbeam_channel::Sender<InferenceOutput>,
 ) {
-    use voxctrl_inference::finalize;
-    let RecordingContext { target_id, binding_id, processing, binding } = ctx;
+    use voxctrl_inference::{finalize, remote_status};
 
     let result = match res {
-        Ok(res) => res,
+        Ok(res) => {
+            remote_status::set_online();
+            res
+        }
         Err(e) => {
-            let _ = text_tx.send(InferenceOutput::failed(target_id, Some(binding_id), &e, false, 0));
+            remote_status::set_offline(voxctrl_inference::remote_openai::failure_reason(&e));
+            let action = remote_failure_action(&state.config.lock().await.data);
+            match action {
+                RemoteFailure::UseFallback => {
+                    // The whole recording is still in `audio`, so nothing the
+                    // user said is lost: the fallback engine transcribes it
+                    // and the result is delivered as any local dictation is.
+                    tracing::warn!("Remote speech engine failed ({e:#}); transcribing with the fallback engine");
+                    let _ = inference_tx.send(ctx.request(audio, false, session_id));
+                }
+                RemoteFailure::Report => {
+                    let e = e.context(
+                        "The speech server could not be used, and no fallback engine is set (Settings → Engine)",
+                    );
+                    let _ = text_tx.send(InferenceOutput::failed(
+                        ctx.target_id,
+                        Some(ctx.binding_id),
+                        &e,
+                        false,
+                        0,
+                    ));
+                }
+            }
             return;
         }
     };
+    let RecordingContext { target_id, binding_id, processing, binding } = ctx;
 
     let app_cfg = state.config.lock().await.data.clone();
 
@@ -226,7 +278,10 @@ pub fn spawn_audio_coordinator(
                     state_for_audio
                         .interim_for_commands
                         .store(commands_enabled, std::sync::atomic::Ordering::SeqCst);
-                    if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi {
+                    let server_offline = voxctrl_inference::remote_status::is_offline();
+                    if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi
+                        && !skip_server_for(&cfg, server_offline)
+                    {
                         is_remote_backend = true;
                         let prompt = Some(voxctrl_inference::finalize::initial_prompt(
                             &cfg.features.custom_vocabulary,
@@ -302,6 +357,7 @@ pub fn spawn_audio_coordinator(
                                 state_for_audio.set_processing(true);
                                 let state_clone = state_for_audio.clone();
                                 let text_tx_clone = text_tx.clone();
+                                let inference_tx_clone = inference_tx.clone();
                                 let ctx = ctx.clone();
 
                                 rt_handle.spawn(async move {
@@ -310,7 +366,9 @@ pub fn spawn_audio_coordinator(
                                         res,
                                         audio,
                                         ctx,
+                                        session_id,
                                         state_clone,
+                                        inference_tx_clone,
                                         text_tx_clone,
                                     )
                                     .await;

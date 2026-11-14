@@ -45,7 +45,8 @@ Full schema with defaults:
       "api_key": null,
       "model": "whisper-1",
       "language": "",
-      "timeout_secs": 30
+      "timeout_secs": 30,
+      "fallback": "none"
     },
     "s1_mini": {
       "enabled": false,
@@ -214,6 +215,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `model` | string | `"whisper-1"` | Remote model name (e.g. `whisper-1`, `large-v3`). |
 | `language` | string | `""` | Language code for transcription, or blank/auto. |
 | `timeout_secs` | integer | `30` | Request timeout in seconds (min 5, max 300). |
+| `fallback` | string | `"none"` | The on-device engine that transcribes while the server is unreachable: `"none"`, `"whisper-cpp"`, `"moonshine"` or `"parakeet"`. It runs with that engine's own section of this file (model, language, device) and is loaded only while the server is unreachable. With `"none"`, a dictation fails with an error instead. See [Remote Speech Engine → Fallback](./speech-recognition.md#fallback-when-the-server-is-unreachable). |
 
 **`s1_mini` sub-object** (dictation cleanup processor):
 

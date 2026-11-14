@@ -45,6 +45,11 @@ export interface RemoteOpenAiConfig {
   model: string;
   language: string;
   timeout_secs: number;
+  /**
+   * The on-device engine that transcribes while the server is unreachable.
+   * Absent in configs written before 0.9.0, which means "none".
+   */
+  fallback?: "none" | "whisper-cpp" | "moonshine" | "parakeet";
 }
 
 export interface WhisperCppConfig {
@@ -215,6 +220,7 @@ const defaultConfig: AppConfig = {
       model: "whisper-1",
       language: "",
       timeout_secs: 30,
+      fallback: "none",
     },
     s1_mini: {
       enabled: false,
