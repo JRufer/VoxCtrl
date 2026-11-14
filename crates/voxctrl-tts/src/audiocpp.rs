@@ -443,7 +443,9 @@ pub struct SpeakRequest<'a> {
 /// one (e.g. on idle-unload, or when switching engine/GPU setting) frees
 /// every resource the model held — not just its GPU/RAM weights.
 pub(crate) struct AudioCppServer {
-    child: Child,
+    // Behind a lock only so a failed request, which has `&self`, can ask how the
+    // process ended.
+    child: std::sync::Mutex<Child>,
     base_url: String,
     http: reqwest::blocking::Client,
     family: &'static str,
@@ -457,8 +459,9 @@ pub(crate) struct AudioCppServer {
 
 impl Drop for AudioCppServer {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let child = self.child.get_mut().unwrap_or_else(|e| e.into_inner());
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -573,7 +576,7 @@ impl AudioCppServer {
             std::thread::sleep(Duration::from_millis(150));
         }
 
-        Ok(Self { child, base_url, http, family, model_dir: model_dir.to_path_buf(), gpu, _config_file: config_file })
+        Ok(Self { child: std::sync::Mutex::new(child), base_url, http, family, model_dir: model_dir.to_path_buf(), gpu, _config_file: config_file })
     }
 
     fn speak(&self, req: &SpeakRequest) -> Result<Vec<u8>> {
@@ -618,9 +621,9 @@ impl AudioCppServer {
             .post(format!("{}/v1/audio/speech", self.base_url))
             .json(&body)
             .send()
-            .context("POST /v1/audio/speech")?;
+            .map_err(|e| self.explain_transport_failure(e))?;
         let status = resp.status();
-        let bytes = resp.bytes().context("read /v1/audio/speech response")?;
+        let bytes = resp.bytes().map_err(|e| self.explain_transport_failure(e))?;
         if !status.is_success() {
             let message = serde_json::from_slice::<serde_json::Value>(&bytes)
                 .ok()
@@ -647,6 +650,37 @@ fn exit_report(child: &mut Child) -> Option<String> {
         chars[chars.len().saturating_sub(600)..].iter().collect()
     };
     Some(if tail.is_empty() { status } else { format!("{status}; last output: {tail}") })
+}
+
+impl AudioCppServer {
+    /// A request that got no answer usually means the server process died
+    /// under it. "Connection closed" says nothing a user can act on, so wait
+    /// a moment for the process to finish exiting and say how it ended and
+    /// what it last printed (out of memory, a missing library, a Vulkan
+    /// failure, ...).
+    fn explain_transport_failure(&self, error: reqwest::Error) -> anyhow::Error {
+        let mut child = self.child.lock().unwrap_or_else(|e| e.into_inner());
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        let report = loop {
+            if let Some(report) = exit_report(&mut child) {
+                break Some(report);
+            }
+            if Instant::now() > deadline {
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        match report {
+            Some(report) => anyhow::anyhow!(
+                "The audio.cpp speech engine ({}) stopped while working: {report}. It will be restarted on the next request.",
+                self.family
+            ),
+            None => anyhow::Error::new(error).context(format!(
+                "The audio.cpp speech engine ({}) did not answer, though it is still running",
+                self.family
+            )),
+        }
+    }
 }
 
 fn read_stderr(child: &mut Child) -> String {
@@ -681,7 +715,7 @@ impl AudioCppSession {
         // A server that has exited (crashed, ran out of memory, was killed)
         // cannot be reused: without this check every later request would be
         // sent to a port nobody listens on, until the app restarted.
-        let died = slot.as_mut().and_then(|s| exit_report(&mut s.server.child));
+        let died = slot.as_mut().and_then(|s| exit_report(s.server.child.get_mut().unwrap_or_else(|e| e.into_inner())));
         if let Some(report) = &died {
             warn!("audio.cpp server (family={family}) is no longer running ({report}); starting a new one");
         }
