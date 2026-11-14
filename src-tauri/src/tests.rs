@@ -939,3 +939,14 @@ fn the_tray_update_item_names_the_found_version() {
     assert_eq!(crate::tray::update_item_text(None), crate::tray::TRAY_CHECK_FOR_UPDATES);
     assert!(crate::tray::update_item_text(Some("0.9.0")).contains("Update to 0.9.0"));
 }
+
+#[test]
+fn only_windows_with_a_keybind_recorder_release_the_hotkeys_on_close() {
+    use crate::window::{hosts_keybind_recorder, WIZARD_WINDOW};
+    assert!(hosts_keybind_recorder("settings"));
+    assert!(hosts_keybind_recorder(WIZARD_WINDOW));
+    // The overlay and history windows come and go while a recorder may be
+    // open in Settings; they must not end its hold on the hotkeys.
+    assert!(!hosts_keybind_recorder(crate::window::OVERLAY_WINDOW));
+    assert!(!hosts_keybind_recorder(crate::window::HISTORY_WINDOW));
+}

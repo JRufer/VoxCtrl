@@ -562,6 +562,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state.clone())
+        .on_window_event(crate::window::release_hotkeys_when_recorder_closes)
         .setup(move |app| {
             set_app_handle(app.handle().clone());
 

@@ -92,9 +92,7 @@
   }
 
   function stopRecording() {
-    wizard.recording = false;
-    wizard.held = [];
-    void invoke("set_hotkeys_inhibited", { inhibited: false }).catch(() => {});
+    wizard.endCapture();
   }
 
   /**
@@ -250,7 +248,10 @@
       void unlisten.then((off) => off()).catch(() => {});
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
-      if (wizard.recording) stopRecording();
+      // Unconditionally: leaving this step means nobody is recording, however
+      // `wizard.recording` came to read at this point.
+      wizard.endCapture();
+      void Promise.resolve(invoke("set_hotkeys_inhibited", { inhibited: false })).catch(() => {});
       registerGate(STEP, null);
       setBlocker(STEP, null);
     };

@@ -163,6 +163,9 @@ pub async fn finish_setup_wizard(
     };
     let _ = app.emit("config-changed", updated);
     info!("First-run setup wizard completed");
+    // The wizard's shortcut recorder silences every hotkey while it listens.
+    // Whatever state it was left in, a finished wizard is not recording.
+    state.set_hotkeys_inhibited(false);
 
     if let Some(window) = app.get_webview_window(crate::window::WIZARD_WINDOW) {
         let _ = window.hide();
