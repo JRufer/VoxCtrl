@@ -208,7 +208,7 @@ label). Everything that changes afterward — recording/processing/speaking
 state, the live audio level — has to be read from CSS: VoxCtrl continuously
 writes it onto custom properties on the page root (`--voxctrl-recording`,
 `--voxctrl-processing`, `--voxctrl-speaking`, `--voxctrl-mcp-recording`,
-`--voxctrl-audio-ready`, all 0/1, plus `--voxctrl-audio-level` 0..1), for
+`--voxctrl-audio-ready`, `--voxctrl-offline`, all 0/1, plus `--voxctrl-audio-level` 0..1), for
 `var()`/`calc()` to consume directly — see the shipped `Custom/index.html`
 and `style.css` for a fully commented, working example (the on/off flip,
 the status-stamp text swap, and the audio-reactive LED matrix are all
@@ -229,6 +229,33 @@ under the Spectrum floor, stdout lines in the Terminal and a typed paper label
 under the Vinyl meter. With the setting off, or with an engine that cannot
 produce live text (`status.live_text_capable` is false), the area is not
 rendered and each style looks exactly as it did before.
+
+`live_text_capable` is a live answer, not a fixed property of the settings.
+With a remote speech engine it is true while the server is reachable. If the
+server is lost it becomes the fallback engine's answer, and false when no
+fallback is set — so an overlay drops back to its plain layout for the length
+of an outage instead of showing a text area nothing will fill, and gets the
+text area back when the server returns.
+
+### Offline state
+
+`--voxctrl-offline` is `1` while a remote speech engine is selected and its
+server cannot be reached, `0` otherwise (including whenever a local engine is
+selected). It is written onto the page root with the other live values, so a
+custom overlay can show that a dictation is running on the fallback engine, or
+is about to fail:
+
+```css
+/* A small amber dot that appears only while the server is unreachable. */
+.my-offline-dot {
+  opacity: var(--voxctrl-offline, 0);
+  background: #f59e0b;
+}
+```
+
+The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.0,
+which never set the property. The built-in styles do not draw an offline mark
+yet; the tray icon and its tooltip carry it.
 
 **Committed and tentative words.** The transcript arrives in two parts.
 *Committed* words will not change; *tentative* words are the engine's current
@@ -260,8 +287,9 @@ these on the page root:
 The attributes are also the **opt-in that turns the work on**. At the start of
 each recording the backend (`pipeline::spawn_audio_coordinator`) decides
 `live_text_wanted`: the overlay is shown, live text is switched on, the engine
-can produce it (`pipeline::live_text_capable`: not the remote backend and not a
-CPU-only medium/large Whisper model), and the style is a built-in one or a
+can produce it right now (`pipeline::live_text_capable`: not a CPU-only
+medium/large Whisper model; with a remote backend, the server is reachable or a
+fallback engine that qualifies is set), and the style is a built-in one or a
 custom one whose `index.html` contains a live-text attribute
 (`commands::overlay_has_live_text`; HTML comments are ignored, so documenting
 the attributes in a comment does not enable them). Overlays without them pay

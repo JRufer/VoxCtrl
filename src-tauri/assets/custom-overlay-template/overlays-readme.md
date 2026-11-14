@@ -69,7 +69,9 @@ working example of all of this — this is the short version:
 page root while the overlay is visible — read them with `var()`/`calc()`,
 no script needed):
 - `--voxctrl-recording`, `--voxctrl-processing`, `--voxctrl-speaking`,
-  `--voxctrl-mcp-recording`, `--voxctrl-audio-ready` — each `0` or `1`.
+  `--voxctrl-mcp-recording`, `--voxctrl-audio-ready`, `--voxctrl-offline` —
+  each `0` or `1`. `--voxctrl-offline` is `1` while a remote speech server is
+  selected and can't be reached.
 - `--voxctrl-audio-level` — `0`..`1`, already smoothed.
 
 CSS can't swap text content based on a variable, so for anything that
