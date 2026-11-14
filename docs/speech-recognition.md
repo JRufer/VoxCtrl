@@ -423,7 +423,8 @@ While a remote engine is selected and its server is unreachable:
   using the fallback or will fail;
 - **Settings → Engine** shows the same status under the fallback setting, and
   shows "Connected to the server." when all is well;
-- overlays can read it as `--voxctrl-offline` (see
+- every built-in overlay shows a small OFFLINE mark in its status line, and
+  custom overlays can read the state as `--voxctrl-offline` (see
   [Overlays → Offline state](./overlays.md#offline-state)).
 
 The badge clears by itself when the server answers again. Saving the settings

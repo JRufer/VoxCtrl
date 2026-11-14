@@ -41,6 +41,10 @@ import Waveform from "../../src/lib/Overlay/Waveform.svelte";
 import Pulse from "../../src/lib/Overlay/Pulse.svelte";
 import BlueWave from "../../src/lib/Overlay/BlueWave.svelte";
 import VoiceCard from "../../src/lib/Overlay/VoiceCard.svelte";
+import MonoBars from "../../src/lib/Overlay/MonoBars.svelte";
+import Spectrum from "../../src/lib/Overlay/Spectrum.svelte";
+import Terminal from "../../src/lib/Overlay/Terminal.svelte";
+import Vinyl from "../../src/lib/Overlay/Vinyl.svelte";
 
 function setStatus(partial: Partial<AppStatus> = {}) {
   status.set({
@@ -328,5 +332,32 @@ describe("Overlay.svelte (command pill catch-up)", () => {
     await settle();
 
     expect(container.querySelector(".system-response-box.command")).toBeNull();
+  });
+});
+
+describe("offline mark", () => {
+  const styles: [string, any][] = [
+    ["Voice Card", VoiceCard],
+    ["Waveform", Waveform],
+    ["Pulse", Pulse],
+    ["Ocean Wave", BlueWave],
+    ["Mono Bars", MonoBars],
+    ["Spectrum", Spectrum],
+    ["Terminal", Terminal],
+    ["Vinyl", Vinyl],
+  ];
+
+  test.each(styles)("%s shows it only while the remote server is unreachable", (_name, Style) => {
+    setStatus({ recording: true });
+    const online = render(Style, { recording: true, active: true });
+    expect(online.container.querySelector(".om")).toBeNull();
+    expect(online.container.textContent?.toLowerCase()).not.toContain("offline");
+    online.unmount();
+
+    setStatus({ recording: true, remote_offline: true });
+    const offline = render(Style, { recording: true, active: true });
+    const mark = offline.container.querySelector(".om");
+    expect(mark).not.toBeNull();
+    expect(mark?.textContent?.toLowerCase()).toContain("offline");
   });
 });

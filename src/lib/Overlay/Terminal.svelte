@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -51,7 +52,10 @@
     <span class="dot"></span>
     <span class="dot"></span>
     <span class="dot"></span>
-    <span class="titletext">VOXCTRL — /dev/mic0</span>
+    <span class="titletext">
+      VOXCTRL — /dev/mic0
+      <OfflineMark text="[offline]" --om-dot="none" --om-gap="0.6em" />
+    </span>
   </div>
   <div class="body">
     <div class="line1">$ voxctrl listen --target "{targetLabel}"</div>

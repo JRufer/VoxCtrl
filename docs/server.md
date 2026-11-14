@@ -411,7 +411,8 @@ From then on:
   longer while the model loads.
 - The tray icon shows an **amber badge with a slash**, its tooltip gives the
   reason, and one notification tells you the fallback is in use. **Settings →
-  Engine** shows the same status.
+  Engine** shows the same status, and the overlay shows a small **OFFLINE**
+  mark while you dictate.
 - The app checks the server every 15 seconds. When it answers, the badge
   clears, the next dictation goes back to the server, and the fallback model is
   unloaded.

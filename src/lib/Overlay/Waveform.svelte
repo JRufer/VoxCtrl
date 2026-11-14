@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -67,6 +68,7 @@
         {:else}
           · LIVE TRACE
         {/if}
+        <OfflineMark --om-gap="0.6em" />
       </span>
       <span class="spacer"></span>
       <span class="target-chip">
