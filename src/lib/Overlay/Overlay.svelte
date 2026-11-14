@@ -306,6 +306,9 @@
     root.style.setProperty("--voxctrl-speaking", $speaking ? "1" : "0");
     root.style.setProperty("--voxctrl-mcp-recording", $mcpRecording ? "1" : "0");
     root.style.setProperty("--voxctrl-audio-ready", $status.audio_ready !== false ? "1" : "0");
+    // 1 while a remote speech engine's server is unreachable, so an overlay
+    // can say that this dictation is running on the fallback (or will fail).
+    root.style.setProperty("--voxctrl-offline", $status.remote_offline ? "1" : "0");
   });
 
   onMount(() => {

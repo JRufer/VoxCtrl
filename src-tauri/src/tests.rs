@@ -1054,3 +1054,49 @@ fn only_windows_with_a_keybind_recorder_release_the_hotkeys_on_close() {
     assert!(!hosts_keybind_recorder(crate::window::OVERLAY_WINDOW));
     assert!(!hosts_keybind_recorder(crate::window::HISTORY_WINDOW));
 }
+
+// ── Live text with a remote speech engine ─────────────────────────────────────
+
+#[test]
+fn live_text_follows_the_remote_server() {
+    use crate::pipeline::live_text_capable_with;
+    use voxctrl_config::FallbackChoice;
+
+    // While the server answers, live passes go to it.
+    assert!(live_text_capable_with(&remote_cfg(FallbackChoice::None), false));
+    assert!(live_text_capable_with(&remote_cfg(FallbackChoice::Parakeet), false));
+
+    // Server lost, nothing to run a live pass on: overlays must drop back to
+    // their layout without the text area.
+    assert!(!live_text_capable_with(&remote_cfg(FallbackChoice::None), true));
+
+    // Server lost, but a fallback that is quick enough carries on.
+    assert!(live_text_capable_with(&remote_cfg(FallbackChoice::Parakeet), true));
+    assert!(live_text_capable_with(&remote_cfg(FallbackChoice::Moonshine), true));
+}
+
+#[test]
+fn a_heavy_cpu_whisper_fallback_cannot_do_live_text() {
+    use crate::pipeline::live_text_capable_with;
+    use voxctrl_config::FallbackChoice;
+
+    let mut cfg = remote_cfg(FallbackChoice::WhisperCpp);
+    cfg.engine.whisper_cpp.model_size = "large-v3".into();
+    // Only a build with no GPU path for whisper.cpp makes the big models too
+    // slow; a GPU build can keep up.
+    let cpu_only = voxctrl_inference::whisper_gpu_backend().is_none();
+    assert_eq!(live_text_capable_with(&cfg, true), !cpu_only);
+    // Its size is irrelevant while the server is doing the work.
+    assert!(live_text_capable_with(&cfg, false));
+
+    cfg.engine.whisper_cpp.model_size = "base".into();
+    assert!(live_text_capable_with(&cfg, true));
+}
+
+#[test]
+fn a_local_engine_ignores_the_remote_servers_state() {
+    use crate::pipeline::live_text_capable_with;
+    let cfg = voxctrl_config::AppConfig::default();
+    assert_eq!(live_text_capable_with(&cfg, true), live_text_capable_with(&cfg, false));
+    assert!(live_text_capable_with(&cfg, true), "the default tiny model can do live text");
+}

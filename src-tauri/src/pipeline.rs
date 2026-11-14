@@ -81,7 +81,7 @@ async fn process_remote_transcription(
                         Some(ctx.binding_id),
                         &e,
                         false,
-                        0,
+                        session_id,
                     ));
                 }
             }
@@ -103,7 +103,7 @@ async fn process_remote_transcription(
         let _ = text_tx.send(InferenceOutput {
             inference_ms: result.inference_ms,
             language: result.language,
-            ..InferenceOutput::empty(target_id, Some(binding_id), false, 0)
+            ..InferenceOutput::empty(target_id, Some(binding_id), false, session_id)
         });
         return;
     }
@@ -126,7 +126,10 @@ async fn process_remote_transcription(
         language: result.language,
         error: None,
         is_interim: false,
-        session_id: 0,
+        // The recording's own id, as a local final pass carries: the overlay
+        // matches it to replace this recording's live text with the final
+        // transcript, and per-app cleanup styling looks the focused app up by it.
+        session_id,
     });
 }
 
@@ -185,15 +188,41 @@ impl RecordingContext {
 /// (With live text, `live_text.rs` decides what each pass covers.)
 const INTERIM_MAX_SAMPLES: usize = 6 * 16_000;
 
-/// Whether the current speech engine can produce live text mid-recording:
-/// a local engine that isn't a heavy Whisper model running without a GPU
-/// (each pass would take longer than the speech it transcribes).
+/// Whether the current speech engine can produce live text mid-recording,
+/// right now. The overlays read this (as `live_text_capable` in the status)
+/// to decide whether to make room for live text at all, so when it is false
+/// they show their plain layout rather than an empty text area.
+///
+/// With a remote engine the answer follows the server: see
+/// [`live_text_capable_with`]. `remote_monitor` refreshes the status flag
+/// whenever the server is lost or comes back.
 pub fn live_text_capable(cfg: &voxctrl_config::AppConfig) -> bool {
-    let heavy_model = cfg.engine.backend == voxctrl_config::BackendChoice::WhisperCpp
+    live_text_capable_with(cfg, voxctrl_inference::remote_status::is_offline())
+}
+
+/// [`live_text_capable`] for a given state of the remote server.
+///
+/// - A local engine can, unless it is a heavy Whisper model running without a
+///   GPU: each pass would take longer than the speech it transcribes.
+/// - A remote engine can while its server answers: live passes are sent there.
+/// - With the server unreachable, live passes fall to the fallback engine, so
+///   the answer is the fallback's — and with no fallback there is nothing to
+///   run them on.
+pub fn live_text_capable_with(cfg: &voxctrl_config::AppConfig, server_offline: bool) -> bool {
+    use voxctrl_config::BackendChoice;
+    let engine = match cfg.engine.backend {
+        BackendChoice::RemoteOpenAi if !server_offline => return true,
+        BackendChoice::RemoteOpenAi => match cfg.engine.remote_openai.fallback.backend() {
+            Some(fallback) => fallback,
+            None => return false,
+        },
+        ref local => local.clone(),
+    };
+    let heavy_model = engine == BackendChoice::WhisperCpp
         && voxctrl_inference::whisper_gpu_backend().is_none()
         && (cfg.engine.whisper_cpp.model_size.starts_with("medium")
             || cfg.engine.whisper_cpp.model_size.starts_with("large"));
-    cfg.engine.backend != voxctrl_config::BackendChoice::RemoteOpenAi && !heavy_model
+    !heavy_model
 }
 
 /// Whether the overlay should get live text this recording: the user wants

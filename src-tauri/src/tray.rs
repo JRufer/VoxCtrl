@@ -349,7 +349,7 @@ pub fn spawn_status_ticker(
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
-        let mut last_flags: Option<(bool, bool, bool, bool, bool, u32, bool)> = None;
+        let mut last_flags: Option<(bool, bool, bool, bool, bool, u32, bool, bool)> = None;
         let mut last_emit = tokio::time::Instant::now() - HEARTBEAT;
         // The label is derived from three rarely-changing strings and the
         // targets (tracked by their version, so a renamed label shows at once);
@@ -598,6 +598,7 @@ pub fn spawn_status_ticker(
                 state_for_ticker.is_audio_ready(),
                 state_for_ticker.total_words(),
                 state_for_ticker.is_live_text_capable(),
+                is_offline,
             );
             let now = tokio::time::Instant::now();
             let unchanged = last_flags == Some(flags) && !label_changed;
@@ -617,6 +618,7 @@ pub fn spawn_status_ticker(
                 "active_target_id": &active_target_id,
                 "active_target_label": &cached_label,
                 "live_text_capable": flags.6,
+                "remote_offline": flags.7,
             });
 
             let _ = handle.emit("status-tick", &payload);
