@@ -109,6 +109,11 @@ pub struct RemoteOpenAiConfig {
     /// language, device), and is loaded only while the server is unreachable.
     #[serde(default)]
     pub fallback: FallbackChoice,
+    /// Send dictation cleanup to this server instead of running S1-mini on
+    /// this machine. Only a VoxCtrl server with cleanup enabled answers it;
+    /// when it cannot, the transcript is used as it was.
+    #[serde(default)]
+    pub cleanup_on_server: bool,
 }
 
 /// Which on-device engine stands in for an unreachable remote server.
@@ -144,6 +149,7 @@ impl Default for RemoteOpenAiConfig {
             language: "".into(),
             timeout_secs: 30,
             fallback: FallbackChoice::None,
+            cleanup_on_server: false,
         }
     }
 }
@@ -241,6 +247,16 @@ pub struct EngineConfig {
     pub remote_openai: RemoteOpenAiConfig,
     #[serde(default)]
     pub s1_mini: S1MiniConfig,
+}
+
+impl EngineConfig {
+    /// The server that does this machine's dictation cleanup, when cleanup
+    /// has been handed to one: the backend is a remote server and
+    /// `cleanup_on_server` is on. `None` means cleanup runs on this machine.
+    pub fn server_cleanup(&self) -> Option<&RemoteOpenAiConfig> {
+        (self.backend == BackendChoice::RemoteOpenAi && self.remote_openai.cleanup_on_server)
+            .then_some(&self.remote_openai)
+    }
 }
 
 #[cfg(test)]

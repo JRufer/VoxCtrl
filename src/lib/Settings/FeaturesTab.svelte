@@ -82,10 +82,16 @@
     .then((s) => (pasteSupport = s))
     .catch(() => {});
 
+  // Cleanup handed to the speech server (Settings → Engine): the model runs
+  // there, so nothing about this computer's copy of it applies.
+  let cleanupOnServer = $derived(
+    cfg.engine.backend === "remote-openai" && !!cfg.engine.remote_openai?.cleanup_on_server,
+  );
+
   async function onS1MiniToggle() {
     ensureS1MiniConfig();
     markDirty();
-    if (cfg.engine.s1_mini.enabled && !s1MiniDownloaded) {
+    if (cfg.engine.s1_mini.enabled && !s1MiniDownloaded && !cleanupOnServer) {
       await triggerS1MiniDownload();
     }
   }
@@ -125,11 +131,13 @@
   <div class="field-group">
     <div class="field-label-row">
       <h3>S1-mini Dictation Cleanup</h3>
-      <DeviceChip
-        state={s1MiniDownloaded ? "ready" : s1MiniDownloading ? "downloading" : s1MiniEnabled ? "missing" : "checking"}
-        backend={s1MiniGpu}
-        on={cfg.engine.s1_mini.gpu}
-      />
+      {#if !cleanupOnServer}
+        <DeviceChip
+          state={s1MiniDownloaded ? "ready" : s1MiniDownloading ? "downloading" : s1MiniEnabled ? "missing" : "checking"}
+          backend={s1MiniGpu}
+          on={cfg.engine.s1_mini.gpu}
+        />
+      {/if}
     </div>
 
     <label class="field">
@@ -146,11 +154,19 @@
       />
     </label>
 
-    <div class="s1-mini-note">
-      Note: S1-Mini is a ~480 MB download.
-    </div>
+    {#if cleanupOnServer}
+      <div class="s1-mini-note" data-testid="cleanup-on-server-note">
+        Cleanup runs on your speech server, so no model is downloaded or loaded on this computer. If the
+        server can't be reached, dictation is typed as it was said. Change this under Engine → Remote
+        Speech Engine Settings.
+      </div>
+    {:else}
+      <div class="s1-mini-note">
+        Note: S1-Mini is a ~480 MB download.
+      </div>
+    {/if}
 
-    {#if s1MiniEnabled}
+    {#if s1MiniEnabled && !cleanupOnServer}
       <GpuToggle
         backend={s1MiniGpu}
         on={cfg.engine.s1_mini.gpu}
@@ -182,7 +198,9 @@
           </div>
         {/if}
       </div>
+    {/if}
 
+    {#if s1MiniEnabled}
       <label class="field">
         <span>Cleanup styling</span>
         <CustomSelect

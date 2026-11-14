@@ -34,24 +34,24 @@ that listens on a network port.
 
 ## What runs where
 
-This is the first release of the server (0.9.0). It moves speech recognition to
-the server and nothing else yet.
+The server runs speech recognition and, from 0.9.4, S1-mini dictation cleanup.
 
-| | Where it runs in 0.9.0 |
+| | Where it runs |
 |---|---|
 | Hotkeys, microphone, overlay, typing the text | Client (the VoxCtrl app) |
 | **Speech recognition** (whisper.cpp, Moonshine, Parakeet) | **Server** |
 | Filler removal, spoken punctuation, snippets, custom vocabulary | Client |
-| S1-mini dictation cleanup and the OpenAI-compatible LLM step | Client |
+| **S1-mini dictation cleanup** | **Server**, when turned on at both ends (see [Dictation cleanup on the server](#dictation-cleanup-on-the-server)); otherwise client |
+| The OpenAI-compatible LLM step | Wherever the endpoint in the client's AI settings points |
 | Text-to-speech | Client |
 
-So a client using the server still loads S1-mini and its TTS voice locally if
-you have those features turned on. Turn them off on the client if the goal is
-to load no models there at all.
+So a client using the server still loads its TTS voice locally if you have
+text-to-speech turned on, and S1-mini too unless you hand cleanup to the
+server.
 
 Not in this release, and planned for later ones:
 
-- cleanup (LLM) and text-to-speech running on the server;
+- text-to-speech running on the server;
 - sending custom voices from the client to the server;
 - pairing with a code, and encrypted connections built in;
 
@@ -265,10 +265,14 @@ And Rust, if it is not installed: <https://rustup.rs>.
 git clone https://github.com/JRufer/VoxCtrl.git
 cd VoxCtrl
 cargo build --release -p voxctrl-server
+cargo build --release -p voxctrl-llm-sidecar   # only needed for dictation cleanup
 ```
 
 Only the server and the crates it needs are compiled; the desktop app and its
-GTK/WebKit dependencies are not. The result is `target/release/voxctrl-server`.
+GTK/WebKit dependencies are not. The results are `target/release/voxctrl-server`
+and `target/release/voxctrl-llm-sidecar`. The second is the helper that runs
+the cleanup model; skip it if you won't turn on
+[cleanup](#dictation-cleanup-on-the-server).
 
 The default build includes all three engines and downloads ONNX Runtime while
 compiling (for Moonshine and Parakeet). For a whisper.cpp-only build that needs
@@ -288,6 +292,8 @@ with `curl http://localhost:8787/health`, then stop it with `Ctrl-C`.
 
 ```bash
 sudo install -m 755 target/release/voxctrl-server /usr/local/bin/voxctrl-server
+# If you built it: the server looks for the cleanup helper beside its own binary.
+sudo install -m 755 target/release/voxctrl-llm-sidecar /usr/local/bin/voxctrl-llm-sidecar
 sudo useradd --system --create-home --home-dir /var/lib/voxctrl \
      --shell /usr/sbin/nologin voxctrl
 sudo install -m 644 packaging/systemd/voxctrl-server.service /etc/systemd/system/
@@ -430,6 +436,74 @@ in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unre
 
 ---
 
+### Dictation cleanup on the server
+
+S1-mini dictation cleanup (the model that turns a raw transcript into
+punctuated, tidied text) can run on the server instead of on each client, so a
+client loads no language model at all. It needs VoxCtrl 0.9.4 or newer at both
+ends, and has to be turned on at both.
+
+**On the server**, turn cleanup on and restart:
+
+- Docker: set `VOXCTRL_SERVER_CLEANUP=true` in `packaging/docker/.env`, then
+  `docker compose up -d --build`. An image built before 0.9.4 has to be
+  rebuilt; the new one also contains the cleanup helper.
+- System service: add this to `server.toml`, then
+  `sudo systemctl restart voxctrl-server`.
+
+  ```toml
+  [cleanup]
+  enabled = true
+  ```
+
+On that start the server downloads the S1-mini model (about 470 MB) next to its
+speech models, loads it, and logs `Cleanup:  on (s1-mini)` with the other
+startup lines. Check it from the server:
+
+```bash
+curl -H "Authorization: Bearer $KEY" http://localhost:8787/v1/cleanup
+# {"available":true,"model":"s1-mini"}
+
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"text": "um so can you send me the uh the report by friday", "styling": "semi-formal"}' \
+     http://localhost:8787/v1/cleanup
+# something like: {"text":"Can you send me the report by Friday?"}
+```
+
+**On each client**, in **Settings → Engine → Remote Speech Engine Settings**,
+tick **Run dictation cleanup on the server**. The line under it says whether
+the server at that address offers cleanup, and what to change on the server if
+it does not.
+
+What stays on the client: whether a dictation is cleaned at all (**Settings →
+Features → Enable S1-mini dictation cleanup**, and the per-hotkey override), the
+cleanup style, and the per-app styles. The client sends the style with each
+request, so several clients can share one server with different settings. With
+the option ticked, the client does not download or load S1-mini, and
+[Clean up models](#free-the-disk-space-your-local-models-used) will offer to
+remove a copy it already has.
+
+Things to know:
+
+- **If the server can't clean a dictation, it is typed as it was said.** That
+  covers the server being unreachable (including while the fallback engine is
+  transcribing), cleanup being turned off on the server, and a cleanup that
+  takes longer than the client's **Timeout** setting (held between 5 and 30
+  seconds for cleanup). The client does not fall back to cleaning it locally.
+  The reason is in the client's log.
+- **Speed depends on the cleanup helper.** With `voxctrl-llm-sidecar` installed
+  beside the server (the Docker image includes it) cleanup runs on llama.cpp.
+  Without it the server says so at startup and uses a much slower built-in CPU
+  engine. For GPU cleanup the helper needs the `vulkan` build; see
+  [GPU acceleration](#gpu-acceleration).
+- **It adds memory use on the server**: roughly the size of the model, on top
+  of the speech model.
+- **Only `voxctrl-server` offers this.** Other OpenAI-compatible speech servers
+  have no `/v1/cleanup`; with one of those, leave the option off and cleanup
+  keeps running on the client.
+- The server logs how long each cleanup took and how many characters went in
+  and out, never the text.
+
 ### Free the disk space your local models used
 
 If this computer ran everything itself before you set up the server, its speech,
@@ -515,9 +589,17 @@ device = "cpu"
 model_size = "tdt-0.6b-v3"
 language = "auto"
 device = "cpu"
+
+[cleanup]
+# true = clean up dictation for clients that ask. Downloads the S1-mini model
+# (about 470 MB) on the next start and keeps it loaded.
+enabled = false
+# Run the cleanup model on the GPU when the cleanup helper was built with GPU
+# support (the `vulkan` build). No effect otherwise.
+gpu = true
 ```
 
-Only the section for the selected `backend` is used. You can leave out any key,
+Only the `[engine.*]` section for the selected `backend` is used. You can leave out any key,
 and any whole section, that you don't want to change.
 
 Models are stored in `~/.local/share/voxctrl/models/` for the user running the
@@ -536,6 +618,8 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_MODEL` | `model_size` of the selected backend | `tdt-0.6b-v3` |
 | `VOXCTRL_SERVER_DEVICE` | `device` of the selected backend | `cpu` |
 | `VOXCTRL_SERVER_LANGUAGE` | `language` of the selected backend | `en` |
+| `VOXCTRL_SERVER_CLEANUP` | `cleanup.enabled` | `true` |
+| `VOXCTRL_SERVER_CLEANUP_GPU` | `cleanup.gpu` | `false` |
 
 A variable that is set but empty is ignored. Environment variables are never
 written into `server.toml`.
@@ -607,6 +691,7 @@ time:
 
 ```bash
 cargo build --release -p voxctrl-server --features vulkan
+cargo build --release -p voxctrl-llm-sidecar --features vulkan   # GPU dictation cleanup
 ```
 
 **Docker — experimental.** The files are provided but have not yet been tested
@@ -673,6 +758,11 @@ use, so tools other than VoxCtrl can use it too.
 | `GET /health` | No | Liveness check |
 | `GET /v1/models` | Yes | The model the server is running |
 | `POST /v1/audio/transcriptions` | Yes | Transcribe audio |
+| `GET /v1/cleanup` | Yes | Whether cleanup is enabled: `{"available": true, "model": "s1-mini"}` |
+| `POST /v1/cleanup` | Yes | Clean up a transcript |
+
+`GET /health` also reports `"cleanup": true` or `false`. `/v1/cleanup` is
+VoxCtrl's own and not part of the OpenAI API.
 
 Send the key as `Authorization: Bearer <key>`.
 
@@ -718,7 +808,48 @@ Errors use OpenAI's envelope, with a message written to be shown to a person:
 
 ---
 
+### `POST /v1/cleanup`
+
+JSON in, JSON out.
+
+| Field | Required | Meaning |
+|---|---|---|
+| `text` | Yes | The transcript to clean, at most 20,000 characters |
+| `styling` | No | `semi-formal` (default), `casual`, `formal`, `verbatim` or `concise` |
+
+```bash
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"text": "um so lets meet at three tomorrow", "styling": "casual"}' \
+     http://server:8787/v1/cleanup
+# something like: {"text":"Let's meet at 3 tomorrow."}
+```
+
+Errors use the same envelope as the rest of the API. A server with cleanup
+turned off answers HTTP 501 with `"type": "not_enabled"`. Empty text returns
+empty text without running the model.
+
+---
+
 ## Troubleshooting
+
+### Dictation arrives uncleaned although cleanup is on
+
+The client types the raw transcript whenever the server can't clean it. In
+**Settings → Engine → Remote Speech Engine Settings** on the client, look at
+the line under **Run dictation cleanup on the server**:
+
+- *Cleanup is turned off on this server*: set `VOXCTRL_SERVER_CLEANUP=true` or
+  `[cleanup] enabled = true` on the server and restart it.
+- *This server does not offer dictation cleanup*: the server is older than
+  0.9.4 (rebuild it), or the endpoint is not a `voxctrl-server`.
+- *This server cleans up dictation*, and text still arrives uncleaned: cleanup
+  is probably timing out. Check the server log for how long cleanups take. If
+  the server logged that `voxctrl-llm-sidecar` was not found at startup,
+  install it beside the server binary; it is far faster than the built-in
+  engine.
+
+Also check that cleanup is on for that dictation at all: **Settings → Features →
+Enable S1-mini dictation cleanup**, or the hotkey's own setting.
 
 ### The tray icon has an amber badge
 

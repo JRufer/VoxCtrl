@@ -21,7 +21,28 @@ const KEY: &str = "vx_contract_test_key";
 /// Start the server on a free local port; returns its `/v1` endpoint.
 async fn serve(text: &str) -> (String, Arc<std::sync::Mutex<Seen>>) {
     let (engine, seen) = fake_engine(text, false);
-    let state = Arc::new(AppState { engine, api_key: Some(KEY.into()), max_upload_bytes: 64 * 1024 * 1024 });
+    serve_with(engine, seen, None).await
+}
+
+/// Answers with the style and the text, so a test can see both arrived.
+struct EchoCleaner;
+
+impl crate::cleanup::Cleaner for EchoCleaner {
+    fn clean(&self, text: &str, styling: &str) -> String {
+        format!("<{styling}> {text}")
+    }
+
+    fn model(&self) -> &str {
+        "echo"
+    }
+}
+
+async fn serve_with(
+    engine: crate::engine::Engine,
+    seen: Arc<std::sync::Mutex<Seen>>,
+    cleanup: Option<Arc<dyn crate::cleanup::Cleaner>>,
+) -> (String, Arc<std::sync::Mutex<Seen>>) {
+    let state = Arc::new(AppState { engine, cleanup, api_key: Some(KEY.into()), max_upload_bytes: 64 * 1024 * 1024 });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, router(state)).await });
@@ -126,4 +147,55 @@ async fn a_streamed_upload_with_a_wrong_key_gets_the_servers_explanation() {
     assert!(message.contains("401"), "{message}");
     assert!(message.contains("was not accepted"), "{message}");
     assert_eq!(seen.lock().unwrap().calls, 0);
+}
+
+// ── Cleanup ───────────────────────────────────────────────────────────────────
+
+use voxctrl_inference::remote_cleanup::{check_server_cleanup, clean_on_server};
+
+async fn serve_cleanup(enabled: bool) -> String {
+    let (engine, seen) = fake_engine("unused", false);
+    let cleaner: Option<Arc<dyn crate::cleanup::Cleaner>> = enabled.then(|| Arc::new(EchoCleaner) as _);
+    serve_with(engine, seen, cleaner).await.0
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_gets_its_text_cleaned_in_the_style_it_asked_for() {
+    let endpoint = serve_cleanup(true).await;
+    let cleaned = clean_on_server(&client_config(&endpoint, Some(KEY)), "um hello there", "casual").await.unwrap();
+    assert_eq!(cleaned, "<casual> um hello there");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_learns_whether_the_server_offers_cleanup() {
+    let on = check_server_cleanup(&serve_cleanup(true).await, Some(KEY)).await;
+    assert!(on.available, "{}", on.message);
+    assert_eq!(on.model.as_deref(), Some("echo"));
+
+    let off = check_server_cleanup(&serve_cleanup(false).await, Some(KEY)).await;
+    assert!(!off.available);
+    assert!(off.message.contains("turned off"), "{}", off.message);
+
+    let wrong_key = check_server_cleanup(&serve_cleanup(true).await, Some("vx_wrong")).await;
+    assert!(!wrong_key.available);
+    assert!(wrong_key.message.contains("API key"), "{}", wrong_key.message);
+
+    let nobody = check_server_cleanup("http://127.0.0.1:1/v1", Some(KEY)).await;
+    assert!(!nobody.available);
+    assert!(nobody.message.contains("connect"), "{}", nobody.message);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cleanup_the_server_cannot_do_is_an_error_carrying_its_reason() {
+    // The caller falls back to the raw transcript on any error, so each of
+    // these must be one rather than an empty or half-right string.
+    let off = clean_on_server(&client_config(&serve_cleanup(false).await, Some(KEY)), "hello", "casual").await;
+    let message = format!("{:#}", off.unwrap_err());
+    assert!(message.contains("HTTP 501") && message.contains("not enabled"), "{message}");
+
+    let wrong_key = clean_on_server(&client_config(&serve_cleanup(true).await, Some("vx_wrong")), "hello", "casual").await;
+    assert!(format!("{:#}", wrong_key.unwrap_err()).contains("HTTP 401"));
+
+    let nobody = clean_on_server(&client_config("http://127.0.0.1:1/v1", Some(KEY)), "hello", "casual").await;
+    assert!(nobody.is_err());
 }

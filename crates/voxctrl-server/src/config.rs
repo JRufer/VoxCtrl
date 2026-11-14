@@ -31,6 +31,24 @@ pub struct ServerConfig {
     /// about 2 MB a minute.
     pub max_upload_mb: u64,
     pub engine: ServerEngineConfig,
+    pub cleanup: CleanupConfig,
+}
+
+/// Dictation cleanup (the S1-mini model) for clients that ask this server to
+/// do it. Off by default: it is a second model to download and keep in memory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CleanupConfig {
+    pub enabled: bool,
+    /// Run the model on the GPU when the server's cleanup helper was built
+    /// with GPU support. Has no effect otherwise.
+    pub gpu: bool,
+}
+
+impl Default for CleanupConfig {
+    fn default() -> Self {
+        Self { enabled: false, gpu: true }
+    }
 }
 
 /// The speech engine section. Same keys and values as the desktop app's
@@ -52,6 +70,7 @@ impl Default for ServerConfig {
             require_api_key: true,
             max_upload_mb: 256,
             engine: ServerEngineConfig::default(),
+            cleanup: CleanupConfig::default(),
         }
     }
 }
@@ -137,6 +156,12 @@ impl ServerConfig {
                 BackendChoice::Parakeet => self.engine.parakeet.language = v,
                 BackendChoice::RemoteOpenAi => {}
             }
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_CLEANUP") {
+            self.cleanup.enabled = parse_bool("VOXCTRL_SERVER_CLEANUP", &v)?;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_CLEANUP_GPU") {
+            self.cleanup.gpu = parse_bool("VOXCTRL_SERVER_CLEANUP_GPU", &v)?;
         }
         Ok(())
     }
@@ -294,6 +319,27 @@ mod tests {
         assert_eq!(cfg.max_upload_mb, 64);
         // The whisper section was not the selected backend, so it is untouched.
         assert_eq!(cfg.engine.whisper_cpp, WhisperCppConfig::default());
+    }
+
+    #[test]
+    fn cleanup_is_off_until_asked_for() {
+        let cfg = ServerConfig::default();
+        assert!(!cfg.cleanup.enabled);
+        assert!(cfg.cleanup.gpu);
+
+        let from_file = ServerConfig::from_toml_str("[cleanup]\nenabled = true\n").unwrap();
+        assert!(from_file.cleanup.enabled);
+        assert!(from_file.cleanup.gpu, "an unnamed key keeps its default");
+
+        let mut from_env = ServerConfig::default();
+        from_env
+            .apply_env(env(&[("VOXCTRL_SERVER_CLEANUP", "true"), ("VOXCTRL_SERVER_CLEANUP_GPU", "off")]))
+            .unwrap();
+        assert!(from_env.cleanup.enabled);
+        assert!(!from_env.cleanup.gpu);
+
+        let err = ServerConfig::default().apply_env(env(&[("VOXCTRL_SERVER_CLEANUP", "sure")])).unwrap_err();
+        assert!(err.to_string().contains("VOXCTRL_SERVER_CLEANUP"), "{err}");
     }
 
     #[test]

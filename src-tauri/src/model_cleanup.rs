@@ -14,9 +14,9 @@
 //! - **Never custom voices.** The cloned-voice folder is not scanned at all,
 //!   and nothing inside it can be reached from an item's paths.
 //! - **Never anything in use.** The selected speech engine's model, the
-//!   fallback engine's model, the cleanup model while cleanup is on, and the
-//!   selected text-to-speech engine's model are listed as kept, and
-//!   [`execute`] refuses them even if asked.
+//!   fallback engine's model, the cleanup model while cleanup is on and runs
+//!   on this machine, and the selected text-to-speech engine's model are
+//!   listed as kept, and [`execute`] refuses them even if asked.
 //! - **The backend decides the paths.** The frontend sends back item ids; the
 //!   plan is rebuilt here before anything is removed.
 //!
@@ -251,7 +251,10 @@ fn cleanup_model_item(cfg: &AppConfig, bindings: &[HotkeyBinding], layout: &Layo
         return None;
     }
     // Cleanup can be switched on for a single shortcut while off overall.
-    let kept = if cfg.engine.s1_mini.enabled {
+    // Handed to a server, it never loads this machine's copy of the model.
+    let kept = if cfg.engine.server_cleanup().is_some() {
+        None
+    } else if cfg.engine.s1_mini.enabled {
         Some("Dictation cleanup is on".to_string())
     } else if bindings.iter().any(|b| b.s1_mini_enabled == Some(true)) {
         Some("Dictation cleanup is on for a shortcut".to_string())
@@ -586,6 +589,13 @@ mod tests {
         cfg.engine.s1_mini.enabled = false;
         assert!(!item(&plan(&cfg, &[binding(Some(true))], FallbackChoice::None, &fx.layout), "s1-mini").removable());
         assert!(item(&plan(&cfg, &[binding(Some(false))], FallbackChoice::None, &fx.layout), "s1-mini").removable());
+
+        // Cleanup handed to the server: on, but this machine's model is idle.
+        cfg.engine.s1_mini.enabled = true;
+        remote(&mut cfg);
+        assert!(!item(&plan(&cfg, &[binding(Some(true))], FallbackChoice::None, &fx.layout), "s1-mini").removable());
+        cfg.engine.remote_openai.cleanup_on_server = true;
+        assert!(item(&plan(&cfg, &[binding(Some(true))], FallbackChoice::None, &fx.layout), "s1-mini").removable());
     }
 
     #[test]
