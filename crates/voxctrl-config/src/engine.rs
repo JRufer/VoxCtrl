@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// A section that names only some keys takes the rest from `Default`, so a
+// hand-written file (the server's `server.toml` above all) can set just the
+// model and leave everything else out.
+#[serde(default)]
 pub struct WhisperCppConfig {
     /// Directory containing GGUF model files. Empty = platform default.
     pub model_dir: String,
@@ -38,6 +42,7 @@ impl Default for WhisperCppConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct MoonshineConfig {
     /// "base" or "tiny"
     pub model_size: String,
@@ -68,6 +73,7 @@ impl Default for MoonshineConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct ParakeetConfig {
     pub model_size: String,
     pub language: String,

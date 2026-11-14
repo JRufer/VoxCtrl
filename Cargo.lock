@@ -340,6 +340,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "axum"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
+dependencies = [
+ "axum-core",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "itoa",
+ "matchit",
+ "memchr",
+ "mime",
+ "multer",
+ "percent-encoding",
+ "pin-project-lite",
+ "serde_core",
+ "serde_json",
+ "serde_path_to_error",
+ "sync_wrapper",
+ "tokio",
+ "tower",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c78f31d7b1291f7ee735c1c6780ccde7785daae9a9206026862dab7d8792d1"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
+ "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2573,6 +2622,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hyper"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2586,6 +2641,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -3240,6 +3296,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "matchit"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
 name = "matrixmultiply"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3383,6 +3445,23 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin",
+ "version_check",
 ]
 
 [[package]]
@@ -5131,6 +5210,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_plain"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5414,6 +5504,12 @@ dependencies = [
  "libc",
  "system-deps",
 ]
+
+[[package]]
+name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 
 [[package]]
 name = "spm_precompiled"
@@ -6830,7 +6926,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6870,7 +6966,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "cpal",
@@ -6884,7 +6980,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -6902,7 +6998,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-clipboard"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "tracing",
@@ -6913,7 +7009,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -6926,7 +7022,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -6938,7 +7034,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-history"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -6953,7 +7049,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -6975,7 +7071,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7006,7 +7102,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7026,7 +7122,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7040,7 +7136,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm-sidecar"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "encoding_rs",
  "llama-cpp-2",
@@ -7052,7 +7148,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -7066,7 +7162,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-routing"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7092,15 +7188,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxctrl-server"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "dirs 5.0.1",
+ "futures-util",
+ "getrandom 0.3.4",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.8.23",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "voxctrl-config",
+ "voxctrl-inference",
+]
+
+[[package]]
 name = "voxctrl-text"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "cc",
@@ -7124,7 +7242,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-update"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7142,7 +7260,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.8.11"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "tracing",

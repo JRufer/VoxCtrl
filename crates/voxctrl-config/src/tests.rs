@@ -683,3 +683,28 @@ fn history_entry_limit_is_validated() {
         .iter()
         .any(|e| e.contains("history.max_entries")));
 }
+
+#[test]
+fn an_engine_section_may_name_only_some_of_its_keys() {
+    // A hand-written section — `voxctrl-server`'s `server.toml` above all —
+    // sets the model and leaves the rest out. Each missing key takes its own
+    // default instead of the whole `engine` block falling back.
+    let text = r#"{
+        "backend": "parakeet",
+        "whisper_cpp": { "model_size": "large-v3-turbo" },
+        "moonshine": { "model_size": "tiny" },
+        "parakeet": { "model_size": "phonon-2" }
+    }"#;
+    let engine: EngineConfig = serde_json::from_str(text).unwrap();
+    assert_eq!(engine.backend, BackendChoice::Parakeet);
+
+    assert_eq!(engine.whisper_cpp.model_size, "large-v3-turbo");
+    assert_eq!(engine.whisper_cpp.device, WhisperCppConfig::default().device);
+    assert_eq!(engine.whisper_cpp.threads, WhisperCppConfig::default().threads);
+
+    assert_eq!(engine.moonshine.model_size, "tiny");
+    assert_eq!(engine.moonshine.language, MoonshineConfig::default().language);
+
+    assert_eq!(engine.parakeet.model_size, "phonon-2");
+    assert_eq!(engine.parakeet.device, ParakeetConfig::default().device);
+}
