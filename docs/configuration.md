@@ -334,6 +334,8 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `breeze_tts_2` | object | | Breeze-TTS-2 engine sub-configuration (see below) |
 | `vox_cpm_2` | object | | VoxCPM2 engine sub-configuration (see below) |
 | `kitten_tts_2` | object | | Kitten TTS 2 engine sub-configuration (see below) |
+| `server_engine` | string | `""` | With `engine: "server"`: which of the server's engines to speak with, by id (e.g. `"kitten_tts_2"`). Empty means the server's default |
+| `server_voice` | string | `""` | With `engine: "server"`: a voice of that engine, or `"custom:<name>"` for one of this computer's own voice clips, which is uploaded to the server. Empty means the engine's default on the server |
 | `pocket_tts` | object | | Pocket-TTS engine sub-configuration (see below) |
 | `inflect_micro` | object | | Inflect-Micro-v2 engine sub-configuration (see below) |
 | `memory_mode` | string | `"always_loaded"` | `"always_loaded"` keeps the model resident for the session; `"on_demand"` loads it when it is needed and unloads it again after `idle_unload_secs` of no use. Affects the model-backed engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Inflect-Micro-v2) — Piper and eSpeak hold no model between utterances. |

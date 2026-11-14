@@ -255,9 +255,13 @@ async fn apply_dbus_binding(state: &Arc<AppState>, binding_id: &str) {
 /// until an address has been entered.
 pub fn tts_server_link(cfg: &voxctrl_config::AppConfig) -> Option<voxctrl_tts::remote::ServerLink> {
     let remote = &cfg.engine.remote_openai;
+    let chosen = |value: &str| Some(value.trim().to_string()).filter(|v| !v.is_empty());
     (!remote.endpoint.trim().is_empty()).then(|| voxctrl_tts::remote::ServerLink {
         endpoint: remote.endpoint.clone(),
         api_key: remote.api_key.clone(),
+        client_id: voxctrl_tts::remote::default_client_id(),
+        engine: chosen(&cfg.tts.server_engine),
+        voice: chosen(&cfg.tts.server_voice),
     })
 }
 

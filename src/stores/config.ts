@@ -187,6 +187,13 @@ export interface TtsConfig {
     | "vox_cpm_2"
     | "kitten_tts_2"
     | "server";
+  /** With the "server" engine: which of the server's engines. "" = its default. */
+  server_engine?: string;
+  /**
+   * With the "server" engine: a voice of that engine, or "custom:<name>" for
+   * one of this computer's own clips. "" = the engine's default on the server.
+   */
+  server_voice?: string;
   voice: string;
   voice_dir: string;
   stop_key: string[];

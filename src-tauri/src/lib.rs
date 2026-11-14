@@ -732,6 +732,8 @@ pub fn run() {
             run_model_cleanup,
             check_server_cleanup,
             check_server_tts,
+            list_own_voices,
+            sync_server_voices,
             get_available_monitors,
             start_recording,
             stop_recording,

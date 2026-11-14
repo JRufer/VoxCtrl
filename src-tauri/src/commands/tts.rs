@@ -178,9 +178,55 @@ pub async fn check_server_tts(
     endpoint: String,
     api_key: Option<String>,
 ) -> Result<voxctrl_tts::remote::ServerTtsStatus, String> {
-    let link = voxctrl_tts::remote::ServerLink { endpoint, api_key };
+    let link = voxctrl_tts::remote::ServerLink { endpoint, api_key, ..Default::default() };
     // The client is blocking, for the TTS worker thread's sake.
     tokio::task::spawn_blocking(move || voxctrl_tts::remote::check_server_tts(&link))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// What the TTS tab needs to offer this computer's own voices on a server.
+#[derive(serde::Serialize)]
+pub struct ServerVoiceSync {
+    /// The voice clips on this computer that a server can take, by name.
+    pub local: Vec<String>,
+    pub uploaded: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+/// The names of this computer's own voice clips, for the server voice picker.
+#[tauri::command]
+pub async fn list_own_voices() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        voxctrl_tts::remote::local_custom_voices(&voxctrl_tts::cloned_tts_voices_dir())
+            .into_iter()
+            .map(|v| v.name)
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Make the server's copy of this computer's voice clips match what is here:
+/// upload new and changed ones, remove ones deleted here. They are stored
+/// under this client's id and no other client can use them.
+#[tauri::command]
+pub async fn sync_server_voices(endpoint: String, api_key: Option<String>) -> Result<ServerVoiceSync, String> {
+    tokio::task::spawn_blocking(move || {
+        let link = voxctrl_tts::remote::ServerLink {
+            endpoint,
+            api_key,
+            client_id: voxctrl_tts::remote::default_client_id(),
+            ..Default::default()
+        };
+        let local = voxctrl_tts::remote::local_custom_voices(&voxctrl_tts::cloned_tts_voices_dir());
+        let report = voxctrl_tts::remote::sync_voices(&link, &local).map_err(|e| format!("{e:#}"))?;
+        Ok(ServerVoiceSync {
+            local: local.into_iter().map(|v| v.name).collect(),
+            uploaded: report.uploaded,
+            removed: report.removed,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

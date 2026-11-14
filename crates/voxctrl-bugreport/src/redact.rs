@@ -85,6 +85,8 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("openai.api_key", Secret),
     ("tts.engine", Safe),
     ("tts.voice", Safe),
+    ("tts.server_engine", Safe),
+    ("tts.server_voice", Safe),
     ("tts.voice_dir", Path),
     ("tts.stop_key", Safe),
     ("tts.hf_token", Secret),

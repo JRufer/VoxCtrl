@@ -459,14 +459,102 @@
   // The server set as the Remote Speech Engine synthesizes with the engine and
   // voice chosen there, and this computer only plays the audio. There is
   // nothing to download or pick here; the panel reports what the server says.
+  interface ServerEngine {
+    id: string;
+    name: string;
+    voices: string[];
+    default_voice: string | null;
+    custom_voices: boolean;
+  }
   interface ServerTtsStatus {
     available: boolean;
     engine: string | null;
     voice: string | null;
     message: string;
+    /** Every engine on offer, default first. Empty from a server before 0.9.11. */
+    engines?: ServerEngine[];
+    custom_voices?: boolean;
   }
   let serverTts = $state<ServerTtsStatus | null>(null);
   let serverTtsChecking = $state(false);
+
+  // The engine and voice chosen for this client. Held here as well as in the
+  // config so the pickers follow a choice at once.
+  let serverEngineChoice = $state(cfg.tts.server_engine ?? "");
+  let serverVoiceChoice = $state(cfg.tts.server_voice ?? "");
+  // This computer's own voice clips, which can be sent to the server.
+  let ownVoices = $state<string[]>([]);
+  let voiceSyncNote = $state<{ ok: boolean; text: string } | null>(null);
+  let voiceSyncing = $state(false);
+
+  const CUSTOM = "custom:";
+
+  let serverEngines = $derived(serverTts?.engines ?? []);
+  // "" means the server's default, which is the first one it lists.
+  let serverEngine = $derived(
+    serverEngines.find((e) => e.id === serverEngineChoice) ?? serverEngines[0] ?? null,
+  );
+  let serverEngineOptions = $derived(
+    serverEngines.map((e, i) => ({ value: i === 0 ? "" : e.id, label: i === 0 ? `${e.name} (server default)` : e.name })),
+  );
+  let canUseOwnVoices = $derived(!!serverEngine?.custom_voices && !!serverTts?.custom_voices);
+  let serverVoiceOptions = $derived.by(() => {
+    if (!serverEngine) return [];
+    const fallback = serverEngine.default_voice ? `Server default (${serverEngine.default_voice})` : "Server default";
+    const options = [{ value: "", label: fallback }];
+    for (const voice of serverEngine.voices) options.push({ value: voice, label: voice });
+    if (canUseOwnVoices) {
+      for (const voice of ownVoices) options.push({ value: CUSTOM + voice, label: `${voice} (your voice)` });
+    }
+    // A saved choice the server or this computer no longer has stays visible,
+    // so it can be seen and changed, not silently replaced.
+    if (serverVoiceChoice && !options.some((o) => o.value === serverVoiceChoice)) {
+      options.push({ value: serverVoiceChoice, label: `${serverVoiceChoice.replace(CUSTOM, "")} (not available)` });
+    }
+    return options;
+  });
+
+  function onServerEngineChosen() {
+    cfg.tts.server_engine = serverEngineChoice;
+    // A voice belongs to an engine: start the new one on its default.
+    serverVoiceChoice = "";
+    cfg.tts.server_voice = "";
+    voiceSyncNote = null;
+    markDirty();
+  }
+
+  async function onServerVoiceChosen() {
+    cfg.tts.server_voice = serverVoiceChoice;
+    markDirty();
+    if (serverVoiceChoice.startsWith(CUSTOM)) await syncOwnVoices();
+    else voiceSyncNote = null;
+  }
+
+  // Send this computer's voice clips to the server (and remove from it any
+  // that were deleted here). They are stored under this client's id; no
+  // other client can use them.
+  async function syncOwnVoices() {
+    const remote = cfg.engine.remote_openai;
+    voiceSyncing = true;
+    try {
+      const result = await invoke<{ local: string[]; uploaded: string[]; removed: string[] }>("sync_server_voices", {
+        endpoint: remote?.endpoint ?? "",
+        apiKey: remote?.api_key || null,
+      });
+      ownVoices = result.local;
+      const parts = [];
+      if (result.uploaded.length) parts.push(`sent ${result.uploaded.join(", ")}`);
+      if (result.removed.length) parts.push(`removed ${result.removed.join(", ")}`);
+      voiceSyncNote = {
+        ok: true,
+        text: parts.length ? `Your voices on the server are up to date: ${parts.join("; ")}.` : "Your voices on the server are up to date.",
+      };
+    } catch (e) {
+      voiceSyncNote = { ok: false, text: `Your voices could not be sent to the server: ${e}` };
+    } finally {
+      voiceSyncing = false;
+    }
+  }
 
   async function checkServerTts() {
     const remote = cfg.engine.remote_openai;
@@ -480,6 +568,11 @@
       serverTts = { available: false, engine: null, voice: null, message: String(e) };
     } finally {
       serverTtsChecking = false;
+    }
+    try {
+      ownVoices = await invoke<string[]>("list_own_voices");
+    } catch {
+      ownVoices = [];
     }
   }
 
@@ -966,10 +1059,10 @@
   <div class="field-group" data-testid="server-tts-panel">
     <h3>VoxCtrl Server</h3>
     <p class="hint">
-      Speech is made on the server set under <strong>Engine → Remote Speech Engine Settings</strong>, with
-      the engine and voice chosen on that server, and played here. Nothing is downloaded or loaded on this
-      computer. Speed and the stop key above still apply. If the server can't be reached, nothing is spoken
-      and an error is shown.
+      Speech is made on the server set under <strong>Engine → Remote Speech Engine Settings</strong> and
+      played here. Choose among the engines and voices that server has set up; nothing is downloaded or
+      loaded on this computer. Speed and the stop key above still apply. If the server can't be reached,
+      nothing is spoken and an error is shown.
     </p>
     {#if serverTtsChecking}
       <p class="hint" data-testid="server-tts-status">Checking the server…</p>
@@ -978,8 +1071,43 @@
         {serverTts.available ? "✔" : "⚠️"} {serverTts.message}
       </p>
     {/if}
+    {#if serverTts?.available && serverEngine}
+      <label class="field">
+        <span>Engine</span>
+        <CustomSelect
+          bind:value={serverEngineChoice}
+          options={serverEngineOptions}
+          onchange={onServerEngineChosen}
+          disabled={serverEngineOptions.length < 2}
+        />
+      </label>
+      <label class="field">
+        <span>Voice</span>
+        <CustomSelect bind:value={serverVoiceChoice} options={serverVoiceOptions} onchange={onServerVoiceChosen} />
+      </label>
+      <p class="hint" data-testid="server-voice-hint">
+        {#if canUseOwnVoices}
+          Your own voices are the clips in this computer's cloned voices folder. Picking one sends it to the
+          server, where only this computer can use it; deleting the clip here removes it from the server.
+        {:else if serverEngine.custom_voices}
+          This server does not store uploaded voices, so only its own voices can be used.
+        {:else}
+          {serverEngine.name} cannot speak with an uploaded voice. Choose another engine to use one of yours.
+        {/if}
+      </p>
+      {#if voiceSyncing}
+        <p class="hint" data-testid="voice-sync-note">Sending your voices to the server…</p>
+      {:else if voiceSyncNote}
+        <p class={voiceSyncNote.ok ? "hint" : "field-error-msg"} data-testid="voice-sync-note">
+          {voiceSyncNote.ok ? "✔" : "⚠️"} {voiceSyncNote.text}
+        </p>
+      {/if}
+    {/if}
     <div class="row">
       <button class="btn-preview" onclick={checkServerTts} disabled={serverTtsChecking}>Check the server</button>
+      {#if canUseOwnVoices}
+        <button class="btn-preview" onclick={syncOwnVoices} disabled={voiceSyncing}>Send my voices now</button>
+      {/if}
     </div>
   </div>
   {/if}

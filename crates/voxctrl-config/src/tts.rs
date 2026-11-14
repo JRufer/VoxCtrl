@@ -366,6 +366,15 @@ pub struct TtsConfig {
     pub vox_cpm_2: VoxCpm2Config,
     #[serde(default)]
     pub kitten_tts_2: KittenTts2Config,
+    /// With the `server` engine: which of the server's engines to speak
+    /// with. Empty = the server's default.
+    #[serde(default)]
+    pub server_engine: String,
+    /// With the `server` engine: a voice of that engine, or `custom:<name>`
+    /// for one of this computer's own voice clips, which is uploaded to the
+    /// server. Empty = the engine's default on the server.
+    #[serde(default)]
+    pub server_voice: String,
     #[serde(default)]
     pub snippets: std::collections::HashMap<String, String>,
 }
@@ -393,6 +402,8 @@ impl Default for TtsConfig {
             breeze_tts_2: BreezeTts2Config::default(),
             vox_cpm_2: VoxCpm2Config::default(),
             kitten_tts_2: KittenTts2Config::default(),
+            server_engine: String::new(),
+            server_voice: String::new(),
             snippets: {
                 let mut map = std::collections::HashMap::new();
                 map.insert("VoxCtrl".into(), "Voks Con-trol".into());
