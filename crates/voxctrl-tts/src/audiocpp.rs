@@ -677,6 +677,7 @@ impl AudioCppSession {
 
 /// Decodes WAV bytes audio.cpp's server returned and queues them onto
 /// `sink`, blocking until playback ends.
+#[cfg(feature = "playback")]
 pub fn play_wav_bytes(sink: &rodio::Sink, bytes: Vec<u8>) -> Result<()> {
     let source = rodio::Decoder::new(std::io::Cursor::new(bytes)).context("decode audio.cpp response")?;
     sink.append(source);

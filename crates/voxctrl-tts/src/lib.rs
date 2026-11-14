@@ -1,5 +1,10 @@
 //! VoxCtrl text-to-speech engine.
 //!
+//! With the default `playback` feature this is the app's speaking voice: a
+//! worker thread that synthesizes and plays through the sound card. Without
+//! it (the server) only synthesis is built, through [`synth`], and no audio
+//! library is linked.
+//!
 //! Split by concern:
 //! - [`piper`]    — Piper voice catalogue, path resolution, binary/voice download
 //! - [`audiocpp`] — shared audio.cpp runtime: binary management, GGUF asset
@@ -17,15 +22,24 @@
 //! `voxctrl-inference` (which applies the same logic to STT output) via the
 //! `voxctrl-text` crate.
 
+// Without playback, the worker that calls most of the model-loading helpers
+// is not built; they are still part of the engines.
+#![cfg_attr(not(feature = "playback"), allow(dead_code, unused_imports))]
+
 mod audiocpp;
 pub mod breeze;
+#[cfg(feature = "playback")]
 mod engine;
 pub mod hf;
+#[cfg(feature = "playback")]
 mod fifo;
 pub mod inflect;
 pub mod kitten;
 mod piper;
 mod pocket;
+pub mod remote;
+pub mod synth;
+mod utterance;
 pub mod voxcpm;
 
 pub use breeze::{
@@ -39,11 +53,11 @@ pub use kitten::{
     download_kitten_tts_2_assets, is_kitten_tts_2_ready, kitten_tts_2_model_dir,
     KITTEN_TTS_2_LICENSE_NOTE, KITTEN_TTS_2_VOICES,
 };
-pub use engine::{
-    stop_current_playback, ErrorCallback, PlaybackCallback, TtsCommand, TtsEngineHandle,
-    TtsEngineWorker, Utterance,
-};
+#[cfg(feature = "playback")]
+pub use engine::{stop_current_playback, TtsCommand, TtsEngineHandle, TtsEngineWorker};
+#[cfg(feature = "playback")]
 pub use fifo::run_fifo_responder;
+pub use utterance::{ErrorCallback, PlaybackCallback, Utterance};
 pub use hf::{
     apply_hf_token, classify_download_error, effective_hf_token, hf_token_from_env,
     looks_like_auth_failure, token_rejected, HF_TOKEN_ENV, HF_TOKEN_REJECTED_TAG,

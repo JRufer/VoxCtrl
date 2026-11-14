@@ -572,6 +572,7 @@ pub(crate) fn ensure_inflect_micro_loaded(
 /// `speak_pocket_tts` caches its model.
 #[cfg(feature = "inflect-micro")]
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "playback")]
 pub(crate) fn speak_inflect_micro(
     config: &voxctrl_config::TtsConfig,
     u: &crate::engine::Utterance,
@@ -678,6 +679,7 @@ pub(crate) fn ensure_inflect_micro_loaded(
 /// selecting the engine reports why it can't run instead of failing obscurely.
 #[cfg(not(feature = "inflect-micro"))]
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "playback")]
 pub(crate) fn speak_inflect_micro(
     _config: &voxctrl_config::TtsConfig,
     _u: &crate::engine::Utterance,

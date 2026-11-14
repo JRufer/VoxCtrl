@@ -250,6 +250,17 @@ async fn apply_dbus_binding(state: &Arc<AppState>, binding_id: &str) {
 ///
 /// Every place that starts a worker goes through here, so none can start one
 /// that plays audio the rest of the app never hears about.
+/// The server the TTS `Server` engine speaks through: the Remote Speech
+/// Engine's address and key, whichever speech engine is selected. `None`
+/// until an address has been entered.
+pub fn tts_server_link(cfg: &voxctrl_config::AppConfig) -> Option<voxctrl_tts::remote::ServerLink> {
+    let remote = &cfg.engine.remote_openai;
+    (!remote.endpoint.trim().is_empty()).then(|| voxctrl_tts::remote::ServerLink {
+        endpoint: remote.endpoint.clone(),
+        api_key: remote.api_key.clone(),
+    })
+}
+
 pub fn start_tts_worker(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -259,6 +270,7 @@ pub fn start_tts_worker(
     let (state_start, state_end) = (state.clone(), state.clone());
     voxctrl_tts::TtsEngineWorker::start(
         cfg.tts.clone(),
+        tts_server_link(cfg),
         cfg.features.custom_vocabulary.clone(),
         Some(Arc::new(move || {
             state_start.set_speaking(true);

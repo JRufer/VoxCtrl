@@ -54,11 +54,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:${DEBIAN_RELEASE}-slim
 ARG FEATURES=""
 
+# espeak-ng is the eSpeak text-to-speech engine. libvulkan1 and libgomp1 are
+# for the audio.cpp runtime the neural TTS engines download at first start: it
+# is a Vulkan build and links the loader even when it runs on the CPU.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libssl3t64 \
-    && if echo ",${FEATURES}," | grep -q ",vulkan,"; then \
-         apt-get install -y --no-install-recommends libvulkan1; \
-       fi \
+       espeak-ng libvulkan1 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Everything the server writes lives under one directory, so one volume keeps

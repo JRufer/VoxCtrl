@@ -7,6 +7,8 @@
 //! | `POST /v1/audio/transcriptions` | key | Speech to text |
 //! | `GET /v1/cleanup` | key | Whether this server cleans up dictation |
 //! | `POST /v1/cleanup` | key | Clean up a transcript |
+//! | `GET /v1/audio/speech` | key | Whether this server speaks, and with what |
+//! | `POST /v1/audio/speech` | key | Text to speech, as a WAV file |
 //!
 //! Matching OpenAI's shapes is what lets the desktop app's existing "Remote
 //! OpenAI" engine use this server unchanged, and lets any other client that
@@ -29,7 +31,11 @@ use tracing::{info, warn};
 
 use crate::audio;
 use crate::cleanup::Cleaner;
+use crate::speech::Speaker;
 use crate::engine::Engine;
+
+/// Longest text accepted for speech, in characters: a few minutes of audio.
+const MAX_SPEECH_CHARS: usize = 5_000;
 
 /// Longest transcript accepted for cleanup, in characters: several minutes of
 /// speech. A longer one is refused rather than left to tie up the model.
@@ -39,6 +45,8 @@ pub struct AppState {
     pub engine: Engine,
     /// `None` when cleanup is not enabled on this server.
     pub cleanup: Option<Arc<dyn Cleaner>>,
+    /// `None` when text-to-speech is not enabled on this server.
+    pub speech: Option<Arc<dyn Speaker>>,
     /// `None` when the server was told not to require a key.
     pub api_key: Option<String>,
     /// Largest request body accepted, in bytes.
@@ -51,6 +59,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/models", get(models))
         .route("/v1/audio/transcriptions", post(transcriptions))
         .route("/v1/cleanup", get(cleanup_status).post(cleanup))
+        .route("/v1/audio/speech", get(speech_status).post(speech))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_key))
         // axum's default cap is 2 MB — about a minute of speech.
         .layer(DefaultBodyLimit::max(max_upload_bytes));
@@ -185,6 +194,7 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "model": state.engine.info().model_id(),
         "cleanup": state.cleanup.is_some(),
+        "tts": state.speech.is_some(),
     }))
 }
 
@@ -362,6 +372,76 @@ async fn cleanup(
     Ok(Json(json!({ "text": cleaned })))
 }
 
+// ── Speech ────────────────────────────────────────────────────────────────────
+
+/// OpenAI's `/v1/audio/speech` request. `model`, `voice` and `speed` are
+/// accepted and ignored: the server speaks with the engine and voice it was
+/// set up with, and the client applies its own speed when it plays the audio.
+#[derive(serde::Deserialize)]
+struct SpeechRequest {
+    input: String,
+    #[serde(default)]
+    response_format: Option<String>,
+}
+
+async fn speech_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    Json(json!({
+        "available": state.speech.is_some(),
+        "engine": state.speech.as_ref().map(|s| s.engine()),
+        "voice": state.speech.as_ref().and_then(|s| s.voice()),
+    }))
+}
+
+async fn speech(
+    State(state): State<Arc<AppState>>,
+    request: Result<Json<SpeechRequest>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let Json(request) = request.map_err(|e| {
+        ApiError::bad_request(format!("The request must be JSON such as {{\"input\": \"…\"}}: {}", e.body_text()))
+    })?;
+    let Some(speaker) = state.speech.clone() else {
+        return Err(ApiError::not_enabled(
+            "Text-to-speech is not enabled on this server. Set enabled = true under [tts] in server.toml \
+             (or VOXCTRL_SERVER_TTS=true) and restart it.",
+        ));
+    };
+    // OpenAI's default is mp3; this server only makes WAV, and says so rather
+    // than hand back a format the caller did not ask for.
+    if let Some(format) = request.response_format.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        if !format.eq_ignore_ascii_case("wav") {
+            return Err(ApiError::bad_request(format!(
+                "response_format '{format}' is not supported. This server returns WAV: use \"wav\" or leave it out."
+            )));
+        }
+    }
+    let chars = request.input.chars().count();
+    if request.input.trim().is_empty() {
+        return Err(ApiError::bad_request("input is empty: there is nothing to speak."));
+    }
+    if chars > MAX_SPEECH_CHARS {
+        return Err(ApiError::bad_request(format!(
+            "The text is {chars} characters long; this server speaks at most {MAX_SPEECH_CHARS} at a time."
+        )));
+    }
+
+    let started = std::time::Instant::now();
+    let text = request.input;
+    let wav = tokio::task::spawn_blocking(move || speaker.speak(&text))
+        .await
+        .map_err(|e| {
+            warn!("Speech task stopped unexpectedly: {e}");
+            ApiError::server("The speech engine stopped unexpectedly. See the server log.")
+        })?
+        .map_err(|e| {
+            warn!("Speech failed: {e:#}");
+            ApiError::server("The speech engine failed. See the server log.")
+        })?;
+
+    // Sizes, never the words: this log stays on disk.
+    info!("Spoke {chars} characters in {} ms ({} bytes of audio)", started.elapsed().as_millis(), wav.len());
+    Ok(([(header::CONTENT_TYPE, "audio/wav")], wav).into_response())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +457,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: None,
+            speech: None,
             api_key: key.map(str::to_string),
             max_upload_bytes: 1024 * 1024,
         });
@@ -403,10 +484,133 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: enabled.then(|| cleaner.clone() as Arc<dyn Cleaner>),
+            speech: None,
             api_key: Some(KEY.to_string()),
             max_upload_bytes: 1024 * 1024,
         });
         (router(state), cleaner)
+    }
+
+    /// Returns a recognisable "WAV" and records what it was asked to say.
+    struct FakeSpeaker {
+        said: std::sync::Mutex<Vec<String>>,
+        fail: bool,
+    }
+
+    impl Speaker for FakeSpeaker {
+        fn speak(&self, text: &str) -> anyhow::Result<Vec<u8>> {
+            self.said.lock().unwrap().push(text.to_string());
+            if self.fail {
+                anyhow::bail!("the voice file at /secret/path is missing");
+            }
+            Ok(b"RIFFfake-wav".to_vec())
+        }
+
+        fn engine(&self) -> String {
+            "piper".into()
+        }
+
+        fn voice(&self) -> Option<String> {
+            Some("en-us-amy-low".into())
+        }
+    }
+
+    fn app_with_speech(enabled: bool, fail: bool) -> (Router, Arc<FakeSpeaker>) {
+        let (engine, _) = fake_engine("x", false);
+        let speaker = Arc::new(FakeSpeaker { said: std::sync::Mutex::new(Vec::new()), fail });
+        let state = Arc::new(AppState {
+            engine,
+            cleanup: None,
+            speech: enabled.then(|| speaker.clone() as Arc<dyn Speaker>),
+            api_key: Some(KEY.to_string()),
+            max_upload_bytes: 1024 * 1024,
+        });
+        (router(state), speaker)
+    }
+
+    fn speech_post(body: &str, key: Option<&str>) -> axum::http::Request<Body> {
+        let mut req = axum::http::Request::post("/v1/audio/speech").header(header::CONTENT_TYPE, "application/json");
+        if let Some(key) = key {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {key}"));
+        }
+        req.body(Body::from(body.to_string())).unwrap()
+    }
+
+    #[tokio::test]
+    async fn speech_returns_the_wav_for_the_text() {
+        let (app, speaker) = app_with_speech(true, false);
+        // What an OpenAI client sends: the extra fields are accepted.
+        let body = r#"{"model": "tts-1", "voice": "alloy", "input": "Hello there.", "response_format": "wav", "speed": 1.0}"#;
+        let res = app.oneshot(speech_post(body, Some(KEY))).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "audio/wav");
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&bytes[..], b"RIFFfake-wav");
+        assert_eq!(*speaker.said.lock().unwrap(), vec!["Hello there.".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn speech_needs_the_key() {
+        let (app, speaker) = app_with_speech(true, false);
+        let res = app.oneshot(speech_post(r#"{"input": "hi"}"#, None)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert!(speaker.said.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn speech_that_is_not_enabled_says_how_to_enable_it() {
+        let (app, _) = app_with_speech(false, false);
+        let res = app.oneshot(speech_post(r#"{"input": "hi"}"#, Some(KEY))).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        assert!(body_json(res).await["error"]["message"].as_str().unwrap().contains("VOXCTRL_SERVER_TTS"));
+    }
+
+    #[tokio::test]
+    async fn speech_status_names_the_engine_and_voice() {
+        for enabled in [true, false] {
+            let (app, _) = app_with_speech(enabled, false);
+            let req = axum::http::Request::get("/v1/audio/speech")
+                .header(header::AUTHORIZATION, format!("Bearer {KEY}"))
+                .body(Body::empty())
+                .unwrap();
+            let json = body_json(app.oneshot(req).await.unwrap()).await;
+            assert_eq!(json["available"], enabled);
+            assert_eq!(json["engine"].as_str(), enabled.then_some("piper"));
+            assert_eq!(json["voice"].as_str(), enabled.then_some("en-us-amy-low"));
+
+            let (app, _) = app_with_speech(enabled, false);
+            let health = app.oneshot(axum::http::Request::get("/health").body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(body_json(health).await["tts"], enabled);
+        }
+    }
+
+    #[tokio::test]
+    async fn speech_refuses_what_it_should_not_run() {
+        let long = "a".repeat(MAX_SPEECH_CHARS + 1);
+        let cases = [
+            (r#"{"input": "hi", "response_format": "mp3"}"#.to_string(), "returns WAV"),
+            (r#"{"input": "   "}"#.to_string(), "nothing to speak"),
+            (format!(r#"{{"input": "{long}"}}"#), "at most"),
+            ("not json".to_string(), "must be JSON"),
+            (r#"{"text": "hi"}"#.to_string(), "must be JSON"),
+        ];
+        for (body, expected) in cases {
+            let (app, speaker) = app_with_speech(true, false);
+            let res = app.oneshot(speech_post(&body, Some(KEY))).await.unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{expected}");
+            let message = body_json(res).await["error"]["message"].as_str().unwrap().to_string();
+            assert!(message.contains(expected), "{message}");
+            assert!(speaker.said.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_engine_failure_is_a_500_that_keeps_its_details_in_the_log() {
+        let (app, _) = app_with_speech(true, true);
+        let res = app.oneshot(speech_post(r#"{"input": "hi"}"#, Some(KEY))).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let message = body_json(res).await["error"]["message"].as_str().unwrap().to_string();
+        assert!(!message.contains("/secret/path"), "{message}");
     }
 
     fn cleanup_post(body: &str, key: Option<&str>) -> axum::http::Request<Body> {
@@ -700,7 +904,7 @@ mod tests {
     #[tokio::test]
     async fn an_upload_over_the_limit_is_a_413_that_names_the_setting() {
         let (engine, _) = fake_engine("x", false);
-        let state = Arc::new(AppState { engine, cleanup: None, api_key: None, max_upload_bytes: 1024 });
+        let state = Arc::new(AppState { engine, cleanup: None, speech: None, api_key: None, max_upload_bytes: 1024 });
         let app = router(state);
         let res = app.oneshot(post(multipart(&[], Some(&speech_wav())), None)).await.unwrap();
         assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);

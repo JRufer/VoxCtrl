@@ -32,6 +32,12 @@ pub struct ServerConfig {
     pub max_upload_mb: u64,
     pub engine: ServerEngineConfig,
     pub cleanup: CleanupConfig,
+    /// Text-to-speech for clients whose TTS engine is "VoxCtrl server". The
+    /// same settings as the `tts` section of the app's own config; off until
+    /// `enabled` is set. Left out of a file the server writes while it is
+    /// untouched, so a generated `server.toml` is not filled with defaults.
+    #[serde(skip_serializing_if = "tts_untouched")]
+    pub tts: voxctrl_config::TtsConfig,
 }
 
 /// Dictation cleanup (the S1-mini model) for clients that ask this server to
@@ -43,6 +49,10 @@ pub struct CleanupConfig {
     /// Run the model on the GPU when the server's cleanup helper was built
     /// with GPU support. Has no effect otherwise.
     pub gpu: bool,
+}
+
+fn tts_untouched(tts: &voxctrl_config::TtsConfig) -> bool {
+    *tts == voxctrl_config::TtsConfig::default()
 }
 
 impl Default for CleanupConfig {
@@ -71,6 +81,7 @@ impl Default for ServerConfig {
             max_upload_mb: 256,
             engine: ServerEngineConfig::default(),
             cleanup: CleanupConfig::default(),
+            tts: voxctrl_config::TtsConfig::default(),
         }
     }
 }
@@ -159,6 +170,27 @@ impl ServerConfig {
         }
         if let Some(v) = var("VOXCTRL_SERVER_CLEANUP") {
             self.cleanup.enabled = parse_bool("VOXCTRL_SERVER_CLEANUP", &v)?;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_TTS") {
+            self.tts.enabled = parse_bool("VOXCTRL_SERVER_TTS", &v)?;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_TTS_ENGINE") {
+            self.tts.engine = serde_json::from_value(serde_json::Value::String(v.trim().to_string())).map_err(|_| {
+                anyhow::anyhow!(
+                    "VOXCTRL_SERVER_TTS_ENGINE: unknown engine '{}'. Use piper, espeak, pocket_tts, breeze_tts_2, \
+                     vox_cpm_2 or kitten_tts_2.",
+                    v.trim()
+                )
+            })?;
+        }
+        // After the engine, so the voice lands on the engine just chosen.
+        if let Some(v) = var("VOXCTRL_SERVER_TTS_VOICE") {
+            let voice = v.trim().to_string();
+            match self.tts.engine {
+                voxctrl_config::TtsEngine::PocketTts => self.tts.pocket_tts.voice = voice,
+                voxctrl_config::TtsEngine::KittenTts2 => self.tts.kitten_tts_2.voice = voice,
+                _ => self.tts.voice = voice,
+            }
         }
         if let Some(v) = var("VOXCTRL_SERVER_CLEANUP_GPU") {
             self.cleanup.gpu = parse_bool("VOXCTRL_SERVER_CLEANUP_GPU", &v)?;
@@ -340,6 +372,38 @@ mod tests {
 
         let err = ServerConfig::default().apply_env(env(&[("VOXCTRL_SERVER_CLEANUP", "sure")])).unwrap_err();
         assert!(err.to_string().contains("VOXCTRL_SERVER_CLEANUP"), "{err}");
+    }
+
+    #[test]
+    fn tts_is_off_until_asked_for_and_takes_the_apps_settings() {
+        use voxctrl_config::TtsEngine;
+        assert!(!ServerConfig::default().tts.enabled);
+
+        // A few keys are enough; the rest keep their defaults.
+        let cfg = ServerConfig::from_toml_str(
+            "[tts]\nenabled = true\nengine = \"piper\"\nvoice = \"en-us-amy-low\"\n\n[tts.pocket_tts]\nvoice = \"alba\"\n",
+        )
+        .unwrap();
+        assert!(cfg.tts.enabled);
+        assert_eq!(cfg.tts.engine, TtsEngine::Piper);
+        assert_eq!(cfg.tts.voice, "en-us-amy-low");
+        assert_eq!(cfg.tts.pocket_tts.voice, "alba");
+
+        let mut from_env = ServerConfig::default();
+        from_env
+            .apply_env(env(&[
+                ("VOXCTRL_SERVER_TTS", "true"),
+                ("VOXCTRL_SERVER_TTS_ENGINE", "pocket_tts"),
+                ("VOXCTRL_SERVER_TTS_VOICE", "marius"),
+            ]))
+            .unwrap();
+        assert!(from_env.tts.enabled);
+        assert_eq!(from_env.tts.engine, TtsEngine::PocketTts);
+        assert_eq!(from_env.tts.pocket_tts.voice, "marius", "the voice goes to the engine chosen");
+        assert_ne!(from_env.tts.voice, "marius");
+
+        let err = ServerConfig::default().apply_env(env(&[("VOXCTRL_SERVER_TTS_ENGINE", "robot")])).unwrap_err();
+        assert!(err.to_string().contains("unknown engine 'robot'"), "{err}");
     }
 
     #[test]

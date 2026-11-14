@@ -18,7 +18,8 @@ dirs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 crossbeam-channel = { workspace = true }
-rodio = { workspace = true }
+# Only for playing audio: the server synthesizes without it.
+rodio = { workspace = true, optional = true }
 # Not the workspace `ort`: that is configured `load-dynamic`, which resolves
 # ONNX Runtime at runtime and so needs a system libonnxruntime present. Nothing
 # in the workspace provides one, and its absence surfaces as the TTS worker
@@ -37,7 +38,11 @@ ort = { version = "2.0.0-rc.12", optional = true }
 libc = "0.2"
 
 [features]
-default = []
+default = ["playback"]
+# The worker thread that plays what it synthesizes, and the FIFO trigger. The
+# desktop app needs it; a headless server does not, and leaving it out keeps
+# the sound-card libraries out of that build.
+playback = ["dep:rodio"]
 # Inflect-Micro-v2 neural TTS via ONNX Runtime. Opt-in like `moonshine` on
 # voxctrl-inference, and for the same reason: it pulls in ONNX Runtime. The
 # eSpeak-NG phoneme frontend is a runtime dependency, checked for before

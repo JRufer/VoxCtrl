@@ -455,6 +455,20 @@ Whether the saved Remote Speech Engine's server is reachable right now, and
 which fallback engine is set. Changes afterwards arrive as
 [`remote-status`](#remote-status) events, which carry the same type.
 
+#### `check_server_tts(endpoint, apiKey) → ServerTtsStatus`
+Asks the speech server at `endpoint` whether it offers text-to-speech
+(`GET /v1/audio/speech`), for the TTS tab's "VoxCtrl server" engine. Takes the
+endpoint and key as typed. Never rejects: every outcome is a status to show.
+
+```ts
+interface ServerTtsStatus {
+  available: boolean;
+  engine: string | null;  // the server's engine, e.g. "piper"
+  voice: string | null;   // its voice, for engines with named voices
+  message: string;        // what to tell the user, including how to fix "not available"
+}
+```
+
 #### `check_server_cleanup(endpoint, apiKey) → ServerCleanupStatus`
 Asks the speech server at `endpoint` whether it offers dictation cleanup
 (`GET /v1/cleanup`). Takes the endpoint and key as typed, which need not be

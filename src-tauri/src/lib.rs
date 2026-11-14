@@ -731,6 +731,7 @@ pub fn run() {
             plan_model_cleanup,
             run_model_cleanup,
             check_server_cleanup,
+            check_server_tts,
             get_available_monitors,
             start_recording,
             stop_recording,
