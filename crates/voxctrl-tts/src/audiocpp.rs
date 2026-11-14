@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::piper::expand_tilde;
 
@@ -632,6 +632,23 @@ impl AudioCppServer {
     }
 }
 
+/// If `child` has exited: how, and the end of what it printed, for the log.
+/// `None` while it is still running.
+fn exit_report(child: &mut Child) -> Option<String> {
+    let status = match child.try_wait() {
+        Ok(None) => return None,
+        Ok(Some(status)) => status.to_string(),
+        Err(e) => format!("its state could not be read: {e}"),
+    };
+    let stderr = read_stderr(child);
+    // The reason is at the end; the start is startup chatter.
+    let tail: String = {
+        let chars: Vec<char> = stderr.chars().collect();
+        chars[chars.len().saturating_sub(600)..].iter().collect()
+    };
+    Some(if tail.is_empty() { status } else { format!("{status}; last output: {tail}") })
+}
+
 fn read_stderr(child: &mut Child) -> String {
     let mut stderr = String::new();
     if let Some(mut s) = child.stderr.take() {
@@ -661,7 +678,14 @@ impl AudioCppSession {
         let matches = slot.as_ref().is_some_and(|s| {
             s.server.family == family && s.server.model_dir == model_dir && s.server.gpu == gpu
         });
-        if matches {
+        // A server that has exited (crashed, ran out of memory, was killed)
+        // cannot be reused: without this check every later request would be
+        // sent to a port nobody listens on, until the app restarted.
+        let died = slot.as_mut().and_then(|s| exit_report(&mut s.server.child));
+        if let Some(report) = &died {
+            warn!("audio.cpp server (family={family}) is no longer running ({report}); starting a new one");
+        }
+        if matches && died.is_none() {
             return Ok(());
         }
         *slot = None; // drop first: frees the old port before the new server binds one
@@ -688,6 +712,48 @@ pub fn play_wav_bytes(sink: &rodio::Sink, bytes: Vec<u8>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_running_helper_has_no_exit_report() {
+        let mut child = std::process::Command::new("sleep").arg("30").stderr(Stdio::piped()).spawn().unwrap();
+        assert_eq!(exit_report(&mut child), None);
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_died_is_reported_with_how_and_its_last_words() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "echo 'out of memory loading model' >&2; exit 3"])
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Poll rather than `wait()`: the report must come from `try_wait`.
+        let report = loop {
+            if let Some(report) = exit_report(&mut child) {
+                break report;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(report.contains('3'), "{report}");
+        assert!(report.contains("out of memory loading model"), "{report}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_killed_helper_is_reported_as_such() {
+        let mut child = std::process::Command::new("sleep").arg("30").stderr(Stdio::piped()).spawn().unwrap();
+        child.kill().unwrap();
+        let report = loop {
+            if let Some(report) = exit_report(&mut child) {
+                break report;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(report.contains("signal"), "{report}");
+    }
     use tempfile::tempdir;
 
     #[test]
