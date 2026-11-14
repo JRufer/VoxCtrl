@@ -154,6 +154,10 @@
           return await invoke<boolean>("check_vox_cpm_2_ready", {
             modelDir: cfg.tts.vox_cpm_2?.model_dir ?? "",
           });
+        case "kitten_tts_2":
+          return await invoke<boolean>("check_kitten_tts_2_ready", {
+            modelDir: cfg.tts.kitten_tts_2?.model_dir ?? "",
+          });
       }
     } catch (e) {
       console.error("Wizard: TTS readiness check failed for", id, e);
@@ -209,6 +213,12 @@
             hfToken: cfg.tts.hf_token,
           });
           break;
+        case "kitten_tts_2":
+          await invoke("download_kitten_tts_2", {
+            modelDir: cfg.tts.kitten_tts_2?.model_dir ?? "",
+            hfToken: cfg.tts.hf_token,
+          });
+          break;
         case "espeak":
           break;
       }
@@ -241,7 +251,7 @@
     }
   }
 
-  const GPU_CAPABLE: TtsEngineId[] = ["pocket_tts", "breeze_tts_2", "vox_cpm_2"];
+  const GPU_CAPABLE: TtsEngineId[] = ["pocket_tts", "breeze_tts_2", "vox_cpm_2", "kitten_tts_2"];
   const gpuCapable = $derived(GPU_CAPABLE.includes(selected));
   const gpuOn = $derived(
     selected === "pocket_tts"
@@ -250,7 +260,9 @@
         ? $config.tts.breeze_tts_2.gpu
         : selected === "vox_cpm_2"
           ? $config.tts.vox_cpm_2.gpu
-          : false,
+          : selected === "kitten_tts_2"
+            ? $config.tts.kitten_tts_2.gpu
+            : false,
   );
 
   function setGpu(on: boolean) {
@@ -258,6 +270,7 @@
       if (selected === "pocket_tts") cfg.tts.pocket_tts.gpu = on;
       else if (selected === "breeze_tts_2") cfg.tts.breeze_tts_2.gpu = on;
       else if (selected === "vox_cpm_2") cfg.tts.vox_cpm_2.gpu = on;
+      else if (selected === "kitten_tts_2") cfg.tts.kitten_tts_2.gpu = on;
     });
   }
 
@@ -509,6 +522,13 @@
       <strong>⚠ Non-commercial license:</strong>
       {selectedEngine.name} weights are released under a research/non-commercial license. Commercial
       use requires a separate license from the model's publisher.
+    </div>
+  {/if}
+
+  {#if enabled && selectedEngine.licenceNotice && !ready[selected]}
+    <div class="non-commercial-notice">
+      <strong>⚠ Model license:</strong>
+      {selectedEngine.licenceNotice}
     </div>
   {/if}
 

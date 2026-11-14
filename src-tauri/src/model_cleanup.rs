@@ -148,7 +148,12 @@ pub fn plan(cfg: &AppConfig, bindings: &[HotkeyBinding], fallback: FallbackChoic
 
 fn custom_voice_dirs(cfg: &AppConfig, layout: &Layout) -> Vec<PathBuf> {
     let mut dirs = vec![layout.custom_voices()];
-    for configured in [&cfg.tts.pocket_tts.voice_dir, &cfg.tts.breeze_tts_2.voice_dir, &cfg.tts.vox_cpm_2.voice_dir] {
+    for configured in [
+        &cfg.tts.pocket_tts.voice_dir,
+        &cfg.tts.breeze_tts_2.voice_dir,
+        &cfg.tts.vox_cpm_2.voice_dir,
+        &cfg.tts.kitten_tts_2.voice_dir,
+    ] {
         let configured = configured.trim();
         if !configured.is_empty() {
             dirs.push(expand_tilde(configured));
@@ -305,10 +310,17 @@ fn piper_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
 /// directory. One the user has moved to a folder of their own (`model_dir`)
 /// is left alone: that folder is theirs.
 fn tts_folder_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
-    let engines: [(&str, &str, &str, TtsEngine, bool); 4] = [
+    let engines: [(&str, &str, &str, TtsEngine, bool); 5] = [
         ("pocket-tts", "pocket-tts", "Pocket-TTS", TtsEngine::PocketTts, true),
         ("breeze-tts-2", "breeze-tts-2", "Breeze-TTS-2", TtsEngine::BreezeTts2, cfg.tts.breeze_tts_2.model_dir.trim().is_empty()),
         ("voxcpm2", "voxcpm2", "VoxCPM2", TtsEngine::VoxCpm2, cfg.tts.vox_cpm_2.model_dir.trim().is_empty()),
+        (
+            "kitten-tts-2",
+            "kitten-tts-2",
+            "Kitten TTS 2",
+            TtsEngine::KittenTts2,
+            cfg.tts.kitten_tts_2.model_dir.trim().is_empty(),
+        ),
         ("inflect-micro", "inflect-micro", "Inflect-Micro", TtsEngine::InflectMicro, cfg.tts.inflect_micro.model_dir.trim().is_empty()),
     ];
     engines
@@ -620,6 +632,28 @@ mod tests {
         cfg.tts.enabled = false;
         let off = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
         assert!(off.items.iter().filter(|i| i.kind == ItemKind::Voice).all(CleanupItem::removable));
+    }
+
+    #[test]
+    fn kitten_tts_2_is_listed_and_kept_only_while_selected() {
+        let fx = fixture();
+        write(&fx.layout.models().join("kitten-tts-2/kitten-tts2-20261021-q8_0.gguf"), 330);
+        let mut cfg = AppConfig::default();
+        cfg.tts.enabled = true;
+        cfg.tts.engine = TtsEngine::KittenTts2;
+        let selected = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
+        let kitten = item(&selected, "kitten-tts-2");
+        assert_eq!(kitten.bytes, 330);
+        assert_eq!(kitten.kept_because.as_deref(), Some("Selected text-to-speech engine"));
+
+        cfg.tts.engine = TtsEngine::Piper;
+        let other = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
+        assert!(item(&other, "kitten-tts-2").removable());
+
+        // A model folder of the user's own is theirs, not VoxCtrl's to offer.
+        cfg.tts.kitten_tts_2.model_dir = "/somewhere/else".into();
+        let moved = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
+        assert!(moved.items.iter().all(|i| i.id != "kitten-tts-2"));
     }
 
     #[test]

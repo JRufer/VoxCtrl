@@ -34,7 +34,7 @@ that listens on a network port.
 
 ## What runs where
 
-The server runs speech recognition and, from 0.9.4, S1-mini dictation cleanup.
+The server runs speech recognition and, from 0.9.5, S1-mini dictation cleanup.
 
 | | Where it runs |
 |---|---|
@@ -440,13 +440,13 @@ in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unre
 
 S1-mini dictation cleanup (the model that turns a raw transcript into
 punctuated, tidied text) can run on the server instead of on each client, so a
-client loads no language model at all. It needs VoxCtrl 0.9.4 or newer at both
+client loads no language model at all. It needs VoxCtrl 0.9.5 or newer at both
 ends, and has to be turned on at both.
 
 **On the server**, turn cleanup on and restart:
 
 - Docker: set `VOXCTRL_SERVER_CLEANUP=true` in `packaging/docker/.env`, then
-  `docker compose up -d --build`. An image built before 0.9.4 has to be
+  `docker compose up -d --build`. An image built before 0.9.5 has to be
   rebuilt; the new one also contains the cleanup helper.
 - System service: add this to `server.toml`, then
   `sudo systemctl restart voxctrl-server`.
@@ -841,7 +841,7 @@ the line under **Run dictation cleanup on the server**:
 - *Cleanup is turned off on this server*: set `VOXCTRL_SERVER_CLEANUP=true` or
   `[cleanup] enabled = true` on the server and restart it.
 - *This server does not offer dictation cleanup*: the server is older than
-  0.9.4 (rebuild it), or the endpoint is not a `voxctrl-server`.
+  0.9.5 (rebuild it), or the endpoint is not a `voxctrl-server`.
 - *This server cleans up dictation*, and text still arrives uncleaned: cleanup
   is probably timing out. Check the server log for how long cleanups take. If
   the server logged that `voxctrl-llm-sidecar` was not found at startup,

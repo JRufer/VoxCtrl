@@ -7,6 +7,9 @@
 
 #[cfg(test)]
 mod reference;
+mod spoken;
+
+pub use spoken::{number_to_words, spell_out_numbers_en};
 
 use std::borrow::Cow;
 use std::collections::HashMap;

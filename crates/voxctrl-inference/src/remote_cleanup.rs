@@ -137,7 +137,7 @@ fn interpret_status(status: u16, body: &[u8]) -> ServerCleanupStatus {
         }
         401 | 403 => ServerCleanupStatus::unavailable(format!("The server rejected the API key (HTTP {status}).")),
         404 | 405 => ServerCleanupStatus::unavailable(
-            "This server does not offer dictation cleanup. It needs voxctrl-server 0.9.4 or newer; \
+            "This server does not offer dictation cleanup. It needs voxctrl-server 0.9.5 or newer; \
              other speech servers do not have it.",
         ),
         _ => ServerCleanupStatus::unavailable(format!("The server answered with an error (HTTP {status}).")),

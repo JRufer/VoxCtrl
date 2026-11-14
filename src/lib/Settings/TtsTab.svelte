@@ -29,6 +29,8 @@
       ? { backend: "vulkan", on: cfg.tts.breeze_tts_2.gpu }
       : cfg.tts.engine === "vox_cpm_2"
       ? { backend: "vulkan", on: cfg.tts.vox_cpm_2.gpu }
+      : cfg.tts.engine === "kitten_tts_2"
+      ? { backend: "vulkan", on: cfg.tts.kitten_tts_2.gpu }
       : null,
   );
   function setTtsGpu(v: boolean) {
@@ -36,6 +38,7 @@
     else if (cfg.tts.engine === "pocket_tts") cfg.tts.pocket_tts.gpu = v;
     else if (cfg.tts.engine === "breeze_tts_2") cfg.tts.breeze_tts_2.gpu = v;
     else if (cfg.tts.engine === "vox_cpm_2") cfg.tts.vox_cpm_2.gpu = v;
+    else if (cfg.tts.engine === "kitten_tts_2") cfg.tts.kitten_tts_2.gpu = v;
     markDirty();
   }
 
@@ -204,6 +207,9 @@
     } else if (cfg.tts.engine === "vox_cpm_2") {
       engineName = "VoxCPM2";
       voice = null;
+    } else if (cfg.tts.engine === "kitten_tts_2") {
+      engineName = "Kitten TTS 2";
+      voice = null;
     } else if (cfg.tts.engine === "inflect_micro") {
       engineName = "Inflect Micro";
       voice = null;
@@ -256,6 +262,12 @@
       if (voxCpmDownloading) return "Downloading the model...";
       if (!voxCpmReady) return "Download the model first.";
     }
+    if (cfg.tts.engine === "kitten_tts_2") {
+      if (kittenChecking) return "Checking local model files...";
+      if (kittenDownloading) return "Downloading the model...";
+      if (!kittenReady) return "Download the model first.";
+      if (kittenCloneNeedsClip()) return "Pick a voice clip to clone first.";
+    }
     return null;
   }
 
@@ -276,6 +288,9 @@
     if (cfg.tts.engine === "vox_cpm_2") {
       return voxCpmChecking || voxCpmDownloading || !voxCpmReady;
     }
+    if (cfg.tts.engine === "kitten_tts_2") {
+      return kittenChecking || kittenDownloading || !kittenReady || kittenCloneNeedsClip();
+    }
     if (cfg.tts.engine === "inflect_micro") {
       return inflectChecking || inflectDownloading || !inflectReady || !inflectAvailable;
     }
@@ -290,6 +305,7 @@
   function activeClonedVoiceDir(): string {
     if (cfg.tts.engine === "vox_cpm_2") return cfg.tts.vox_cpm_2.voice_dir || "";
     if (cfg.tts.engine === "breeze_tts_2") return cfg.tts.breeze_tts_2.voice_dir || "";
+    if (cfg.tts.engine === "kitten_tts_2") return cfg.tts.kitten_tts_2.voice_dir || "";
     return cfg.tts.pocket_tts.voice_dir || "";
   }
 
@@ -307,6 +323,16 @@
     // Breeze-TTS-2: default cloned voice to first voice if not selected or invalid
     if (!cfg.tts.breeze_tts_2.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.breeze_tts_2.cloned_voice)) {
       cfg.tts.breeze_tts_2.cloned_voice = firstVoice;
+      changed = true;
+    }
+
+    // Kitten TTS 2: only when cloning — preset mode never reads cloned_voice,
+    // so leave it empty there rather than inventing a selection.
+    if (
+      cfg.tts.kitten_tts_2.voice_mode === "clone" &&
+      (!cfg.tts.kitten_tts_2.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.kitten_tts_2.cloned_voice))
+    ) {
+      cfg.tts.kitten_tts_2.cloned_voice = firstVoice;
       changed = true;
     }
 
@@ -385,9 +411,9 @@
 
   // ── Model memory ───────────────────────────────────────────────────────────
   //
-  // Only the neural engines (Pocket-TTS, Breeze-TTS-2, Inflect-Micro-v2) keep
-  // weights resident; Piper and eSpeak shell out to a process per utterance and
-  // hold nothing between them.
+  // Only the neural engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2,
+  // Inflect-Micro-v2) keep weights resident; Piper and eSpeak shell out to a
+  // process per utterance and hold nothing between them.
 
   const memoryModeOptions = [
     { value: "always_loaded", label: "Always loaded (fastest response)" },
@@ -415,6 +441,7 @@
   }
 
   const engineOptions = [
+    { value: "kitten_tts_2", label: "Kitten TTS 2 (neural, multilingual, voice cloning)" },
     { value: "vox_cpm_2", label: "VoxCPM2 (neural, voice cloning & design)" },
     { value: "breeze_tts_2", label: "Breeze-TTS-2 (neural, voice design)" },
     { value: "pocket_tts", label: "Pocket-TTS (neural, voice cloning)" },
@@ -617,6 +644,84 @@
     }
   }
 
+  // ── Kitten TTS 2 ───────────────────────────────────────────────────────────
+  //
+  // Two voice sources: a preset built into the model (the default) or a clip
+  // from the shared voice folder. Like Breeze-TTS-2, cloning needs the clip's
+  // exact transcript next to it.
+
+  let kittenReady = $state(false);
+  let kittenChecking = $state(false);
+  let kittenDownloading = $state(false);
+  let kittenVoices = $state<string[]>(["Bruno"]);
+
+  const kittenVoiceModeOptions = [
+    { value: "preset", label: "Built-in voice" },
+    { value: "clone", label: "Clone a voice clip" },
+  ];
+  const kittenPresetOptions = [
+    { value: "stable", label: "Stable (steady, consistent delivery)" },
+    { value: "expressive", label: "Expressive (more varied, follows emotion tags)" },
+  ];
+  // A voice typed in by name (a newer model package has more) stays
+  // selectable rather than snapping back to the first listed one.
+  let kittenVoiceOptions = $derived(
+    (kittenVoices.includes(cfg.tts.kitten_tts_2.voice) || !cfg.tts.kitten_tts_2.voice
+      ? kittenVoices
+      : [cfg.tts.kitten_tts_2.voice, ...kittenVoices]
+    ).map(v => ({ value: v, label: v }))
+  );
+
+  function kittenCloneNeedsClip(): boolean {
+    return cfg.tts.kitten_tts_2.voice_mode === "clone" && !cfg.tts.kitten_tts_2.cloned_voice;
+  }
+
+  async function loadKittenVoices() {
+    try {
+      const found = await invoke<string[]>("list_kitten_tts_2_voices");
+      if (found.length > 0) kittenVoices = found;
+    } catch (e) {
+      console.error("list_kitten_tts_2_voices:", e);
+    }
+  }
+
+  async function checkKittenReady() {
+    kittenChecking = true;
+    try {
+      kittenReady = await invoke<boolean>("check_kitten_tts_2_ready", {
+        modelDir: cfg.tts.kitten_tts_2.model_dir,
+      });
+    } catch (e) {
+      console.error("check_kitten_tts_2_ready:", e);
+      kittenReady = false;
+    } finally {
+      kittenChecking = false;
+    }
+  }
+
+  async function downloadKittenTts2() {
+    if (kittenDownloading) return;
+    kittenDownloading = true;
+    try {
+      await invoke("download_kitten_tts_2", {
+        modelDir: cfg.tts.kitten_tts_2.model_dir,
+        hfToken: cfg.tts.hf_token,
+      });
+      kittenReady = true;
+    } catch (e) {
+      alert(`Failed to download Kitten TTS 2 assets: ${e}`);
+    } finally {
+      kittenDownloading = false;
+    }
+  }
+
+  async function onKittenVoiceModeChanged() {
+    markDirty();
+    if (cfg.tts.kitten_tts_2.voice_mode === "clone") {
+      await loadPocketTtsVoices();
+    }
+  }
+
   /**
    * Whether the session has an `HF_TOKEN` environment variable, shown as a
    * note by the gated-engine panels. The token itself is entered once in the
@@ -646,6 +751,11 @@
         cfg.tts.breeze_tts_2.voice_mode = "clone";
         breezeReady = false;
         await checkBreezeReady();
+        await loadPocketTtsVoices();
+      } else if (cfg.tts.engine === "kitten_tts_2") {
+        kittenReady = false;
+        await loadKittenVoices();
+        await checkKittenReady();
         await loadPocketTtsVoices();
       } else if (cfg.tts.engine === "pocket_tts") {
         pocketTtsReady = false;
@@ -694,6 +804,11 @@
 
     if (cfg.tts.engine === "breeze_tts_2") {
       checkBreezeReady();
+    }
+
+    if (cfg.tts.engine === "kitten_tts_2") {
+      loadKittenVoices();
+      checkKittenReady();
     }
 
     if (cfg.tts.engine === "pocket_tts") {
@@ -940,6 +1055,137 @@
     <label class="field">
       <span>Pre-warm on startup</span>
       <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
+  </div>
+  {/if}
+
+  <!-- ── Kitten TTS 2 section ───────────────────────────────────────────── -->
+  {#if cfg.tts.engine === "kitten_tts_2"}
+  <div class="field-group">
+    <h3>Kitten TTS 2 Voice</h3>
+
+    <div class="non-commercial-warning">
+      <div class="warning-header">
+        <span class="warning-icon">⚠️</span>
+        <strong>Model License: Stellon Labs Community License</strong>
+      </div>
+      <p class="warning-text">
+        Kitten TTS 2 model weights are not covered by VoxCtrl's MIT license. Personal, research and
+        non-commercial use are free. Commercial use requires registering with Stellon Labs, and the
+        free grant ends above USD $1M in annual revenue or total funding. Audio it produces may not
+        be used to train or improve other models. <strong>Powered by Stellon Labs.</strong>
+      </p>
+    </div>
+
+    <label class="field col">
+      <span class="field-title">Voice source</span>
+      <CustomSelect
+        bind:value={cfg.tts.kitten_tts_2.voice_mode}
+        options={kittenVoiceModeOptions}
+        onchange={onKittenVoiceModeChanged}
+      />
+    </label>
+
+    {#if cfg.tts.kitten_tts_2.voice_mode === "clone"}
+      <label class="field col">
+        <span class="field-title">Cloned Voice Reference Clip</span>
+        <CustomSelect
+          bind:value={cfg.tts.kitten_tts_2.cloned_voice}
+          options={pocketTtsVoiceOptions}
+          defaultToFirst={true}
+          onchange={markDirty}
+        />
+      </label>
+
+      <div class="field">
+        <span>Shared Voice Folder (leave blank for default)</span>
+        <input
+          type="text"
+          bind:value={cfg.tts.kitten_tts_2.voice_dir}
+          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.kitten_tts_2.voice_dir); }}
+        />
+      </div>
+      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
+
+      <div class="license-warning-card" style="margin-top: 4px; margin-bottom: 8px;">
+        <p class="license-title">⚠️ Voice Cloning Transcript Required</p>
+        <p class="license-text">
+          Kitten TTS 2 clones from a 1–30 second clip of one speaker and needs a matching text file
+          (e.g. <code>voice_name.txt</code> next to <code>voice_name.wav</code>) containing exactly
+          what is spoken in it. Use a clean clip without long pauses. Only clone voices you have
+          permission to use.
+        </p>
+      </div>
+    {:else}
+      <label class="field col">
+        <span class="field-title">Built-in voice</span>
+        <CustomSelect
+          bind:value={cfg.tts.kitten_tts_2.voice}
+          options={kittenVoiceOptions}
+          onchange={markDirty}
+        />
+      </label>
+      <div class="field">
+        <span>Or type a voice name</span>
+        <input type="text" bind:value={cfg.tts.kitten_tts_2.voice} onchange={markDirty} placeholder="Bruno" />
+      </div>
+      <p class="hint">
+        The language-named voices (German, Spanish, Hindi, …) are how you speak other languages —
+        write the text in that language. Names are case-sensitive.
+      </p>
+    {/if}
+
+    <label class="field col">
+      <span class="field-title">Delivery</span>
+      <CustomSelect
+        bind:value={cfg.tts.kitten_tts_2.preset}
+        options={kittenPresetOptions}
+        onchange={markDirty}
+      />
+    </label>
+    <p class="hint" style="margin-top: -6px;">
+      Text may start with an emotion tag such as <code>[excited]</code>, <code>[sad]</code> or
+      <code>[tender]</code>, and include <code>&lt;sigh&gt;</code> or <code>&lt;laugh&gt;</code>.
+      Kitten treats them as hints, not guarantees.
+    </p>
+
+    <div class="voice-status-container">
+      {#if kittenChecking}
+        <span class="status-checking">⏳ Checking local model files...</span>
+      {:else if kittenDownloading}
+        <span class="status-downloading">⏳ Downloading Kitten TTS 2 model weights from HuggingFace (3.3 GB)...</span>
+      {:else}
+        <div class="status-missing-wrapper">
+          <span class={kittenReady ? "status-downloaded" : "status-missing"}>
+            {kittenReady ? "✔ Model weights downloaded and ready" : "❌ Model files missing (or the audio.cpp runtime needs installing or updating)"}
+          </span>
+          <button class="btn-download" onclick={downloadKittenTts2} disabled={kittenReady || kittenDownloading}>
+            {kittenReady ? "Downloaded" : "📥 Download"}
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <p class="hint">
+      Kitten TTS 2 runs through the audio.cpp engine — no HuggingFace token required. It is a
+      1.7B-parameter model: expect several GB of RAM (or VRAM with the GPU on). audio.cpp has
+      validated it on CPU and NVIDIA CUDA; the Vulkan GPU path is still experimental.
+    </p>
+
+    <div class="field">
+      <span>Model directory (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.kitten_tts_2.model_dir}
+        onchange={() => { markDirty(); checkKittenReady(); }}
+      />
+    </div>
+    <p class="hint">Default directory: <code>~/.local/share/voxctrl/models/kitten-tts-2/</code></p>
+
+    <label class="field">
+      <span>Pre-warm on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.kitten_tts_2.prewarm} onchange={markDirty} />
     </label>
     <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
   </div>

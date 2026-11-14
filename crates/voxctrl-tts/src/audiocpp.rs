@@ -35,13 +35,26 @@ use tracing::info;
 use crate::piper::expand_tilde;
 
 /// The audio.cpp release VoxCtrl downloads. Bump alongside a verified test of
-/// the new release's CLI flags for the three families we drive.
-pub const AUDIOCPP_RELEASE_VERSION: &str = "v0.8.0";
+/// the new release's server request fields for every family we drive.
+///
+/// v0.9.4 is the first release VoxCtrl uses that ships the `kitten_tts2`
+/// family (Kitten TTS 2); the server config schema (`models[].path`,
+/// `backend`, `lazy_load`) and the `/v1/audio/speech` fields VoxCtrl sends
+/// (`voice`, `voice_ref`, `reference_text`, `instruct`, `options`) are the
+/// same ones v0.8.0 accepted.
+pub const AUDIOCPP_RELEASE_VERSION: &str = "v0.9.4";
+
+/// Written next to the managed binaries after a successful install, holding
+/// the [`AUDIOCPP_RELEASE_VERSION`] that was installed. Installs from before
+/// this marker existed have no file, which reads as out of date — so the next
+/// audio.cpp model download also upgrades the runtime.
+const AUDIOCPP_VERSION_MARKER: &str = "VOXCTRL_AUDIOCPP_VERSION";
 
 /// GGUF model family names audio.cpp registers for the engines VoxCtrl offers.
 pub const FAMILY_POCKET_TTS: &str = "pocket_tts";
 pub const FAMILY_BREEZE_TTS: &str = "breeze_tts";
 pub const FAMILY_VOXCPM2: &str = "voxcpm2";
+pub const FAMILY_KITTEN_TTS2: &str = "kitten_tts2";
 
 pub fn audiocpp_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -64,18 +77,8 @@ pub(crate) fn resolve_model_dir(model_dir: &str, default: impl FnOnce() -> PathB
     }
 }
 
-/// Resolves the `audiocpp_cli` binary: VoxCtrl's own managed install first,
-/// then PATH — mirroring `piper_binary()`.
-pub fn audiocpp_binary() -> Option<PathBuf> {
-    let exe = if cfg!(target_os = "windows") { "audiocpp_cli.exe" } else { "audiocpp_cli" };
-    let local = audiocpp_dir().join(exe);
-    if local.exists() {
-        return Some(local);
-    }
-    voxctrl_config::find_in_path("audiocpp_cli")
-}
-
-/// Resolves the `audiocpp_server` binary the same way as [`audiocpp_binary`].
+/// Resolves the `audiocpp_server` binary: VoxCtrl's own managed install
+/// first, then PATH — mirroring `piper_binary()`.
 fn audiocpp_server_binary() -> Option<PathBuf> {
     let exe = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
     let local = audiocpp_dir().join(exe);
@@ -85,20 +88,72 @@ fn audiocpp_server_binary() -> Option<PathBuf> {
     voxctrl_config::find_in_path("audiocpp_server")
 }
 
+/// What runtime the audio.cpp engines would run on right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioCppRuntime {
+    /// VoxCtrl's own install, at [`AUDIOCPP_RELEASE_VERSION`].
+    Current,
+    /// VoxCtrl's own install, from an older release (or from before the
+    /// version marker existed). Works for the families that release had,
+    /// but may lack newer ones such as `kitten_tts2`.
+    Outdated,
+    /// No managed install, but an `audiocpp_server` on PATH. The user manages
+    /// that one; VoxCtrl never replaces it, and can't know what it supports.
+    System,
+    Missing,
+}
+
+fn installed_marker_version(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join(AUDIOCPP_VERSION_MARKER))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn classify_runtime(managed_dir: &Path, on_path: bool) -> AudioCppRuntime {
+    let exe = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
+    if managed_dir.join(exe).exists() {
+        if installed_marker_version(managed_dir).as_deref() == Some(AUDIOCPP_RELEASE_VERSION) {
+            AudioCppRuntime::Current
+        } else {
+            AudioCppRuntime::Outdated
+        }
+    } else if on_path {
+        AudioCppRuntime::System
+    } else {
+        AudioCppRuntime::Missing
+    }
+}
+
+pub fn audiocpp_runtime() -> AudioCppRuntime {
+    classify_runtime(&audiocpp_dir(), voxctrl_config::find_in_path("audiocpp_server").is_some())
+}
+
+/// Installs the audio.cpp runtime when it is missing, or upgrades VoxCtrl's
+/// own install when it predates [`AUDIOCPP_RELEASE_VERSION`]. A system-wide
+/// install on PATH is left alone. Every audio.cpp model download goes through
+/// here, so asking for any of those models is what brings an older install
+/// up to date.
+pub async fn ensure_audiocpp_runtime() -> Result<()> {
+    match audiocpp_runtime() {
+        AudioCppRuntime::Current | AudioCppRuntime::System => Ok(()),
+        AudioCppRuntime::Outdated | AudioCppRuntime::Missing => {
+            download_audiocpp_binary().await.context("download audio.cpp runtime")
+        }
+    }
+}
+
 // ── Binary download ───────────────────────────────────────────────────────────
 
 /// Fetches and unpacks the prebuilt audio.cpp release archive for the current
-/// OS into `~/.local/share/voxctrl/audiocpp/`. Only extracts the runtime
-/// (binary + shared libraries + model_specs + license) — the archive also
-/// ships audio.cpp's own Python model-manager/conversion tooling under
-/// `tools/`, which VoxCtrl never invokes and does not install.
+/// OS into `~/.local/share/voxctrl/audiocpp/`, replacing any older install in
+/// place. Only extracts the runtime (binary + shared libraries + model_specs +
+/// license) — the archive also ships audio.cpp's own Python
+/// model-manager/conversion tooling under `tools/`, which VoxCtrl never
+/// invokes and does not install.
 #[cfg(target_os = "linux")]
 pub async fn download_audiocpp_binary() -> Result<()> {
     let dest_dir = audiocpp_dir();
-    let dest_exe = dest_dir.join("audiocpp_cli");
-    if dest_exe.exists() {
-        return Ok(());
-    }
     tokio::fs::create_dir_all(&dest_dir).await?;
 
     let asset = format!("audio-{AUDIOCPP_RELEASE_VERSION}-bin-ubuntu-x64-vulkan.tar.gz");
@@ -110,11 +165,16 @@ pub async fn download_audiocpp_binary() -> Result<()> {
     let response = reqwest::get(&url).await?.error_for_status()?;
     let bytes = response.bytes().await?;
 
-    tokio::task::spawn_blocking(move || extract_audiocpp_archive(&bytes, &dest_dir))
+    let extract_dir = dest_dir.clone();
+    tokio::task::spawn_blocking(move || extract_audiocpp_archive(&bytes, &extract_dir))
         .await
         .context("extract_audiocpp_archive task join")??;
+    // Last, so an interrupted install never claims to be current.
+    tokio::fs::write(dest_dir.join(AUDIOCPP_VERSION_MARKER), AUDIOCPP_RELEASE_VERSION)
+        .await
+        .context("write audio.cpp version marker")?;
 
-    info!("audio.cpp runtime installed to {}", dest_exe.display());
+    info!("audio.cpp {AUDIOCPP_RELEASE_VERSION} runtime installed to {}", dest_dir.display());
     Ok(())
 }
 
@@ -165,6 +225,13 @@ fn extract_audiocpp_archive(bytes: &[u8], dest_dir: &Path) -> Result<()> {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // Unlink before writing: on an upgrade, an older `audiocpp_server`
+        // may still be running from this file (another engine's resident
+        // session), and overwriting a running executable in place fails with
+        // ETXTBSY. The running process keeps its unlinked copy until it exits.
+        if entry.header().entry_type().is_file() {
+            let _ = std::fs::remove_file(&dest);
+        }
         entry.unpack(&dest)?;
     }
 
@@ -209,18 +276,33 @@ fn hf_reference_parts(reference: &str) -> Result<(String, String, String, PathBu
 /// path either way. Async and `reqwest`-based, replacing the removed
 /// `pocket_tts::weights::download_if_necessary` (which relied on `hf-hub`).
 pub async fn resolve_hf_reference(reference: &str, hf_token: Option<&str>) -> Result<PathBuf> {
-    let Ok((repo, url, _filename, dest)) = hf_reference_parts(reference) else {
+    let Ok((_repo, _url, _filename, dest)) = hf_reference_parts(reference) else {
         return Ok(PathBuf::from(reference));
     };
     if dest.exists() {
         return Ok(dest);
     }
+    download_hf_file(reference, &dest, hf_token).await?;
+    Ok(dest)
+}
+
+/// Downloads an `hf://owner/repo/path[@revision]` reference straight to
+/// `dest` — for model GGUFs, which go into their engine's own model
+/// directory rather than through the clip cache (a copy from the cache would
+/// leave the same multi-gigabyte file on disk twice).
+pub(crate) async fn download_hf_file(reference: &str, dest: &Path, hf_token: Option<&str>) -> Result<()> {
+    let (repo, url, _filename, _cache_dest) = hf_reference_parts(reference)?;
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
 
+    // No overall timeout: these are multi-gigabyte GGUFs (Breeze-TTS-2's is
+    // 5.1 GB, Kitten TTS 2's 3.3 GB), so any fixed total would fail on a slow
+    // but healthy connection. A stalled connection is caught by the read
+    // timeout instead.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(Duration::from_secs(120))
         .build()
         .context("build reqwest client")?;
     let mut request = client.get(&url);
@@ -236,9 +318,63 @@ pub async fn resolve_hf_reference(reference: &str, hf_token: Option<&str>) -> Re
     if !status.is_success() {
         anyhow::bail!("fetch {url}: HTTP {status}");
     }
-    let bytes = resp.bytes().await.with_context(|| format!("read {url}"))?;
-    tokio::fs::write(&dest, &bytes).await.with_context(|| format!("write {}", dest.display()))?;
-    Ok(dest)
+    stream_to_file(resp, dest).await.with_context(|| format!("download {url}"))
+}
+
+/// The in-progress name for a download headed to `dest`. It never ends in
+/// `.gguf`, so audio.cpp (which loads every `*.gguf` in a model directory)
+/// and VoxCtrl's ready checks both ignore a half-finished file.
+fn partial_path(dest: &Path) -> PathBuf {
+    let mut name = dest.file_name().unwrap_or_default().to_os_string();
+    name.push(".part");
+    dest.with_file_name(name)
+}
+
+/// Writes a response body to `dest` chunk by chunk — never holding the whole
+/// file in memory — via a `.part` file that is renamed into place only once
+/// the body is complete.
+async fn stream_to_file(mut resp: reqwest::Response, dest: &Path) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    let part = partial_path(dest);
+    let total = resp.content_length();
+    let result: Result<()> = async {
+        let mut file = tokio::fs::File::create(&part)
+            .await
+            .with_context(|| format!("create {}", part.display()))?;
+        let mut written: u64 = 0;
+        let mut next_log: u64 = 0;
+        while let Some(chunk) = resp.chunk().await.context("read response body")? {
+            file.write_all(&chunk).await.with_context(|| format!("write {}", part.display()))?;
+            written += chunk.len() as u64;
+            if written >= next_log {
+                match total {
+                    Some(t) if t > 0 => info!("Downloaded {} / {} MB", written >> 20, t >> 20),
+                    _ => info!("Downloaded {} MB", written >> 20),
+                }
+                next_log = written + (256 << 20);
+            }
+        }
+        if let Some(t) = total {
+            if written != t {
+                anyhow::bail!("download ended early: got {written} of {t} bytes");
+            }
+        }
+        file.flush().await?;
+        file.sync_all().await?;
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => tokio::fs::rename(&part, dest)
+            .await
+            .with_context(|| format!("move {} into place", part.display())),
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&part).await;
+            Err(e)
+        }
+    }
 }
 
 /// Blocking counterpart of [`resolve_hf_reference`], for the synchronous TTS
@@ -292,10 +428,14 @@ pub enum SpeakerRef<'a> {
 pub struct SpeakRequest<'a> {
     pub text: &'a str,
     pub speaker: Option<SpeakerRef<'a>>,
-    /// Reference transcript for a `voice_ref` clip. `breeze_tts` requires
-    /// this whenever cloning; the other families treat it as an optional
-    /// cloning-quality boost.
+    /// Reference transcript for a `voice_ref` clip. `breeze_tts` and
+    /// `kitten_tts2` require this whenever cloning; the other families treat
+    /// it as an optional cloning-quality boost.
     pub reference_text: Option<&'a str>,
+    /// Family-specific request options, sent as the body's `options` object
+    /// (e.g. `kitten_tts2`'s `preset`). audio.cpp rejects option names a
+    /// family's model spec doesn't declare, so only send ones it does.
+    pub options: &'a [(&'a str, &'a str)],
 }
 
 /// A running `audiocpp_server` process bound to one model (family + model
@@ -438,10 +578,6 @@ impl AudioCppServer {
 
     fn speak(&self, req: &SpeakRequest) -> Result<Vec<u8>> {
         #[derive(Serialize)]
-        struct RequestOptions<'a> {
-            instruction: &'a str,
-        }
-        #[derive(Serialize)]
         struct Body<'a> {
             model: &'static str,
             input: &'a str,
@@ -452,9 +588,9 @@ impl AudioCppServer {
             #[serde(skip_serializing_if = "Option::is_none")]
             instruct: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
-            request_options: Option<RequestOptions<'a>>,
-            #[serde(skip_serializing_if = "Option::is_none")]
             reference_text: Option<&'a str>,
+            #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+            options: std::collections::BTreeMap<&'a str, &'a str>,
         }
 
         let mut body = Body {
@@ -463,25 +599,17 @@ impl AudioCppServer {
             voice: None,
             voice_ref: None,
             instruct: None,
-            request_options: None,
             reference_text: req.reference_text,
+            options: req.options.iter().copied().collect(),
         };
         match req.speaker {
             Some(SpeakerRef::Clone(clip)) => body.voice_ref = Some(clip),
             Some(SpeakerRef::VoiceId(id)) => body.voice = Some(id),
-            Some(SpeakerRef::Design(prompt)) => {
-                // Confirmed against a running server: `voxcpm2` honors the
-                // top-level `instruct` field structurally (though — separate,
-                // upstream issue — it doesn't yet audibly act on it), while
-                // `breeze_tts` only reads its own `instruction` request
-                // option (mirrors the equivalent audiocpp_cli quirk: passing
-                // `--instruct` to breeze_tts fails outright there).
-                if self.family == FAMILY_BREEZE_TTS {
-                    body.request_options = Some(RequestOptions { instruction: prompt });
-                } else {
-                    body.instruct = Some(prompt);
-                }
-            }
+            // Every family that takes a Voice Design prompt (`voxcpm2`,
+            // `breeze_tts`) reads it from the top-level `instruct` field on
+            // audio.cpp v0.9.x. (Before, Breeze's prompt went in a
+            // `request_options` object that the server never read.)
+            Some(SpeakerRef::Design(prompt)) => body.instruct = Some(prompt),
             None => {}
         }
 
@@ -591,7 +719,34 @@ mod tests {
     }
 
     #[test]
-    fn test_audiocpp_binary_returns_option_without_panicking() {
-        let _ = audiocpp_binary();
+    fn test_runtime_missing_without_managed_install_or_path() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Missing);
+        assert_eq!(classify_runtime(dir.path(), true), AudioCppRuntime::System);
+    }
+
+    #[test]
+    fn test_runtime_without_marker_is_outdated() {
+        // Every install made before the marker existed looks like this.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("audiocpp_server"), b"").unwrap();
+        assert_eq!(classify_runtime(dir.path(), true), AudioCppRuntime::Outdated);
+    }
+
+    #[test]
+    fn test_runtime_marker_must_match_release() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("audiocpp_server"), b"").unwrap();
+        std::fs::write(dir.path().join(AUDIOCPP_VERSION_MARKER), "v0.8.0\n").unwrap();
+        assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Outdated);
+        std::fs::write(dir.path().join(AUDIOCPP_VERSION_MARKER), format!("{AUDIOCPP_RELEASE_VERSION}\n")).unwrap();
+        assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Current);
+    }
+
+    #[test]
+    fn test_partial_path_never_looks_like_a_gguf() {
+        let p = partial_path(Path::new("/m/kitten-tts2-20261021-q8_0.gguf"));
+        assert_eq!(p, Path::new("/m/kitten-tts2-20261021-q8_0.gguf.part"));
+        assert_ne!(p.extension().and_then(|e| e.to_str()), Some("gguf"));
     }
 }

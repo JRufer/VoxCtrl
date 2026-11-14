@@ -225,7 +225,7 @@ S1-mini runs **after voice command resolution** to ensure that trigger keywords 
 ### Configuration & Controls
 - **Global Toggle:** In **Settings → Post-Processing**, check **Enable S1-mini dictation cleanup**. If model files are not yet present, VoxCtrl will automatically download `s1-mini-q4_k_m.gguf` and `tokenizer.json` into `~/.local/share/voxctrl/models/s1-mini/` (~480 MB total download) and display reactive progress. Enabling it greys out the Basic Text Cleanup section in the same tab, since S1-mini's normalization covers the same ground.
 - **Per-Keybind Override:** In **Settings → Hotkeys**, open any keybind to enable or disable S1-mini dictation cleanup specifically for that shortcut. If unset, keybinds inherit the global engine setting. Active keybinds show a distinctive cyan `S1-mini` badge in the UI.
-- **Run it on a server instead:** With a Remote Speech Engine that is a `voxctrl-server` (0.9.4 or newer, with cleanup enabled), tick **Settings → Engine → Remote Speech Engine Settings → Run dictation cleanup on the server** (`engine.remote_openai.cleanup_on_server`). Each transcript is then sent to the server for cleanup and S1-mini is neither downloaded nor loaded on this computer. The toggles and styles here still decide whether and how a dictation is cleaned. If the server can't clean a dictation (unreachable, cleanup turned off there, or too slow), the text is typed as it was said. See [Dictation cleanup on the server](./server.md#dictation-cleanup-on-the-server).
+- **Run it on a server instead:** With a Remote Speech Engine that is a `voxctrl-server` (0.9.5 or newer, with cleanup enabled), tick **Settings → Engine → Remote Speech Engine Settings → Run dictation cleanup on the server** (`engine.remote_openai.cleanup_on_server`). Each transcript is then sent to the server for cleanup and S1-mini is neither downloaded nor loaded on this computer. The toggles and styles here still decide whether and how a dictation is cleaned. If the server can't clean a dictation (unreachable, cleanup turned off there, or too slow), the text is typed as it was said. See [Dictation cleanup on the server](./server.md#dictation-cleanup-on-the-server).
 - **Styling:** Configured via `engine.s1_mini.styling` in `config.json` (defaults to `"semi-formal"`).
 - **Styling per app:** In **Settings → Post-Processing → Styling per app**, add rules such as *Slack → Casual* or *Thunderbird → Formal* (`engine.s1_mini.app_styles`). VoxCtrl notes which app has focus when dictation starts and uses the first matching rule's styling; other apps get the global styling. **Detect app** gives you three seconds to click into the app you want, then adds a rule with the name VoxCtrl sees for it. Detection uses the same focused-window lookup as pasting into terminals: X11, Hyprland (`hyprctl`), Sway (`swaymsg`), KDE (needs `kdotool`) and Windows (program name); GNOME can't report the focused app, so its dictations use the global styling.
 
@@ -516,7 +516,7 @@ unreachable.
 - **Files VoxCtrl did not download.** In a Whisper model folder or Piper voice
   folder you chose yourself, only files with the exact names VoxCtrl downloads
   are listed; your own converted models and voices are left alone. A
-  Breeze-TTS-2, VoxCPM2 or Inflect-Micro model you moved to a folder of your
+  Breeze-TTS-2, VoxCPM2, Kitten TTS 2 or Inflect-Micro model you moved to a folder of your
   own is not listed at all.
 - **Symbolic links.** A link is never followed: what it points to is neither
   counted nor deleted.

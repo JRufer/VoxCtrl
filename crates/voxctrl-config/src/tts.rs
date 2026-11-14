@@ -14,12 +14,14 @@ pub enum TtsEngine {
     BreezeTts2,
     #[serde(rename = "vox_cpm_2", alias = "voxcpm2", alias = "vox_cpm2")]
     VoxCpm2,
+    #[serde(rename = "kitten_tts_2", alias = "kitten_tts2", alias = "kittentts2")]
+    KittenTts2,
 }
 
 /// How the TTS engine manages the memory of model-backed engines (currently
-/// Inflect-Micro-v2; Piper, eSpeak, and the audio.cpp-backed engines
-/// (Pocket-TTS, Breeze-TTS-2, VoxCPM2) all shell out to a subprocess per
-/// utterance and hold nothing in-process).
+/// Inflect-Micro-v2, plus the resident `audiocpp_server` process behind the
+/// audio.cpp-backed engines: Pocket-TTS, Breeze-TTS-2, VoxCPM2 and Kitten TTS 2.
+/// Piper and eSpeak shell out per utterance and hold nothing).
 ///
 /// * `AlwaysLoaded` — once loaded, the model stays resident for the lifetime of
 ///   the TTS worker. Fastest, but the weights sit in RAM even when unused.
@@ -209,6 +211,74 @@ impl Default for VoxCpm2Config {
     }
 }
 
+/// Kitten TTS 2 (KittenML / Stellon Labs) — a 1.7B-parameter multilingual
+/// speech language model, run through audio.cpp's `kitten_tts2` family. It
+/// has built-in preset voices (named in the GGUF) and clones from a 1–30 s
+/// reference clip plus its exact transcript. Weights are under the Stellon
+/// Labs Community License, not VoxCtrl's MIT license.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KittenTts2Config {
+    /// Voice selection mode: "preset" (a voice built into the model) or
+    /// "clone" (a reference clip from the shared voice folder).
+    #[serde(default = "default_kitten_tts_2_voice_mode")]
+    pub voice_mode: String,
+    /// Built-in voice name, e.g. "Bruno", "Luna", "German". Case-sensitive —
+    /// it must match a name in the downloaded model package.
+    #[serde(default = "default_kitten_tts_2_voice")]
+    pub voice: String,
+    /// Clip ID from the shared voice folder, for "clone" mode. Needs a
+    /// matching `<id>.txt` transcript next to `<id>.wav`.
+    #[serde(default)]
+    pub cloned_voice: String,
+    /// Shared voice directory for custom clips (empty = platform default
+    /// `~/.local/share/voxctrl/cloned-tts-voices/`).
+    #[serde(default)]
+    pub voice_dir: String,
+    /// Sampling preset: "stable" (default, steadier delivery) or "expressive"
+    /// (more varied, follows emotion tags like `[excited]` more readily).
+    #[serde(default = "default_kitten_tts_2_preset")]
+    pub preset: String,
+    /// Directory holding the GGUF. Empty = platform default
+    /// (`~/.local/share/voxctrl/models/kitten-tts-2/`).
+    #[serde(default)]
+    pub model_dir: String,
+    /// Pre-warm model on startup so the first synthesis is instant
+    #[serde(default)]
+    pub prewarm: bool,
+    /// Enable Vulkan GPU acceleration (via audio.cpp's `--backend vulkan`).
+    /// audio.cpp has validated this family on CPU and CUDA only, so Vulkan is
+    /// opt-in and still experimental here.
+    #[serde(default)]
+    pub gpu: bool,
+}
+
+fn default_kitten_tts_2_voice_mode() -> String {
+    "preset".into()
+}
+
+fn default_kitten_tts_2_voice() -> String {
+    "Bruno".into()
+}
+
+fn default_kitten_tts_2_preset() -> String {
+    "stable".into()
+}
+
+impl Default for KittenTts2Config {
+    fn default() -> Self {
+        Self {
+            voice_mode: default_kitten_tts_2_voice_mode(),
+            voice: default_kitten_tts_2_voice(),
+            cloned_voice: String::new(),
+            voice_dir: String::new(),
+            preset: default_kitten_tts_2_preset(),
+            model_dir: String::new(),
+            prewarm: false,
+            gpu: false,
+        }
+    }
+}
+
 fn default_inflect_micro_seed() -> u64 {
     0
 }
@@ -291,6 +361,8 @@ pub struct TtsConfig {
     #[serde(default)]
     pub vox_cpm_2: VoxCpm2Config,
     #[serde(default)]
+    pub kitten_tts_2: KittenTts2Config,
+    #[serde(default)]
     pub snippets: std::collections::HashMap<String, String>,
 }
 
@@ -316,6 +388,7 @@ impl Default for TtsConfig {
             inflect_micro: InflectMicroConfig::default(),
             breeze_tts_2: BreezeTts2Config::default(),
             vox_cpm_2: VoxCpm2Config::default(),
+            kitten_tts_2: KittenTts2Config::default(),
             snippets: {
                 let mut map = std::collections::HashMap::new();
                 map.insert("VoxCtrl".into(), "Voks Con-trol".into());
