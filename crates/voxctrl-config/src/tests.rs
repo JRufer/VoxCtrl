@@ -533,6 +533,32 @@ fn test_breeze_tts_2_serde() {
 }
 
 #[test]
+fn test_kitten_tts_2_serde() {
+    let json = serde_json::to_string(&TtsEngine::KittenTts2).unwrap();
+    assert_eq!(json, r#""kitten_tts_2""#);
+    for alias in [r#""kitten_tts_2""#, r#""kitten_tts2""#, r#""kittentts2""#] {
+        let parsed: TtsEngine = serde_json::from_str(alias).unwrap();
+        assert_eq!(parsed, TtsEngine::KittenTts2, "{alias}");
+    }
+}
+
+/// A config written before Kitten TTS 2 existed loads with its defaults.
+#[test]
+fn kitten_tts_2_section_defaults_when_absent() {
+    let data: TtsConfig = serde_json::from_str(
+        r#"{"enabled": true, "engine": "piper", "voice": "en-us-lessac-medium",
+            "stop_key": ["KEY_ESC"], "response_overlay": true}"#,
+    )
+    .unwrap();
+    let k = &data.kitten_tts_2;
+    assert_eq!(k.voice_mode, "preset");
+    assert_eq!(k.voice, "Bruno");
+    assert_eq!(k.preset, "stable");
+    assert!(k.cloned_voice.is_empty() && k.model_dir.is_empty());
+    assert!(!k.gpu && !k.prewarm);
+}
+
+#[test]
 fn test_vox_cpm_2_serde() {
     let engine = TtsEngine::VoxCpm2;
     let json = serde_json::to_string(&engine).unwrap();

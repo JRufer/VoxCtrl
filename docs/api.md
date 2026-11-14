@@ -373,6 +373,15 @@ const signature = await invoke<unknown>('inflect_micro_inspect', { modelDir: '' 
 
 ---
 
+#### `check_kitten_tts_2_ready(modelDir: string) → boolean`
+Returns whether the Kitten TTS 2 GGUF exists locally and an audio.cpp runtime that can run it is installed (VoxCtrl's own at v0.9.4+, or one on `PATH`).
+
+#### `download_kitten_tts_2(modelDir: string, hfToken: string | null) → void`
+Downloads the Kitten TTS 2 GGUF (3.3 GB) from the ungated `audio-cpp/audio.cpp-gguf` mirror, installing or upgrading the audio.cpp runtime first. `hfToken` is optional.
+
+#### `list_kitten_tts_2_voices() → string[]`
+The built-in preset voice names Settings offers for Kitten TTS 2.
+
 #### `check_breeze_tts_2_ready(modelDir: string) → boolean`
 Returns whether Breeze-TTS-2 model weights and tokenizer exist locally.
 
@@ -904,6 +913,17 @@ interface BreezeTts2Config {
   gpu: boolean;             // Vulkan, via the audio.cpp subprocess
 }
 
+interface KittenTts2Config {
+  voice_mode: "preset" | "clone";
+  voice: string;            // built-in voice name, e.g. "Bruno"
+  cloned_voice: string;     // clip id in voice_dir; needs <id>.txt
+  voice_dir: string;
+  preset: "stable" | "expressive";
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
 interface VoxCpm2Config {
   voice_mode: "prompt" | "clone";
   speaker_prompt: string;
@@ -917,18 +937,19 @@ interface VoxCpm2Config {
 
 interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2";
+  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2" | "kitten_tts_2";
   voice: string;
   voice_dir: string;
   stop_key: string[];       // singular field name, plural value
   response_overlay: boolean;
   speed: number;            // not used by pocket_tts
-  gpu: boolean;             // applies to piper; Breeze and VoxCPM2 have their own flag
+  gpu: boolean;             // applies to piper; Breeze, VoxCPM2 and Kitten TTS 2 have their own flag
   hf_token: string | null;  // one token for every gated model download
   pocket_tts: PocketTtsConfig;
   inflect_micro: InflectMicroConfig;
   breeze_tts_2: BreezeTts2Config;
   vox_cpm_2: VoxCpm2Config;
+  kitten_tts_2: KittenTts2Config;
   memory_mode: "always_loaded" | "on_demand"; // "on_demand" unloads model after 15 min idle
   idle_unload_secs: number;  // idle seconds before unloading (default 900)
   snippets: Record<string, string>;   // pronunciation guide, speech only

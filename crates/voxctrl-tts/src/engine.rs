@@ -16,6 +16,7 @@ use voxctrl_text::{correct_custom_vocabulary, expand_snippets};
 use crate::audiocpp::AudioCppSession;
 use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2};
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
+use crate::kitten::{ensure_kitten_tts_2_loaded, speak_kitten_tts_2};
 use crate::piper::{get_voice_path, piper_binary, sample_rate_for_voice_at};
 use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
 use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2};
@@ -133,6 +134,7 @@ fn prewarm_enabled(config: &TtsConfig) -> bool {
         TtsEngine::InflectMicro => config.inflect_micro.prewarm,
         TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
         TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
+        TtsEngine::KittenTts2 => config.kitten_tts_2.prewarm,
         _ => false,
     }
 }
@@ -153,6 +155,9 @@ fn load_selected_engine(
             Some(ensure_breeze_tts_2_loaded(config, audiocpp_session))
         }
         TtsEngine::VoxCpm2 if audiocpp_session.is_none() => Some(ensure_vox_cpm_2_loaded(config, audiocpp_session)),
+        TtsEngine::KittenTts2 if audiocpp_session.is_none() => {
+            Some(ensure_kitten_tts_2_loaded(config, audiocpp_session))
+        }
         _ => None,
     }
 }
@@ -417,6 +422,15 @@ impl TtsEngineWorker {
                             generation,
                         ),
                         TtsEngine::VoxCpm2 => speak_vox_cpm_2(
+                            &current_config,
+                            &utterance,
+                            &mut audiocpp_session,
+                            &self.on_playback_start,
+                            &sink,
+                            &self.generation,
+                            generation,
+                        ),
+                        TtsEngine::KittenTts2 => speak_kitten_tts_2(
                             &current_config,
                             &utterance,
                             &mut audiocpp_session,

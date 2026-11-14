@@ -109,6 +109,12 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.vox_cpm_2.model_dir", Path),
     ("tts.vox_cpm_2.prewarm", Safe),
     ("tts.vox_cpm_2.gpu", Safe),
+    ("tts.kitten_tts_2.voice_mode", Safe),
+    ("tts.kitten_tts_2.voice", Safe),
+    ("tts.kitten_tts_2.cloned_voice", Safe),
+    ("tts.kitten_tts_2.voice_dir", Path),
+    ("tts.kitten_tts_2.preset", Safe),
+    ("tts.kitten_tts_2.model_dir", Path),
     ("updates.skipped_version", Safe),
 ];
 

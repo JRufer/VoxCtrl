@@ -122,6 +122,10 @@
         <a class="credit-name-link" href="https://huggingface.co/BreezeBlue/Breeze-TTS-2" target="_blank">Breeze-TTS-2 (BreezeBlue)</a>
         <span class="credit-license non-commercial">Non-Commercial License</span>
       </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/KittenML/kitten-tts-2" target="_blank">Kitten TTS 2 (KittenML) — Powered by Stellon Labs</a>
+        <span class="credit-license non-commercial">Stellon Labs Community License</span>
+      </div>
     </div>
 
     <p class="credits-hint">Dictation cleanup</p>

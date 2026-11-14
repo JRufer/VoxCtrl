@@ -102,7 +102,8 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### TTS Tab
 - Enable/disable toggle
-- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2)
+- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2)
+- Kitten TTS 2: voice source (built-in voice or a cloned clip), a built-in voice picker that also accepts a typed name, the Stable/Expressive delivery preset, and the Stellon Labs license notice with its "Powered by Stellon Labs" attribution
 - Voice design speaker prompt inputs for Breeze-TTS-2 and VoxCPM2
 - Reference voice selector with download status per voice and support for custom `.wav` voice clips
 - Model Memory mode selector (**Always Loaded** vs **On Demand** with idle unload minutes slider)
@@ -220,7 +221,7 @@ config as it is made:
 | Hotkey | `bindings.toml` | Only gestures the running shortcut backend can deliver are offered, and the combination is validated by the same Rust rules the portal registration uses. Blocked until the desktop has accepted the shortcut, because the next step is a live test |
 | Overlay | `ui.show_overlay`, `ui.overlay_style`, `ui.overlay_position` | Each style previews a recording of the real overlay, bundled at `src/assets/overlays/<style id>.webm`, falling back to a CSS animation |
 | Test | — | A real dictation: the transcript is injected into the focused window, and the readout follows the pipeline's own recording and processing state |
-| Voice | `tts.enabled`, `tts.engine`, `tts.hf_token` | Each engine downloads from its own card (Breeze-TTS-2, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, Piper, eSpeak-NG); the play button unlocks once its assets are on disk. Pocket-TTS and Breeze-TTS-2 are gated downloads, so the step asks for a HuggingFace access token and keeps those two cards locked until one is entered. The token is saved to `tts.hf_token`. An exported `HF_TOKEN` is shown instead, read-only |
+| Voice | `tts.enabled`, `tts.engine`, `tts.hf_token` | Each engine downloads from its own card (Kitten TTS 2, Breeze-TTS-2, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, Piper, eSpeak-NG); the play button unlocks once its assets are on disk. Pocket-TTS and Breeze-TTS-2 are gated downloads, so the step asks for a HuggingFace access token and keeps those two cards locked until one is entered. The token is saved to `tts.hf_token`. An exported `HF_TOKEN` is shown instead, read-only |
 | Done | `ui.setup_completed` | Lists anything that failed, with the raw backend error and a copyable diagnostics report |
 
 The first hotkey is bound to a `command` delivery target named "Command",

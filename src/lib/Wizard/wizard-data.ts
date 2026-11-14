@@ -181,6 +181,7 @@ export const OVERLAY_POSITIONS: { id: string; label: string; glyph: string }[] =
 export type TtsEngineId =
   | "vox_cpm_2"
   | "breeze_tts_2"
+  | "kitten_tts_2"
   | "pocket_tts"
   | "piper"
   | "inflect_micro"
@@ -211,6 +212,12 @@ export interface TtsEngineInfo {
    * not on *use*).
    */
   nonCommercial?: boolean;
+  /**
+   * A licence notice in the model's own terms, shown before download when the
+   * weights carry conditions that are neither VoxCtrl's MIT license nor a plain
+   * non-commercial one.
+   */
+  licenceNotice?: string;
 }
 
 export const TTS_ENGINES: TtsEngineInfo[] = [
@@ -233,6 +240,20 @@ export const TTS_ENGINES: TtsEngineInfo[] = [
     note: "Most natural prosody. Runs via audio.cpp, best on a Vulkan GPU or fast CPU.",
     nonCommercial: true,
     licenceUrl: "huggingface.co/BreezeBlue/Breeze-TTS-2",
+  },
+  {
+    id: "kitten_tts_2",
+    name: "Kitten TTS 2",
+    kind: "neural · multilingual · 1.7B",
+    quality: 0.94,
+    speed: 0.3,
+    mb: 3340,
+    note: "Built-in voices in 10 languages, plus cloning from a clip and its transcript. Runs via audio.cpp; needs several GB of RAM.",
+    licenceUrl: "huggingface.co/KittenML/kitten-tts-2",
+    licenceNotice:
+      "Kitten TTS 2 weights are under the Stellon Labs Community License: free for personal, research " +
+      "and non-commercial use; commercial use requires registering with Stellon Labs and ends above " +
+      "USD $1M revenue or funding; its audio may not be used to train other models. Powered by Stellon Labs.",
   },
   {
     id: "pocket_tts",

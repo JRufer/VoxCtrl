@@ -205,9 +205,7 @@ pub fn is_pocket_tts_ready(voice: &str, voice_dir: &str) -> bool {
 /// audio.cpp GGUF mirror is not gated, so `hf_token` is accepted for parity
 /// with the other engines but not required.
 pub async fn download_pocket_tts_assets(voice: &str, voice_dir: &str, hf_token: Option<String>) -> Result<()> {
-    if audiocpp::audiocpp_binary().is_none() {
-        audiocpp::download_audiocpp_binary().await.context("download audio.cpp runtime")?;
-    }
+    audiocpp::ensure_audiocpp_runtime().await?;
 
     let model_dir = pocket_tts_model_dir();
     tokio::fs::create_dir_all(&model_dir)
@@ -217,11 +215,13 @@ pub async fn download_pocket_tts_assets(voice: &str, voice_dir: &str, hf_token: 
     let model_dest = model_dir.join(POCKET_TTS_MODEL_FILENAME);
     if !model_dest.exists() {
         info!("Downloading Pocket-TTS model ({POCKET_TTS_GGUF_FILE})...");
-        let downloaded =
-            resolve_hf_reference(&format!("hf://{POCKET_TTS_GGUF_REPO}/{POCKET_TTS_GGUF_FILE}"), hf_token.as_deref())
-                .await
-                .context("download pocket-tts model")?;
-        tokio::fs::copy(&downloaded, &model_dest).await.context("place pocket-tts model")?;
+        audiocpp::download_hf_file(
+            &format!("hf://{POCKET_TTS_GGUF_REPO}/{POCKET_TTS_GGUF_FILE}"),
+            &model_dest,
+            hf_token.as_deref(),
+        )
+        .await
+        .context("download pocket-tts model")?;
     }
 
     match resolve_pocket_tts_voice(voice, voice_dir) {
@@ -280,6 +280,7 @@ pub(crate) fn ensure_pocket_tts_loaded(
         text: " ",
         speaker: Some(speaker_ref_for_voice(&resolved)),
         reference_text: None,
+        options: &[],
     })?;
     Ok(())
 }
@@ -315,6 +316,7 @@ pub(crate) fn speak_pocket_tts(
         text: &u.text,
         speaker: Some(speaker_ref_for_voice(&resolved)),
         reference_text: None,
+        options: &[],
     })?;
 
     if is_prewarm {

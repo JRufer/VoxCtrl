@@ -16,7 +16,7 @@ use tracing::info;
 use voxctrl_config::TtsConfig;
 
 use crate::audiocpp::{
-    self, resolve_hf_reference, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
+    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
     SpeakRequest, SpeakerRef,
 };
 use crate::engine::{PlaybackCallback, Utterance};
@@ -46,9 +46,7 @@ pub fn is_vox_cpm_2_ready(model_dir: &str) -> bool {
 /// Downloads the VoxCPM2 GGUF model into `model_dir`. Ungated, so `hf_token`
 /// is accepted for parity with the other engines but not required.
 pub async fn download_vox_cpm_2_assets(model_dir: &str, hf_token: Option<String>) -> Result<()> {
-    if audiocpp::audiocpp_binary().is_none() {
-        audiocpp::download_audiocpp_binary().await.context("download audio.cpp runtime")?;
-    }
+    audiocpp::ensure_audiocpp_runtime().await?;
 
     let dir = resolve_vox_cpm_2_dir(model_dir);
     tokio::fs::create_dir_all(&dir)
@@ -58,13 +56,13 @@ pub async fn download_vox_cpm_2_assets(model_dir: &str, hf_token: Option<String>
     let dest = dir.join(VOX_CPM_2_MODEL_FILENAME);
     if !dest.exists() {
         info!("Downloading VoxCPM2 model ({VOX_CPM_2_GGUF_FILE})...");
-        let downloaded = resolve_hf_reference(
+        audiocpp::download_hf_file(
             &format!("hf://{VOX_CPM_2_GGUF_REPO}/{VOX_CPM_2_GGUF_FILE}"),
+            &dest,
             hf_token.as_deref(),
         )
         .await
         .context("download voxcpm2 model")?;
-        tokio::fs::copy(&downloaded, &dest).await.context("place voxcpm2 model")?;
     }
 
     info!("VoxCPM2 assets ready in {}", dir.display());
@@ -154,6 +152,7 @@ pub(crate) fn ensure_vox_cpm_2_loaded(
         text: " ",
         speaker: Some(speaker_ref(cfg, &clone_ref)),
         reference_text,
+        options: &[],
     })?;
     Ok(())
 }
@@ -192,6 +191,7 @@ pub(crate) fn speak_vox_cpm_2(
         text: &u.text,
         speaker: Some(speaker_ref(cfg, &clone_ref)),
         reference_text,
+        options: &[],
     })?;
 
     if is_prewarm {
