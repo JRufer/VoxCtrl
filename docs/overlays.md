@@ -253,7 +253,7 @@ is about to fail:
 }
 ```
 
-The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.1,
+The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.2,
 which never set the property.
 
 **Built-in styles** each show a small OFFLINE mark in their own status line
