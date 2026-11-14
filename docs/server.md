@@ -52,8 +52,6 @@ to load no models there at all.
 Not in this release, and planned for later ones:
 
 - cleanup (LLM) and text-to-speech running on the server;
-- a local fallback model for when the server can't be reached, and an offline
-  indicator;
 - sending custom voices from the client to the server;
 - pairing with a code, and encrypted connections built in;
 - live text in overlays while using a server (see
@@ -374,7 +372,8 @@ The same settings in `~/.config/voxctrl/config.json`:
       "api_key": "vx_…",
       "model": "parakeet/tdt-0.6b-v3",
       "language": "",
-      "timeout_secs": 30
+      "timeout_secs": 30,
+      "fallback": "parakeet"
     }
   }
 }
@@ -385,11 +384,47 @@ The same settings in `~/.config/voxctrl/config.json`:
 - **No live text.** Overlays that show words as you speak need a local engine;
   with a remote engine the text appears when you finish. This is an existing
   limit of the Remote Speech Engine, not something the server adds.
-- **No fallback.** If the server is unreachable, dictation fails with an error
-  until it is back or you switch the Backend to a local engine.
+- **A server outage needs a fallback to ride through.** Without one, dictation
+  fails with an error until the server is back. See the next section.
 - **Vocabulary and snippets still work.** The client sends your custom
   vocabulary as a hint with each request and applies snippets, punctuation and
   cleanup to the result itself, exactly as it does with a local engine.
+
+### When the server can't be reached
+
+Set a **Fallback engine** in the same settings group and the app keeps working
+through an outage:
+
+1. In **Settings → Engine → Remote Speech Engine Settings**, choose a
+   **Fallback engine**: Whisper.cpp, Moonshine or Parakeet. Each is listed with
+   the model it would run, which is the one chosen in that engine's own
+   settings. If that model isn't downloaded, a warning with a **Download**
+   button appears.
+2. Save.
+
+From then on:
+
+- The fallback model is **not loaded** while the server is reachable. It costs
+  disk space and nothing else.
+- If the server can't be reached, the dictation you just made is transcribed by
+  the fallback instead. Nothing you said is lost; the first one takes a little
+  longer while the model loads.
+- The tray icon shows an **amber badge with a slash**, its tooltip gives the
+  reason, and one notification tells you the fallback is in use. **Settings →
+  Engine** shows the same status.
+- The app checks the server every 15 seconds. When it answers, the badge
+  clears, the next dictation goes back to the server, and the fallback model is
+  unloaded.
+
+With **Fallback engine** set to **None**, the badge and notification still
+appear, and each dictation fails with an error until the server is back.
+
+To change which model the fallback runs: switch **Backend** to that engine,
+pick the model, switch **Backend** back to **Remote Speech Engine (OpenAI
+API)**, and save.
+
+The fallback needs a client that has it (VoxCtrl 0.9.0 or newer). Details are
+in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unreachable).
 
 ---
 
@@ -639,6 +674,14 @@ Errors use OpenAI's envelope, with a message written to be shown to a person:
 ---
 
 ## Troubleshooting
+
+### The tray icon has an amber badge
+
+The app can't reach the server. Hover the icon for the reason, or open
+**Settings → Engine**. "Could not connect to the server" is the network or the
+server being down: work through the next entry. "The server rejected the API
+key" is the entry after it. Dictation keeps working in the meantime if a
+[fallback engine](#when-the-server-cant-be-reached) is set.
 
 ### Test Connection says "Connection failed"
 
