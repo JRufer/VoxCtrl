@@ -253,7 +253,7 @@ is about to fail:
 }
 ```
 
-The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.0,
+The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.1,
 which never set the property. The built-in styles do not draw an offline mark
 yet; the tray icon and its tooltip carry it.
 

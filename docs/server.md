@@ -379,7 +379,7 @@ The same settings in `~/.config/voxctrl/config.json`:
 
 ### Limitations on the client
 
-- **Live text needs VoxCtrl 0.9.0 or newer on the client.** From 0.9.0 the
+- **Live text needs VoxCtrl 0.9.1 or newer on the client.** From 0.9.1 the
   overlay shows words as you speak with a remote engine too: while you talk,
   the app sends the server short clips of what you have said so far, a few
   times a second, alongside the dictation itself. Older clients show the text
@@ -423,7 +423,8 @@ To change which model the fallback runs: switch **Backend** to that engine,
 pick the model, switch **Backend** back to **Remote Speech Engine (OpenAI
 API)**, and save.
 
-The fallback needs a client that has it (VoxCtrl 0.9.0 or newer). Details are
+The fallback needs a client that has it (VoxCtrl 0.9.1 or newer; 0.9.0 gained
+it only after its first publication, so an early 0.9.0 does not). Details are
 in [Speech Recognition](./speech-recognition.md#fallback-when-the-server-is-unreachable).
 
 ---
