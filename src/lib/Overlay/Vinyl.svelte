@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -78,6 +79,8 @@
       {/if}
     </span>
     <span class="spacer"></span>
+    <!-- A darker amber than the other styles: this one sits on cream paper. -->
+    <span class="subtitle"><OfflineMark --om-gap="0" --om-color="#b45309" /></span>
     <span class="led" class:processing={$status.processing} class:standby={recording && !isReady}></span>
   </div>
 

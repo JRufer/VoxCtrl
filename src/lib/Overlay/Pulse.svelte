@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -50,6 +51,7 @@
         {:else}
           PULSE // TARGET LOCK
         {/if}
+        <OfflineMark text="// OFFLINE" --om-dot="none" --om-gap="0.35em" />
       </span>
       <span class="label">
         {#if $status.processing}

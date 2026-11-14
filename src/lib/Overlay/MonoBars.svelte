@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, active = true } = $props();
 
@@ -75,6 +76,7 @@
       {:else}
         LISTENING
       {/if}
+      <OfflineMark --om-gap="0.9em" />
     </span>
   </div>
 

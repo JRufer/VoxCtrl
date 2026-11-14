@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, speaking = false, active = true } = $props();
 
@@ -69,6 +70,7 @@
     {:else}
       high tide — listening
     {/if}
+    <OfflineMark text="offline" --om-gap="0.5em" />
   </span>
 
   {#if $liveTextShown}

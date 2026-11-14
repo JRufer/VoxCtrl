@@ -4,6 +4,7 @@
   import { status } from "../../stores/status";
   import { liveTextShown } from "../../stores/liveTranscript";
   import LiveText from "./LiveText.svelte";
+  import OfflineMark from "./OfflineMark.svelte";
 
   let { recording = false, speaking = false, active = true } = $props();
 
@@ -68,6 +69,10 @@
 
     <span class="brand">VOXCTRL</span>
     <span class="brand-sub">VOICE CARD</span>
+
+    {#if $status.remote_offline}
+      <span class="offline-stamp"><OfflineMark --om-gap="0" /></span>
+    {/if}
 
     <span class="stamp">
       <span class="stamp-dot"></span>
@@ -215,6 +220,25 @@
     border: 1px solid rgba(244, 63, 94, 0.5);
     background: rgba(244, 63, 94, 0.08);
     color: #f43f5e;
+    font-size: 8.5px;
+    font-weight: 850;
+    letter-spacing: 0.18em;
+  }
+
+  /* A second stamp beside the first, in the tray badge's amber, while the
+     remote speech server is unreachable. Sits to the left of REC / INIT /
+     PROC, the widest of which is about 56px. */
+  .offline-stamp {
+    position: absolute;
+    right: 86px;
+    top: 18px;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 9px;
+    border-radius: 5px;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.08);
     font-size: 8.5px;
     font-weight: 850;
     letter-spacing: 0.18em;
