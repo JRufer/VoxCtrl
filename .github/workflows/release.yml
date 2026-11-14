@@ -172,9 +172,11 @@ jobs:
           # to the CPU cleanly when no usable GPU is found
           # (crates/voxctrl-inference/src/moonshine.rs, `with_execution_providers`
           # error path), so a separate CPU artifact bought nothing but a second
-          # download for users to choose wrong between. Measured at release
-          # v0.6.3, the CPU and WebGPU installers were 17.1 MB and 17 MB — the
-          # WebGPU feature costs nothing in binary size either.
+          # download for users to choose wrong between. The WebGPU provider
+          # does need Dawn and the DirectX shader compiler beside the exe; the
+          # staging step below bundles them, which adds about 7 MB to the
+          # installer. (Up to 0.9.6 they were missing, and the installed app
+          # could not start.)
           #
           # This accelerates Moonshine, not whisper.cpp: ggml's Vulkan backend
           # is the only GPU path whisper.cpp has here and it does not register
@@ -491,32 +493,70 @@ jobs:
       # load-time import on webgpu_dawn.dll, so an NSIS installer without them
       # cannot start on a machine that never ran a WebGPU build. Build once so
       # ort stages the DLLs, then add them to the bundle as resources.
+      #
+      # dxcompiler.dll is not imported by anything: Dawn loads it by name when
+      # it creates a D3D12 device, and without it that fails and every ONNX
+      # engine quietly runs on the CPU. So it is required here too.
+      #
+      # dxil.dll is Microsoft's closed-source signing library, and whether it
+      # is needed depends on the Dawn that ONNX Runtime was built against. Up
+      # to mid-2026 Dawn opens dxil.dll before dxcompiler.dll and gives up if
+      # it is missing; later revisions never load it. Rather than track that
+      # by hand, look for the file name inside webgpu_dawn.dll: bundle dxil.dll
+      # when Dawn still refers to it, leave it out when it does not. An `ort`
+      # upgrade that brings a newer Dawn then drops it with no change here.
+      #
+      # The licence texts these libraries require travel with them, in
+      # `licenses\` beside the exe
+      # (packaging/third-party-licenses/windows-webgpu).
       - name: Stage Dawn DLLs (Windows, GPU)
         if: runner.os == 'Windows' && matrix.features != ''
         shell: pwsh
         run: |
           npm run build
-          cargo build --release -p voxctrl-app --features ${{ matrix.features }}
+          cargo build --release -p voxctrl-app --features "${{ matrix.features }}"
 
-          $dlls = @("webgpu_dawn.dll", "dxcompiler.dll", "dxil.dll")
+          $dlls = @("webgpu_dawn.dll", "dxcompiler.dll")
+
+          $dawn = (Resolve-Path -LiteralPath "target/release/webgpu_dawn.dll").Path
+          $text = [System.Text.Encoding]::GetEncoding(28591).GetString([System.IO.File]::ReadAllBytes($dawn))
+          $needsDxil = $text.Contains("dxil.dll")
+          $text = $null
+          if ($needsDxil) {
+            Write-Host "webgpu_dawn.dll refers to dxil.dll: bundling it."
+            $dlls += "dxil.dll"
+          } else {
+            Write-Host "webgpu_dawn.dll does not refer to dxil.dll: leaving it out."
+          }
+
           New-Item -ItemType Directory -Force -Path "src-tauri/dawn" | Out-Null
+          $resources = [ordered]@{}
           foreach ($name in $dlls) {
             $src = Join-Path "target/release" $name
             if (-not (Test-Path -LiteralPath $src)) {
               throw "$name was not staged into target/release by the WebGPU build"
             }
             Copy-Item -LiteralPath $src -Destination (Join-Path "src-tauri/dawn" $name) -Force
+            $resources["dawn/$name"] = $name
+            # In the log, so a later question about which compiler a release
+            # shipped can be answered from the run.
+            $version = (Get-Item -LiteralPath $src).VersionInfo.FileVersion
+            Write-Host ("Staged {0} (version {1})" -f $name, $version)
           }
 
-          @{
-            bundle = @{
-              resources = @{
-                "dawn/webgpu_dawn.dll" = "webgpu_dawn.dll"
-                "dawn/dxcompiler.dll"  = "dxcompiler.dll"
-                "dawn/dxil.dll"        = "dxil.dll"
-              }
-            }
-          } | ConvertTo-Json -Depth 5 | Set-Content -Path "tauri-webgpu.conf.json" -Encoding utf8
+          # Paths are relative to src-tauri, where tauri.conf.json lives.
+          $licenses = Get-ChildItem -File "packaging/third-party-licenses/windows-webgpu"
+          if ($licenses.Count -eq 0) {
+            throw "No licence texts found in packaging/third-party-licenses/windows-webgpu"
+          }
+          foreach ($file in $licenses) {
+            $resources["../packaging/third-party-licenses/windows-webgpu/$($file.Name)"] = "licenses/$($file.Name)"
+          }
+
+          @{ bundle = @{ resources = $resources } } |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -Path "tauri-webgpu.conf.json" -Encoding utf8
+          Get-Content "tauri-webgpu.conf.json"
 
       - name: Build installer (Windows, GPU)
         if: runner.os == 'Windows' && matrix.features != ''

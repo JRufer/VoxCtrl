@@ -66,7 +66,9 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 
 # Cross-vendor GPU offload for Moonshine, via ONNX Runtime's WebGPU execution
 # provider. This is the Windows counterpart to what `vulkan` does for
-# whisper.cpp: any modern GPU, no vendor SDK at build time, no runtime to ship.
+# whisper.cpp: any modern GPU, no vendor SDK at build time, no vendor runtime
+# for the user to install. Dawn itself is a shared library that has to ship
+# beside the binary; packaging does that (release.yml, build_appimage.sh).
 # On Windows ORT's WebGPU EP runs on Dawn over D3D12, so it covers NVIDIA, AMD
 # and Intel alike.
 #

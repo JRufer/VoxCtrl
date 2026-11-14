@@ -83,8 +83,10 @@ moonshine = ["voxctrl-inference/moonshine"]
 moonshine-cuda = ["voxctrl-inference/moonshine-cuda"]
 moonshine-coreml = ["voxctrl-inference/moonshine-coreml"]
 # Cross-vendor GPU offload for Moonshine. Unlike `moonshine-cuda` this needs no
-# vendor toolchain at build time and nothing extra at run time, so it is what
-# the Windows GPU release build uses. See voxctrl-inference's Cargo.toml for why
+# vendor toolchain at build time and no vendor runtime on the user's machine,
+# so it is what the Windows GPU release build uses. It does need Dawn shipped
+# beside the binary (and, on Windows, the DirectX shader compiler): see the
+# Dawn staging steps in .github/workflows/release.yml. See voxctrl-inference's Cargo.toml for why
 # this is WebGPU and not DirectML.
 moonshine-webgpu = ["voxctrl-inference/moonshine-webgpu"]
 # Compiles the Parakeet ONNX speech-to-text backend into the app. On by
