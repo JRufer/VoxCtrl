@@ -254,8 +254,18 @@ is about to fail:
 ```
 
 The `, 0` default keeps the overlay correct on VoxCtrl versions before 0.9.1,
-which never set the property. The built-in styles do not draw an offline mark
-yet; the tray icon and its tooltip carry it.
+which never set the property.
+
+**Built-in styles** each show a small OFFLINE mark in their own status line
+while the server is unreachable (`OfflineMark.svelte`), in the same amber as
+the tray icon's badge: a second stamp beside REC on the Voice Card; a lamp and
+the word after the status on the Waveform, Spectrum and Mono Bars; `// OFFLINE`
+on the Pulse caption; `offline` after the Ocean Wave subtitle; `[offline]` in
+the Terminal's title bar; and beside the lamp on the Vinyl meter, in a darker
+amber for its cream face. The mark inherits the type of wherever it is placed
+and is adjusted per style through `--om-*` custom properties. With a local
+engine or a reachable server it renders nothing, and each style looks exactly
+as it did before.
 
 **Committed and tentative words.** The transcript arrives in two parts.
 *Committed* words will not change; *tentative* words are the engine's current
