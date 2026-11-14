@@ -59,6 +59,8 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("engine.remote_openai.api_key", Secret),
     ("engine.remote_openai.model", Safe),
     ("engine.remote_openai.language", Safe),
+    // One of a fixed set of engine names.
+    ("engine.remote_openai.fallback", Safe),
     ("engine.s1_mini.styling", Safe),
     ("engine.s1_mini.gpu", Safe),
     // App names say which apps someone uses: counted, never quoted.
