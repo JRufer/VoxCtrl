@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+sha2 = { workspace = true }
+hex = { workspace = true }
 voxctrl-config = { workspace = true }
 voxctrl-text = { workspace = true }
 thiserror = { workspace = true }

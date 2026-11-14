@@ -13,6 +13,7 @@ mod config;
 mod engine;
 mod http;
 mod speech;
+mod voices;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -57,7 +58,9 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_TTS               true = speak for clients (text-to-speech)
     VOXCTRL_SERVER_TTS_ENGINE        piper, espeak, pocket_tts, breeze_tts_2,
                                      vox_cpm_2 or kitten_tts_2
-    VOXCTRL_SERVER_TTS_VOICE         Voice name for the engine chosen
+    VOXCTRL_SERVER_TTS_ENGINES       Several engines for clients to choose
+                                     between, comma-separated; first = default
+    VOXCTRL_SERVER_TTS_VOICE         Default voice for the default engine
 
 Full guide: docs/server.md
 ";
@@ -220,21 +223,22 @@ async fn run(cli: Cli) -> Result<()> {
     };
 
     let speaker: Option<Arc<dyn speech::Speaker>> = if effective.tts.enabled {
-        Some(Arc::new(speech::EngineSpeaker::prepare(effective.tts.clone()).await?))
+        Some(Arc::new(speech::EngineSpeaker::prepare(effective.tts.clone(), &effective.speech.engines).await?))
     } else {
         None
     };
     let speech_line = match &speaker {
-        Some(s) => match s.voice() {
-            Some(voice) => format!("on ({}, voice {voice})", s.engine()),
-            None => format!("on ({})", s.engine()),
-        },
+        Some(s) => {
+            let engines: Vec<String> = s.engines().into_iter().map(|e| e.id).collect();
+            format!("on ({}), clients may upload voices", engines.join(", "))
+        }
         None => "off (set tts.enabled or VOXCTRL_SERVER_TTS to offer it)".to_string(),
     };
 
     let state = Arc::new(http::AppState {
         engine,
         cleanup: cleaner,
+        voices: speaker.is_some().then(|| voices::VoiceStore::new(voices::VoiceStore::default_root())),
         speech: speaker,
         api_key: effective.require_api_key.then(|| effective.api_key.clone()),
         max_upload_bytes: usize::try_from(effective.max_upload_mb.saturating_mul(1024 * 1024)).unwrap_or(usize::MAX),
@@ -408,6 +412,7 @@ mod tests {
             engine,
             cleanup: None,
             speech: None,
+            voices: None,
             api_key: Some("vx_key".into()),
             max_upload_bytes: 1024,
         });
@@ -442,6 +447,7 @@ mod tests {
             "VOXCTRL_SERVER_CLEANUP_GPU",
             "VOXCTRL_SERVER_TTS",
             "VOXCTRL_SERVER_TTS_ENGINE",
+            "VOXCTRL_SERVER_TTS_ENGINES",
             "VOXCTRL_SERVER_TTS_VOICE",
         ] {
             assert!(HELP.contains(name), "--help does not mention {name}");

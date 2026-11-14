@@ -48,6 +48,11 @@ processor generation as shared libraries next to the binary and picks one at
 run time. VoxCtrl 0.9.4 to 0.9.9 installed the plain build; 0.9.10 replaces it
 automatically.
 
+**System requirement.** The v0.9.4 runtime, either build, needs glibc 2.43 or
+newer (Ubuntu 26.04, or a rolling distribution such as Arch). On an older system
+`audiocpp_server` does not start and the error names `GLIBC_2.43`; Piper,
+eSpeak and Inflect-Micro are unaffected.
+
 **Model downloads** stream straight into the engine's model directory through a
 `<file>.part` file that is renamed into place only once complete, so a
 half-finished GGUF is never loaded or mistaken for a ready model. There is no
@@ -61,19 +66,23 @@ two minutes is abandoned.
 ### VoxCtrl server
 
 Set **Engine** to **VoxCtrl server** (`tts.engine = "server"`) to have a
-[VoxCtrl server](./server.md) do the speaking. The server synthesizes with the
-engine and voice set on the server and sends the audio back; this computer only
-plays it, so it downloads and loads no TTS model.
+[VoxCtrl server](./server.md) do the speaking. The server synthesizes and sends
+the audio back; this computer only plays it, so it downloads and loads no TTS
+model.
 
 - The server is the one under **Settings → Engine → Remote Speech Engine
   Settings** (`engine.remote_openai.endpoint` and `api_key`). It is used for
   speech even when a local speech engine is selected.
-- The panel under the engine picker shows which engine and voice the server
-  speaks with, or what to change on the server when it does not.
+- **Engine** (`tts.server_engine`) lists the engines that server has set up.
+  The server's owner decides which exist; a client cannot add one.
+- **Voice** (`tts.server_voice`) lists the chosen engine's own voices and, for
+  engines that clone, **your own voices**: the clips in this computer's cloned
+  voices folder. Picking one uploads it; it is stored on the server for this
+  computer only, and deleting the clip here removes it there. Details are in
+  [Your own voices on the server](./server.md#your-own-voices-on-the-server).
 - **Speed**, the stop key, pronunciation snippets and custom vocabulary are
   applied here as with any other engine. Pre-warming and the model memory mode
   have nothing to act on.
-- The voice is the server's: voices cloned on this computer are not used.
 - The whole passage is synthesized before playback starts. If the server can't
   be reached nothing is spoken and the reason is shown; there is no local
   fallback.

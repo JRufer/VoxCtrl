@@ -505,20 +505,23 @@ Things to know:
 
 ### Text-to-speech on the server
 
-The server can do the speaking for its clients: it synthesizes the speech with
-an engine and voice you set on the server, and the client plays the audio. A
-client then loads no TTS model. It needs VoxCtrl 0.9.7 or newer at both ends,
-and has to be turned on at both.
+The server can do the speaking for its clients: it synthesizes the speech and
+the client plays the audio, so a client loads no TTS model. You decide on the
+server which engines exist there. Each client then picks an engine and a voice
+in its own Settings, including voices of its own that it uploads. It needs
+VoxCtrl 0.9.11 or newer at both ends for that choice (0.9.7 to 0.9.10 speak
+with one engine and voice fixed on the server), and has to be turned on at
+both.
 
-**On the server**, choose an engine and voice, turn it on, and restart.
+**On the server**, say which engines to offer, turn it on, and restart.
 
 - Docker: in `packaging/docker/.env`, then `docker compose up -d --build`
-  (an image built before 0.9.7 has to be rebuilt):
+  (an image built before 0.9.11 has to be rebuilt):
 
   ```bash
   VOXCTRL_SERVER_TTS=true
-  VOXCTRL_SERVER_TTS_ENGINE=piper
-  VOXCTRL_SERVER_TTS_VOICE=en-us-lessac-medium
+  # Every engine clients may choose between; the first is the default.
+  VOXCTRL_SERVER_TTS_ENGINES=kitten_tts_2,piper
   ```
 
 - System service: in `server.toml`, then `sudo systemctl restart voxctrl-server`:
@@ -526,9 +529,18 @@ and has to be turned on at both.
   ```toml
   [tts]
   enabled = true
-  engine = "piper"
-  voice = "en-us-lessac-medium"
+  engine = "kitten_tts_2"      # the default
+
+  [speech]
+  engines = ["piper"]          # offered as well
   ```
+
+Each engine listed is downloaded when the server next starts. Only the default
+is loaded then; the server keeps one engine's model in memory and swaps when a
+request asks for another, so the first request after a client switches engine
+is slower. **Nothing a client sends makes the server download anything:**
+clients choose among what is listed here, and among voices that are already on
+the server or that they upload themselves.
 
 The `[tts]` section takes the same keys as the `tts` section of the app's own
 config file, so anything you can set for an engine in the app you can set here;
@@ -545,16 +557,27 @@ nothing on a server.
 | `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
 | `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
 
-Inflect-Micro is not available on the server yet. `VOXCTRL_SERVER_TTS_VOICE`
-sets the voice of whichever engine is chosen, for the three engines with named
-voices.
+Inflect-Micro is not available on the server yet. The voice settings above are
+only each engine's **default**, used when a client picks none;
+`VOXCTRL_SERVER_TTS_VOICE` sets it for the default engine. For Piper, clients
+can pick among the Piper voices already downloaded on the server, which is the
+default one unless you have put more in the server's `piper-voices` folder.
 
-At startup the server logs `Speech:   on (piper, voice en-us-lessac-medium)`.
-Check it from the server:
+> **The neural engines need a recent system.** Pocket-TTS, Kitten TTS 2,
+> Breeze-TTS-2 and VoxCPM2 run on the audio.cpp runtime, whose v0.9.4 build
+> needs glibc 2.43 or newer (Ubuntu 26.04, or a rolling distribution such as Arch; **not**
+> Debian 13 or Ubuntu 24.04). On an older system the server fails at startup
+> with `GLIBC_2.43 not found`. The Docker image is built on Ubuntu 26.04 for
+> this reason. Piper and eSpeak have no such requirement.
+
+At startup the server logs `Speech:   on (kitten_tts_2, piper), clients may
+upload voices`. Check it from the server:
 
 ```bash
 curl -H "Authorization: Bearer $KEY" http://localhost:8787/v1/audio/speech
-# {"available":true,"engine":"piper","voice":"en-us-lessac-medium"}
+# {"available":true,"engine":"kitten_tts_2","voice":"Bruno","custom_voices":true,
+#  "engines":[{"id":"kitten_tts_2","name":"Kitten TTS 2","voices":["Bella",…],
+#              "default_voice":"Bruno","custom_voices":true}, …]}
 
 curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
      -d '{"input": "Hello from the server."}' \
@@ -562,16 +585,49 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
 ```
 
 **On each client**, in **Settings → TTS**, set **Engine** to **VoxCtrl server**.
-The panel under it says which engine and voice the server speaks with, or what
-to change on the server if it does not speak. The server used is the one under
-**Settings → Engine → Remote Speech Engine Settings**; its address and key are
-used even if the client transcribes with a local engine.
+The panel under it then offers:
+
+- **Engine**: the engines this server has set up, its default first.
+- **Voice**: the server's default for that engine, the engine's own voices, and
+  (for Pocket-TTS, Kitten TTS 2, Breeze-TTS-2 and VoxCPM2) **your own voices**.
+
+The server used is the one under **Settings → Engine → Remote Speech Engine
+Settings**; its address and key are used even if the client transcribes with a
+local engine. If the server does not speak, the panel says what to change on it.
+
+#### Your own voices on the server
+
+Your voices are the clips in the client's cloned voices folder
+(`~/.local/share/voxctrl/cloned-tts-voices/`): `<name>.wav`, with `<name>.txt`
+beside it holding the words spoken in the clip, which Kitten TTS 2 requires.
+They are the same clips the client's own engines use, so a voice you already
+cloned locally is there to pick.
+
+- **Uploading is automatic.** Picking one of your voices sends your clips to
+  the server, and they are checked again before speech that uses one, so a
+  clip you add or change is sent without you doing anything. **Send my voices
+  now** does it on demand.
+- **They are private to the client.** Each client's clips are stored in a
+  folder of their own on the server
+  (`<data>/voxctrl/client-voices/<client id>/`). Another client does not see
+  them in its voice list and cannot speak with them. The client id is a hash of
+  the computer's machine id and the user name; neither is sent.
+- **Deleting a clip on the client removes it from the server** the next time
+  the voices are synced: when the TTS tab checks the server, when you pick a
+  voice, or before the next speech with one of your voices.
+- A clip's name may use letters, digits, spaces, `-` and `_`, up to 64
+  characters. Clips with other names stay local. A client can keep up to 50
+  voices on a server, each within the server's upload limit (`max_upload_mb`).
+
+This separation keeps clients' voices apart; it is not a defence against
+someone who holds the server's API key and sets out to learn another client's
+id. Everyone with the key is trusted with the server.
 
 Things to know:
 
-- **The server chooses the voice.** Every client of a server hears the same
-  engine and voice. Voices cloned on a client can't be used through the server
-  yet.
+- **Each client chooses for itself.** The engine and voice travel with each
+  request, so two clients of one server can use different ones. Switching
+  between engines makes the server reload a model.
 - **Speed, the stop key and what gets spoken stay on the client.** The client
   applies its pronunciation snippets and custom vocabulary to the text before
   sending it, plays the audio at its own **Speed**, and its stop key stops
@@ -689,6 +745,11 @@ engine = "espeak"
 # with the same keys as the app's config: [tts.pocket_tts], [tts.kitten_tts_2],
 # [tts.breeze_tts_2], [tts.vox_cpm_2].
 voice = "en-us-lessac-medium"
+
+[speech]
+# Engines offered to clients besides tts.engine, which is always offered and
+# is the default. Each is downloaded at startup.
+engines = []
 ```
 
 A `server.toml` the server writes itself leaves `[tts]` out until you add it.
@@ -716,7 +777,8 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_CLEANUP_GPU` | `cleanup.gpu` | `false` |
 | `VOXCTRL_SERVER_TTS` | `tts.enabled` | `true` |
 | `VOXCTRL_SERVER_TTS_ENGINE` | `tts.engine` | `piper` |
-| `VOXCTRL_SERVER_TTS_VOICE` | The voice of the chosen engine (`piper`, `pocket_tts`, `kitten_tts_2`) | `en-us-lessac-medium` |
+| `VOXCTRL_SERVER_TTS_ENGINES` | `speech.engines`: every engine clients may choose between, comma-separated. The first is the default unless `VOXCTRL_SERVER_TTS_ENGINE` is set | `kitten_tts_2,piper` |
+| `VOXCTRL_SERVER_TTS_VOICE` | The default voice of the default engine (`piper`, `pocket_tts`, `kitten_tts_2`) | `en-us-lessac-medium` |
 
 A variable that is set but empty is ignored. Environment variables are never
 written into `server.toml`.
@@ -859,6 +921,12 @@ use, so tools other than VoxCtrl can use it too.
 | `POST /v1/cleanup` | Yes | Clean up a transcript |
 | `GET /v1/audio/speech` | Yes | Whether text-to-speech is enabled: `{"available": true, "engine": "piper", "voice": "…"}` |
 | `POST /v1/audio/speech` | Yes | Speak text; returns a WAV file |
+| `GET /v1/voices` | Yes, plus client id | The voices this client has uploaded |
+| `PUT /v1/voices/{name}` | Yes, plus client id | Upload or replace a voice (multipart: `audio`, optional `transcript`, `fingerprint`) |
+| `DELETE /v1/voices/{name}` | Yes, plus client id | Remove a voice |
+
+The voice endpoints, and speech with an uploaded voice, need an
+`X-VoxCtrl-Client` header of 16 to 64 hex digits naming the client.
 
 `GET /health` also reports `"cleanup"` and `"tts"` as `true` or `false`. `/v1/cleanup` is
 VoxCtrl's own and not part of the OpenAI API.
@@ -936,7 +1004,9 @@ can use it. JSON in, `audio/wav` out.
 |---|---|---|
 | `input` | Yes | The text to speak, at most 5,000 characters |
 | `response_format` | No | `wav` or left out. Anything else is refused: the server only makes WAV |
-| `model`, `voice`, `speed` | No | Accepted and ignored. The server speaks with the engine and voice it was set up with |
+| `model` | No | One of this server's engine ids, e.g. `kitten_tts_2`. Anything else, such as an OpenAI client's `tts-1`, means the default engine |
+| `voice` | No | One of that engine's voices, or `custom:<name>` for a voice this client uploaded. Left out, or a name the server does not know sent without one of its engine ids, means the engine's default |
+| `speed` | No | Accepted and ignored: the client applies its own speed when it plays the audio |
 
 ```bash
 curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
@@ -944,13 +1014,22 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
      http://server:8787/v1/audio/speech -o speech.wav
 ```
 
-A server with text-to-speech turned off answers HTTP 501 with
-`"type": "not_enabled"`. An OpenAI client that asks for its default format
+Asking one of the server's engines for a voice it does not have, or for an
+uploaded voice this client has not sent, is HTTP 400. A server with
+text-to-speech turned off answers HTTP 501 with `"type": "not_enabled"`. An OpenAI client that asks for its default format
 (`mp3`) gets HTTP 400; set its format to `wav`.
 
 ---
 
 ## Troubleshooting
+
+### A neural TTS engine will not start on the server: `GLIBC_2.43 not found`
+
+Pocket-TTS, Kitten TTS 2, Breeze-TTS-2 and VoxCPM2 run on a runtime that needs
+glibc 2.43 or newer. A Docker image built before 0.9.11 was based on Debian 13,
+which is too old: rebuild it (`docker compose up -d --build`) to get the Ubuntu
+26.04 base. For a system service on an older distribution, use Piper or eSpeak,
+or run the server in Docker.
 
 ### Nothing is spoken with the "VoxCtrl server" engine
 

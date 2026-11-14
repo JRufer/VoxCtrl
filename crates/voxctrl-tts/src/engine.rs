@@ -561,6 +561,40 @@ impl TtsEngineWorker {
     }
 }
 
+/// Bring the server's copy of this computer's voice clips up to date, unless
+/// that was already done for these clips on this server (`force` skips that
+/// check). Reading the clips to compare them costs a disk read per utterance,
+/// so the comparison goes by their names, sizes and modification times.
+fn sync_own_voices(server: &crate::remote::ServerLink, force: bool) -> Result<()> {
+    static SYNCED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    let dir = crate::pocket::cloned_tts_voices_dir();
+    let mut state = format!("{}|{}", server.endpoint.trim(), server.client_id);
+    let mut files: Vec<String> = std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|e| {
+                    let meta = e.metadata().ok()?;
+                    Some(format!("{}:{}:{:?}", e.file_name().to_string_lossy(), meta.len(), meta.modified().ok()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    state.push_str(&files.join("|"));
+
+    let mut synced = SYNCED.lock().unwrap_or_else(|e| e.into_inner());
+    if !force && synced.as_deref() == Some(state.as_str()) {
+        return Ok(());
+    }
+    let report = crate::remote::sync_voices(server, &crate::remote::local_custom_voices(&dir))?;
+    if !report.uploaded.is_empty() || !report.removed.is_empty() {
+        info!("Synced voices with the server: {} uploaded, {} removed", report.uploaded.len(), report.removed.len());
+    }
+    *synced = Some(state);
+    Ok(())
+}
+
 /// The `Server` engine: the server synthesizes, this machine plays.
 fn speak_on_server(
     server: Option<&crate::remote::ServerLink>,
@@ -577,7 +611,19 @@ fn speak_on_server(
     let server = server.ok_or_else(|| {
         anyhow::anyhow!("No server is set. Enter its address under Settings → Engine → Remote Speech Engine Settings.")
     })?;
-    let audio = crate::remote::fetch_speech(server, &u.text)?;
+    let custom = server.voice.as_deref().is_some_and(|v| v.starts_with(crate::remote::CUSTOM_VOICE_PREFIX));
+    if custom {
+        sync_own_voices(server, false)?;
+    }
+    let audio = match crate::remote::fetch_speech(server, &u.text) {
+        // The server no longer has the clip (its storage was cleared, or it
+        // is a different server at the same address): send it and try once more.
+        Err(e) if custom && e.to_string().contains("has not been uploaded") => {
+            sync_own_voices(server, true)?;
+            crate::remote::fetch_speech(server, &u.text)?
+        }
+        other => other?,
+    };
     // Stopped while the server was still working: `stop()` had no audio to
     // stop then, so it must not start now.
     if generation_counter.load(Ordering::SeqCst) != generation {

@@ -51,8 +51,15 @@ async fn serve_all(
     cleanup: Option<Arc<dyn crate::cleanup::Cleaner>>,
     speech: Option<Arc<dyn crate::speech::Speaker>>,
 ) -> (String, Arc<std::sync::Mutex<Seen>>) {
-    let state =
-        Arc::new(AppState { engine, cleanup, speech, api_key: Some(KEY.into()), max_upload_bytes: 64 * 1024 * 1024 });
+    let voices = speech.is_some().then(|| crate::voices::VoiceStore::new(voice_root()));
+    let state = Arc::new(AppState {
+        engine,
+        cleanup,
+        speech,
+        voices,
+        api_key: Some(KEY.into()),
+        max_upload_bytes: 64 * 1024 * 1024,
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, router(state)).await });
@@ -212,34 +219,95 @@ async fn a_cleanup_the_server_cannot_do_is_an_error_carrying_its_reason() {
 
 // ── Speech ────────────────────────────────────────────────────────────────────
 
-use voxctrl_tts::remote::{check_server_tts, fetch_speech, ServerLink};
+use voxctrl_tts::remote::{check_server_tts, fetch_speech, local_custom_voices, sync_voices, ServerLink};
 
-/// A valid, tiny WAV whose samples spell out how long the text was.
-struct CountingSpeaker;
+const ALICE: &str = "0123456789abcdef0123456789abcdef";
+const BOB: &str = "fedcba9876543210fedcba9876543210";
 
-impl crate::speech::Speaker for CountingSpeaker {
-    fn speak(&self, text: &str) -> anyhow::Result<Vec<u8>> {
-        let samples: Vec<u8> = (0..text.chars().count() as i16).flat_map(|s| s.to_le_bytes()).collect();
+/// A fresh folder per server, kept for the life of the test process.
+fn voice_root() -> std::path::PathBuf {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("client-voices");
+    std::mem::forget(dir);
+    path
+}
+
+/// A valid, tiny WAV. Its sample count is the length of a line describing
+/// the request as the engine would see it, and that line is kept so a test
+/// can read it back.
+#[derive(Default)]
+struct DescribingSpeaker(std::sync::Mutex<Vec<String>>);
+
+impl crate::speech::Speaker for DescribingSpeaker {
+    fn speak(&self, request: &crate::speech::SpeechRequest) -> Result<Vec<u8>, crate::speech::SpeakError> {
+        // As the real speaker does: an uploaded voice must be in the folder
+        // of the client that is asking.
+        if let Some(custom) = request.voice.as_deref().and_then(|v| v.strip_prefix("custom:")) {
+            let found = request.client_voices.as_ref().is_some_and(|dir| dir.join(format!("{custom}.wav")).is_file());
+            if !found {
+                return Err(crate::speech::SpeakError::Invalid(format!(
+                    "The voice \"{custom}\" has not been uploaded to this server by this client."
+                )));
+            }
+        }
+        let line = format!("{}|{}|{}", request.engine.as_deref().unwrap_or("-"), request.voice.as_deref().unwrap_or("-"), request.text);
+        let samples: Vec<u8> = (0..line.chars().count() as i16).flat_map(|s| s.to_le_bytes()).collect();
+        self.0.lock().unwrap().push(line);
         Ok(voxctrl_tts::synth::pcm16_to_wav(&samples, 16000))
     }
 
-    fn engine(&self) -> String {
-        "piper".into()
-    }
-
-    fn voice(&self) -> Option<String> {
-        Some("en-us-amy-low".into())
+    fn engines(&self) -> Vec<crate::speech::EngineOffer> {
+        vec![
+            crate::speech::EngineOffer {
+                id: "kitten_tts_2".into(),
+                name: "Kitten TTS 2".into(),
+                voices: vec!["Bruno".into(), "Luna".into()],
+                default_voice: Some("Bruno".into()),
+                custom_voices: true,
+            },
+            crate::speech::EngineOffer {
+                id: "piper".into(),
+                name: "Piper".into(),
+                voices: vec!["en-us-amy-low".into()],
+                default_voice: Some("en-us-amy-low".into()),
+                custom_voices: false,
+            },
+        ]
     }
 }
 
-async fn serve_speech(enabled: bool) -> String {
+async fn serve_speech(enabled: bool) -> (String, Arc<DescribingSpeaker>) {
     let (engine, seen) = fake_engine("unused", false);
-    let speaker: Option<Arc<dyn crate::speech::Speaker>> = enabled.then(|| Arc::new(CountingSpeaker) as _);
-    serve_all(engine, seen, None, speaker).await.0
+    let speaker = Arc::new(DescribingSpeaker::default());
+    let offered: Option<Arc<dyn crate::speech::Speaker>> = enabled.then(|| speaker.clone() as _);
+    (serve_all(engine, seen, None, offered).await.0, speaker)
 }
 
 fn link(endpoint: &str, key: &str) -> ServerLink {
-    ServerLink { endpoint: endpoint.to_string(), api_key: Some(key.to_string()) }
+    ServerLink { endpoint: endpoint.to_string(), api_key: Some(key.to_string()), ..Default::default() }
+}
+
+fn link_as(endpoint: &str, client: &str, engine: Option<&str>, voice: Option<&str>) -> ServerLink {
+    ServerLink {
+        endpoint: endpoint.to_string(),
+        api_key: Some(KEY.to_string()),
+        client_id: client.to_string(),
+        engine: engine.map(str::to_string),
+        voice: voice.map(str::to_string),
+    }
+}
+
+/// A folder of voice clips as the app keeps them.
+fn voice_folder(voices: &[(&str, Option<&str>)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, transcript) in voices {
+        let clip = voxctrl_tts::synth::pcm16_to_wav(&[1, 0, 2, 0, 3, 0], 16000);
+        std::fs::write(dir.path().join(format!("{name}.wav")), clip).unwrap();
+        if let Some(transcript) = transcript {
+            std::fs::write(dir.path().join(format!("{name}.txt")), transcript).unwrap();
+        }
+    }
+    dir
 }
 
 // The app's speech client is blocking (it runs on the TTS worker thread), so
@@ -247,23 +315,37 @@ fn link(endpoint: &str, key: &str) -> ServerLink {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_gets_a_wav_it_can_play() {
-    let endpoint = serve_speech(true).await;
+    let (endpoint, speaker) = serve_speech(true).await;
     let wav = tokio::task::spawn_blocking(move || fetch_speech(&link(&endpoint, KEY), "Hello there")).await.unwrap().unwrap();
     assert_eq!(&wav[0..4], b"RIFF");
-    // 11 characters, one 2-byte sample each, after the 44-byte header.
-    assert_eq!(wav.len(), 44 + 22);
+    assert_eq!(*speaker.0.lock().unwrap(), vec!["-|-|Hello there"], "nothing chosen: the server's defaults");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_clients_choice_of_engine_and_voice_reaches_the_server() {
+    let (endpoint, speaker) = serve_speech(true).await;
+    tokio::task::spawn_blocking(move || {
+        fetch_speech(&link_as(&endpoint, ALICE, Some("kitten_tts_2"), Some("Luna")), "hi").unwrap()
+    })
+    .await
+    .unwrap();
+    assert_eq!(*speaker.0.lock().unwrap(), vec!["kitten_tts_2|Luna|hi"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_learns_whether_and_how_the_server_speaks() {
-    let (on, off) = (serve_speech(true).await, serve_speech(false).await);
+    let ((on, _), (off, _)) = (serve_speech(true).await, serve_speech(false).await);
     let (on, off, wrong_key) = tokio::task::spawn_blocking(move || {
         (check_server_tts(&link(&on, KEY)), check_server_tts(&link(&off, KEY)), check_server_tts(&link(&on, "vx_wrong")))
     })
     .await
     .unwrap();
     assert!(on.available, "{}", on.message);
-    assert_eq!(on.message, "This server speaks with piper, voice en-us-amy-low.");
+    assert_eq!(on.message, "This server offers 2 speech engines.");
+    assert_eq!(on.engines.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["kitten_tts_2", "piper"]);
+    assert_eq!(on.engines[0].voices, vec!["Bruno", "Luna"]);
+    assert!(on.engines[0].custom_voices && !on.engines[1].custom_voices);
+    assert!(on.custom_voices);
     assert!(!off.available);
     assert!(off.message.contains("turned off"), "{}", off.message);
     assert!(wrong_key.message.contains("API key"), "{}", wrong_key.message);
@@ -271,13 +353,70 @@ async fn the_client_learns_whether_and_how_the_server_speaks() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn speech_the_server_cannot_give_is_an_error_the_user_can_act_on() {
-    let (on, off) = (serve_speech(true).await, serve_speech(false).await);
-    let (disabled, wrong_key) = tokio::task::spawn_blocking(move || {
-        (fetch_speech(&link(&off, KEY), "hi"), fetch_speech(&link(&on, "vx_wrong"), "hi"))
+    let ((on, _), (off, _)) = (serve_speech(true).await, serve_speech(false).await);
+    let (disabled, wrong_key, not_uploaded) = tokio::task::spawn_blocking(move || {
+        (
+            fetch_speech(&link(&off, KEY), "hi"),
+            fetch_speech(&link(&on, "vx_wrong"), "hi"),
+            fetch_speech(&link_as(&on, ALICE, None, Some("custom:Rick")), "hi"),
+        )
     })
     .await
     .unwrap();
     let message = disabled.unwrap_err().to_string();
     assert!(message.contains("HTTP 501") && message.contains("not enabled"), "{message}");
     assert!(wrong_key.unwrap_err().to_string().contains("API key"));
+    let message = not_uploaded.unwrap_err().to_string();
+    assert!(message.contains("HTTP 400") && message.contains("has not been uploaded"), "{message}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_clients_own_voices_are_uploaded_used_kept_private_and_removed() {
+    let (endpoint, speaker) = serve_speech(true).await;
+    tokio::task::spawn_blocking(move || {
+        let alice = link_as(&endpoint, ALICE, Some("kitten_tts_2"), Some("custom:Rick"));
+        let bob = link_as(&endpoint, BOB, Some("kitten_tts_2"), Some("custom:Rick"));
+        let folder = voice_folder(&[("Rick", Some("hello there")), ("my voice", None)]);
+
+        // First sync uploads both; a second has nothing to do.
+        let first = sync_voices(&alice, &local_custom_voices(folder.path())).unwrap();
+        assert_eq!(first.uploaded, vec!["Rick", "my voice"]);
+        assert!(first.removed.is_empty());
+        let again = sync_voices(&alice, &local_custom_voices(folder.path())).unwrap();
+        assert!(again.uploaded.is_empty() && again.removed.is_empty(), "{again:?}");
+
+        // The uploader can speak with it. Someone else cannot, and has none.
+        assert!(fetch_speech(&alice, "hi").is_ok());
+        let err = fetch_speech(&bob, "hi").unwrap_err().to_string();
+        assert!(err.contains("has not been uploaded"), "{err}");
+        assert_eq!(sync_voices(&bob, &[]).unwrap(), Default::default(), "nothing of Bob's to remove, nothing of Alice's touched");
+        assert!(fetch_speech(&alice, "still mine").is_ok());
+
+        // A changed transcript is a new version: only that voice goes up again.
+        std::fs::write(folder.path().join("Rick.txt"), "different words").unwrap();
+        let changed = sync_voices(&alice, &local_custom_voices(folder.path())).unwrap();
+        assert_eq!(changed.uploaded, vec!["Rick"]);
+
+        // Deleted on the client: gone from the server at the next sync.
+        std::fs::remove_file(folder.path().join("Rick.wav")).unwrap();
+        let after_delete = sync_voices(&alice, &local_custom_voices(folder.path())).unwrap();
+        assert_eq!(after_delete.removed, vec!["Rick"]);
+        assert!(after_delete.uploaded.is_empty());
+        let err = fetch_speech(&alice, "hi").unwrap_err().to_string();
+        assert!(err.contains("has not been uploaded"), "{err}");
+        let other = link_as(&endpoint, ALICE, Some("kitten_tts_2"), Some("custom:my voice"));
+        assert!(fetch_speech(&other, "the other one is still there").is_ok());
+    })
+    .await
+    .unwrap();
+    let said = speaker.0.lock().unwrap();
+    assert_eq!(said.len(), 3, "{said:?}");
+    assert_eq!(said[0], "kitten_tts_2|custom:Rick|hi");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn voices_cannot_be_synced_without_a_client_id() {
+    let (endpoint, _) = serve_speech(true).await;
+    let err = tokio::task::spawn_blocking(move || sync_voices(&link(&endpoint, KEY), &[])).await.unwrap().unwrap_err();
+    assert!(err.to_string().contains("no client id"), "{err}");
 }

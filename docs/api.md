@@ -456,18 +456,37 @@ which fallback engine is set. Changes afterwards arrive as
 [`remote-status`](#remote-status) events, which carry the same type.
 
 #### `check_server_tts(endpoint, apiKey) → ServerTtsStatus`
-Asks the speech server at `endpoint` whether it offers text-to-speech
-(`GET /v1/audio/speech`), for the TTS tab's "VoxCtrl server" engine. Takes the
-endpoint and key as typed. Never rejects: every outcome is a status to show.
+Asks the speech server at `endpoint` whether it offers text-to-speech and with
+which engines and voices (`GET /v1/audio/speech`), for the TTS tab's "VoxCtrl
+server" engine. Takes the endpoint and key as typed. Never rejects: every
+outcome is a status to show.
 
 ```ts
 interface ServerTtsStatus {
   available: boolean;
-  engine: string | null;  // the server's engine, e.g. "piper"
-  voice: string | null;   // its voice, for engines with named voices
+  engine: string | null;  // the server's default engine, e.g. "piper"
+  voice: string | null;   // that engine's default voice
   message: string;        // what to tell the user, including how to fix "not available"
+  engines: {              // every engine on offer, default first; [] from a server before 0.9.11
+    id: string;
+    name: string;
+    voices: string[];     // the engine's own voices that can be picked
+    default_voice: string | null;
+    custom_voices: boolean;  // can speak with a clip the client uploads
+  }[];
+  custom_voices: boolean; // the server stores uploaded voices
 }
 ```
+
+#### `list_own_voices() → string[]`
+The names of this computer's own voice clips that a server can take (the
+`.wav` files in the cloned voices folder with uploadable names).
+
+#### `sync_server_voices(endpoint, apiKey) → { local, uploaded, removed }`
+Makes the server's copy of this computer's voice clips match the folder:
+uploads new and changed clips, removes ones deleted here. `local` is every
+uploadable clip; `uploaded` and `removed` are what this call changed. Rejects
+with a message for the user when the server can't be reached or refuses.
 
 #### `check_server_cleanup(endpoint, apiKey) → ServerCleanupStatus`
 Asks the speech server at `endpoint` whether it offers dictation cleanup

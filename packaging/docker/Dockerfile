@@ -12,6 +12,12 @@
 # relying on it.
 
 ARG DEBIAN_RELEASE=trixie
+# The image the server runs in. It has to provide glibc 2.43 or newer: the
+# audio.cpp runtime that the neural text-to-speech engines download (v0.9.4)
+# is built against it, and on anything older every one of those engines fails
+# to start with "GLIBC_2.43 not found". Debian 13 (trixie) has 2.41; Ubuntu
+# 26.04 has 2.43. The server binary is built on trixie and runs on either.
+ARG RUNTIME_IMAGE=ubuntu:26.04
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM rust:1-${DEBIAN_RELEASE} AS build
@@ -51,7 +57,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/voxctrl-server target/release/voxctrl-llm-sidecar /usr/local/bin/
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM debian:${DEBIAN_RELEASE}-slim
+FROM ${RUNTIME_IMAGE}
 ARG FEATURES=""
 
 # espeak-ng is the eSpeak text-to-speech engine. libvulkan1 and libgomp1 are
@@ -66,7 +72,10 @@ RUN apt-get update \
 # the downloaded models and the generated API key across upgrades:
 #   /var/lib/voxctrl/config/voxctrl/server.toml
 #   /var/lib/voxctrl/data/voxctrl/models/
-RUN useradd --system --uid 1000 --home-dir /var/lib/voxctrl --shell /usr/sbin/nologin voxctrl \
+# Ubuntu's image comes with an `ubuntu` user at uid 1000. The server keeps
+# that uid, so an existing volume's files still belong to it.
+RUN (userdel --remove ubuntu 2>/dev/null || true) \
+    && useradd --system --uid 1000 --home-dir /var/lib/voxctrl --shell /usr/sbin/nologin voxctrl \
     && mkdir -p /var/lib/voxctrl/config /var/lib/voxctrl/data \
     && chown -R voxctrl:voxctrl /var/lib/voxctrl
 ENV HOME=/var/lib/voxctrl \
