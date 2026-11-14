@@ -1,0 +1,34 @@
+# voxctrl-server with Docker Compose. Full guide: docs/server.md
+#
+#   cd packaging/docker
+#   cp .env.example .env        # then edit .env: pick a model, set a key
+#   docker compose up -d --build
+#   docker compose logs -f      # wait for "voxctrl-server ... is ready"
+
+services:
+  voxctrl-server:
+    build:
+      context: ../..
+      dockerfile: packaging/docker/Dockerfile
+      args:
+        FEATURES: ${VOXCTRL_BUILD_FEATURES:-}
+    image: voxctrl-server:local
+    container_name: voxctrl-server
+    restart: unless-stopped
+    ports:
+      # host:container. Change the left side to listen on another host port.
+      - "${VOXCTRL_SERVER_PORT:-8787}:8787"
+    environment:
+      VOXCTRL_SERVER_BACKEND: ${VOXCTRL_SERVER_BACKEND:-parakeet}
+      VOXCTRL_SERVER_MODEL: ${VOXCTRL_SERVER_MODEL:-tdt-0.6b-v3}
+      VOXCTRL_SERVER_LANGUAGE: ${VOXCTRL_SERVER_LANGUAGE:-}
+      VOXCTRL_SERVER_DEVICE: ${VOXCTRL_SERVER_DEVICE:-}
+      # Left blank, the server generates a key on first start, saves it in the
+      # volume, and prints it once in the log.
+      VOXCTRL_SERVER_API_KEY: ${VOXCTRL_SERVER_API_KEY:-}
+    volumes:
+      # Downloaded models and server.toml (with the generated API key).
+      - voxctrl-data:/var/lib/voxctrl
+
+volumes:
+  voxctrl-data:

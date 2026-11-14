@@ -1,0 +1,22 @@
+# EXPERIMENTAL: NVIDIA GPU access for a Vulkan build of voxctrl-server.
+# Has not been tested on real hardware yet. See "GPU acceleration" in
+# docs/server.md, including why a GPU often is not needed.
+#
+# Requires the NVIDIA Container Toolkit on the host, and
+# VOXCTRL_BUILD_FEATURES=vulkan in .env. Then:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+services:
+  voxctrl-server:
+    environment:
+      # Vulkan needs the driver's graphics libraries, not only compute.
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

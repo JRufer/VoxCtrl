@@ -1,0 +1,9 @@
+# Keeps the build context for packaging/docker/Dockerfile small. The image
+# builds only the Rust server, so none of this is needed inside it.
+.git
+target
+**/target
+**/node_modules
+dist
+*.AppImage
+packaging/docker/.env

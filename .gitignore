@@ -70,3 +70,6 @@ vite.config.*.timestamp-*
 
 # Local research/planning notes, not shipped documentation.
 /Resources/
+
+# Local settings for packaging/docker/docker-compose.yml (holds the API key)
+packaging/docker/.env

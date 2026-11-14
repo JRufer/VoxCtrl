@@ -53,8 +53,15 @@ VoxCtrl/
     ├── voxctrl-text/       # Shared snippet expansion + fuzzy vocab correction
     ├── voxctrl-update/     # GitHub release check, download, verify, self-replace
     ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
-    └── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
+    ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
+    └── voxctrl-server/     # Headless speech server: OpenAI-compatible HTTP API over voxctrl-inference
 ```
+
+`voxctrl-server` is a separate binary, not part of the desktop app. It depends
+only on `voxctrl-config` and `voxctrl-inference`, loads one transcription
+backend, and serves it to VoxCtrl clients through the app's existing Remote
+Speech Engine. It returns raw transcripts; post-processing stays in the client.
+See [VoxCtrl Server](./server.md).
 
 ---
 
