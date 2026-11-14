@@ -708,3 +708,26 @@ fn an_engine_section_may_name_only_some_of_its_keys() {
     assert_eq!(engine.parakeet.model_size, "phonon-2");
     assert_eq!(engine.parakeet.device, ParakeetConfig::default().device);
 }
+
+#[test]
+fn remote_fallback_defaults_to_none_and_reads_kebab_case() {
+    // A config written before the fallback existed has no such key.
+    let old: RemoteOpenAiConfig = serde_json::from_str(
+        r#"{"endpoint":"http://server:8787/v1","api_key":null,"model":"whisper-1","language":"","timeout_secs":30}"#,
+    )
+    .unwrap();
+    assert_eq!(old.fallback, FallbackChoice::None);
+    assert_eq!(old.fallback.backend(), None);
+
+    for (text, choice, backend) in [
+        ("none", FallbackChoice::None, None),
+        ("whisper-cpp", FallbackChoice::WhisperCpp, Some(BackendChoice::WhisperCpp)),
+        ("moonshine", FallbackChoice::Moonshine, Some(BackendChoice::Moonshine)),
+        ("parakeet", FallbackChoice::Parakeet, Some(BackendChoice::Parakeet)),
+    ] {
+        let parsed: FallbackChoice = serde_json::from_str(&format!("\"{text}\"")).unwrap();
+        assert_eq!(parsed, choice);
+        assert_eq!(parsed.backend(), backend);
+        assert_eq!(serde_json::to_string(&choice).unwrap(), format!("\"{text}\""));
+    }
+}

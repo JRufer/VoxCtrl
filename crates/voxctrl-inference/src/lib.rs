@@ -7,12 +7,14 @@ pub mod moonshine;
 pub mod parakeet;
 pub mod postprocess;
 pub mod remote_openai;
+pub mod remote_status;
 pub mod s1_mini;
 mod util;
 pub mod whisper_cpp;
 
 pub use remote_openai::{
-    test_remote_speech_engine, RemoteOpenAiBackend, RemoteSttTestResult, RemoteStreamingSession,
+    probe_remote_speech_engine, test_remote_speech_engine, RemoteOpenAiBackend, RemoteSttTestResult,
+    RemoteStreamingSession,
 };
 
 /// Whether the Moonshine ONNX backend was compiled into this build. When false,
@@ -337,18 +339,30 @@ impl InferenceEngine {
         self.backend.unload();
     }
 
+    /// Whether this engine is a remote server's fallback: built, but kept
+    /// unloaded until the server cannot be reached. See [`is_standby_config`].
+    pub fn is_standby(&self) -> bool {
+        is_standby_config(&self.config)
+    }
+
     /// Update engine configuration. If backend or backend model settings changed,
     /// re-creates the backend and returns `true` (meaning the caller should reload).
     pub fn update_config(&mut self, new_config: Arc<AppConfig>) -> bool {
+        // What this engine actually runs is the on-device engine: the selected
+        // backend, or a remote backend's fallback. Only a change to that (or to
+        // its own settings) is a reason to rebuild it — editing the server's
+        // address must not throw away a loaded fallback model.
+        let old_local = local_engine_choice(&self.config);
+        let new_local = local_engine_choice(&new_config);
         let backend_changed = self.config.engine.backend != new_config.engine.backend
-            || (new_config.engine.backend == BackendChoice::WhisperCpp
-                && self.config.engine.whisper_cpp != new_config.engine.whisper_cpp)
-            || (new_config.engine.backend == BackendChoice::Moonshine
-                && self.config.engine.moonshine != new_config.engine.moonshine)
-            || (new_config.engine.backend == BackendChoice::Parakeet
-                && self.config.engine.parakeet != new_config.engine.parakeet)
-            || (new_config.engine.backend == BackendChoice::RemoteOpenAi
-                && self.config.engine.remote_openai != new_config.engine.remote_openai);
+            || old_local != new_local
+            || match new_local {
+                Some(BackendChoice::WhisperCpp) => self.config.engine.whisper_cpp != new_config.engine.whisper_cpp,
+                Some(BackendChoice::Moonshine) => self.config.engine.moonshine != new_config.engine.moonshine,
+                Some(BackendChoice::Parakeet) => self.config.engine.parakeet != new_config.engine.parakeet,
+                // Remote with no fallback: the backend is the HTTP client itself.
+                _ => self.config.engine.remote_openai != new_config.engine.remote_openai,
+            };
 
         self.config = new_config.clone();
 
@@ -390,7 +404,7 @@ impl InferenceEngine {
         // Moonshine, Parakeet and Remote-OpenAI backends read their language
         // setting straight from their own config, ignoring this field; only
         // whisper.cpp consults it, treating "auto"/empty as auto-detect.
-        let language: Option<String> = (app_config.engine.backend == BackendChoice::WhisperCpp)
+        let language: Option<String> = (local_engine_choice(app_config) == Some(BackendChoice::WhisperCpp))
             .then(|| app_config.engine.whisper_cpp.language.trim())
             .filter(|lang| !lang.is_empty() && *lang != "auto")
             .map(str::to_string);
@@ -473,7 +487,33 @@ fn run_llm_rewrite(client: voxctrl_llm::OpenAiClient, text: String) -> String {
 /// Public for `voxctrl-server`, which drives a backend directly: it serves raw
 /// transcripts and leaves post-processing to the client that asked for them.
 pub fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
+    // A remote backend with a fallback configured builds the fallback: the
+    // recording pipeline talks to the server itself, and this engine is only
+    // handed a dictation when the server could not take it.
+    let choice = local_engine_choice(config).unwrap_or(BackendChoice::RemoteOpenAi);
+    build_backend_for(&choice, config)
+}
+
+/// The on-device engine `config` transcribes with: the selected backend, or
+/// the fallback of a remote one. `None` when a remote backend has no fallback
+/// and nothing runs locally at all.
+pub fn local_engine_choice(config: &AppConfig) -> Option<BackendChoice> {
     match config.engine.backend {
+        BackendChoice::RemoteOpenAi => config.engine.remote_openai.fallback.backend(),
+        ref local => Some(local.clone()),
+    }
+}
+
+/// Whether `config` keeps an on-device engine in reserve behind a remote
+/// server. Such an engine is not loaded at startup: it costs memory only
+/// while the server is unreachable.
+pub fn is_standby_config(config: &AppConfig) -> bool {
+    config.engine.backend == BackendChoice::RemoteOpenAi
+        && config.engine.remote_openai.fallback.backend().is_some()
+}
+
+fn build_backend_for(choice: &BackendChoice, config: &AppConfig) -> Box<dyn TranscriptionBackend> {
+    match choice {
         BackendChoice::WhisperCpp => {
             Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))
         }
@@ -523,6 +563,20 @@ pub fn build_backend(config: &AppConfig) -> Box<dyn TranscriptionBackend> {
 
 // ── Threaded worker ───────────────────────────────────────────────────────────
 
+/// How often the worker checks whether a loaded fallback model can go.
+const STANDBY_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How long a loaded fallback model is kept without being used while the
+/// server is still unreachable. Long enough that dictating every few minutes
+/// through an outage does not reload it each time.
+const STANDBY_IDLE_UNLOAD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Whether a loaded fallback model should be unloaded: as soon as the server
+/// answers again, or after sitting unused for [`STANDBY_IDLE_UNLOAD`].
+fn standby_should_unload(server_online: bool, idle: std::time::Duration) -> bool {
+    server_online || idle >= STANDBY_IDLE_UNLOAD
+}
+
 /// Run the inference engine on a dedicated OS thread.
 /// Receives `InferenceRequest` from `rx`, sends `InferenceOutput` to `tx`.
 pub fn run_worker(
@@ -547,19 +601,31 @@ pub fn run_worker_with_config(
         .name("voxctrl-inference".into())
         .spawn(move || {
             let mut engine = InferenceEngine::new(config);
+            // Checked every few seconds to unload a fallback model the app no
+            // longer needs. See the `ticker` arm below.
+            let ticker = crossbeam_channel::tick(STANDBY_CHECK_INTERVAL);
+            let mut last_used = std::time::Instant::now();
             // A load failure (typically: model not downloaded yet on a fresh
             // install) must NOT kill this thread. Keep consuming requests and
             // retry the load on each one — the user may download the model
             // from Settings → Engine while the app is running, and dictation
             // must start working right away, not after an app restart.
-            let mut loaded = match engine.load() {
-                Ok(()) => {
-                    info!("Inference engine ready");
-                    true
-                }
-                Err(e) => {
-                    error!("Failed to load inference backend: {e:#}");
-                    false
+            //
+            // A remote server's fallback is deliberately not loaded here: it is
+            // loaded by the first dictation the server could not take.
+            let mut loaded = if engine.is_standby() {
+                info!("Fallback speech engine on standby (not loaded)");
+                false
+            } else {
+                match engine.load() {
+                    Ok(()) => {
+                        info!("Inference engine ready");
+                        true
+                    }
+                    Err(e) => {
+                        error!("Failed to load inference backend: {e:#}");
+                        false
+                    }
                 }
             };
 
@@ -621,7 +687,18 @@ pub fn run_worker_with_config(
                             error!("Inference error: {e:?}");
                             InferenceOutput::failed(target_id, binding_id, &e, is_interim, session_id)
                         });
+                        last_used = std::time::Instant::now();
                         let _ = tx.send(output);
+                    }
+                    recv(ticker) -> _ => {
+                        if loaded
+                            && engine.is_standby()
+                            && standby_should_unload(remote_status::is_online(), last_used.elapsed())
+                        {
+                            info!("Unloading the fallback speech engine: the server is reachable again, or it has been idle");
+                            engine.unload();
+                            loaded = false;
+                        }
                     }
                     recv(config_rx) -> new_cfg_res => {
                         let new_cfg = match new_cfg_res {
@@ -629,7 +706,10 @@ pub fn run_worker_with_config(
                             Err(_) => break,
                         };
                         let needs_reload = engine.update_config(new_cfg);
-                        if needs_reload {
+                        if needs_reload && engine.is_standby() {
+                            // A new fallback: built, and left unloaded until needed.
+                            loaded = false;
+                        } else if needs_reload {
                             loaded = match engine.load() {
                                 Ok(()) => {
                                     info!("Inference engine ready with new backend");
@@ -693,6 +773,127 @@ mod tests {
             backend: Box::new(RecordingBackend { transcript, requests: requests.clone() }),
         };
         (engine, requests)
+    }
+
+    fn remote_config(fallback: voxctrl_config::FallbackChoice) -> AppConfig {
+        let mut cfg = AppConfig::default();
+        cfg.engine.backend = BackendChoice::RemoteOpenAi;
+        cfg.engine.remote_openai.fallback = fallback;
+        cfg
+    }
+
+    #[test]
+    fn the_local_engine_is_the_backend_or_a_remote_backends_fallback() {
+        use voxctrl_config::FallbackChoice;
+        let mut local = AppConfig::default();
+        local.engine.backend = BackendChoice::Parakeet;
+        assert_eq!(local_engine_choice(&local), Some(BackendChoice::Parakeet));
+        assert!(!is_standby_config(&local));
+
+        let bare = remote_config(FallbackChoice::None);
+        assert_eq!(local_engine_choice(&bare), None);
+        assert!(!is_standby_config(&bare));
+
+        let backed = remote_config(FallbackChoice::Parakeet);
+        assert_eq!(local_engine_choice(&backed), Some(BackendChoice::Parakeet));
+        assert!(is_standby_config(&backed));
+    }
+
+    #[test]
+    fn a_remote_backend_builds_its_fallback_engine_or_the_http_client() {
+        use voxctrl_config::FallbackChoice;
+        assert_eq!(build_backend(&remote_config(FallbackChoice::None)).name(), "remote-openai");
+        assert_eq!(build_backend(&remote_config(FallbackChoice::WhisperCpp)).name(), "whisper-cpp");
+    }
+
+    #[test]
+    fn a_fallback_model_is_unloaded_when_the_server_returns_or_it_sits_idle() {
+        let short = std::time::Duration::from_secs(30);
+        assert!(!standby_should_unload(false, short), "still offline and in use: keep it");
+        assert!(standby_should_unload(true, short), "the server is back");
+        assert!(standby_should_unload(false, STANDBY_IDLE_UNLOAD), "idle through a long outage");
+    }
+
+    /// Only a change to what actually runs on this machine rebuilds the
+    /// engine. Editing the server's address or key must not throw away a
+    /// fallback model that is loaded and in use.
+    #[test]
+    fn remote_settings_rebuild_the_engine_only_when_the_fallback_changes() {
+        use voxctrl_config::FallbackChoice;
+        let (mut engine, _) = recording_engine(remote_config(FallbackChoice::WhisperCpp), "x");
+        assert!(engine.is_standby());
+
+        let mut moved = remote_config(FallbackChoice::WhisperCpp);
+        moved.engine.remote_openai.endpoint = "http://other-server:8787/v1".into();
+        moved.engine.remote_openai.api_key = Some("vx_new".into());
+        assert!(!engine.update_config(Arc::new(moved.clone())), "a new address rebuilt the fallback");
+
+        let mut bigger = moved.clone();
+        bigger.engine.whisper_cpp.model_size = "small".into();
+        assert!(engine.update_config(Arc::new(bigger.clone())), "the fallback's own model changed");
+
+        // Another engine's settings are not this fallback's business.
+        let mut unrelated = bigger.clone();
+        unrelated.engine.moonshine.model_size = "tiny".into();
+        assert!(!engine.update_config(Arc::new(unrelated.clone())));
+
+        let mut dropped = unrelated.clone();
+        dropped.engine.remote_openai.fallback = FallbackChoice::None;
+        assert!(engine.update_config(Arc::new(dropped)), "the fallback was removed");
+        assert!(!engine.is_standby());
+    }
+
+    /// With no fallback the engine is the HTTP client, which does follow the
+    /// server's address.
+    #[test]
+    fn remote_settings_without_a_fallback_rebuild_the_client() {
+        use voxctrl_config::FallbackChoice;
+        let (mut engine, _) = recording_engine(remote_config(FallbackChoice::None), "x");
+        let mut moved = remote_config(FallbackChoice::None);
+        moved.engine.remote_openai.endpoint = "http://other-server:8787/v1".into();
+        assert!(engine.update_config(Arc::new(moved)));
+    }
+
+    /// A whisper.cpp fallback is given the language from its own settings,
+    /// exactly as when whisper.cpp is the selected backend.
+    #[test]
+    fn a_whisper_fallback_transcribes_in_its_configured_language() {
+        let mut cfg = remote_config(voxctrl_config::FallbackChoice::WhisperCpp);
+        cfg.engine.whisper_cpp.language = "de".into();
+        let (engine, requests) = recording_engine(cfg, "hallo");
+        engine.process(request(speech())).unwrap();
+        assert_eq!(requests.lock().unwrap()[0].language.as_deref(), Some("de"));
+
+        let mut cfg = remote_config(voxctrl_config::FallbackChoice::Parakeet);
+        cfg.engine.whisper_cpp.language = "de".into();
+        let (engine, requests) = recording_engine(cfg, "hello");
+        engine.process(request(speech())).unwrap();
+        assert_eq!(requests.lock().unwrap()[0].language, None);
+    }
+
+    /// A fallback engine is left unloaded at startup and loaded by the first
+    /// dictation handed to it. With no model on disk that load fails, and the
+    /// failure reaches the user as that dictation's error, naming the model.
+    #[test]
+    fn the_worker_loads_a_fallback_only_when_a_dictation_needs_it() {
+        let models = tempfile::tempdir().unwrap();
+        let mut cfg = remote_config(voxctrl_config::FallbackChoice::WhisperCpp);
+        cfg.engine.whisper_cpp.model_dir = models.path().to_string_lossy().into_owned();
+
+        let (req_tx, req_rx) = crossbeam_channel::unbounded();
+        let (out_tx, out_rx) = crossbeam_channel::unbounded();
+        // Held for the test: the worker stops when its config channel closes.
+        let (_config_tx, config_rx) = crossbeam_channel::unbounded();
+        run_worker_with_config(Arc::new(cfg), req_rx, out_tx, config_rx);
+
+        // Nothing was loaded (or attempted) at startup: no output until asked.
+        assert!(out_rx.recv_timeout(std::time::Duration::from_millis(300)).is_err());
+
+        req_tx.send(request(speech())).unwrap();
+        let out = out_rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+        let error = out.error.expect("there is no model to load");
+        assert!(error.contains("not downloaded"), "{error}");
+        assert_eq!(out.target_id, "notes");
     }
 
     /// Loud enough to pass the noise gate at any sensitivity.

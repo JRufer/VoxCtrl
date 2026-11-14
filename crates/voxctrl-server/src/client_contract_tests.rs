@@ -35,6 +35,7 @@ fn client_config(endpoint: &str, api_key: Option<&str>) -> RemoteOpenAiConfig {
         model: "whisper-1".into(),
         language: "en".into(),
         timeout_secs: 10,
+        ..Default::default()
     }
 }
 
