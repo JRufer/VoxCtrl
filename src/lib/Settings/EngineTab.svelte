@@ -212,6 +212,17 @@
     markDirty();
   }
 
+  // AI processing through this server: the OpenAI API tab's "use the VoxCtrl
+  // server" setting, offered here too so the server's uses sit together.
+  let serverLlm = $state<{ available: boolean; message: string } | null>(null);
+  let llmViaServer = $state(!!cfg.openai?.on_server);
+
+  function onServerLlmToggle(e: Event) {
+    cfg.openai.on_server = (e.currentTarget as HTMLInputElement).checked;
+    llmViaServer = cfg.openai.on_server;
+    markDirty();
+  }
+
   function onEndpointChanged() {
     cfg.engine.remote_openai.endpoint = normalizeServerAddress(
       cfg.engine.remote_openai.endpoint ?? "",
@@ -321,10 +332,12 @@
           apiKey: cfg.engine.remote_openai.api_key || null,
           tlsFingerprint: cfg.engine.remote_openai.tls_fingerprint || null,
         };
-        const [cleanup, speech] = await Promise.all([
+        const [cleanup, speech, llm] = await Promise.all([
           invoke<ServerCleanupStatus>("check_server_cleanup", args).catch(() => null),
           invoke<{ available: boolean; message: string }>("check_server_tts", args).catch(() => null),
+          invoke<{ available: boolean; message: string }>("check_server_llm", args).catch(() => null),
         ]);
+        serverLlm = llm;
         if (cleanup) serverCleanup = cfg.engine.remote_openai.cleanup_on_server || !cleanup.available ? cleanup : null;
         serverSpeech = speech;
         remoteTestStatus = {
@@ -333,6 +346,7 @@
             recognition: { ok: true, message: res.message, models: res.models ?? [] },
             cleanup: cleanup ?? { available: false, message: "" },
             speech: speech ?? { available: false, message: "" },
+            llm: llm ?? { available: false, message: "" },
           }).text,
         };
       }
@@ -1064,6 +1078,22 @@
           onchange={onServerSpeechToggle}
           data-testid="speech-on-server"
         />
+      </label>
+
+      <label class="field">
+        <div class="field-title-col">
+          <span>Use the server for AI processing</span>
+          <p class="hint">
+            {#if serverLlm && !serverLlm.available}
+              {serverLlm.message}
+            {:else}
+              Hotkeys with AI processing switched on send their text to the server's language model instead of
+              the service set under <strong>OpenAI API</strong>. Your prompts are still used; the model is the
+              server's.
+            {/if}
+          </p>
+        </div>
+        <input type="checkbox" checked={llmViaServer} onchange={onServerLlmToggle} data-testid="llm-on-server" />
       </label>
 
       {#if remoteSummary}

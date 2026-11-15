@@ -35,7 +35,8 @@ that listens on a network port.
 ## What runs where
 
 The server runs speech recognition, S1-mini dictation cleanup (from 0.9.5) and
-text-to-speech (from 0.9.7).
+text-to-speech (from 0.9.7), and can pass AI processing on to a language model
+(from 0.9.16).
 
 | | Where it runs |
 |---|---|
@@ -43,16 +44,11 @@ text-to-speech (from 0.9.7).
 | **Speech recognition** (whisper.cpp, Moonshine, Parakeet) | **Server** |
 | Filler removal, spoken punctuation, snippets, custom vocabulary | Client |
 | **S1-mini dictation cleanup** | **Server**, when turned on at both ends (see [Dictation cleanup on the server](#dictation-cleanup-on-the-server)); otherwise client |
-| The OpenAI-compatible LLM step | Wherever the endpoint in the client's AI settings points |
+| **AI processing** (the OpenAI-compatible LLM step) | **Through the server** to the language model service it is pointed at, when turned on at both ends (see [AI processing through the server](#ai-processing-through-the-server)); otherwise wherever the client's own OpenAI API settings point |
 | **Text-to-speech** | **Server**, when turned on there and the client's TTS engine is "VoxCtrl server" (see [Text-to-speech on the server](#text-to-speech-on-the-server)); otherwise client. The audio is always played on the client |
 
-Cleanup and text-to-speech are each off until you turn them on at both ends,
-so a client keeps loading its own S1-mini and TTS voice until then.
-
-Not in this release, and planned for later ones:
-
-- sending custom voices from the client to the server;
-- pairing with a code, and encrypted connections built in;
+Cleanup, text-to-speech and AI processing are each off until you turn them on
+at both ends, so a client keeps using its own until then.
 
 ---
 
@@ -389,6 +385,7 @@ with encryption on.
    |---|---|
    | **Fallback engine** | The local engine that takes over when the server can't be reached ([fallback](#when-the-server-cant-be-reached)) |
    | **Run dictation cleanup on the server** | S1-mini cleanup runs on the server. Needs cleanup enabled there |
+   | **Use the server for AI processing** | Hotkeys with AI processing on send their text to the server's language model instead of the service under **Settings → OpenAI API**. Needs AI processing enabled on the server ([AI processing through the server](#ai-processing-through-the-server)) |
    | **Use the server for text-to-speech** | The server speaks and this computer plays the audio. This sets the TTS engine to **VoxCtrl server**; pick the server's engine and voice under **Settings → TTS**. Switching it off goes back to the TTS engine in use before |
 
 Settings save as you change them. Dictation goes to the server for as long as
@@ -688,6 +685,80 @@ Things to know:
 - The server logs how long each request took, its size and which engine and
   voice were asked for, never the text.
 
+### AI processing through the server
+
+AI processing is the optional step where a hotkey sends what you dictated to a
+language model to be rewritten (**Settings → OpenAI API**, switched on per
+hotkey). Normally each computer connects to the model's service itself. With
+this turned on, each computer sends the request to the VoxCtrl server, and the
+server passes it to one language model service that you set up once.
+
+Use it when:
+
+- the service runs on the server machine (Ollama, llama.cpp) and you would
+  rather not open its port to the network;
+- the service is a hosted provider and you want its API key kept on the
+  server, not on every computer;
+- the server has [encryption](#encryption) on, so the text is encrypted on the
+  way.
+
+The model does not run inside `voxctrl-server`. You need an OpenAI-compatible
+service the server can reach.
+
+**1. On the server**, in `.env` (Docker):
+
+```bash
+VOXCTRL_SERVER_LLM=true
+VOXCTRL_SERVER_LLM_ENDPOINT=http://host.docker.internal:11434
+VOXCTRL_SERVER_LLM_MODEL=llama3.2:1b
+# Only if the service needs a key:
+VOXCTRL_SERVER_LLM_API_KEY=
+```
+
+or in `server.toml`:
+
+```toml
+[llm]
+enabled = true
+endpoint = "http://localhost:11434"
+model = "llama3.2:1b"
+```
+
+Restart the server. Its log shows `AI processing: on (llama3.2:1b at …)`, and
+warns if the service is not reachable or does not list that model. Neither
+stops the server from starting.
+
+In Docker, `localhost` is the container, not the machine. For a service on the
+same machine use `http://host.docker.internal:11434`, and make that service
+listen on more than loopback (for Ollama, `OLLAMA_HOST=0.0.0.0`).
+
+**2. On each client**, turn on **Use the VoxCtrl server** under **Settings →
+OpenAI API**, or **Use the server for AI processing** under **Settings →
+Engine**. They are the same setting. **Check the server** reports the model the
+server answers with, or what to change on the server.
+
+What changes on the client and what does not:
+
+| | |
+|---|---|
+| Prompts (system and user, per hotkey or global) | Still the client's |
+| Which hotkeys use AI processing | Still the client's |
+| Model | The server's. The client's model, and a hotkey's model override, are not used |
+| API URL and key under OpenAI API | Not used while this is on; kept for when you turn it off |
+| Timeout | The client's timeout still applies to its request; `llm.timeout_secs` on the server (60) limits the model's answer |
+
+It works with any speech engine selected on the client: only the server's
+address and key under **Engine** are needed, not the Remote Speech Engine
+backend.
+
+If the request fails for any reason (server unreachable, AI processing off
+there, the model's service down), the text is typed as it was dictated. The
+client's log and the server's log say why. Chat targets under **Output
+Commands** are separate and still connect to their own service.
+
+The server logs how many characters each request had and how long it took,
+never the text.
+
 ### Free the disk space your local models used
 
 If this computer ran everything itself before you set up the server, its speech,
@@ -802,6 +873,17 @@ voice = "en-us-lessac-medium"
 # is the default. Each is downloaded at startup.
 engines = []
 
+[llm]
+# AI processing for clients: an OpenAI-compatible language model service this
+# server passes their requests on to. See "AI processing through the server".
+enabled = false
+endpoint = "http://localhost:11434"
+model = "llama3.2:1b"
+# The service's own key, if it needs one. Clients never see it.
+api_key = ""
+# How long one answer may take, in seconds.
+timeout_secs = 60
+
 [tls]
 # true = encrypt every connection (HTTPS only). Clients then connect with the
 # pairing code. See "Encryption".
@@ -837,6 +919,10 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_TTS_ENGINE` | `tts.engine` | `piper` |
 | `VOXCTRL_SERVER_TTS_ENGINES` | `speech.engines`: every engine clients may choose between, comma-separated. The first is the default unless `VOXCTRL_SERVER_TTS_ENGINE` is set | `kitten_tts_2,piper` |
 | `VOXCTRL_SERVER_TTS_VOICE` | The default voice of the default engine (`piper`, `pocket_tts`, `kitten_tts_2`) | `en-us-lessac-medium` |
+| `VOXCTRL_SERVER_LLM` | `llm.enabled` | `true` |
+| `VOXCTRL_SERVER_LLM_ENDPOINT` | `llm.endpoint` | `http://host.docker.internal:11434` |
+| `VOXCTRL_SERVER_LLM_MODEL` | `llm.model` | `llama3.2:1b` |
+| `VOXCTRL_SERVER_LLM_API_KEY` | `llm.api_key` | `sk-…` |
 
 A variable that is set but empty is ignored. Environment variables are never
 written into `server.toml`.
@@ -1020,6 +1106,8 @@ use, so tools other than VoxCtrl can use it too.
 | `POST /v1/audio/transcriptions` | Yes | Transcribe audio |
 | `GET /v1/cleanup` | Yes | Whether cleanup is enabled: `{"available": true, "model": "s1-mini"}` |
 | `POST /v1/cleanup` | Yes | Clean up a transcript |
+| `GET /v1/chat/completions` | Yes | Whether AI processing is enabled: `{"available": true, "model": "llama3.2:1b"}` |
+| `POST /v1/chat/completions` | Yes | An OpenAI-style chat request, answered by the server's language model |
 | `GET /v1/audio/speech` | Yes | Whether text-to-speech is enabled: `{"available": true, "engine": "piper", "voice": "…"}` |
 | `POST /v1/audio/speech` | Yes | Speak text; returns a WAV file |
 | `GET /v1/voices` | Yes, plus client id | The voices this client has uploaded |
@@ -1096,6 +1184,29 @@ Errors use the same envelope as the rest of the API. A server with cleanup
 turned off answers HTTP 501 with `"type": "not_enabled"`. Empty text returns
 empty text without running the model.
 
+### `POST /v1/chat/completions`
+
+An OpenAI-style chat request, passed on to the service under `[llm]`:
+
+```bash
+curl -s http://SERVER:8787/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "system", "content": "Fix grammar only."},
+                    {"role": "user", "content": "me and him was there"}]}'
+```
+
+The server sets `model` to its own (whatever the request named) and `stream`
+to `false`, and returns the service's answer unchanged, status included, so
+that service's own error messages reach the client. Other fields
+(`temperature` and so on) are passed through.
+
+| Status | Meaning |
+|---|---|
+| 400 | Not a chat request, or more than 200,000 characters of message text |
+| 501 | AI processing is not enabled on this server (`"type": "not_enabled"`) |
+| 502 | The server could not reach its language model service, or it did not answer in time (`"type": "upstream_error"`) |
+| Other | Whatever the language model service answered |
+
 ### `POST /v1/audio/speech`
 
 The same path and request shape as OpenAI's speech endpoint, so OpenAI clients
@@ -1148,6 +1259,20 @@ If the server will not start with text-to-speech on, its log says what could
 not be downloaded or loaded. The engines' programs and models are fetched from
 GitHub and Hugging Face on the first start, so the server needs internet access
 then.
+
+### AI processing does nothing with "Use the VoxCtrl server" on
+
+The text is typed as dictated whenever the request fails. Click **Check the
+server** under **Settings → OpenAI API**:
+
+- *AI processing is turned off on this server*: set it up as in
+  [AI processing through the server](#ai-processing-through-the-server).
+- *This server does not offer AI processing*: the server is older than 0.9.16.
+- It reports a model but nothing is rewritten: look at the server's log. `could
+  not reach its language model service` means the address under `[llm]` is
+  wrong from where the server runs (in Docker, `localhost` is the container);
+  `answered HTTP 404` usually means the service does not have that model.
+- Also check that the hotkey itself has AI processing switched on.
 
 ### Dictation arrives uncleaned although cleanup is on
 

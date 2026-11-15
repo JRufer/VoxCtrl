@@ -160,6 +160,18 @@ pub fn post_process(
 /// The global settings are the base; the binding may override the model, pick
 /// a preset (which replaces the system prompt), give its own system prompt
 /// (which wins over the preset) and its own user-prompt template.
+/// The client for this binding's AI-processing step, or `None` when the
+/// binding has none. With "use the server" on, requests go through the
+/// VoxCtrl server set under Engine and are answered by its language model.
+pub fn binding_llm_client(binding: Option<&HotkeyBinding>, config: &AppConfig) -> Option<voxctrl_llm::OpenAiClient> {
+    let openai = binding_openai_config(binding, &config.openai)?;
+    Some(if config.openai.on_server {
+        voxctrl_llm::OpenAiClient::via_server(openai, &config.engine.remote_openai)
+    } else {
+        voxctrl_llm::OpenAiClient::new(openai)
+    })
+}
+
 pub fn binding_openai_config(
     binding: Option<&HotkeyBinding>,
     base: &OpenAiConfig,

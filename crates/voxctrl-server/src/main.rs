@@ -12,6 +12,7 @@ mod client_contract_tests;
 mod config;
 mod engine;
 mod http;
+mod llm;
 mod speech;
 mod tls;
 mod voices;
@@ -56,6 +57,12 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_DEVICE            auto | cpu
     VOXCTRL_SERVER_LANGUAGE          Language code, or auto
     VOXCTRL_SERVER_MAX_UPLOAD_MB     Largest upload accepted
+    VOXCTRL_SERVER_LLM               true = answer clients' AI-processing requests
+                                     with the language model service below
+    VOXCTRL_SERVER_LLM_ENDPOINT      That service's address (OpenAI-compatible),
+                                     e.g. http://localhost:11434 for Ollama
+    VOXCTRL_SERVER_LLM_MODEL         The model it should answer with
+    VOXCTRL_SERVER_LLM_API_KEY       The service's key, if it needs one
     VOXCTRL_SERVER_TLS               true = encrypt connections (HTTPS only);
                                      clients connect with the pairing code
     VOXCTRL_SERVER_PUBLIC_HOST       Name or IP address clients reach this
@@ -211,6 +218,9 @@ async fn run(cli: Cli) -> Result<()> {
             shown.api_key = "(set)".into();
         }
         // The Hugging Face token is a secret too.
+        if !shown.llm.api_key.is_empty() {
+            shown.llm.api_key = "(set)".into();
+        }
         if shown.tts.hf_token.as_deref().is_some_and(|t| !t.is_empty()) {
             shown.tts.hf_token = Some("(set)".into());
         }
@@ -254,6 +264,15 @@ async fn run(cli: Cli) -> Result<()> {
         None => "off (set cleanup.enabled or VOXCTRL_SERVER_CLEANUP to offer it)".to_string(),
     };
 
+    let relay = match effective.llm.enabled {
+        true => Some(Arc::new(llm::LlmRelay::prepare(&effective.llm).await?)),
+        false => None,
+    };
+    let llm_line = match &relay {
+        Some(relay) => format!("on ({} at {})", relay.model(), effective.llm.endpoint.trim()),
+        None => "off (set llm.enabled or VOXCTRL_SERVER_LLM to offer it)".to_string(),
+    };
+
     let speaker: Option<Arc<dyn speech::Speaker>> = if effective.tts.enabled {
         Some(Arc::new(speech::EngineSpeaker::prepare(effective.tts.clone(), &effective.speech.engines).await?))
     } else {
@@ -270,6 +289,7 @@ async fn run(cli: Cli) -> Result<()> {
     let state = Arc::new(http::AppState {
         engine,
         cleanup: cleaner,
+        llm: relay,
         voices: speaker.is_some().then(|| voices::VoiceStore::new(voices::VoiceStore::default_root())),
         speech: speaker,
         api_key: effective.require_api_key.then(|| effective.api_key.clone()),
@@ -298,6 +318,7 @@ async fn run(cli: Cli) -> Result<()> {
     info!("  Model:    {model_id}");
     info!("  Cleanup:  {cleanup_line}");
     info!("  Speech:   {speech_line}");
+    info!("  AI processing: {llm_line}");
     info!("  Endpoint: {scheme}://{addr}/v1  (use this machine's address from a client)");
     match &identity {
         Some(identity) => info!(
@@ -554,6 +575,7 @@ mod tests {
         let state = Arc::new(http::AppState {
             engine,
             cleanup: None,
+            llm: None,
             speech: None,
             voices: None,
             api_key: Some("vx_key".into()),

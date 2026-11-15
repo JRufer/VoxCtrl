@@ -127,6 +127,12 @@ export interface OpenAiConfig {
   endpoint: string;
   api_key: string | null;
   timeout_secs: number;
+  /**
+   * Send AI processing through the VoxCtrl server set under Engine, which
+   * answers with its own language model. `endpoint`, `api_key` and `model`
+   * are not used while this is on. Absent in configs written before 0.9.16.
+   */
+  on_server?: boolean;
 }
 
 export interface PocketTtsConfig {

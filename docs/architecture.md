@@ -57,7 +57,7 @@ VoxCtrl/
     ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
     ├── voxctrl-pairing/    # Pairing codes and certificate pinning between the app and an encrypted server
     ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
-    └── voxctrl-server/     # Headless speech server: OpenAI-compatible HTTP API over voxctrl-inference, plus S1-mini cleanup (`/v1/cleanup`) text-to-speech (`/v1/audio/speech`) and clients' uploaded voices (`/v1/voices`)
+    └── voxctrl-server/     # Headless speech server: OpenAI-compatible HTTP API over voxctrl-inference, plus S1-mini cleanup (`/v1/cleanup`) text-to-speech (`/v1/audio/speech`) and clients' uploaded voices (`/v1/voices`), and AI processing passed on to a language model service (`/v1/chat/completions`)
 ```
 
 `voxctrl-server` is a separate binary, not part of the desktop app. It depends

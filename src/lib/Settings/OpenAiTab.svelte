@@ -74,10 +74,36 @@
     !availableModels.includes(cfg.openai.model)
   );
 
+  // "Use the VoxCtrl server": requests go to the server set under Engine and
+  // are answered by its language model, so the connection fields below do not
+  // apply. Kept in local state because a plain config object is not reactive.
+  let onServer = $state(!!cfg.openai.on_server);
+
+  function onServerToggle(e: Event) {
+    cfg.openai.on_server = (e.currentTarget as HTMLInputElement).checked;
+    onServer = cfg.openai.on_server;
+    markDirty();
+    performTest();
+  }
+
+  async function checkServer() {
+    const remote = cfg.engine?.remote_openai;
+    const status = await invoke<{ available: boolean; model: string | null; message: string }>("check_server_llm", {
+      endpoint: remote?.endpoint ?? "",
+      apiKey: remote?.api_key || null,
+      tlsFingerprint: remote?.tls_fingerprint || null,
+    });
+    testStatus = { success: status.available, message: status.message };
+  }
+
   async function performTest() {
     testing = true;
     testStatus = null;
     try {
+      if (onServer) {
+        await checkServer();
+        return;
+      }
       const res = await invoke<TestResult>("test_openai", {
         endpoint: cfg.openai.endpoint,
         apiKey: cfg.openai.api_key,
@@ -117,25 +143,41 @@
   <div class="field-group">
     <h3>Connection</h3>
     <label class="field">
-      <span>API URL</span>
-      <input type="text" bind:value={cfg.openai.endpoint} onchange={markDirty} placeholder="http://localhost:11434" />
+      <span>Use the VoxCtrl server</span>
+      <input type="checkbox" checked={onServer} onchange={onServerToggle} data-testid="openai-on-server" />
     </label>
-    <label class="field">
-      <span>API Key</span>
-      <input type="password" bind:value={cfg.openai.api_key} onchange={markDirty} placeholder="Required for remote servers (optional for localhost)" autocomplete="off" />
-    </label>
-    <label class="field">
-      <span>Model (Default)</span>
-      {#if availableModels.length > 0}
-        <CustomSelect bind:value={cfg.openai.model} options={openaiModelOptions} onchange={markDirty} />
+    <p class="hint">
+      {#if onServer}
+        AI processing is sent to the VoxCtrl server set under <strong>Engine</strong> and answered by the
+        language model chosen on that server. Your prompts below are still used. A hotkey's own model
+        setting is not.
       {:else}
-        <input type="text" bind:value={cfg.openai.model} onchange={markDirty} placeholder="e.g. llama3.2:1b" />
+        Turn this on to have the VoxCtrl server set under <strong>Engine</strong> answer with its own
+        language model, instead of this computer connecting to a service itself.
       {/if}
-    </label>
-    {#if modelMissing}
-      <span class="validation-error">
-        ⚠️ The model <code>{cfg.openai.model}</code> isn't available on this server. Post-processing will fail with a 404 — pick a model from the list above or pull it on the server.
-      </span>
+    </p>
+    {#if !onServer}
+      <label class="field">
+        <span>API URL</span>
+        <input type="text" bind:value={cfg.openai.endpoint} onchange={markDirty} placeholder="http://localhost:11434" />
+      </label>
+      <label class="field">
+        <span>API Key</span>
+        <input type="password" bind:value={cfg.openai.api_key} onchange={markDirty} placeholder="Required for remote servers (optional for localhost)" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Model (Default)</span>
+        {#if availableModels.length > 0}
+          <CustomSelect bind:value={cfg.openai.model} options={openaiModelOptions} onchange={markDirty} />
+        {:else}
+          <input type="text" bind:value={cfg.openai.model} onchange={markDirty} placeholder="e.g. llama3.2:1b" />
+        {/if}
+      </label>
+      {#if modelMissing}
+        <span class="validation-error">
+          ⚠️ The model <code>{cfg.openai.model}</code> isn't available on this server. Post-processing will fail with a 404 — pick a model from the list above or pull it on the server.
+        </span>
+      {/if}
     {/if}
     <label class="field">
       <span>Timeout (seconds)</span>
@@ -144,10 +186,10 @@
 
     <div class="action-row">
       <button class="btn-test" onclick={performTest} disabled={testing}>
-        {testing ? "⏳ Testing..." : "🔌 Test Connection"}
+        {testing ? "⏳ Testing..." : onServer ? "🔌 Check the server" : "🔌 Test Connection"}
       </button>
       {#if testStatus}
-        <span class="status-msg {testStatus.success ? 'success' : 'error'}">
+        <span class="status-msg {testStatus.success ? 'success' : 'error'}" data-testid="openai-test-status">
           {testStatus.message}
         </span>
       {/if}

@@ -64,6 +64,12 @@ pub struct OpenAiConfig {
     #[serde(default)]
     pub api_key: Option<String>,
     pub timeout_secs: u64,
+    /// Send AI processing through the VoxCtrl server set under
+    /// `engine.remote_openai` instead of to `endpoint`. The server answers
+    /// with its own language model, so `endpoint`, `api_key` and `model` here
+    /// (and a hotkey's model override) are not used while this is on.
+    #[serde(default)]
+    pub on_server: bool,
 }
 
 impl Default for OpenAiConfig {
@@ -78,6 +84,7 @@ impl Default for OpenAiConfig {
             endpoint: "http://localhost:11434".into(),
             api_key: None,
             timeout_secs: 30,
+            on_server: false,
         }
     }
 }

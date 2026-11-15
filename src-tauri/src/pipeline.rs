@@ -112,8 +112,8 @@ async fn process_remote_transcription(
 
     // ── Hotkey-Specific OpenAI Post-Processing ────────────────────────────
     if !processed.is_empty() {
-        if let Some(openai_cfg) = finalize::binding_openai_config(binding.as_ref(), &app_cfg.openai) {
-            processed = voxctrl_llm::OpenAiClient::new(openai_cfg).process(&processed).await;
+        if let Some(client) = finalize::binding_llm_client(binding.as_ref(), &app_cfg) {
+            processed = client.process(&processed).await;
         }
     }
 

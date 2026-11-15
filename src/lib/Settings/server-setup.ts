@@ -61,6 +61,7 @@ export interface ServerReport {
   recognition: { ok: boolean; message: string; models: string[] };
   cleanup: { available: boolean; message: string };
   speech: { available: boolean; message: string };
+  llm: { available: boolean; message: string };
 }
 
 /** One line for the top of the panel after a connection test. */
@@ -69,6 +70,7 @@ export function connectionSummary(report: ServerReport): { ok: boolean; text: st
   const offers = ["speech recognition"];
   if (report.cleanup.available) offers.push("dictation cleanup");
   if (report.speech.available) offers.push("text-to-speech");
+  if (report.llm.available) offers.push("AI processing");
   const list = offers.length > 1 ? `${offers.slice(0, -1).join(", ")} and ${offers[offers.length - 1]}` : offers[0];
   return { ok: true, text: `Connected. This server offers ${list}.` };
 }

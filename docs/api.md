@@ -488,6 +488,19 @@ uploads new and changed clips, removes ones deleted here. `local` is every
 uploadable clip; `uploaded` and `removed` are what this call changed. Rejects
 with a message for the user when the server can't be reached or refuses.
 
+#### `check_server_llm(endpoint, apiKey, tlsFingerprint) → ServerLlmStatus`
+Asks the VoxCtrl server at `endpoint` whether it does AI processing and with
+which language model (`GET /v1/chat/completions`). Never rejects: every outcome
+is a status to show.
+
+```ts
+interface ServerLlmStatus {
+  available: boolean;
+  model: string | null;   // the model the server answers with
+  message: string;        // what to tell the user, including how to fix "not available"
+}
+```
+
 #### `check_server_cleanup(endpoint, apiKey) → ServerCleanupStatus`
 Asks the speech server at `endpoint` whether it offers dictation cleanup
 (`GET /v1/cleanup`). Takes the endpoint and key as typed, which need not be

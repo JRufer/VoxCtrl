@@ -31,6 +31,12 @@ services:
       VOXCTRL_SERVER_TTS_ENGINES: ${VOXCTRL_SERVER_TTS_ENGINES:-}
       VOXCTRL_SERVER_TTS_ENGINE: ${VOXCTRL_SERVER_TTS_ENGINE:-}
       VOXCTRL_SERVER_TTS_VOICE: ${VOXCTRL_SERVER_TTS_VOICE:-}
+      # true = pass clients' AI-processing requests on to the language model
+      # service below. See "AI processing through the server" in docs/server.md.
+      VOXCTRL_SERVER_LLM: ${VOXCTRL_SERVER_LLM:-}
+      VOXCTRL_SERVER_LLM_ENDPOINT: ${VOXCTRL_SERVER_LLM_ENDPOINT:-}
+      VOXCTRL_SERVER_LLM_MODEL: ${VOXCTRL_SERVER_LLM_MODEL:-}
+      VOXCTRL_SERVER_LLM_API_KEY: ${VOXCTRL_SERVER_LLM_API_KEY:-}
       # true = encrypt connections (HTTPS only); clients pair with the code
       # from `docker exec voxctrl-server voxctrl-server --pairing-code`.
       VOXCTRL_SERVER_TLS: ${VOXCTRL_SERVER_TLS:-}
@@ -39,6 +45,10 @@ services:
       # Left blank, the server generates a key on first start, saves it in the
       # volume, and prints it once in the log.
       VOXCTRL_SERVER_API_KEY: ${VOXCTRL_SERVER_API_KEY:-}
+    # Lets the server reach a service on this machine (such as Ollama) as
+    # http://host.docker.internal:<port>.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Downloaded models and server.toml (with the generated API key).
       - voxctrl-data:/var/lib/voxctrl

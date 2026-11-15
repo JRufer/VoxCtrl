@@ -28,6 +28,8 @@ dirs = { workspace = true }
 # OpenAI" engine among them) upload audio.
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "multipart", "tokio"] }
 futures-util = { workspace = true }
+# Passing clients' AI-processing requests on to the language model service.
+reqwest = { workspace = true }
 # Random bytes for the API key generated on first start.
 getrandom = "0.3"
 # Encryption (`[tls] enabled`): a self-made certificate, served with rustls on
@@ -39,6 +41,9 @@ rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 
 [dev-dependencies]
+# The app's own AI-processing client and hotkey settings, for the contract tests.
+voxctrl-llm = { workspace = true }
+voxctrl-routing = { workspace = true }
 tempfile = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
 

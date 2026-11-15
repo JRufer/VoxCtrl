@@ -7,6 +7,8 @@
 //! | `POST /v1/audio/transcriptions` | key | Speech to text |
 //! | `GET /v1/cleanup` | key | Whether this server cleans up dictation |
 //! | `POST /v1/cleanup` | key | Clean up a transcript |
+//! | `GET /v1/chat/completions` | key | Whether this server does AI processing, and with which model |
+//! | `POST /v1/chat/completions` | key | A chat request, answered by the server's language model |
 //! | `GET /v1/audio/speech` | key | Whether this server speaks, and with what |
 //! | `POST /v1/audio/speech` | key | Text to speech, as a WAV file |
 //! | `GET /v1/voices` | key + client id | The voices this client has uploaded |
@@ -52,6 +54,8 @@ pub struct AppState {
     pub engine: Engine,
     /// `None` when cleanup is not enabled on this server.
     pub cleanup: Option<Arc<dyn Cleaner>>,
+    /// `None` when AI processing is not enabled on this server.
+    pub llm: Option<Arc<crate::llm::LlmRelay>>,
     /// `None` when text-to-speech is not enabled on this server.
     pub speech: Option<Arc<dyn Speaker>>,
     /// Where clients' uploaded voices are kept. `None` when text-to-speech is
@@ -69,6 +73,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/models", get(models))
         .route("/v1/audio/transcriptions", post(transcriptions))
         .route("/v1/cleanup", get(cleanup_status).post(cleanup))
+        .route("/v1/chat/completions", get(chat_status).post(chat))
         .route("/v1/audio/speech", get(speech_status).post(speech))
         .route("/v1/voices", get(list_voices))
         .route("/v1/voices/{name}", put(put_voice).delete(delete_voice))
@@ -105,6 +110,10 @@ impl ApiError {
 
     fn not_enabled(message: impl Into<String>) -> Self {
         Self { status: StatusCode::NOT_IMPLEMENTED, kind: "not_enabled", message: message.into() }
+    }
+
+    fn upstream(message: impl Into<String>) -> Self {
+        Self { status: StatusCode::BAD_GATEWAY, kind: "upstream_error", message: message.into() }
     }
 
     fn server(message: impl Into<String>) -> Self {
@@ -207,6 +216,7 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
         "model": state.engine.info().model_id(),
         "cleanup": state.cleanup.is_some(),
         "tts": state.speech.is_some(),
+        "llm": state.llm.is_some(),
     }))
 }
 
@@ -320,6 +330,62 @@ async fn cleanup_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
         "available": state.cleanup.is_some(),
         "model": state.cleanup.as_ref().map(|c| c.model().to_string()),
     }))
+}
+
+// ── AI processing ─────────────────────────────────────────────────────────────
+
+/// Longest chat request passed on, in characters of message text: far more
+/// than a dictation with its prompts, far less than an upload.
+const MAX_CHAT_CHARS: usize = 200_000;
+
+async fn chat_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    Json(json!({
+        "available": state.llm.is_some(),
+        "model": state.llm.as_ref().map(|l| l.model().to_string()),
+    }))
+}
+
+async fn chat(
+    State(state): State<Arc<AppState>>,
+    request: Result<Json<serde_json::Value>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let Json(request) = request.map_err(|e| {
+        ApiError::bad_request(format!("The request must be an OpenAI-style chat request in JSON: {}", e.body_text()))
+    })?;
+    let Some(relay) = state.llm.clone() else {
+        return Err(ApiError::not_enabled(
+            "AI processing is not enabled on this server. Set enabled = true, endpoint and model under \
+             [llm] in server.toml (or VOXCTRL_SERVER_LLM=true with VOXCTRL_SERVER_LLM_ENDPOINT and \
+             VOXCTRL_SERVER_LLM_MODEL) and restart it.",
+        ));
+    };
+    let chars = crate::llm::message_chars(&request);
+    if chars > MAX_CHAT_CHARS {
+        return Err(ApiError::bad_request(format!(
+            "The messages are {chars} characters long; this server passes on at most {MAX_CHAT_CHARS} at a time."
+        )));
+    }
+
+    let started = std::time::Instant::now();
+    let (status, body) = relay.relay(request).await.map_err(|e| match e {
+        crate::llm::RelayError::Invalid(message) => ApiError::bad_request(message),
+        crate::llm::RelayError::Upstream(message) => {
+            warn!("AI processing request failed: {message}");
+            ApiError::upstream(message)
+        }
+    })?;
+
+    // Lengths, never the words: this log stays on disk.
+    if status.is_success() {
+        info!(
+            "AI processing: {chars} characters in, answered by {} in {} ms",
+            relay.model(),
+            started.elapsed().as_millis()
+        );
+    } else {
+        warn!("AI processing: the language model service answered HTTP {}", status.as_u16());
+    }
+    Ok((status, [(header::CONTENT_TYPE, "application/json")], body).into_response())
 }
 
 /// The style goes into the model's control line, so it is held to the plain
@@ -600,6 +666,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: None,
+            llm: None,
             speech: None,
             voices: None,
             api_key: key.map(str::to_string),
@@ -628,6 +695,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: enabled.then(|| cleaner.clone() as Arc<dyn Cleaner>),
+            llm: None,
             speech: None,
             voices: None,
             api_key: Some(KEY.to_string()),
@@ -671,6 +739,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: None,
+            llm: None,
             speech: enabled.then(|| speaker.clone() as Arc<dyn Speaker>),
             voices: None,
             api_key: Some(KEY.to_string()),
@@ -756,6 +825,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine,
             cleanup: None,
+            llm: None,
             speech: Some(speaker.clone() as Arc<dyn Speaker>),
             voices: Some(VoiceStore::new(tmp.path().join("client-voices"))),
             api_key: Some(KEY.to_string()),
@@ -1188,7 +1258,7 @@ mod tests {
     #[tokio::test]
     async fn an_upload_over_the_limit_is_a_413_that_names_the_setting() {
         let (engine, _) = fake_engine("x", false);
-        let state = Arc::new(AppState { engine, cleanup: None, speech: None, voices: None, api_key: None, max_upload_bytes: 1024 });
+        let state = Arc::new(AppState { engine, cleanup: None, llm: None, speech: None, voices: None, api_key: None, max_upload_bytes: 1024 });
         let app = router(state);
         let res = app.oneshot(post(multipart(&[], Some(&speech_wav())), None)).await.unwrap();
         assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);

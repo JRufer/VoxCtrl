@@ -7,6 +7,16 @@ pub struct OpenAiTestResult {
     pub models: Vec<String>,
 }
 
+/// Whether the VoxCtrl server does AI processing, and with which model.
+#[tauri::command]
+pub async fn check_server_llm(
+    endpoint: String,
+    api_key: Option<String>,
+    tls_fingerprint: Option<String>,
+) -> Result<voxctrl_llm::ServerLlmStatus, String> {
+    Ok(voxctrl_llm::check_server_llm(&endpoint, api_key.as_deref(), tls_fingerprint.as_deref()).await)
+}
+
 #[tauri::command]
 pub async fn test_openai(
     endpoint: String,

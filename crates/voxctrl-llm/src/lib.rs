@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
-use voxctrl_config::{OpenAiConfig, OpenAiMode};
+use voxctrl_config::{OpenAiConfig, OpenAiMode, RemoteOpenAiConfig};
 
 // ── Preset system prompts ───────────────────────────────────────────────────
 
@@ -79,6 +79,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct OpenAiClient {
     config: OpenAiConfig,
     http: reqwest::Client,
+    /// Why no request may be sent with these settings, when that is so: a
+    /// server paired with encryption but given an unencrypted address.
+    refused: Option<String>,
 }
 
 impl OpenAiClient {
@@ -91,7 +94,25 @@ impl OpenAiClient {
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .expect("reqwest client");
-        Self { config, http }
+        Self { config, http, refused: None }
+    }
+
+    /// A client whose requests go through a VoxCtrl server, which answers
+    /// them with its own language model. The prompts and timeout stay as
+    /// `config` has them; the address, key and certificate are the server's.
+    pub fn via_server(mut config: OpenAiConfig, server: &RemoteOpenAiConfig) -> Self {
+        config.endpoint = server_base(&server.endpoint);
+        config.api_key = server.api_key.clone();
+        let builder = reqwest::Client::builder()
+            // A server on the network gets a little longer than a local one.
+            .connect_timeout(SERVER_CONNECT_TIMEOUT)
+            .timeout(Duration::from_secs(config.timeout_secs));
+        match voxctrl_pairing::pin(builder, &server.endpoint, server.tls_fingerprint.as_deref())
+            .and_then(|b| b.build().map_err(Into::into))
+        {
+            Ok(http) => Self { config, http, refused: None },
+            Err(e) => Self { config, http: reqwest::Client::new(), refused: Some(format!("{e:#}")) },
+        }
     }
 
     /// Attach the configured API key as a Bearer token, if one is set.
@@ -127,6 +148,10 @@ impl OpenAiClient {
     /// probe would only add a round trip to every rewrite that succeeds.
     pub async fn process(&self, text: &str) -> String {
         if !self.config.enabled {
+            return text.to_string();
+        }
+        if let Some(reason) = &self.refused {
+            warn!("AI processing skipped: {reason}");
             return text.to_string();
         }
 
@@ -206,6 +231,10 @@ impl OpenAiClient {
                 }
                 text.to_string()
             }
+            Err(e) if voxctrl_pairing::is_certificate_mismatch(&e) => {
+                warn!("AI processing skipped: {}", voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
+                text.to_string()
+            }
             Err(e) => {
                 warn!("OpenAI API request error: {e}");
                 text.to_string()
@@ -236,9 +265,99 @@ impl OpenAiClient {
     }
 }
 
+// ── AI processing through a VoxCtrl server ──────────────────────────────────
+
+/// How long a VoxCtrl server gets to accept a connection.
+const SERVER_CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// The server's `/v1` base for a speech endpoint, however it was entered.
+fn server_base(endpoint: &str) -> String {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    api_base(trimmed.strip_suffix("/audio/transcriptions").unwrap_or(trimmed))
+}
+
+/// Whether a server does AI processing, in words for the Settings window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServerLlmStatus {
+    pub available: bool,
+    /// The language model the server answers with, when it says.
+    pub model: Option<String>,
+    /// What to tell the user, including what to do when it is not available.
+    pub message: String,
+}
+
+impl ServerLlmStatus {
+    fn unavailable(message: impl Into<String>) -> Self {
+        Self { available: false, model: None, message: message.into() }
+    }
+}
+
+/// Ask the server whether it does AI processing. Never an error: every way
+/// this can go wrong is something to show the user.
+pub async fn check_server_llm(endpoint: &str, api_key: Option<&str>, tls_fingerprint: Option<&str>) -> ServerLlmStatus {
+    if endpoint.trim().is_empty() {
+        return ServerLlmStatus::unavailable(
+            "No server is set up yet. Enter its address under Engine, with Remote Speech Engine as the backend.",
+        );
+    }
+    let builder = reqwest::Client::builder().connect_timeout(SERVER_CONNECT_TIMEOUT).timeout(Duration::from_secs(6));
+    let client = match voxctrl_pairing::pin(builder, endpoint, tls_fingerprint).and_then(|b| b.build().map_err(Into::into)) {
+        Ok(client) => client,
+        Err(e) => return ServerLlmStatus::unavailable(format!("{e:#}")),
+    };
+    let mut request = client.get(format!("{}/chat/completions", server_base(endpoint)));
+    if let Some(key) = api_key.map(str::trim).filter(|k| !k.is_empty()) {
+        request = request.bearer_auth(key);
+    }
+    let response = match request.send().await {
+        Ok(r) => r,
+        Err(e) if voxctrl_pairing::is_certificate_mismatch(&e) => {
+            return ServerLlmStatus::unavailable(voxctrl_pairing::CERTIFICATE_MISMATCH_HELP)
+        }
+        Err(e) if e.is_connect() => return ServerLlmStatus::unavailable("Could not connect to the server."),
+        Err(e) if e.is_timeout() => return ServerLlmStatus::unavailable("The server did not answer in time."),
+        Err(_) => return ServerLlmStatus::unavailable("The request to the server failed."),
+    };
+    let status = response.status().as_u16();
+    let body = response.bytes().await.unwrap_or_default();
+    interpret_server_status(status, &body)
+}
+
+fn interpret_server_status(status: u16, body: &[u8]) -> ServerLlmStatus {
+    match status {
+        200 => {
+            let value: serde_json::Value = serde_json::from_slice(body).unwrap_or_default();
+            let model = value.get("model").and_then(|m| m.as_str()).map(str::to_string);
+            match value.get("available").and_then(|a| a.as_bool()) {
+                Some(true) => ServerLlmStatus {
+                    available: true,
+                    message: match &model {
+                        Some(model) => format!("This server does AI processing with {model}."),
+                        None => "This server does AI processing.".into(),
+                    },
+                    model,
+                },
+                Some(false) => ServerLlmStatus::unavailable(
+                    "AI processing is turned off on this server. On the server, set enabled = true, endpoint \
+                     and model under [llm] in server.toml (or VOXCTRL_SERVER_LLM=true with \
+                     VOXCTRL_SERVER_LLM_ENDPOINT and VOXCTRL_SERVER_LLM_MODEL) and restart it.",
+                ),
+                None => ServerLlmStatus::unavailable("This server does not offer AI processing."),
+            }
+        }
+        401 | 403 => ServerLlmStatus::unavailable("The server did not accept the API key."),
+        404 | 405 => ServerLlmStatus::unavailable(
+            "This server does not offer AI processing. It needs voxctrl-server 0.9.16 or newer; other \
+             speech servers do not have it.",
+        ),
+        other => ServerLlmStatus::unavailable(format!("The server answered HTTP {other}.")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{api_base, preset_system_prompt};
+    use super::{api_base, interpret_server_status, preset_system_prompt, server_base, OpenAiClient};
+    use voxctrl_config::{OpenAiConfig, RemoteOpenAiConfig};
     use voxctrl_config::OpenAiMode;
 
     #[test]
@@ -251,6 +370,65 @@ mod tests {
     fn api_base_preserves_existing_v1() {
         assert_eq!(api_base("https://api.openai.com/v1"), "https://api.openai.com/v1");
         assert_eq!(api_base("https://api.openai.com/v1/"), "https://api.openai.com/v1");
+    }
+
+    #[test]
+    fn the_servers_base_follows_the_speech_endpoint_however_it_was_entered() {
+        for endpoint in ["http://box:8787/v1", "http://box:8787/v1/", "http://box:8787", " http://box:8787/v1/audio/transcriptions "] {
+            assert_eq!(server_base(endpoint), "http://box:8787/v1", "{endpoint}");
+        }
+    }
+
+    #[test]
+    fn going_through_the_server_uses_its_address_and_key_and_keeps_the_prompts() {
+        let own = OpenAiConfig {
+            enabled: true,
+            endpoint: "http://localhost:11434".into(),
+            api_key: Some("sk-own".into()),
+            system_prompt: "Be formal.".into(),
+            ..Default::default()
+        };
+        let server = RemoteOpenAiConfig {
+            endpoint: "http://box:8787/v1".into(),
+            api_key: Some("vx_key".into()),
+            ..Default::default()
+        };
+        let client = OpenAiClient::via_server(own, &server);
+        assert_eq!(client.config.endpoint, "http://box:8787/v1");
+        assert_eq!(client.config.api_key.as_deref(), Some("vx_key"));
+        assert_eq!(client.config.system_prompt, "Be formal.");
+        assert!(client.refused.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_paired_server_given_a_plain_address_gets_nothing_sent() {
+        let server = RemoteOpenAiConfig {
+            endpoint: "http://box:8787/v1".into(),
+            tls_fingerprint: Some("ab".repeat(32)),
+            ..Default::default()
+        };
+        let client = OpenAiClient::via_server(OpenAiConfig { enabled: true, ..Default::default() }, &server);
+        assert!(client.refused.as_deref().is_some_and(|r| r.contains("must start with https://")));
+        // The text comes back as it was said.
+        assert_eq!(client.process("hello there").await, "hello there");
+    }
+
+    #[test]
+    fn server_status_is_read_from_what_the_server_says() {
+        let on = interpret_server_status(200, br#"{"available": true, "model": "llama3.2:1b"}"#);
+        assert!(on.available);
+        assert_eq!(on.model.as_deref(), Some("llama3.2:1b"));
+        assert_eq!(on.message, "This server does AI processing with llama3.2:1b.");
+
+        let off = interpret_server_status(200, br#"{"available": false, "model": null}"#);
+        assert!(!off.available);
+        assert!(off.message.contains("VOXCTRL_SERVER_LLM=true"), "{}", off.message);
+
+        assert!(interpret_server_status(401, b"").message.contains("API key"));
+        // An older VoxCtrl server, or another speech server altogether.
+        assert!(interpret_server_status(404, b"").message.contains("0.9.16 or newer"));
+        assert!(interpret_server_status(405, b"").message.contains("0.9.16 or newer"));
+        assert_eq!(interpret_server_status(500, b"").message, "The server answered HTTP 500.");
     }
 
     #[test]

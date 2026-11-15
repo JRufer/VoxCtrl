@@ -547,10 +547,8 @@ impl InferenceEngine {
         // thrown away; running the hotkey's (billed, slow) OpenAI rewrite on
         // every one of them would cost a request per pass for nothing.
         if !is_interim && !processed.is_empty() {
-            if let Some(openai_cfg) =
-                finalize::binding_openai_config(req.binding.as_ref(), &app_config.openai)
-            {
-                processed = run_llm_rewrite(voxctrl_llm::OpenAiClient::new(openai_cfg), processed);
+            if let Some(client) = finalize::binding_llm_client(req.binding.as_ref(), app_config) {
+                processed = run_llm_rewrite(client, processed);
             }
         }
 
