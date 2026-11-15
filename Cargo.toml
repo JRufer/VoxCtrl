@@ -24,7 +24,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.9.16"
+version = "0.9.17"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -131,6 +131,7 @@ voxctrl-audio    = { path = "crates/voxctrl-audio" }
 voxctrl-inference = { path = "crates/voxctrl-inference" }
 voxctrl-tts      = { path = "crates/voxctrl-tts", default-features = false }
 voxctrl-pairing  = { path = "crates/voxctrl-pairing" }
+voxctrl-server   = { path = "crates/voxctrl-server", default-features = false }
 voxctrl-inject   = { path = "crates/voxctrl-inject" }
 voxctrl-winput   = { path = "crates/voxctrl-winput" }
 voxctrl-clipboard = { path = "crates/voxctrl-clipboard" }

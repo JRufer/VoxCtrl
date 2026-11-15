@@ -55,6 +55,10 @@ chrono = { workspace = true }
 tauri-plugin-single-instance = "2.4.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# `voxctrl --server` runs the headless speech server from this same binary,
+# so the AppImage is also the server download. It shares the engines already
+# linked for the app; its ONNX engines follow the app's features below.
+voxctrl-server = { workspace = true }
 libc = "0.2"
 zbus = { workspace = true }
 gtk = { version = "0.18", features = ["v3_24"] }
@@ -76,7 +80,7 @@ vulkan = ["voxctrl-inference/vulkan"]
 # Compiles the Moonshine ONNX speech-to-text backend into the app. On by
 # default; without it a "moonshine" backend selection transparently falls back
 # to whisper-cpp.
-moonshine = ["voxctrl-inference/moonshine"]
+moonshine = ["voxctrl-inference/moonshine", "voxctrl-server/moonshine"]
 # GPU offload for Moonshine. Opt-in for the same reason as `cuda`: it needs the
 # CUDA runtime at build and run time. Note there is deliberately no Vulkan
 # equivalent — ONNX Runtime has none — so the `vulkan` build above accelerates
@@ -90,7 +94,7 @@ moonshine-coreml = ["voxctrl-inference/moonshine-coreml"]
 moonshine-webgpu = ["voxctrl-inference/moonshine-webgpu"]
 # Compiles the Parakeet ONNX speech-to-text backend into the app. On by
 # default; without it a "parakeet" backend selection falls back to whisper-cpp.
-parakeet = ["voxctrl-inference/parakeet"]
+parakeet = ["voxctrl-inference/parakeet", "voxctrl-server/parakeet"]
 parakeet-cuda = ["voxctrl-inference/parakeet-cuda"]
 parakeet-coreml = ["voxctrl-inference/parakeet-coreml"]
 parakeet-webgpu = ["voxctrl-inference/parakeet-webgpu"]

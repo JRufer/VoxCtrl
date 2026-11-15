@@ -77,6 +77,7 @@ impl VoiceStore {
         voices
     }
 
+    #[cfg(test)]
     pub fn has(&self, client: &str, name: &str) -> bool {
         valid_voice_name(name) && self.wav_path(client, name).is_some_and(|p| p.is_file())
     }

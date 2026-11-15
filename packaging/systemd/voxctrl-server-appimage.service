@@ -1,0 +1,26 @@
+# systemd USER unit: run the VoxCtrl server from the VoxCtrl AppImage.
+# Full guide: docs/server.md, "Run it from the VoxCtrl AppImage".
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/systemd/voxctrl-server-appimage.service ~/.config/systemd/user/voxctrl-server.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now voxctrl-server
+#   sudo loginctl enable-linger "$USER"        # keep it running when you are logged out
+#   journalctl --user -u voxctrl-server -f     # the generated API key is printed here once
+#
+# Adjust the path below to where your AppImage is. %h is your home folder.
+
+[Unit]
+Description=VoxCtrl speech server
+Documentation=https://github.com/JRufer/VoxCtrl/blob/master/docs/server.md
+After=network-online.target
+
+[Service]
+ExecStart=%h/Applications/VoxCtrl-linux-x86_64-vulkan.AppImage --server
+Restart=on-failure
+RestartSec=5
+# A first start downloads the model before the server is up.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=default.target

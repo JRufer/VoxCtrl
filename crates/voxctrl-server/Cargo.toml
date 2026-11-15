@@ -6,6 +6,12 @@ authors.workspace = true
 license.workspace = true
 description = "Headless VoxCtrl speech server: runs the models so a VoxCtrl client doesn't have to"
 
+# The server is a library so the desktop app can start it too
+# (`voxctrl --server`); the binary below is a few lines around it.
+[lib]
+name = "voxctrl_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "voxctrl-server"
 path = "src/main.rs"
