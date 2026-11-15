@@ -11,6 +11,7 @@
   import DeviceChip from "./DeviceChip.svelte";
   import BenchmarkPanel from "./BenchmarkPanel.svelte";
   import ModelCleanupDialog from "./ModelCleanupDialog.svelte";
+  import { connectionSummary, normalizeServerAddress, setSpeechOnServer, speechOnServer } from "./server-setup";
   import { gpuLabel } from "./gpu";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
@@ -190,6 +191,23 @@
 
   // Set from the event rather than through a binding: a change handler runs
   // before the binding has written the new value.
+  // Text-to-speech through this server: the TTS tab's engine set to "VoxCtrl
+  // server". Offered here so the server's uses can be chosen in one place.
+  let serverSpeech = $state<{ available: boolean; message: string } | null>(null);
+  let speechViaServer = $state(speechOnServer(cfg));
+  const ttsEngineBefore = !cfg.tts || cfg.tts.engine === "server" ? null : cfg.tts.engine;
+
+  function onServerSpeechToggle(e: Event) {
+    setSpeechOnServer(cfg, (e.currentTarget as HTMLInputElement).checked, ttsEngineBefore);
+    speechViaServer = speechOnServer(cfg);
+    markDirty();
+  }
+
+  function onEndpointChanged() {
+    cfg.engine.remote_openai.endpoint = normalizeServerAddress(cfg.engine.remote_openai.endpoint ?? "");
+    markDirty();
+  }
+
   function onServerCleanupToggle(e: Event) {
     const on = (e.currentTarget as HTMLInputElement).checked;
     cfg.engine.remote_openai.cleanup_on_server = on;
@@ -243,6 +261,25 @@
         timeoutSecs: cfg.engine.remote_openai.timeout_secs || 30,
       });
       remoteTestStatus = { success: res.success, message: res.message };
+      if (res.success) {
+        // What else this server can do, so the options below can say so. A
+        // server that is not a VoxCtrl server answers "no" to both.
+        const args = { endpoint: cfg.engine.remote_openai.endpoint, apiKey: cfg.engine.remote_openai.api_key || null };
+        const [cleanup, speech] = await Promise.all([
+          invoke<ServerCleanupStatus>("check_server_cleanup", args).catch(() => null),
+          invoke<{ available: boolean; message: string }>("check_server_tts", args).catch(() => null),
+        ]);
+        if (cleanup) serverCleanup = cfg.engine.remote_openai.cleanup_on_server || !cleanup.available ? cleanup : null;
+        serverSpeech = speech;
+        remoteTestStatus = {
+          success: true,
+          message: connectionSummary({
+            recognition: { ok: true, message: res.message, models: res.models ?? [] },
+            cleanup: cleanup ?? { available: false, message: "" },
+            speech: speech ?? { available: false, message: "" },
+          }).text,
+        };
+      }
       if (res.models && res.models.length > 0) {
         remoteDiscoveredModels = res.models;
         if (!cfg.engine.remote_openai.model) {
@@ -762,12 +799,15 @@
         <input
           type="text"
           bind:value={cfg.engine.remote_openai.endpoint}
-          placeholder="http://192.168.1.50:8000/v1"
-          onchange={markDirty}
+          placeholder="http://192.168.1.50:8787/v1"
+          onchange={onEndpointChanged}
+          data-testid="remote-endpoint"
         />
       </label>
       <p class="hint">
-        Base URL or full transcriptions path (e.g. <code>http://192.168.1.50:8000/v1</code> or <code>https://api.openai.com/v1</code>).
+        For a VoxCtrl server the machine's name or IP address is enough (<code>192.168.1.50</code>); it is
+        completed to <code>http://192.168.1.50:8787/v1</code>. For another service, enter its base URL or
+        full transcriptions path (e.g. <code>https://api.openai.com/v1</code>).
       </p>
 
       <label class="field">
@@ -876,7 +916,7 @@
           <p class="hint">
             Sends each transcript to the server for S1-mini cleanup, so this computer loads no cleanup
             model. Needs a VoxCtrl server with cleanup enabled. Whether a dictation is cleaned, and in
-            which style, is still set here under <strong>Features</strong> and per hotkey. If the server
+            which style, is still set under <strong>Post-Processing</strong> and per hotkey. If the server
             can't clean a dictation, it is typed as it was said.
           </p>
         </div>
@@ -905,6 +945,27 @@
         </div>
       {/if}
 
+      <label class="field">
+        <div class="field-title-col">
+          <span>Use the server for text-to-speech</span>
+          <p class="hint">
+            {#if serverSpeech && !serverSpeech.available}
+              {serverSpeech.message}
+            {:else}
+              The server speaks and this computer plays the audio. This sets the TTS engine to
+              <strong>VoxCtrl server</strong>; choose its engine and voice, including your own voices, under
+              <strong>TTS</strong>. Turning it off goes back to the TTS engine you used before.
+            {/if}
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          checked={speechViaServer}
+          onchange={onServerSpeechToggle}
+          data-testid="speech-on-server"
+        />
+      </label>
+
       {#if remoteSummary}
         <div
           class="status-pill"
@@ -932,6 +993,7 @@
 
         {#if remoteTestStatus}
           <div
+            data-testid="remote-test-status"
             class="status-pill"
             class:success={remoteTestStatus.success}
             class:error={!remoteTestStatus.success}
