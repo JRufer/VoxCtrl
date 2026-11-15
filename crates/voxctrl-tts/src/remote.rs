@@ -14,6 +14,9 @@ use anyhow::{anyhow, Context, Result};
 pub struct ServerLink {
     pub endpoint: String,
     pub api_key: Option<String>,
+    /// Fingerprint of the server's certificate when it was paired with
+    /// encryption on; the connection then accepts only that certificate.
+    pub tls_fingerprint: Option<String>,
     /// Names this client to the server, so the voices it uploads stay its
     /// own. 16 to 64 hex digits; empty means "send none" (no custom voices).
     pub client_id: String,
@@ -81,10 +84,9 @@ fn error_message(body: &[u8]) -> Option<String> {
     Some(value.get("error")?.get("message")?.as_str()?.to_string())
 }
 
-fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(timeout)
+fn client(link: &ServerLink, timeout: Duration) -> Result<reqwest::blocking::Client> {
+    let builder = reqwest::blocking::Client::builder().connect_timeout(CONNECT_TIMEOUT).timeout(timeout);
+    voxctrl_pairing::pin_blocking(builder, &link.endpoint, link.tls_fingerprint.as_deref())?
         .build()
         .context("Could not set up the connection")
 }
@@ -124,9 +126,8 @@ pub fn fetch_speech_unless(
     }
 
     let request = async {
-        let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(SPEECH_TIMEOUT)
+        let builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).timeout(SPEECH_TIMEOUT);
+        let http = voxctrl_pairing::pin(builder, &link.endpoint, link.tls_fingerprint.as_deref())?
             .build()
             .context("Could not set up the connection")?;
         let mut req = http.post(speech_url(&link.endpoint)).json(&body);
@@ -137,7 +138,9 @@ pub fn fetch_speech_unless(
             req = req.header(CLIENT_HEADER, link.client_id.trim());
         }
         let response = req.send().await.map_err(|e| {
-            if e.is_connect() {
+            if voxctrl_pairing::is_certificate_mismatch(&e) {
+                anyhow!(voxctrl_pairing::CERTIFICATE_MISMATCH_HELP)
+            } else if e.is_connect() {
                 anyhow!("Could not reach the server to speak. Check that it is running and the address is right.")
             } else if e.is_timeout() {
                 anyhow!("The server took too long to speak.")
@@ -244,12 +247,15 @@ pub fn check_server_tts(link: &ServerLink) -> ServerTtsStatus {
             "No server address is set. Enter it under Engine → Remote Speech Engine Settings.",
         );
     }
-    let client = match client(Duration::from_secs(6)) {
+    let client = match client(link, Duration::from_secs(6)) {
         Ok(c) => c,
         Err(e) => return ServerTtsStatus::unavailable(format!("{e:#}")),
     };
     let response = match signed(client.get(speech_url(&link.endpoint)), link).send() {
         Ok(r) => r,
+        Err(e) if voxctrl_pairing::is_certificate_mismatch(&e) => {
+            return ServerTtsStatus::unavailable(voxctrl_pairing::CERTIFICATE_MISMATCH_HELP)
+        }
         Err(e) if e.is_connect() => return ServerTtsStatus::unavailable("Could not connect to the server."),
         Err(e) if e.is_timeout() => return ServerTtsStatus::unavailable("The server did not answer in time."),
         Err(_) => return ServerTtsStatus::unavailable("The request to the server failed."),
@@ -401,7 +407,7 @@ fn upload_voice(http: &reqwest::blocking::Client, link: &ServerLink, voice: &Loc
 /// Blocking.
 pub fn sync_voices(link: &ServerLink, local: &[LocalVoice]) -> Result<VoiceSync> {
     anyhow::ensure!(!link.client_id.trim().is_empty(), "This computer has no client id to send voices under.");
-    let http = client(Duration::from_secs(60))?;
+    let http = client(link, Duration::from_secs(60))?;
     let on_server = server_voices(&http, link)?;
     let mut report = VoiceSync::default();
     for voice in local {

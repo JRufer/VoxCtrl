@@ -13,6 +13,7 @@ mod config;
 mod engine;
 mod http;
 mod speech;
+mod tls;
 mod voices;
 
 use std::path::PathBuf;
@@ -36,6 +37,9 @@ OPTIONS:
                           (overrides the config file and VOXCTRL_SERVER_BIND)
         --print-config    Print the settings the server would start with
                           (API key hidden) and exit
+        --pairing-code    Print the code a VoxCtrl app pastes to connect to
+                          this server (address, API key and, with encryption
+                          on, the certificate fingerprint) and exit
         --healthcheck     Ask the server already running with these settings
                           whether it is up; exits 0 if so, 1 if not. This is
                           what the container's health check runs
@@ -52,6 +56,10 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_DEVICE            auto | cpu
     VOXCTRL_SERVER_LANGUAGE          Language code, or auto
     VOXCTRL_SERVER_MAX_UPLOAD_MB     Largest upload accepted
+    VOXCTRL_SERVER_TLS               true = encrypt connections (HTTPS only);
+                                     clients connect with the pairing code
+    VOXCTRL_SERVER_PUBLIC_HOST       Name or IP address clients reach this
+                                     machine by, for the pairing code
     VOXCTRL_SERVER_CLEANUP           true = clean up dictation for clients
                                      (downloads the S1-mini model, ~470 MB)
     VOXCTRL_SERVER_CLEANUP_GPU       false = keep the cleanup model on the CPU
@@ -71,6 +79,7 @@ struct Cli {
     bind: Option<String>,
     print_config: bool,
     healthcheck: bool,
+    pairing_code: bool,
 }
 
 /// What the command line asked for.
@@ -103,6 +112,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Invocation> {
             "-b" | "--bind" => cli.bind = Some(value("--bind")?),
             "--print-config" => cli.print_config = true,
             "--healthcheck" => cli.healthcheck = true,
+            "--pairing-code" => cli.pairing_code = true,
             other => bail!("Unknown option '{other}'. Run with --help for usage."),
         }
     }
@@ -169,8 +179,30 @@ async fn run(cli: Cli) -> Result<()> {
     }
     effective.validate()?;
 
+    // Beside the config file, so it is kept wherever the API key is kept.
+    let identity_dir = path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+
     if cli.healthcheck {
-        return healthcheck(&effective.bind);
+        let fingerprint = match effective.tls.enabled {
+            true => Some(tls::Identity::load_or_create(&identity_dir)?.0.fingerprint()),
+            false => None,
+        };
+        return healthcheck(&effective.bind, fingerprint.as_deref());
+    }
+
+    if cli.pairing_code {
+        if effective.require_api_key && effective.api_key.is_empty() {
+            bail!(
+                "This server has no API key yet: one is made the first time it starts. \
+                 Start the server once, then ask for the pairing code again."
+            );
+        }
+        let fingerprint = match effective.tls.enabled {
+            true => Some(tls::Identity::load_or_create(&identity_dir)?.0.fingerprint()),
+            false => None,
+        };
+        println!("{}", pairing_code(&effective, fingerprint).encode());
+        return Ok(());
     }
 
     if cli.print_config {
@@ -245,28 +277,74 @@ async fn run(cli: Cli) -> Result<()> {
     });
     let app = http::router(state);
 
-    let listener = tokio::net::TcpListener::bind(&effective.bind)
-        .await
+    let identity = match effective.tls.enabled {
+        true => {
+            let (identity, made) = tls::Identity::load_or_create(&identity_dir)?;
+            if made {
+                info!("Made a certificate for this server and saved it in {}", identity_dir.display());
+            }
+            Some(identity)
+        }
+        false => None,
+    };
+
+    let listener = std::net::TcpListener::bind(&effective.bind)
         .with_context(|| format!("Could not listen on {}", effective.bind))?;
+    listener.set_nonblocking(true).context("Could not prepare the listening socket")?;
     let addr = listener.local_addr().unwrap_or_else(|_| effective.bind.parse().expect("validated above"));
+    let scheme = if identity.is_some() { "https" } else { "http" };
 
     info!("voxctrl-server {} is ready", env!("CARGO_PKG_VERSION"));
     info!("  Model:    {model_id}");
     info!("  Cleanup:  {cleanup_line}");
     info!("  Speech:   {speech_line}");
-    info!("  Endpoint: http://{addr}/v1  (use this machine's address from a client)");
+    info!("  Endpoint: {scheme}://{addr}/v1  (use this machine's address from a client)");
+    match &identity {
+        Some(identity) => info!(
+            "  Encryption: on. Certificate fingerprint {}",
+            voxctrl_pairing::display_fingerprint(&identity.fingerprint())
+        ),
+        None => info!("  Encryption: off (set tls.enabled or VOXCTRL_SERVER_TLS to turn it on)"),
+    }
     if generated_key {
         // The one time the key is shown: nobody has seen it yet, and on a
         // container the log is the only place to read it.
         info!("  API key:  {}", effective.api_key);
+        info!(
+            "  Pairing code (paste it into the app instead of the address and key): {}",
+            pairing_code(&effective, identity.as_ref().map(tls::Identity::fingerprint)).encode()
+        );
     } else if effective.require_api_key {
         info!("  API key:  required (set in {} or VOXCTRL_SERVER_API_KEY)", path.display());
+        // The code holds the key, so it is not written to the log on every
+        // start.
+        info!("  Pairing code: run `voxctrl-server --pairing-code` to print it");
     }
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("The HTTP server stopped with an error")?;
+    match identity {
+        Some(identity) => {
+            let handle = axum_server::Handle::new();
+            let stop = handle.clone();
+            tokio::spawn(async move {
+                shutdown_signal().await;
+                stop.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+            });
+            let tls = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(identity.server_config()?));
+            axum_server::from_tcp_rustls(listener, tls)
+                .handle(handle)
+                .serve(app.into_make_service())
+                .await
+                .context("The HTTPS server stopped with an error")?;
+        }
+        None => {
+            let listener =
+                tokio::net::TcpListener::from_std(listener).context("Could not prepare the listening socket")?;
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .context("The HTTP server stopped with an error")?;
+        }
+    }
     info!("voxctrl-server stopped");
     Ok(())
 }
@@ -276,26 +354,62 @@ async fn run(cli: Cli) -> Result<()> {
 /// Built in so the container image needs no curl or wget just to answer
 /// Docker's health check. Plain blocking sockets: it runs for a moment in its
 /// own short-lived process.
-fn healthcheck(bind: &str) -> Result<()> {
+///
+/// With encryption on, `fingerprint` is this server's own certificate: the
+/// check speaks TLS and accepts that certificate only, as a client would.
+fn healthcheck(bind: &str, fingerprint: Option<&str>) -> Result<()> {
     use std::io::{Read, Write};
     use std::time::Duration;
 
+    const REQUEST: &[u8] = b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
     let target = health_target(bind)?;
     let timeout = Duration::from_secs(5);
     let mut stream = std::net::TcpStream::connect_timeout(&target, timeout)
         .with_context(|| format!("No server is answering on {target}"))?;
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(timeout))?;
-    stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
 
     let mut response = String::new();
     // A reset after the status line has arrived still tells us the status.
-    let _ = stream.read_to_string(&mut response);
+    match fingerprint {
+        Some(fingerprint) => {
+            let config = Arc::new(voxctrl_pairing::client_tls(fingerprint)?);
+            let name = rustls::pki_types::ServerName::try_from("localhost").expect("a valid name");
+            let session = rustls::ClientConnection::new(config, name).context("Could not set up encryption")?;
+            let mut tls = rustls::StreamOwned::new(session, stream);
+            tls.write_all(REQUEST).with_context(|| format!("The server on {target} did not accept an encrypted connection"))?;
+            let _ = tls.read_to_string(&mut response);
+        }
+        None => {
+            stream.write_all(REQUEST)?;
+            let _ = stream.read_to_string(&mut response);
+        }
+    }
     if is_healthy_response(&response) {
         println!("ok");
         Ok(())
     } else {
         bail!("The server on {target} did not report healthy: {}", response.lines().next().unwrap_or("no response"))
+    }
+}
+
+/// The code a client pastes to connect: where the server is, the key, and the
+/// certificate fingerprint when it encrypts.
+fn pairing_code(config: &ServerConfig, fingerprint: Option<String>) -> voxctrl_pairing::PairingCode {
+    let bound: Option<std::net::SocketAddr> = config.bind.parse().ok();
+    let host = match config.public_host.trim() {
+        "" => match bound {
+            // Bound to one particular address: that is the one to use.
+            Some(addr) if !addr.ip().is_unspecified() && !addr.ip().is_loopback() => Some(addr.ip().to_string()),
+            _ => tls::guess_public_host(),
+        },
+        host => Some(host.to_string()),
+    };
+    voxctrl_pairing::PairingCode {
+        host,
+        port: bound.map_or(8787, |addr| addr.port()),
+        api_key: config.require_api_key.then(|| config.api_key.clone()),
+        fingerprint,
     }
 }
 
@@ -366,6 +480,7 @@ mod tests {
             bind: Some("127.0.0.1:9000".into()),
             print_config: true,
             healthcheck: false,
+            pairing_code: false,
         });
         assert_eq!(
             parse_args(args(&["--config", "/etc/voxctrl/server.toml", "-b", "127.0.0.1:9000", "--print-config"])).unwrap(),
@@ -387,6 +502,34 @@ mod tests {
     fn mistakes_are_reported() {
         assert!(parse_args(args(&["--port", "1"])).unwrap_err().to_string().contains("--port"));
         assert!(parse_args(args(&["--config"])).unwrap_err().to_string().contains("needs a value"));
+    }
+
+    #[test]
+    fn the_pairing_code_carries_what_a_client_needs() {
+        let mut config = ServerConfig { api_key: "vx_key".into(), public_host: "speechbox.lan".into(), ..Default::default() };
+        config.bind = "0.0.0.0:9000".into();
+        let encrypted = pairing_code(&config, Some("ab".repeat(32)));
+        assert_eq!(encrypted.endpoint("").unwrap(), "https://speechbox.lan:9000/v1");
+        assert_eq!(encrypted.api_key.as_deref(), Some("vx_key"));
+        assert_eq!(voxctrl_pairing::PairingCode::decode(&encrypted.encode()).unwrap(), encrypted);
+
+        // Without encryption the code is still a shortcut for address and key.
+        assert_eq!(pairing_code(&config, None).endpoint("").unwrap(), "http://speechbox.lan:9000/v1");
+
+        // Bound to one address: that address is the one clients use.
+        config.public_host.clear();
+        config.bind = "192.168.1.50:8787".into();
+        assert_eq!(pairing_code(&config, None).host.as_deref(), Some("192.168.1.50"));
+
+        // No key required, none handed out.
+        config.require_api_key = false;
+        assert_eq!(pairing_code(&config, None).api_key, None);
+    }
+
+    #[test]
+    fn the_pairing_code_flag_is_understood() {
+        let Invocation::Run(cli) = parse_args(["--pairing-code".to_string()]).unwrap() else { panic!("expected a run") };
+        assert!(cli.pairing_code);
     }
 
     #[test]
@@ -421,13 +564,13 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, http::router(state)).await });
 
         let bind = addr.to_string();
-        let up = tokio::task::spawn_blocking(move || healthcheck(&bind)).await.unwrap();
+        let up = tokio::task::spawn_blocking(move || healthcheck(&bind, None)).await.unwrap();
         assert!(up.is_ok(), "{up:?}");
 
         server.abort();
         let _ = server.await;
         let bind = addr.to_string();
-        let down = tokio::task::spawn_blocking(move || healthcheck(&bind)).await.unwrap();
+        let down = tokio::task::spawn_blocking(move || healthcheck(&bind, None)).await.unwrap();
         assert!(down.is_err());
     }
 

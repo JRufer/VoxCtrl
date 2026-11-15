@@ -342,8 +342,37 @@ instructions](#7-open-the-port), then connect a client.
 
 ## Connect the VoxCtrl app
 
-Do this on each computer that should use the server. You need the server's
-address and the API key.
+Do this on each computer that should use the server.
+
+### With a pairing code
+
+The quickest way, and the only way when the server has
+[encryption](#encryption) on.
+
+1. On the server, print its pairing code:
+
+   ```bash
+   docker exec voxctrl-server voxctrl-server --pairing-code     # Docker
+   sudo -u voxctrl -H voxctrl-server --pairing-code             # system service
+   ```
+
+   The code starts with `vxpair_`. It holds the API key, so treat it like one.
+2. In the app, open **Settings → Engine** and set **Backend** to **Remote
+   Speech Engine**.
+3. If the server runs in Docker, type the server machine's name or IP address
+   into **Endpoint URL** first. A container cannot tell what address it is
+   reached by, so its code leaves that out. Set `VOXCTRL_SERVER_PUBLIC_HOST`
+   on the server to have the code carry the address.
+4. Paste the code into **Pairing code** and click **Pair**. The endpoint, the
+   API key and, with encryption on, the server's certificate are filled in, and
+   the connection is tested.
+
+Then continue with step 5 below.
+
+### By hand
+
+You need the server's address and the API key. This does not work for a server
+with encryption on.
 
 1. Open **Settings → Engine** and set **Backend** to **Remote Speech
    Engine**. The server settings appear below it.
@@ -718,6 +747,11 @@ bind = "0.0.0.0:8787"
 # written back here.
 api_key = ""
 
+# The name or IP address clients reach this machine by, for the pairing code.
+# Left empty, the server works it out; in a container it cannot, and the
+# client types the address instead.
+public_host = ""
+
 # false accepts requests with no key. Only on a network you fully trust.
 require_api_key = true
 
@@ -767,6 +801,11 @@ voice = "en-us-lessac-medium"
 # Engines offered to clients besides tts.engine, which is always offered and
 # is the default. Each is downloaded at startup.
 engines = []
+
+[tls]
+# true = encrypt every connection (HTTPS only). Clients then connect with the
+# pairing code. See "Encryption".
+enabled = false
 ```
 
 A `server.toml` the server writes itself leaves `[tts]` out until you add it.
@@ -786,6 +825,8 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_API_KEY` | `api_key` | `vx_my-own-long-secret` |
 | `VOXCTRL_SERVER_REQUIRE_API_KEY` | `require_api_key` | `false` |
 | `VOXCTRL_SERVER_MAX_UPLOAD_MB` | `max_upload_mb` | `512` |
+| `VOXCTRL_SERVER_TLS` | `tls.enabled` | `true` |
+| `VOXCTRL_SERVER_PUBLIC_HOST` | `public_host` | `192.168.1.50` |
 | `VOXCTRL_SERVER_BACKEND` | `engine.backend` | `parakeet` |
 | `VOXCTRL_SERVER_MODEL` | `model_size` of the selected backend | `tdt-0.6b-v3` |
 | `VOXCTRL_SERVER_DEVICE` | `device` of the selected backend | `cpu` |
@@ -807,7 +848,8 @@ written into `server.toml`.
 | `-c`, `--config <PATH>` | Config file to use |
 | `-b`, `--bind <ADDR>` | Address and port to listen on |
 | `--print-config` | Print the effective settings and exit |
-| `--healthcheck` | Ask the running server whether it is up; exit code 0 if so |
+| `--pairing-code` | Print the code a VoxCtrl app pastes to connect (address, API key and, with encryption on, the certificate fingerprint) and exit |
+| `--healthcheck` | Ask the running server whether it is up; exit code 0 if so. Works with encryption on |
 | `-h`, `--help` | Usage |
 | `-V`, `--version` | Version |
 
@@ -822,10 +864,11 @@ port accordingly.
 
 - **Keep the API key on.** Every request must carry it. Without it, anyone who
   can reach the port can use your server.
-- **The connection is not encrypted.** In this release the server speaks plain
-  HTTP, so audio and the API key cross the network in the clear. On your own
-  LAN that is usually acceptable. Anywhere else it is not.
-- **Do not forward the port from the internet.**
+- **The connection is not encrypted unless you turn encryption on.** By
+  default the server speaks plain HTTP, so audio and the API key cross the
+  network in the clear. On your own LAN that is usually acceptable. Anywhere
+  else it is not: turn on [encryption](#encryption).
+- **Do not forward the port from the internet**, with or without encryption.
 - **For access from outside your network**, use a VPN such as WireGuard or
   Tailscale and point the client at the server's VPN address, or put the server
   behind a reverse proxy that adds HTTPS. With [Caddy](https://caddyserver.com/),
@@ -846,6 +889,47 @@ port accordingly.
 - **The server does not keep your audio or your text.** Audio is held in memory
   for the length of one request. The log records how long each clip was and how
   long it took, never what was said.
+
+### Encryption
+
+With encryption on, everything between the app and the server (audio, text,
+voices, the API key) travels over HTTPS, and the app talks only to your server.
+
+**Turn it on.** Set `VOXCTRL_SERVER_TLS=true` in `.env` (Docker) or add this to
+`server.toml`, then restart:
+
+```toml
+[tls]
+enabled = true
+```
+
+On that start the server makes a certificate for itself and keeps it beside
+`server.toml` (`server-cert.pem` and `server-key.pem`, in the data volume on
+Docker). The log shows `Encryption: on` and the certificate's fingerprint.
+
+**Pair each client again.** The server now answers HTTPS only, so clients set
+up before stop connecting until they are paired: print the
+[pairing code](#with-a-pairing-code) and paste it into each app. A client whose
+fallback engine is set keeps dictating locally in the meantime.
+
+**How the app knows it is your server.** No certificate authority vouches for
+the server's certificate. Instead the pairing code carries its fingerprint, and
+the app accepts that one certificate and nothing else. **Settings → Engine**
+shows `🔒 Encrypted` with the fingerprint; it should match the one in the
+server's log.
+
+- A paired app never falls back to an unencrypted connection. If the address
+  is changed to `http://`, it refuses to connect rather than send in the clear.
+- If the app reports that *the server's certificate is not the one this app
+  was paired with*, either the server's certificate files were replaced (pair
+  again) or something else is answering at that address.
+- **Remove pairing** in the app forgets the certificate, for going back to a
+  server without encryption.
+- Deleting `server-cert.pem` and `server-key.pem` makes the server create a
+  new certificate on the next start. Every client must then be paired again.
+- Other OpenAI-compatible clients (`curl`, scripts) need the certificate to
+  connect: `curl --cacert server-cert.pem https://localhost:8787/health` from
+  the server itself, or `curl -k` where you accept not checking it.
 
 ---
 
@@ -1091,6 +1175,25 @@ The app can't reach the server. Hover the icon for the reason, or open
 server being down: work through the next entry. "The server rejected the API
 key" is the entry after it. Dictation keeps working in the meantime if a
 [fallback engine](#when-the-server-cant-be-reached) is set.
+
+### "The server's certificate is not the one this app was paired with"
+
+The app is paired with a server with [encryption](#encryption) on, and the
+server answering now presents a different certificate. If the server was
+reinstalled, its data volume was recreated, or its certificate files were
+deleted, print the pairing code again and paste it into the app. If none of
+that happened, check that the address is the right machine.
+
+### "This server was paired with encryption on, so its address must start with https://"
+
+The endpoint was changed to an `http://` address while a certificate is still
+saved. Paste the pairing code again to restore the address, or click **Remove
+pairing** under **Settings → Engine** if the server no longer encrypts.
+
+### Clients stopped connecting after encryption was turned on
+
+Expected: the server answers HTTPS only once `tls.enabled` is set. Pair each
+client with the [pairing code](#with-a-pairing-code).
 
 ### Test Connection says "Connection failed"
 

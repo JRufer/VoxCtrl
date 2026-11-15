@@ -33,12 +33,9 @@ fn request_timeout(cfg: &RemoteOpenAiConfig) -> Duration {
     Duration::from_secs(cfg.timeout_secs.clamp(5, 30))
 }
 
-fn client(timeout: Duration) -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(timeout)
-        .build()
-        .context("Could not set up the connection")
+fn client(endpoint: &str, tls_fingerprint: Option<&str>, timeout: Duration) -> Result<reqwest::Client> {
+    let builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).timeout(timeout);
+    voxctrl_pairing::pin(builder, endpoint, tls_fingerprint)?.build().context("Could not set up the connection")
 }
 
 fn with_key(req: reqwest::RequestBuilder, api_key: Option<&str>) -> reqwest::RequestBuilder {
@@ -60,7 +57,7 @@ fn error_message(body: &[u8]) -> Option<String> {
 /// An error means the caller should use the text as it was: the server is
 /// unreachable, has cleanup turned off, or is not a VoxCtrl server.
 pub async fn clean_on_server(cfg: &RemoteOpenAiConfig, text: &str, styling: &str) -> Result<String> {
-    let request = with_key(client(request_timeout(cfg))?.post(cleanup_url(&cfg.endpoint)), cfg.api_key.as_deref())
+    let request = with_key(client(&cfg.endpoint, cfg.tls_fingerprint.as_deref(), request_timeout(cfg))?.post(cleanup_url(&cfg.endpoint)), cfg.api_key.as_deref())
         .json(&serde_json::json!({ "text": text, "styling": styling }));
     let response = request.send().await.context("The cleanup request did not reach the server")?;
     let status = response.status();
@@ -98,13 +95,20 @@ impl ServerCleanupStatus {
 
 /// Ask the server whether it cleans up dictation. Never an error: every way
 /// this can go wrong is something to show the user.
-pub async fn check_server_cleanup(endpoint: &str, api_key: Option<&str>) -> ServerCleanupStatus {
-    let client = match client(Duration::from_secs(6)) {
+pub async fn check_server_cleanup(
+    endpoint: &str,
+    api_key: Option<&str>,
+    tls_fingerprint: Option<&str>,
+) -> ServerCleanupStatus {
+    let client = match client(endpoint, tls_fingerprint, Duration::from_secs(6)) {
         Ok(c) => c,
         Err(e) => return ServerCleanupStatus::unavailable(format!("{e:#}")),
     };
     let response = match with_key(client.get(cleanup_url(endpoint)), api_key).send().await {
         Ok(r) => r,
+        Err(e) if voxctrl_pairing::is_certificate_mismatch(&e) => {
+            return ServerCleanupStatus::unavailable(voxctrl_pairing::CERTIFICATE_MISMATCH_HELP)
+        }
         Err(e) if e.is_connect() => return ServerCleanupStatus::unavailable("Could not connect to the server."),
         Err(e) if e.is_timeout() => return ServerCleanupStatus::unavailable("The server did not answer in time."),
         Err(_) => return ServerCleanupStatus::unavailable("The request to the server failed."),

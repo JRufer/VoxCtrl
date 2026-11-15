@@ -33,6 +33,7 @@ voxctrl-hotkeys   = { workspace = true }
 voxctrl-audio     = { workspace = true, features = ["noisereduce"] }
 voxctrl-inference = { workspace = true }
 voxctrl-tts       = { workspace = true, features = ["playback"] }
+voxctrl-pairing   = { workspace = true }
 voxctrl-inject    = { workspace = true }
 voxctrl-dbus      = { workspace = true }
 voxctrl-mcp       = { workspace = true }

@@ -126,6 +126,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84a22b5d51209f6de83d37a0b33d320acb8da88823e42a94c075140708f032a5"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "array-init"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,6 +394,28 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-server"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ab4a3ec9ea8a657c72d99a03a824af695bd0fb5ec639ccbd9cd3543b41a5f9"
+dependencies = [
+ "arc-swap",
+ "bytes",
+ "fs-err",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-util",
+ "pin-project-lite",
+ "rustls",
+ "rustls-pemfile",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
  "tower-service",
 ]
 
@@ -1919,6 +1950,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs-err"
+version = "3.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5c95b673b8f6f7235229ae11c5642d81b04c2e64c1e2fb417bc0cf73ca45f29"
+dependencies = [
+ "autocfg",
+ "tokio",
 ]
 
 [[package]]
@@ -4175,6 +4216,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
+name = "pem"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
+dependencies = [
+ "base64 0.22.1",
+ "serde_core",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4676,6 +4727,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rcgen"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
+]
+
+[[package]]
 name = "realfft"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4797,6 +4861,7 @@ dependencies = [
  "native-tls",
  "percent-encoding",
  "pin-project-lite",
+ "rustls",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -4804,6 +4869,7 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls",
  "tokio-util",
  "tower",
  "tower-http",
@@ -4961,10 +5027,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
 dependencies = [
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -6926,7 +7002,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6958,6 +7034,7 @@ dependencies = [
  "voxctrl-inject",
  "voxctrl-llm",
  "voxctrl-mcp",
+ "voxctrl-pairing",
  "voxctrl-routing",
  "voxctrl-tts",
  "voxctrl-update",
@@ -6966,7 +7043,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "cpal",
@@ -6980,7 +7057,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -6998,7 +7075,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-clipboard"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "tracing",
@@ -7009,7 +7086,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -7022,7 +7099,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "serde",
@@ -7034,7 +7111,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-history"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -7049,7 +7126,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7071,7 +7148,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7095,6 +7172,7 @@ dependencies = [
  "tracing",
  "voxctrl-config",
  "voxctrl-llm",
+ "voxctrl-pairing",
  "voxctrl-routing",
  "voxctrl-text",
  "whisper-rs",
@@ -7102,7 +7180,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7122,7 +7200,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7136,7 +7214,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm-sidecar"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "encoding_rs",
  "llama-cpp-2",
@@ -7148,7 +7226,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "libc",
@@ -7161,8 +7239,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxctrl-pairing"
+version = "0.9.15"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "hex",
+ "reqwest 0.12.28",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "voxctrl-routing"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7189,13 +7281,17 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-server"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "axum",
+ "axum-server",
  "dirs 5.0.1",
  "futures-util",
  "getrandom 0.3.4",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "tempfile",
@@ -7207,19 +7303,20 @@ dependencies = [
  "tracing-subscriber",
  "voxctrl-config",
  "voxctrl-inference",
+ "voxctrl-pairing",
  "voxctrl-tts",
 ]
 
 [[package]]
 name = "voxctrl-text"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "cc",
@@ -7240,12 +7337,13 @@ dependencies = [
  "tokio",
  "tracing",
  "voxctrl-config",
+ "voxctrl-pairing",
  "voxctrl-text",
 ]
 
 [[package]]
 name = "voxctrl-update"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7263,7 +7361,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.9.14"
+version = "0.9.15"
 dependencies = [
  "anyhow",
  "tracing",
@@ -8462,6 +8560,15 @@ checksum = "ec1cdab258fb55c0da61328dc52c8764709b249011b2cad0454c72f0bf10a1f6"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
 ]
 
 [[package]]

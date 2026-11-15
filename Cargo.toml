@@ -18,12 +18,13 @@ members = [
     "crates/voxctrl-bugreport",
     "crates/voxctrl-llm-sidecar",
     "crates/voxctrl-server",
+    "crates/voxctrl-pairing",
     "src-tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.9.14"
+version = "0.9.15"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -129,6 +130,7 @@ voxctrl-hotkeys  = { path = "crates/voxctrl-hotkeys" }
 voxctrl-audio    = { path = "crates/voxctrl-audio" }
 voxctrl-inference = { path = "crates/voxctrl-inference" }
 voxctrl-tts      = { path = "crates/voxctrl-tts", default-features = false }
+voxctrl-pairing  = { path = "crates/voxctrl-pairing" }
 voxctrl-inject   = { path = "crates/voxctrl-inject" }
 voxctrl-winput   = { path = "crates/voxctrl-winput" }
 voxctrl-clipboard = { path = "crates/voxctrl-clipboard" }

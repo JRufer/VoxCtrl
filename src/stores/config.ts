@@ -55,6 +55,11 @@ export interface RemoteOpenAiConfig {
    * Absent in configs written before 0.9.5, which means off.
    */
   cleanup_on_server?: boolean;
+  /**
+   * SHA-256 fingerprint of the server's certificate, from its pairing code.
+   * When set the connection is encrypted and accepts that certificate only.
+   */
+  tls_fingerprint?: string | null;
 }
 
 export interface WhisperCppConfig {

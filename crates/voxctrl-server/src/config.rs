@@ -39,6 +39,22 @@ pub struct ServerConfig {
     #[serde(skip_serializing_if = "tts_untouched")]
     pub tts: voxctrl_config::TtsConfig,
     pub speech: SpeechConfig,
+    pub tls: TlsConfig,
+    /// The name or IP address clients use to reach this machine, put into the
+    /// pairing code so a client need not type it. Empty = work it out, which
+    /// a server in a container cannot do.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub public_host: String,
+}
+
+/// Encryption between clients and this server. Off by default so existing
+/// clients keep working; turning it on means pairing each client again.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TlsConfig {
+    /// `true` serves HTTPS only, with a certificate the server makes for
+    /// itself on first start and keeps beside this file.
+    pub enabled: bool,
 }
 
 /// Dictation cleanup (the S1-mini model) for clients that ask this server to
@@ -104,6 +120,8 @@ impl Default for ServerConfig {
             cleanup: CleanupConfig::default(),
             tts: voxctrl_config::TtsConfig::default(),
             speech: SpeechConfig::default(),
+            tls: TlsConfig::default(),
+            public_host: String::new(),
         }
     }
 }
@@ -223,6 +241,12 @@ impl ServerConfig {
                 _ => self.tts.voice = voice,
             }
         }
+        if let Some(v) = var("VOXCTRL_SERVER_TLS") {
+            self.tls.enabled = parse_bool("VOXCTRL_SERVER_TLS", &v)?;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_PUBLIC_HOST") {
+            self.public_host = v;
+        }
         if let Some(v) = var("VOXCTRL_SERVER_CLEANUP_GPU") {
             self.cleanup.gpu = parse_bool("VOXCTRL_SERVER_CLEANUP_GPU", &v)?;
         }
@@ -285,7 +309,7 @@ pub fn generate_api_key() -> Result<String> {
 }
 
 #[cfg(unix)]
-fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let mut file = std::fs::OpenOptions::new()
@@ -300,7 +324,7 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     std::fs::write(path, text)
 }
 
@@ -310,6 +334,22 @@ mod tests {
 
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn encryption_is_off_until_asked_for_in_the_file_or_the_environment() {
+        assert!(!ServerConfig::default().tls.enabled);
+        let from_file = ServerConfig::from_toml_str("public_host = \"speechbox.lan\"\n[tls]\nenabled = true\n").unwrap();
+        assert!(from_file.tls.enabled);
+        assert_eq!(from_file.public_host, "speechbox.lan");
+
+        let mut from_env = ServerConfig::default();
+        from_env
+            .apply_env(env(&[("VOXCTRL_SERVER_TLS", "true"), ("VOXCTRL_SERVER_PUBLIC_HOST", "192.168.1.50")]))
+            .unwrap();
+        assert!(from_env.tls.enabled);
+        assert_eq!(from_env.public_host, "192.168.1.50");
+        assert!(ServerConfig::default().apply_env(env(&[("VOXCTRL_SERVER_TLS", "maybe")])).is_err());
     }
 
     #[test]

@@ -259,6 +259,7 @@ pub fn tts_server_link(cfg: &voxctrl_config::AppConfig) -> Option<voxctrl_tts::r
     (!remote.endpoint.trim().is_empty()).then(|| voxctrl_tts::remote::ServerLink {
         endpoint: remote.endpoint.clone(),
         api_key: remote.api_key.clone(),
+        tls_fingerprint: remote.tls_fingerprint.clone(),
         client_id: voxctrl_tts::remote::default_client_id(),
         engine: chosen(&cfg.tts.server_engine),
         voice: chosen(&cfg.tts.server_voice),

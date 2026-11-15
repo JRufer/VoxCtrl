@@ -55,12 +55,14 @@ pub async fn test_remote_stt(
     api_key: Option<String>,
     model: String,
     timeout_secs: u64,
+    tls_fingerprint: Option<String>,
 ) -> Result<voxctrl_inference::RemoteSttTestResult, String> {
     voxctrl_inference::test_remote_speech_engine(
         &endpoint,
         api_key.as_deref(),
         &model,
         timeout_secs,
+        tls_fingerprint.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())
