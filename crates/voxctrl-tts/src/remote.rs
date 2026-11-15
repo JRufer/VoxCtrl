@@ -89,9 +89,27 @@ fn client(timeout: Duration) -> Result<reqwest::blocking::Client> {
         .context("Could not set up the connection")
 }
 
-/// Have the server speak `text` and return the WAV. Blocking: call it from a
-/// thread that is not an async runtime's. Errors are worded for the user.
+/// Have the server speak `text` and return the WAV. Blocking. Errors are
+/// worded for the user.
 pub fn fetch_speech(link: &ServerLink, text: &str) -> Result<Vec<u8>> {
+    fetch_speech_unless(link, text, &|| false)?.ok_or_else(|| anyhow!("The speech request was cancelled."))
+}
+
+/// How often a waiting speech request asks whether it is still wanted.
+const CANCEL_CHECK: Duration = Duration::from_millis(40);
+
+/// [`fetch_speech`], given up as soon as `cancelled` says so: `Ok(None)`.
+///
+/// Giving up closes the connection, which is how the server learns that
+/// nobody is waiting and can skip the work. Without that, speech the user had
+/// already stopped kept this thread waiting, sometimes for many seconds, and
+/// kept the server synthesizing audio that would never be played while the
+/// next thing they said queued up behind it.
+pub fn fetch_speech_unless(
+    link: &ServerLink,
+    text: &str,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<Option<Vec<u8>>> {
     if link.endpoint.trim().is_empty() {
         return Err(anyhow!(
             "No server address is set. Enter it under Settings → Engine → Remote Speech Engine Settings."
@@ -104,20 +122,68 @@ pub fn fetch_speech(link: &ServerLink, text: &str) -> Result<Vec<u8>> {
     if let Some(voice) = link.voice.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
         body["voice"] = voice.into();
     }
-    let request = signed(client(SPEECH_TIMEOUT)?.post(speech_url(&link.endpoint)), link).json(&body);
-    let response = request.send().map_err(|e| {
-        if e.is_connect() {
-            anyhow!("Could not reach the server to speak. Check that it is running and the address is right.")
-        } else if e.is_timeout() {
-            anyhow!("The server took too long to speak.")
-        } else {
-            anyhow!("The request to the server failed: {e}")
+
+    let request = async {
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(SPEECH_TIMEOUT)
+            .build()
+            .context("Could not set up the connection")?;
+        let mut req = http.post(speech_url(&link.endpoint)).json(&body);
+        if let Some(key) = link.api_key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+            req = req.bearer_auth(key);
         }
-    })?;
-    let status = response.status();
-    let body = response.bytes().context("The server's audio could not be read")?;
+        if !link.client_id.trim().is_empty() {
+            req = req.header(CLIENT_HEADER, link.client_id.trim());
+        }
+        let response = req.send().await.map_err(|e| {
+            if e.is_connect() {
+                anyhow!("Could not reach the server to speak. Check that it is running and the address is right.")
+            } else if e.is_timeout() {
+                anyhow!("The server took too long to speak.")
+            } else {
+                anyhow!("The request to the server failed: {e}")
+            }
+        })?;
+        let status = response.status();
+        let bytes = response.bytes().await.context("The server's audio could not be read")?;
+        Ok::<_, anyhow::Error>((status, bytes))
+    };
+
+    // On a thread of its own, so this works whatever kind of thread calls it.
+    let outcome = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("Could not start the connection")?;
+                runtime.block_on(async {
+                    tokio::pin!(request);
+                    loop {
+                        tokio::select! {
+                            result = &mut request => return result.map(Some),
+                            _ = tokio::time::sleep(CANCEL_CHECK) => {
+                                if cancelled() {
+                                    // Dropping the request here closes the connection.
+                                    return Ok(None);
+                                }
+                            }
+                        }
+                    }
+                })
+            })
+            .join()
+    });
+    let Some((status, body)) = outcome.map_err(|_| anyhow!("The speech request stopped unexpectedly."))?? else {
+        return Ok(None);
+    };
+    finish_speech_reply(status, &body).map(Some)
+}
+
+fn finish_speech_reply(status: reqwest::StatusCode, body: &[u8]) -> Result<Vec<u8>> {
     if !status.is_success() {
-        return Err(match (status.as_u16(), error_message(&body)) {
+        return Err(match (status.as_u16(), error_message(body)) {
             (401 | 403, _) => anyhow!("The server rejected the API key (HTTP {}).", status.as_u16()),
             (404 | 405, _) => anyhow!(
                 "This server does not offer text-to-speech. It needs voxctrl-server 0.9.7 or newer."

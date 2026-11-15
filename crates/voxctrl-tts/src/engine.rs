@@ -615,21 +615,26 @@ fn speak_on_server(
     if custom {
         sync_own_voices(server, false)?;
     }
-    let audio = match crate::remote::fetch_speech(server, &u.text) {
+    // Stopped while the server is still working (the user started talking
+    // again, or pressed the stop key): give the request up at once. Waiting
+    // it out would hold this thread, and everything queued behind it, for as
+    // long as the server takes.
+    let stopped = || generation_counter.load(Ordering::SeqCst) != generation;
+    let audio = match crate::remote::fetch_speech_unless(server, &u.text, &stopped) {
         // The server no longer has the clip (its storage was cleared, or it
         // is a different server at the same address): send it and try once more.
         Err(e) if custom && e.to_string().contains("has not been uploaded") => {
             sync_own_voices(server, true)?;
-            crate::remote::fetch_speech(server, &u.text)?
+            crate::remote::fetch_speech_unless(server, &u.text, &stopped)?
         }
         other => other?,
     };
-    // Stopped while the server was still working: `stop()` had no audio to
-    // stop then, so it must not start now.
-    if generation_counter.load(Ordering::SeqCst) != generation {
-        debug!("Discarding server speech that was stopped before it arrived");
+    // `None`: stopped. Also checked after a reply, for a stop that landed
+    // just as the audio arrived: `stop()` had nothing to stop then.
+    let Some(audio) = audio.filter(|_| !stopped()) else {
+        debug!("Gave up on server speech that was stopped before it arrived");
         return Ok(());
-    }
+    };
     if let Some(ref cb) = on_playback_start {
         cb();
     }

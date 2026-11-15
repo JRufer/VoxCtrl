@@ -32,6 +32,10 @@ pub struct SpeechRequest {
     pub voice: Option<String>,
     /// The folder holding this client's uploaded voices, when it sent an id.
     pub client_voices: Option<PathBuf>,
+    /// Set when whoever asked has gone away (the client stopped the speech
+    /// and closed the connection). A request still waiting its turn is then
+    /// skipped; one already being synthesized runs to its end.
+    pub abandoned: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -41,6 +45,8 @@ pub enum SpeakError {
     Invalid(String),
     /// The engine failed. Details stay in the server log.
     Engine(anyhow::Error),
+    /// Skipped, because the client had gone before its turn came.
+    Abandoned,
 }
 
 /// One engine this server offers, for a client's pickers.
@@ -78,6 +84,10 @@ impl EngineSpeaker {
     /// the first request pays for neither. `engines` is what to offer besides
     /// `config.engine`, which is always offered and is the default.
     pub async fn prepare(config: TtsConfig, engines: &[TtsEngine]) -> Result<Self> {
+        // Speech waits behind transcription for the processor: a client is
+        // looking at a frozen overlay while a dictation is transcribed, and
+        // only listening to a pause while a sentence is synthesized.
+        voxctrl_tts::set_helper_niceness(10);
         let mut offered = vec![config.engine.clone()];
         for engine in engines {
             if !offered.contains(engine) {
@@ -144,7 +154,11 @@ async fn fetch_pocket_voices(config: &TtsConfig) {
 struct PlannedSpeech {
     config: TtsConfig,
     text: String,
+    abandoned: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
+
+/// What the speech thread says instead of audio for a request it skipped.
+const ABANDONED: &str = "abandoned by the client";
 
 fn engine_name(engine: &TtsEngine) -> &'static str {
     match engine {
@@ -314,7 +328,15 @@ impl SpeechWorker {
                 };
                 // Ends when the server drops the last sender, at shutdown.
                 for job in inbox {
-                    let _ = job.reply.send(speak(&job.speech));
+                    // Nobody is waiting for this one any more: do not spend
+                    // seconds of every core on audio that will be thrown
+                    // away while live requests queue behind it.
+                    let result = if job.speech.abandoned.load(std::sync::atomic::Ordering::SeqCst) {
+                        Err(anyhow!(ABANDONED))
+                    } else {
+                        speak(&job.speech)
+                    };
+                    let _ = job.reply.send(result);
                 }
             })
             .context("Could not start the speech thread")?;
@@ -347,7 +369,14 @@ pub fn configured_voice(config: &TtsConfig) -> Option<String> {
 impl Speaker for EngineSpeaker {
     fn speak(&self, request: &SpeechRequest) -> Result<Vec<u8>, SpeakError> {
         let config = plan(&self.config, &self.offered, request).map_err(SpeakError::Invalid)?;
-        self.worker.speak(PlannedSpeech { config, text: request.text.clone() }).map_err(SpeakError::Engine)
+        let abandoned = request.abandoned.clone();
+        self.worker.speak(PlannedSpeech { config, text: request.text.clone(), abandoned }).map_err(|e| {
+            if e.to_string() == ABANDONED {
+                SpeakError::Abandoned
+            } else {
+                SpeakError::Engine(e)
+            }
+        })
     }
 
     fn engines(&self) -> Vec<EngineOffer> {
@@ -360,7 +389,52 @@ mod tests {
     use super::*;
 
     fn say(text: &str) -> PlannedSpeech {
-        PlannedSpeech { config: TtsConfig::default(), text: text.to_string() }
+        PlannedSpeech { config: TtsConfig::default(), text: text.to_string(), abandoned: Default::default() }
+    }
+
+    #[test]
+    fn a_request_abandoned_while_it_waited_is_skipped_and_the_next_still_runs() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let spoken = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+        let (release, hold) = mpsc::channel::<()>();
+        let hold = Mutex::new(hold);
+        let seen = spoken.clone();
+        let worker = std::sync::Arc::new(
+            SpeechWorker::start(move || {
+                Ok(move |speech: &PlannedSpeech| {
+                    if speech.text == "first" {
+                        // Stay busy until the test lets go.
+                        hold.lock().unwrap().recv().unwrap();
+                    }
+                    seen.lock().unwrap().push(speech.text.clone());
+                    Ok(vec![1])
+                })
+            })
+            .unwrap(),
+        );
+
+        let gone = std::sync::Arc::new(AtomicBool::new(false));
+        let run = |text: &'static str, abandoned: std::sync::Arc<AtomicBool>| {
+            let worker = worker.clone();
+            std::thread::spawn(move || {
+                worker.speak(PlannedSpeech { config: TtsConfig::default(), text: text.into(), abandoned })
+            })
+        };
+        let first = run("first", Default::default());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let second = run("second", gone.clone());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let third = run("third", Default::default());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // The client of "second" gives up while "first" is still being spoken.
+        gone.store(true, Ordering::SeqCst);
+        release.send(()).unwrap();
+
+        assert!(first.join().unwrap().is_ok());
+        assert_eq!(second.join().unwrap().unwrap_err().to_string(), ABANDONED);
+        assert!(third.join().unwrap().is_ok());
+        assert_eq!(*spoken.lock().unwrap(), vec!["first", "third"], "the abandoned one was never synthesized");
     }
 
     fn request(engine: Option<&str>, voice: Option<&str>, client_voices: Option<&std::path::Path>) -> SpeechRequest {
@@ -369,6 +443,7 @@ mod tests {
             engine: engine.map(str::to_string),
             voice: voice.map(str::to_string),
             client_voices: client_voices.map(|p| p.to_path_buf()),
+            abandoned: Default::default(),
         }
     }
 

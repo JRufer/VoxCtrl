@@ -638,6 +638,15 @@ Things to know:
   spoken per request.
 - **If the server can't be reached, nothing is spoken** and the client shows
   the reason. There is no local fallback for speech.
+- **Stopping speech stops the work.** When you start dictating again or press
+  the stop key while the server is still synthesizing, the client gives the
+  request up at once and closes the connection. The server skips any request
+  whose client has gone before its turn came. A sentence already being
+  synthesized can't be interrupted and runs to its end, so on a slow CPU engine
+  one stopped sentence can still occupy the server for a while.
+- **Speech yields to transcription.** The neural engines' helper process runs
+  at a lower scheduling priority than the rest of the server, so a dictation
+  that arrives while a sentence is being synthesized is transcribed first.
 - **Memory on the server:** the model stays loaded for as long as the server
   runs.
 - The server logs how long each request took, its size and which engine and

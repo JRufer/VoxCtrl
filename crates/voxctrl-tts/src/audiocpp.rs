@@ -539,16 +539,37 @@ fn free_local_port() -> Result<u16> {
 #[cfg(target_os = "linux")]
 fn die_with_this_process(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: `prctl` is async-signal-safe and touches only this syscall's
-    // own arguments — safe to call between fork and exec in the child.
+    let niceness = HELPER_NICENESS.load(std::sync::atomic::Ordering::Relaxed);
+    // SAFETY: `prctl` and `setpriority` are async-signal-safe and touch only
+    // their own arguments — safe to call between fork and exec in the child.
     unsafe {
-        cmd.pre_exec(|| {
+        cmd.pre_exec(move || {
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
                 return Err(std::io::Error::last_os_error());
+            }
+            if niceness != 0 {
+                // Best effort: a helper at normal priority is still a helper.
+                libc::setpriority(libc::PRIO_PROCESS, 0, niceness);
             }
             Ok(())
         });
     }
+}
+
+/// The scheduling niceness audio.cpp helpers are started with. 0 = the same
+/// priority as everything else.
+static HELPER_NICENESS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Start audio.cpp helpers at a lower scheduling priority from now on
+/// (`niceness` 1 to 19; 0 restores normal priority).
+///
+/// For a process that does other time-critical work beside speech: on a
+/// server, neural synthesis on the CPU uses every core for seconds at a time,
+/// and without this it competes on equal terms with transcription, which is
+/// what the person at the other end is waiting on. Has no effect on helpers
+/// already running, or outside Linux.
+pub fn set_helper_niceness(niceness: i32) {
+    HELPER_NICENESS.store(niceness.clamp(0, 19), std::sync::atomic::Ordering::Relaxed);
 }
 
 impl AudioCppServer {
