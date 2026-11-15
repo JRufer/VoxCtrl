@@ -31,6 +31,11 @@ services:
       VOXCTRL_SERVER_TTS_ENGINES: ${VOXCTRL_SERVER_TTS_ENGINES:-}
       VOXCTRL_SERVER_TTS_ENGINE: ${VOXCTRL_SERVER_TTS_ENGINE:-}
       VOXCTRL_SERVER_TTS_VOICE: ${VOXCTRL_SERVER_TTS_VOICE:-}
+      # true = encrypt connections (HTTPS only); clients pair with the code
+      # from `docker exec voxctrl-server voxctrl-server --pairing-code`.
+      VOXCTRL_SERVER_TLS: ${VOXCTRL_SERVER_TLS:-}
+      # The address clients reach this machine by, for the pairing code.
+      VOXCTRL_SERVER_PUBLIC_HOST: ${VOXCTRL_SERVER_PUBLIC_HOST:-}
       # Left blank, the server generates a key on first start, saves it in the
       # volume, and prints it once in the log.
       VOXCTRL_SERVER_API_KEY: ${VOXCTRL_SERVER_API_KEY:-}

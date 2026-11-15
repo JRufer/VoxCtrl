@@ -177,6 +177,32 @@ pub async fn run_model_cleanup(
 pub async fn check_server_cleanup(
     endpoint: String,
     api_key: Option<String>,
+    tls_fingerprint: Option<String>,
 ) -> Result<voxctrl_inference::remote_cleanup::ServerCleanupStatus, String> {
-    Ok(voxctrl_inference::remote_cleanup::check_server_cleanup(&endpoint, api_key.as_deref()).await)
+    Ok(voxctrl_inference::remote_cleanup::check_server_cleanup(
+        &endpoint,
+        api_key.as_deref(),
+        tls_fingerprint.as_deref(),
+    )
+    .await)
+}
+
+/// What a pairing code from a server says, for the Settings window to fill
+/// in. `typed_endpoint` supplies the server's address when the code has none
+/// (a server in a container does not know its own).
+#[derive(serde::Serialize)]
+pub struct PairingDetails {
+    pub endpoint: String,
+    pub api_key: Option<String>,
+    pub tls_fingerprint: Option<String>,
+}
+
+#[tauri::command]
+pub fn read_pairing_code(code: String, typed_endpoint: String) -> Result<PairingDetails, String> {
+    let pairing = voxctrl_pairing::PairingCode::decode(&code).map_err(|e| format!("{e:#}"))?;
+    Ok(PairingDetails {
+        endpoint: pairing.endpoint(&typed_endpoint).map_err(|e| format!("{e:#}"))?,
+        api_key: pairing.api_key,
+        tls_fingerprint: pairing.fingerprint,
+    })
 }

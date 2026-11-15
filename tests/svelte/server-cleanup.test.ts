@@ -78,6 +78,7 @@ describe("Engine tab: cleanup on the server", () => {
     expect(calls.find((c) => c.cmd === "check_server_cleanup")!.args).toEqual({
       endpoint: "http://box:8787/v1",
       apiKey: "vx_key",
+      tlsFingerprint: null,
     });
   });
 

@@ -80,7 +80,7 @@ fn client_config(endpoint: &str, api_key: Option<&str>) -> RemoteOpenAiConfig {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_connection_succeeds_and_discovers_the_model() {
     let (endpoint, seen) = serve("unused").await;
-    let result = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10).await.unwrap();
+    let result = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10, None).await.unwrap();
     assert!(result.success, "{}", result.message);
     assert_eq!(result.models, vec!["fake/test".to_string()]);
     // The probe is silence, so it must not have cost a model run.
@@ -90,7 +90,7 @@ async fn test_connection_succeeds_and_discovers_the_model() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_connection_reports_a_wrong_key() {
     let (endpoint, _) = serve("unused").await;
-    let result = test_remote_speech_engine(&endpoint, Some("vx_wrong"), "whisper-1", 10).await.unwrap();
+    let result = test_remote_speech_engine(&endpoint, Some("vx_wrong"), "whisper-1", 10, None).await.unwrap();
     assert!(!result.success);
     assert!(result.message.contains("401"), "{}", result.message);
 }
@@ -185,19 +185,19 @@ async fn the_client_gets_its_text_cleaned_in_the_style_it_asked_for() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_learns_whether_the_server_offers_cleanup() {
-    let on = check_server_cleanup(&serve_cleanup(true).await, Some(KEY)).await;
+    let on = check_server_cleanup(&serve_cleanup(true).await, Some(KEY), None).await;
     assert!(on.available, "{}", on.message);
     assert_eq!(on.model.as_deref(), Some("echo"));
 
-    let off = check_server_cleanup(&serve_cleanup(false).await, Some(KEY)).await;
+    let off = check_server_cleanup(&serve_cleanup(false).await, Some(KEY), None).await;
     assert!(!off.available);
     assert!(off.message.contains("turned off"), "{}", off.message);
 
-    let wrong_key = check_server_cleanup(&serve_cleanup(true).await, Some("vx_wrong")).await;
+    let wrong_key = check_server_cleanup(&serve_cleanup(true).await, Some("vx_wrong"), None).await;
     assert!(!wrong_key.available);
     assert!(wrong_key.message.contains("API key"), "{}", wrong_key.message);
 
-    let nobody = check_server_cleanup("http://127.0.0.1:1/v1", Some(KEY)).await;
+    let nobody = check_server_cleanup("http://127.0.0.1:1/v1", Some(KEY), None).await;
     assert!(!nobody.available);
     assert!(nobody.message.contains("connect"), "{}", nobody.message);
 }
@@ -304,6 +304,7 @@ fn link_as(endpoint: &str, client: &str, engine: Option<&str>, voice: Option<&st
         endpoint: endpoint.to_string(),
         api_key: Some(KEY.to_string()),
         client_id: client.to_string(),
+        tls_fingerprint: None,
         engine: engine.map(str::to_string),
         voice: voice.map(str::to_string),
     }
@@ -471,4 +472,120 @@ async fn speech_that_is_not_stopped_still_arrives_through_the_cancellable_path()
         .unwrap()
         .expect("not cancelled");
     assert_eq!(&wav[0..4], b"RIFF");
+}
+
+// ── Encryption ──────────────────────────────────────────────────────────────
+
+/// A server with encryption on, cleanup and speech included; returns its
+/// `https` endpoint and the fingerprint of its certificate.
+async fn serve_encrypted() -> (String, String) {
+    let (engine, _seen) = fake_engine("spoken over an encrypted connection", false);
+    let speaker: Arc<dyn crate::speech::Speaker> = Arc::new(DescribingSpeaker::default());
+    let state = Arc::new(AppState {
+        engine,
+        cleanup: Some(Arc::new(EchoCleaner)),
+        voices: Some(crate::voices::VoiceStore::new(voice_root())),
+        speech: Some(speaker),
+        api_key: Some(KEY.into()),
+        max_upload_bytes: 64 * 1024 * 1024,
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let (identity, _) = crate::tls::Identity::load_or_create(dir.path()).unwrap();
+    let fingerprint = identity.fingerprint();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("https://{}/v1", listener.local_addr().unwrap());
+    let tls = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(identity.server_config().unwrap()));
+    tokio::spawn(async move {
+        axum_server::from_tcp_rustls(listener, tls).serve(router(state).into_make_service()).await
+    });
+    (endpoint, fingerprint)
+}
+
+fn paired(endpoint: &str, fingerprint: &str) -> RemoteOpenAiConfig {
+    RemoteOpenAiConfig { tls_fingerprint: Some(fingerprint.to_string()), ..client_config(endpoint, Some(KEY)) }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paired_client_does_everything_over_the_encrypted_connection() {
+    let (endpoint, fingerprint) = serve_encrypted().await;
+
+    let test = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10, Some(&fingerprint)).await.unwrap();
+    assert!(test.success, "{}", test.message);
+
+    let backend = RemoteOpenAiBackend::new(paired(&endpoint, &fingerprint));
+    let request = TranscribeRequest { audio: vec![0.2; 16_000], ..Default::default() };
+    let heard = tokio::task::spawn_blocking(move || backend.transcribe(&request)).await.unwrap().unwrap();
+    assert_eq!(heard.text, "spoken over an encrypted connection");
+
+    let cleaned = clean_on_server(&paired(&endpoint, &fingerprint), "um hello", "casual").await.unwrap();
+    assert_eq!(cleaned, "<casual> um hello");
+    assert!(check_server_cleanup(&endpoint, Some(KEY), Some(&fingerprint)).await.available);
+
+    let speech_link = ServerLink { tls_fingerprint: Some(fingerprint.clone()), ..link(&endpoint, KEY) };
+    let (status, wav) = tokio::task::spawn_blocking(move || {
+        (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello"))
+    })
+    .await
+    .unwrap();
+    assert!(status.available, "{}", status.message);
+    assert!(wav.unwrap().starts_with(b"RIFF"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_different_certificate_is_refused_and_the_reason_is_given() {
+    let (endpoint, _real) = serve_encrypted().await;
+    let other = "ab".repeat(32);
+
+    let test = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10, Some(&other)).await.unwrap();
+    assert!(!test.success);
+
+    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), Some(&other)).await.unwrap_err();
+    assert_eq!(reason, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
+
+    let cleanup = check_server_cleanup(&endpoint, Some(KEY), Some(&other)).await;
+    assert_eq!(cleanup.message, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
+
+    let speech_link = ServerLink { tls_fingerprint: Some(other), ..link(&endpoint, KEY) };
+    let (status, spoken) = tokio::task::spawn_blocking(move || {
+        (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello"))
+    })
+    .await
+    .unwrap();
+    assert_eq!(status.message, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
+    assert_eq!(spoken.unwrap_err().to_string(), voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unpaired_client_does_not_trust_the_servers_own_certificate() {
+    let (endpoint, _fingerprint) = serve_encrypted().await;
+    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap_err();
+    assert!(reason.contains("Could not connect"), "{reason}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paired_client_never_falls_back_to_an_unencrypted_address() {
+    let (plain, _seen) = serve("sent in the clear").await;
+    let fingerprint = "ab".repeat(32);
+
+    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), Some(&fingerprint)).await.unwrap_err();
+    assert!(reason.contains("must start with https://"), "{reason}");
+
+    let backend = RemoteOpenAiBackend::new(paired(&plain, &fingerprint));
+    let request = TranscribeRequest { audio: vec![0.0; 16_000], ..Default::default() };
+    let refused = tokio::task::spawn_blocking(move || backend.transcribe(&request)).await.unwrap().unwrap_err();
+    assert!(format!("{refused:#}").contains("must start with https://"), "{refused:#}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_health_check_speaks_to_an_encrypted_server() {
+    let (endpoint, fingerprint) = serve_encrypted().await;
+    let bind = endpoint.trim_start_matches("https://").trim_end_matches("/v1").to_string();
+    let (good, bad) = tokio::task::spawn_blocking(move || {
+        (crate::healthcheck(&bind, Some(&fingerprint)), crate::healthcheck(&bind, Some(&"ab".repeat(32))))
+    })
+    .await
+    .unwrap();
+    assert!(good.is_ok(), "{good:?}");
+    assert!(bad.is_err());
 }

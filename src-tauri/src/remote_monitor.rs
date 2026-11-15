@@ -82,7 +82,7 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
     tokio::spawn(async move {
         // The server last asked, so that pointing the app at a different one
         // (or changing the key) forgets what was known about the old one.
-        let mut watched: Option<(String, Option<String>)> = None;
+        let mut watched: Option<(String, Option<String>, Option<String>)> = None;
         loop {
             let remote = {
                 let cfg = probe_state.config.lock().await;
@@ -95,13 +95,17 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
                     remote_status::set_not_in_use();
                 }
                 Some(remote) => {
-                    let key = (remote.endpoint.clone(), remote.api_key.clone());
+                    let key = (remote.endpoint.clone(), remote.api_key.clone(), remote.tls_fingerprint.clone());
                     if watched.as_ref() != Some(&key) {
                         remote_status::set_unknown();
                         watched = Some(key);
                     }
-                    match voxctrl_inference::probe_remote_speech_engine(&remote.endpoint, remote.api_key.as_deref())
-                        .await
+                    match voxctrl_inference::probe_remote_speech_engine(
+                        &remote.endpoint,
+                        remote.api_key.as_deref(),
+                        remote.tls_fingerprint.as_deref(),
+                    )
+                    .await
                     {
                         Ok(()) => remote_status::set_online(),
                         Err(reason) => remote_status::set_offline(reason),

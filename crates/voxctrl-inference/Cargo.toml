@@ -18,6 +18,7 @@ crossbeam-channel = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true }
+voxctrl-pairing = { workspace = true }
 bytes = { workspace = true }
 futures-util = { workspace = true }
 whisper-rs = { version = "0.16" }

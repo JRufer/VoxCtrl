@@ -91,6 +91,7 @@ describe("TTS tab: VoxCtrl server engine", () => {
     expect(calls.find((c) => c.cmd === "check_server_tts")!.args).toEqual({
       endpoint: "http://box:8787/v1",
       apiKey: "vx_key",
+      tlsFingerprint: null,
     });
     // No local voice or model controls for this engine.
     expect(screen.queryByText("Piper Voice")).toBeNull();
@@ -175,6 +176,7 @@ describe("TTS tab: choosing the server's engine and voice", () => {
     expect(calls.find((c) => c.cmd === "sync_server_voices")!.args).toEqual({
       endpoint: "http://box:8787/v1",
       apiKey: "vx_key",
+      tlsFingerprint: null,
     });
   });
 

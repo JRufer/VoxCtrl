@@ -114,6 +114,11 @@ pub struct RemoteOpenAiConfig {
     /// when it cannot, the transcript is used as it was.
     #[serde(default)]
     pub cleanup_on_server: bool,
+    /// SHA-256 fingerprint of the server's own certificate, from its pairing
+    /// code. When set, the connection is encrypted and only that certificate
+    /// is accepted; the endpoint must then be an `https://` address.
+    #[serde(default)]
+    pub tls_fingerprint: Option<String>,
 }
 
 /// Which on-device engine stands in for an unreachable remote server.
@@ -150,6 +155,7 @@ impl Default for RemoteOpenAiConfig {
             timeout_secs: 30,
             fallback: FallbackChoice::None,
             cleanup_on_server: false,
+            tls_fingerprint: None,
         }
     }
 }

@@ -27,7 +27,7 @@ export function ensureServerConfig(cfg: AppConfig) {
  * Tidy what was typed into the address box: a bare host or host:port becomes
  * a full `/v1` address. Leaves a complete address alone, and an empty box empty.
  */
-export function normalizeServerAddress(typed: string): string {
+export function normalizeServerAddress(typed: string, encrypted = false): string {
   let address = typed.trim().replace(/\/+$/, "");
   if (!address) return "";
   // Only what was typed without "http://" is treated as a VoxCtrl server on
@@ -35,7 +35,8 @@ export function normalizeServerAddress(typed: string): string {
   // any OpenAI-compatible service and keeps the port it was given.
   if (!/^https?:\/\//i.test(address)) {
     const bare = !address.includes("/") && !/:\d+$/.test(address) && !address.startsWith("[");
-    address = `http://${address}${bare ? `:${DEFAULT_SERVER_PORT}` : ""}`;
+    // A paired server is only ever spoken to over https.
+    address = `${encrypted ? "https" : "http"}://${address}${bare ? `:${DEFAULT_SERVER_PORT}` : ""}`;
   }
   const path = address.replace(/^https?:\/\/[^/]*/i, "");
   if (!path) address = `${address}/v1`;
@@ -70,6 +71,28 @@ export function connectionSummary(report: ServerReport): { ok: boolean; text: st
   if (report.speech.available) offers.push("text-to-speech");
   const list = offers.length > 1 ? `${offers.slice(0, -1).join(", ")} and ${offers[offers.length - 1]}` : offers[0];
   return { ok: true, text: `Connected. This server offers ${list}.` };
+}
+
+/** What the server's pairing code says, as `read_pairing_code` returns it. */
+export interface PairingDetails {
+  endpoint: string;
+  api_key: string | null;
+  tls_fingerprint: string | null;
+}
+
+/** Take the address, key and certificate from a pairing code. */
+export function applyPairing(cfg: AppConfig, details: PairingDetails) {
+  const remote = cfg.engine.remote_openai;
+  remote.endpoint = details.endpoint;
+  remote.api_key = details.api_key;
+  remote.tls_fingerprint = details.tls_fingerprint;
+}
+
+/** A fingerprint as people compare them: `AB:CD:…`, shortened to both ends. */
+export function shortFingerprint(fingerprint: string): string {
+  const pairs = fingerprint.toUpperCase().match(/.{1,2}/g) ?? [];
+  if (pairs.length <= 8) return pairs.join(":");
+  return `${pairs.slice(0, 4).join(":")} … ${pairs.slice(-4).join(":")}`;
 }
 
 /** Whether text-to-speech currently goes through the server. */

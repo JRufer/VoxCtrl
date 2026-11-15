@@ -1,0 +1,21 @@
+[package]
+name = "voxctrl-pairing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Pairing codes and certificate pinning between the VoxCtrl app and a VoxCtrl server"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+# The `ring` provider only: no C toolchain beyond what the workspace already
+# needs, and the same provider on Linux and Windows.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# `use_preconfigured_tls` needs reqwest's rustls backend compiled in. The
+# default backend stays as it was; this one is used only for a pinned server.
+reqwest = { workspace = true, features = ["rustls-tls-manual-roots-no-provider"] }

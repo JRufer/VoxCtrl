@@ -7,6 +7,7 @@ import {
   connectionSummary,
   normalizeServerAddress,
   setSpeechOnServer,
+  shortFingerprint,
   speechOnServer,
 } from "../../src/lib/Settings/server-setup";
 
@@ -39,18 +40,25 @@ let calls: { cmd: string; args: any }[] = [];
 let stt: any;
 let cleanup: any;
 let speech: any;
+let pairing: any;
+const FINGERPRINT = "0123456789abcdef".repeat(4);
 
 beforeEach(() => {
   calls = [];
   stt = { success: true, message: "Connected to the server.", models: ["parakeet-tdt-0.6b-v3"] };
   cleanup = { available: true, message: "This server cleans up dictation (s1-mini)." };
   speech = { available: true, message: "This server offers 2 speech engines." };
+  pairing = { endpoint: "https://192.168.1.162:8787/v1", api_key: "vx_from_code", tls_fingerprint: FINGERPRINT };
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
     calls.push({ cmd, args });
     if (cmd === "test_remote_stt") return stt;
     if (cmd === "check_server_cleanup") return cleanup;
     if (cmd === "check_server_tts") return speech;
+    if (cmd === "read_pairing_code") {
+      if (pairing instanceof Error) throw pairing.message;
+      return pairing;
+    }
     if (cmd === "get_remote_status") return { state: "online", reason: null, fallback: null };
     if (cmd === "check_s1_mini_downloaded") return false;
     if (cmd === "accelerator_support") return { s1_mini_gpu: null };
@@ -85,6 +93,16 @@ describe("server setup rules", () => {
     expect(cfg.tts.engine).toBe("kitten_tts_2");
     setSpeechOnServer(cfg, false, null);
     expect(cfg.tts.engine).toBe("espeak");
+  });
+
+  test("a paired server's address is completed to https", () => {
+    expect(normalizeServerAddress("192.168.1.162", true)).toBe("https://192.168.1.162:8787/v1");
+    expect(normalizeServerAddress("192.168.1.162", false)).toBe("http://192.168.1.162:8787/v1");
+  });
+
+  test("a fingerprint is shown shortened, in the form people compare", () => {
+    expect(shortFingerprint(FINGERPRINT)).toBe("01:23:45:67 … 89:AB:CD:EF");
+    expect(shortFingerprint("ab01")).toBe("AB:01");
   });
 
   test("speech counts as on the server only while text-to-speech is enabled", () => {
@@ -177,6 +195,71 @@ describe("Engine tab: Remote Speech Engine server setup", () => {
     await waitFor(() => expect(screen.getByText("Parakeet Settings")).toBeTruthy());
     expect(screen.queryByTestId("speech-on-server")).toBeNull();
     expect(screen.queryByTestId("remote-endpoint")).toBeNull();
+  });
+});
+
+describe("Engine tab: pairing with a server", () => {
+  test("a pairing code fills in the address, key and certificate, then tests the connection", async () => {
+    const cfg = config({ endpoint: "192.168.1.162" });
+    render(EngineTab, { cfg });
+    const field = (await screen.findByTestId("pairing-code")) as HTMLInputElement;
+    expect((screen.getByTestId("pairing-apply") as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(field, { target: { value: " vxpair_abc " } });
+    await fireEvent.click(screen.getByTestId("pairing-apply"));
+
+    await waitFor(() => expect(screen.getByTestId("pairing-status").textContent).toContain("01:23:45:67"));
+    expect(calls.find((c) => c.cmd === "read_pairing_code")!.args).toEqual({
+      code: "vxpair_abc",
+      typedEndpoint: "192.168.1.162",
+    });
+    expect(cfg.engine.remote_openai).toMatchObject({
+      endpoint: "https://192.168.1.162:8787/v1",
+      api_key: "vx_from_code",
+      tls_fingerprint: FINGERPRINT,
+    });
+    // The code holds the key, so it does not stay in the field.
+    expect(field.value).toBe("");
+    await waitFor(() =>
+      expect(calls.find((c) => c.cmd === "test_remote_stt")!.args).toMatchObject({
+        endpoint: "https://192.168.1.162:8787/v1",
+        apiKey: "vx_from_code",
+        tlsFingerprint: FINGERPRINT,
+      }),
+    );
+  });
+
+  test("a code from a server without encryption says so and pairs nothing", async () => {
+    pairing = { endpoint: "http://box:8787/v1", api_key: "vx_from_code", tls_fingerprint: null };
+    const cfg = config();
+    render(EngineTab, { cfg });
+    await fireEvent.input(await screen.findByTestId("pairing-code"), { target: { value: "vxpair_abc" } });
+    await fireEvent.click(screen.getByTestId("pairing-apply"));
+    await waitFor(() =>
+      expect(screen.getByTestId("pairing-note").textContent).toContain("does not encrypt connections"),
+    );
+    expect(screen.queryByTestId("pairing-status")).toBeNull();
+    expect(cfg.engine.remote_openai.tls_fingerprint).toBeNull();
+  });
+
+  test("what is not a pairing code is refused with the reason and changes nothing", async () => {
+    pairing = new Error('That is not a pairing code. A pairing code starts with "vxpair_".');
+    const cfg = config();
+    render(EngineTab, { cfg });
+    await fireEvent.input(await screen.findByTestId("pairing-code"), { target: { value: "vx_key" } });
+    await fireEvent.click(screen.getByTestId("pairing-apply"));
+    await waitFor(() => expect(screen.getByTestId("pairing-note").textContent).toContain("not a pairing code"));
+    expect(cfg.engine.remote_openai.endpoint).toBe("http://box:8787/v1");
+    expect(calls.some((c) => c.cmd === "test_remote_stt")).toBe(false);
+  });
+
+  test("an already paired server shows its certificate, and the pairing can be removed", async () => {
+    const cfg = config({ endpoint: "https://box:8787/v1" });
+    cfg.engine.remote_openai.tls_fingerprint = FINGERPRINT;
+    render(EngineTab, { cfg });
+    expect((await screen.findByTestId("pairing-status")).textContent).toContain("Encrypted");
+    await fireEvent.click(screen.getByTestId("pairing-remove"));
+    expect(cfg.engine.remote_openai.tls_fingerprint).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("pairing-status")).toBeNull());
   });
 });
 

@@ -296,15 +296,14 @@ impl RemoteStreamingSession {
                 }
             });
 
-            let client = reqwest::Client::builder()
-                .connect_timeout(CONNECT_TIMEOUT)
-                .timeout(Duration::from_secs(cfg_clone.timeout_secs))
-                .build();
-
-            let client = match client {
+            let client = match http_client(
+                &cfg_clone.endpoint,
+                cfg_clone.tls_fingerprint.as_deref(),
+                Duration::from_secs(cfg_clone.timeout_secs),
+            ) {
                 Ok(c) => c,
                 Err(e) => {
-                    let _ = result_tx.send(Err(anyhow!("Failed to build HTTP client: {e}")));
+                    let _ = result_tx.send(Err(e));
                     return;
                 }
             };
@@ -465,18 +464,29 @@ async fn execute_multipart_transcribe(
 /// TranscriptionBackend implementation for remote OpenAI-compatible STT.
 pub struct RemoteOpenAiBackend {
     config: RemoteOpenAiConfig,
-    client: reqwest::Client,
+    /// `Err` holds why no connection can be made with these settings (a
+    /// paired server given an unencrypted address, say), reported when a
+    /// dictation is attempted.
+    client: std::result::Result<reqwest::Client, String>,
 }
 
 impl RemoteOpenAiBackend {
     pub fn new(config: RemoteOpenAiConfig) -> Self {
-        let client = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(Duration::from_secs(config.timeout_secs))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let client = http_client(
+            &config.endpoint,
+            config.tls_fingerprint.as_deref(),
+            Duration::from_secs(config.timeout_secs),
+        )
+        .map_err(|e| format!("{e:#}"));
         Self { config, client }
     }
+}
+
+/// The HTTP client for a server: encrypted to its paired certificate when a
+/// fingerprint is saved, and never falling back to an unpinned connection.
+pub(crate) fn http_client(endpoint: &str, tls_fingerprint: Option<&str>, timeout: Duration) -> Result<reqwest::Client> {
+    let builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).timeout(timeout);
+    voxctrl_pairing::pin(builder, endpoint, tls_fingerprint)?.build().context("Could not set up the connection")
 }
 
 impl TranscriptionBackend for RemoteOpenAiBackend {
@@ -490,7 +500,7 @@ impl TranscriptionBackend for RemoteOpenAiBackend {
 
     fn transcribe(&self, req: &TranscribeRequest) -> Result<TranscriptionResult> {
         let start = Instant::now();
-        let client = self.client.clone();
+        let client = self.client.clone().map_err(|reason| anyhow!(reason))?;
         let cfg = self.config.clone();
         let prompt = req.initial_prompt.clone();
         let audio = req.audio.clone();
@@ -532,11 +542,12 @@ pub async fn test_remote_speech_engine(
     api_key: Option<&str>,
     model: &str,
     timeout_secs: u64,
+    tls_fingerprint: Option<&str>,
 ) -> Result<RemoteSttTestResult> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()
-        .context("Failed to build HTTP client")?;
+    let client = match http_client(endpoint, tls_fingerprint, Duration::from_secs(timeout_secs)) {
+        Ok(client) => client,
+        Err(e) => return Ok(RemoteSttTestResult { success: false, message: format!("{e:#}"), models: Vec::new() }),
+    };
 
     let trans_url = normalize_transcription_url(endpoint);
 
@@ -623,12 +634,12 @@ pub async fn test_remote_speech_engine(
 /// A server that answers but has no such route (404, 405) counts as reachable:
 /// not every OpenAI-compatible server lists its models, and what this is for
 /// is noticing a server that has gone away.
-pub async fn probe_remote_speech_engine(endpoint: &str, api_key: Option<&str>) -> std::result::Result<(), String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(Duration::from_secs(6))
-        .build()
-        .map_err(|e| format!("Could not set up the connection: {e}"))?;
+pub async fn probe_remote_speech_engine(
+    endpoint: &str,
+    api_key: Option<&str>,
+    tls_fingerprint: Option<&str>,
+) -> std::result::Result<(), String> {
+    let client = http_client(endpoint, tls_fingerprint, Duration::from_secs(6)).map_err(|e| format!("{e:#}"))?;
     let request = attach_auth(client.get(normalize_models_url(endpoint)), api_key);
     match request.send().await {
         Ok(response) => probe_status_reason(response.status().as_u16()).map_or(Ok(()), Err),
@@ -647,7 +658,9 @@ fn probe_status_reason(status: u16) -> Option<String> {
 }
 
 fn request_failure_reason(e: &reqwest::Error) -> String {
-    if e.is_connect() {
+    if voxctrl_pairing::is_certificate_mismatch(e) {
+        voxctrl_pairing::CERTIFICATE_MISMATCH_HELP.into()
+    } else if e.is_connect() {
         "Could not connect to the server".into()
     } else if e.is_timeout() {
         "The server did not answer in time".into()
@@ -715,7 +728,7 @@ mod tests {
 
     #[tokio::test]
     async fn probing_a_server_that_is_not_there_says_so() {
-        let reason = probe_remote_speech_engine(&closed_endpoint(), None).await.unwrap_err();
+        let reason = probe_remote_speech_engine(&closed_endpoint(), None, None).await.unwrap_err();
         assert_eq!(reason, "Could not connect to the server");
     }
 

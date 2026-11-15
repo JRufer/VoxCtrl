@@ -177,8 +177,9 @@ pub async fn list_piper_voices(
 pub async fn check_server_tts(
     endpoint: String,
     api_key: Option<String>,
+    tls_fingerprint: Option<String>,
 ) -> Result<voxctrl_tts::remote::ServerTtsStatus, String> {
-    let link = voxctrl_tts::remote::ServerLink { endpoint, api_key, ..Default::default() };
+    let link = voxctrl_tts::remote::ServerLink { endpoint, api_key, tls_fingerprint, ..Default::default() };
     // The client is blocking, for the TTS worker thread's sake.
     tokio::task::spawn_blocking(move || voxctrl_tts::remote::check_server_tts(&link))
         .await
@@ -211,11 +212,16 @@ pub async fn list_own_voices() -> Result<Vec<String>, String> {
 /// upload new and changed ones, remove ones deleted here. They are stored
 /// under this client's id and no other client can use them.
 #[tauri::command]
-pub async fn sync_server_voices(endpoint: String, api_key: Option<String>) -> Result<ServerVoiceSync, String> {
+pub async fn sync_server_voices(
+    endpoint: String,
+    api_key: Option<String>,
+    tls_fingerprint: Option<String>,
+) -> Result<ServerVoiceSync, String> {
     tokio::task::spawn_blocking(move || {
         let link = voxctrl_tts::remote::ServerLink {
             endpoint,
             api_key,
+            tls_fingerprint,
             client_id: voxctrl_tts::remote::default_client_id(),
             ..Default::default()
         };

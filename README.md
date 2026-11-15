@@ -97,6 +97,7 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | **`voxctrl-text`** | Text normalization, filler-word sanitization, and regex replacement filters. |
 | **`voxctrl-update`** | GitHub release checking, SHA-256 verification, and atomic self-updating. |
 | **`voxctrl-bugreport`**| Allowlist-redacted diagnostic bundle generation and GitHub issue submission. |
+| **`voxctrl-pairing`** | Pairing codes and certificate pinning between the app and an encrypted VoxCtrl server. |
 | **`voxctrl-server`** | Headless speech server: runs one STT model and serves it to VoxCtrl clients over an OpenAI-compatible HTTP API ([docs/server.md](docs/server.md)). |
 
 ---

@@ -47,7 +47,8 @@ Full schema with defaults:
       "language": "",
       "timeout_secs": 30,
       "fallback": "none",
-      "cleanup_on_server": false
+      "cleanup_on_server": false,
+      "tls_fingerprint": null
     },
     "s1_mini": {
       "enabled": false,
@@ -228,6 +229,7 @@ The `.en` variants are English-only but slightly faster. `large-v3-turbo` is a d
 | `timeout_secs` | integer | `30` | Request timeout in seconds (min 5, max 300). |
 | `fallback` | string | `"none"` | The on-device engine that transcribes while the server is unreachable: `"none"`, `"whisper-cpp"`, `"moonshine"` or `"parakeet"`. It runs with that engine's own section of this file (model, language, device) and is loaded only while the server is unreachable. With `"none"`, a dictation fails with an error instead. See [Remote Speech Engine → Fallback](./speech-recognition.md#fallback-when-the-server-is-unreachable). |
 | `cleanup_on_server` | bool | `false` | Send S1-mini dictation cleanup to this server instead of running it on this computer. Needs a `voxctrl-server` 0.9.5 or newer with cleanup enabled. `engine.s1_mini` still decides whether and in which style a dictation is cleaned; when the server can't clean one, the text is typed as it was said. Ignored unless `backend` is `"remote-openai"`. See [Dictation cleanup on the server](./server.md#dictation-cleanup-on-the-server). |
+| `tls_fingerprint` | string \| null | `null` | SHA-256 fingerprint of the server's certificate, filled in by pasting a pairing code under **Settings → Engine**. When set, the connection is encrypted, only that certificate is accepted, and `endpoint` must be an `https://` address. See [Encryption](./server.md#encryption). |
 
 **`s1_mini` sub-object** (dictation cleanup processor):
 

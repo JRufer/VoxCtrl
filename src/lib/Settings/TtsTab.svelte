@@ -540,6 +540,7 @@
       const result = await invoke<{ local: string[]; uploaded: string[]; removed: string[] }>("sync_server_voices", {
         endpoint: remote?.endpoint ?? "",
         apiKey: remote?.api_key || null,
+        tlsFingerprint: remote?.tls_fingerprint || null,
       });
       ownVoices = result.local;
       const parts = [];
@@ -563,6 +564,7 @@
       serverTts = await invoke<ServerTtsStatus>("check_server_tts", {
         endpoint: remote?.endpoint ?? "",
         apiKey: remote?.api_key || null,
+        tlsFingerprint: remote?.tls_fingerprint || null,
       });
     } catch (e) {
       serverTts = { available: false, engine: null, voice: null, message: String(e) };

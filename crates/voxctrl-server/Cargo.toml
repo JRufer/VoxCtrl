@@ -30,6 +30,13 @@ axum = { version = "0.8", default-features = false, features = ["http1", "json",
 futures-util = { workspace = true }
 # Random bytes for the API key generated on first start.
 getrandom = "0.3"
+# Encryption (`[tls] enabled`): a self-made certificate, served with rustls on
+# the `ring` provider, and the pairing code that carries its fingerprint.
+voxctrl-pairing = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
+axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

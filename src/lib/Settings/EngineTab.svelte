@@ -11,7 +11,15 @@
   import DeviceChip from "./DeviceChip.svelte";
   import BenchmarkPanel from "./BenchmarkPanel.svelte";
   import ModelCleanupDialog from "./ModelCleanupDialog.svelte";
-  import { connectionSummary, normalizeServerAddress, setSpeechOnServer, speechOnServer } from "./server-setup";
+  import {
+    applyPairing,
+    connectionSummary,
+    normalizeServerAddress,
+    setSpeechOnServer,
+    shortFingerprint,
+    speechOnServer,
+    type PairingDetails,
+  } from "./server-setup";
   import { gpuLabel } from "./gpu";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
@@ -181,6 +189,7 @@
       serverCleanup = await invoke<ServerCleanupStatus>("check_server_cleanup", {
         endpoint: remote.endpoint,
         apiKey: remote.api_key || null,
+        tlsFingerprint: remote.tls_fingerprint || null,
       });
     } catch (e) {
       serverCleanup = { available: false, model: null, message: String(e) };
@@ -204,7 +213,49 @@
   }
 
   function onEndpointChanged() {
-    cfg.engine.remote_openai.endpoint = normalizeServerAddress(cfg.engine.remote_openai.endpoint ?? "");
+    cfg.engine.remote_openai.endpoint = normalizeServerAddress(
+      cfg.engine.remote_openai.endpoint ?? "",
+      !!cfg.engine.remote_openai.tls_fingerprint,
+    );
+    markDirty();
+  }
+
+  // Pairing: the server prints a code holding its address, key and, with
+  // encryption on, the fingerprint of its certificate. The code is not kept:
+  // it contains the key, so the field is emptied once it has been read.
+  let pairingCode = $state("");
+  let pairingNote = $state<{ ok: boolean; text: string } | null>(null);
+  let pairedFingerprint = $state<string | null>(cfg.engine.remote_openai?.tls_fingerprint || null);
+
+  async function applyPairingCode() {
+    ensureRemoteConfig();
+    const code = pairingCode.trim();
+    if (!code) return;
+    try {
+      const details = await invoke<PairingDetails>("read_pairing_code", {
+        code,
+        typedEndpoint: cfg.engine.remote_openai.endpoint ?? "",
+      });
+      applyPairing(cfg, details);
+      pairedFingerprint = details.tls_fingerprint;
+      pairingCode = "";
+      pairingNote = {
+        ok: true,
+        text: details.tls_fingerprint
+          ? "Paired. The address, key and certificate were filled in."
+          : "The address and key were filled in. This server does not encrypt connections.",
+      };
+      markDirty();
+      testRemoteConnection();
+    } catch (e) {
+      pairingNote = { ok: false, text: String(e) };
+    }
+  }
+
+  function removePairing() {
+    cfg.engine.remote_openai.tls_fingerprint = null;
+    pairedFingerprint = null;
+    pairingNote = null;
     markDirty();
   }
 
@@ -259,12 +310,17 @@
         apiKey: cfg.engine.remote_openai.api_key || null,
         model: cfg.engine.remote_openai.model || "whisper-1",
         timeoutSecs: cfg.engine.remote_openai.timeout_secs || 30,
+        tlsFingerprint: cfg.engine.remote_openai.tls_fingerprint || null,
       });
       remoteTestStatus = { success: res.success, message: res.message };
       if (res.success) {
         // What else this server can do, so the options below can say so. A
         // server that is not a VoxCtrl server answers "no" to both.
-        const args = { endpoint: cfg.engine.remote_openai.endpoint, apiKey: cfg.engine.remote_openai.api_key || null };
+        const args = {
+          endpoint: cfg.engine.remote_openai.endpoint,
+          apiKey: cfg.engine.remote_openai.api_key || null,
+          tlsFingerprint: cfg.engine.remote_openai.tls_fingerprint || null,
+        };
         const [cleanup, speech] = await Promise.all([
           invoke<ServerCleanupStatus>("check_server_cleanup", args).catch(() => null),
           invoke<{ available: boolean; message: string }>("check_server_tts", args).catch(() => null),
@@ -795,6 +851,50 @@
       </p>
 
       <label class="field">
+        <span>Pairing code</span>
+        <div class="pairing-row">
+          <input
+            type="password"
+            bind:value={pairingCode}
+            placeholder="vxpair_…"
+            autocomplete="off"
+            data-testid="pairing-code"
+            onkeydown={(e) => e.key === "Enter" && applyPairingCode()}
+          />
+          <button
+            type="button" class="btn-test"
+            onclick={applyPairingCode}
+            disabled={!pairingCode.trim()}
+            data-testid="pairing-apply"
+          >
+            Pair
+          </button>
+        </div>
+      </label>
+      <p class="hint">
+        The quickest way to connect to a VoxCtrl server: paste the code it prints (<code>voxctrl-server
+        --pairing-code</code>) and the address, key and encryption below are filled in. Needed for a server
+        with encryption on. For any other service, skip this and fill in the fields yourself.
+      </p>
+      {#if pairingNote}
+        <div
+          class="status-pill"
+          class:success={pairingNote.ok}
+          class:error={!pairingNote.ok}
+          data-testid="pairing-note"
+        >
+          {pairingNote.ok ? "✔" : "⚠️"} {pairingNote.text}
+        </div>
+      {/if}
+      {#if pairedFingerprint}
+        <div class="status-pill success" data-testid="pairing-status">
+          🔒 Encrypted. Only the server with certificate
+          <code title={pairedFingerprint}>{shortFingerprint(pairedFingerprint)}</code> is accepted.
+          <button type="button" class="btn-test" onclick={removePairing} data-testid="pairing-remove">Remove pairing</button>
+        </div>
+      {/if}
+
+      <label class="field">
         <span>Endpoint URL</span>
         <input
           type="text"
@@ -1079,6 +1179,16 @@
   .field-title-col .hint {
     @apply text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed;
   }
+  .pairing-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .pairing-row input {
+    flex: 1;
+    min-width: 0;
+  }
+
   .status-pill {
     @apply text-xs px-3 py-1.5 rounded-[var(--radius)] font-medium leading-normal;
   }
