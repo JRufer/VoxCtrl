@@ -40,6 +40,7 @@ pub struct ServerConfig {
     pub tts: voxctrl_config::TtsConfig,
     pub speech: SpeechConfig,
     pub tls: TlsConfig,
+    pub llm: LlmConfig,
     /// The name or IP address clients use to reach this machine, put into the
     /// pairing code so a client need not type it. Empty = work it out, which
     /// a server in a container cannot do.
@@ -55,6 +56,36 @@ pub struct TlsConfig {
     /// `true` serves HTTPS only, with a certificate the server makes for
     /// itself on first start and keeps beside this file.
     pub enabled: bool,
+}
+
+/// AI processing for clients: an OpenAI-compatible language model service
+/// this server passes their chat requests on to. Off by default.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct LlmConfig {
+    pub enabled: bool,
+    /// Where the service is, as this server reaches it: `http://localhost:11434`
+    /// for Ollama on the same machine, or a hosted provider's base URL.
+    pub endpoint: String,
+    /// The service's own key, if it needs one. Clients never see it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub api_key: String,
+    /// The model every client's request is answered with.
+    pub model: String,
+    /// How long one answer may take, in seconds.
+    pub timeout_secs: u64,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://localhost:11434".into(),
+            api_key: String::new(),
+            model: "llama3.2:1b".into(),
+            timeout_secs: 60,
+        }
+    }
 }
 
 /// Dictation cleanup (the S1-mini model) for clients that ask this server to
@@ -121,6 +152,7 @@ impl Default for ServerConfig {
             tts: voxctrl_config::TtsConfig::default(),
             speech: SpeechConfig::default(),
             tls: TlsConfig::default(),
+            llm: LlmConfig::default(),
             public_host: String::new(),
         }
     }
@@ -241,6 +273,18 @@ impl ServerConfig {
                 _ => self.tts.voice = voice,
             }
         }
+        if let Some(v) = var("VOXCTRL_SERVER_LLM") {
+            self.llm.enabled = parse_bool("VOXCTRL_SERVER_LLM", &v)?;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_LLM_ENDPOINT") {
+            self.llm.endpoint = v;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_LLM_API_KEY") {
+            self.llm.api_key = v;
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_LLM_MODEL") {
+            self.llm.model = v;
+        }
         if let Some(v) = var("VOXCTRL_SERVER_TLS") {
             self.tls.enabled = parse_bool("VOXCTRL_SERVER_TLS", &v)?;
         }
@@ -334,6 +378,40 @@ mod tests {
 
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn ai_processing_is_off_until_pointed_at_a_service() {
+        let defaults = ServerConfig::default();
+        assert!(!defaults.llm.enabled);
+
+        let from_file = ServerConfig::from_toml_str(
+            "[llm]\nenabled = true\nendpoint = \"http://gpu-box:8080\"\nmodel = \"qwen2.5:7b\"\n",
+        )
+        .unwrap();
+        assert!(from_file.llm.enabled);
+        assert_eq!(from_file.llm.endpoint, "http://gpu-box:8080");
+        assert_eq!(from_file.llm.timeout_secs, 60);
+
+        let mut from_env = ServerConfig::default();
+        from_env
+            .apply_env(env(&[
+                ("VOXCTRL_SERVER_LLM", "true"),
+                ("VOXCTRL_SERVER_LLM_ENDPOINT", "https://api.openai.com/v1"),
+                ("VOXCTRL_SERVER_LLM_API_KEY", "sk-secret"),
+                ("VOXCTRL_SERVER_LLM_MODEL", "gpt-4o-mini"),
+            ]))
+            .unwrap();
+        assert_eq!(
+            from_env.llm,
+            LlmConfig {
+                enabled: true,
+                endpoint: "https://api.openai.com/v1".into(),
+                api_key: "sk-secret".into(),
+                model: "gpt-4o-mini".into(),
+                timeout_secs: 60,
+            }
+        );
     }
 
     #[test]

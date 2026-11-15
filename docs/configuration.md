@@ -97,7 +97,8 @@ Full schema with defaults:
     "mode": "clean",
     "system_prompt": "Fix grammar and punctuation only. Return only the corrected text, no commentary.",
     "user_prompt": "{text}",
-    "timeout_secs": 8
+    "timeout_secs": 8,
+    "on_server": false
   },
   "tts": {
     "enabled": false,
@@ -317,6 +318,7 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `system_prompt` | string | `"Fix grammar and punctuation only…"` | System message describing the transformation. Empty = no system message. |
 | `user_prompt` | string | `"{text}"` | User message template. Must contain `{text}`, replaced with the dictated speech. |
 | `timeout_secs` | integer | `8` | HTTP request timeout in seconds |
+| `on_server` | bool | `false` | Send AI processing through the VoxCtrl server at `engine.remote_openai.endpoint` (with its key and pairing), which answers with its own language model. `endpoint`, `api_key` and `model` here, and a hotkey's `openai_model`, are not used while this is on; prompts still are. Works with any `engine.backend`. Needs `voxctrl-server` 0.9.16 or newer with `[llm]` enabled. See [AI processing through the server](./server.md#ai-processing-through-the-server). |
 
 > The legacy `custom_prompt` field (used when `mode` was `custom`) is migrated
 > into `user_prompt` automatically the first time an old config is loaded.

@@ -732,6 +732,7 @@ pub fn run() {
             run_model_cleanup,
             check_server_cleanup,
             read_pairing_code,
+            check_server_llm,
             check_server_tts,
             list_own_voices,
             sync_server_voices,

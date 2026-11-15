@@ -55,6 +55,7 @@ async fn serve_all(
     let state = Arc::new(AppState {
         engine,
         cleanup,
+        llm: None,
         speech,
         voices,
         api_key: Some(KEY.into()),
@@ -484,6 +485,7 @@ async fn serve_encrypted() -> (String, String) {
     let state = Arc::new(AppState {
         engine,
         cleanup: Some(Arc::new(EchoCleaner)),
+        llm: None,
         voices: Some(crate::voices::VoiceStore::new(voice_root())),
         speech: Some(speaker),
         api_key: Some(KEY.into()),
@@ -588,4 +590,117 @@ async fn the_health_check_speaks_to_an_encrypted_server() {
     .unwrap();
     assert!(good.is_ok(), "{good:?}");
     assert!(bad.is_err());
+}
+
+// ── AI processing ───────────────────────────────────────────────────────────
+
+/// A server whose AI processing is answered by a stand-in language model
+/// service; returns the server's endpoint and what that service saw.
+async fn serve_with_llm(model: &str) -> (String, Arc<crate::llm::testing::Seen>) {
+    let (service, seen) = crate::llm::testing::fake_service(&["llama3.2:1b"]).await;
+    let relay = crate::llm::LlmRelay::prepare(&crate::config::LlmConfig {
+        enabled: true,
+        endpoint: service,
+        api_key: "sk-kept-on-the-server".into(),
+        model: model.into(),
+        timeout_secs: 10,
+    })
+    .await
+    .unwrap();
+    let (engine, _) = fake_engine("unused", false);
+    let state = Arc::new(AppState {
+        engine,
+        cleanup: None,
+        llm: Some(Arc::new(relay)),
+        speech: None,
+        voices: None,
+        api_key: Some(KEY.into()),
+        max_upload_bytes: 64 * 1024 * 1024,
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router(state)).await });
+    (endpoint, seen)
+}
+
+fn ai_settings() -> voxctrl_config::OpenAiConfig {
+    voxctrl_config::OpenAiConfig {
+        enabled: true,
+        on_server: true,
+        // The client's own service settings, none of which may be used.
+        endpoint: "http://127.0.0.1:9".into(),
+        api_key: Some("sk-the-clients-own".into()),
+        model: "the-clients-model".into(),
+        system_prompt: "Shout.".into(),
+        user_prompt: "{text}".into(),
+        timeout_secs: 10,
+        ..Default::default()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_apps_ai_processing_goes_through_the_server_to_its_model() {
+    let (endpoint, seen) = serve_with_llm("llama3.2:1b").await;
+
+    let status = voxctrl_llm::check_server_llm(&endpoint, Some(KEY), None).await;
+    assert!(status.available, "{}", status.message);
+    assert_eq!(status.model.as_deref(), Some("llama3.2:1b"));
+
+    let client = voxctrl_llm::OpenAiClient::via_server(ai_settings(), &client_config(&endpoint, Some(KEY)));
+    assert_eq!(client.process("hello there").await, "[llama3.2:1b] HELLO THERE");
+
+    // The service saw the client's prompts, the server's model and the
+    // server's key: never the client's own model, nor the VoxCtrl key.
+    let sent = seen.requests.lock().unwrap()[0].clone();
+    assert_eq!(sent["model"], "llama3.2:1b");
+    assert_eq!(sent["messages"][0]["content"], "Shout.");
+    assert_eq!(sent["messages"][1]["content"], "hello there");
+    assert_eq!(seen.keys.lock().unwrap()[0].as_deref(), Some("Bearer sk-kept-on-the-server"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ai_processing_that_cannot_happen_leaves_the_text_as_it_was_said() {
+    // The server's model is one its service does not have.
+    let (endpoint, _seen) = serve_with_llm("missing").await;
+    let client = voxctrl_llm::OpenAiClient::via_server(ai_settings(), &client_config(&endpoint, Some(KEY)));
+    assert_eq!(client.process("hello there").await, "hello there");
+
+    // A wrong key for the VoxCtrl server.
+    let (endpoint, seen) = serve_with_llm("llama3.2:1b").await;
+    let client = voxctrl_llm::OpenAiClient::via_server(ai_settings(), &client_config(&endpoint, Some("vx_wrong")));
+    assert_eq!(client.process("hello there").await, "hello there");
+    assert!(seen.requests.lock().unwrap().is_empty());
+    assert!(voxctrl_llm::check_server_llm(&endpoint, Some("vx_wrong"), None).await.message.contains("API key"));
+
+    // A server with AI processing off.
+    let (off, _) = serve("unused").await;
+    let client = voxctrl_llm::OpenAiClient::via_server(ai_settings(), &client_config(&off, Some(KEY)));
+    assert_eq!(client.process("hello there").await, "hello there");
+    let status = voxctrl_llm::check_server_llm(&off, Some(KEY), None).await;
+    assert!(!status.available);
+    assert!(status.message.contains("turned off on this server"), "{}", status.message);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hotkeys_ai_step_follows_the_use_the_server_setting() {
+    let (endpoint, seen) = serve_with_llm("llama3.2:1b").await;
+    let mut app = voxctrl_config::AppConfig::default();
+    app.openai = ai_settings();
+    app.engine.remote_openai = client_config(&endpoint, Some(KEY));
+    let binding: voxctrl_routing::HotkeyBinding =
+        serde_json::from_value(serde_json::json!({
+            "id": "b", "keys": ["KEY_F9"], "gesture": "hold", "target_id": "default",
+            "openai_enabled": true, "openai_model": "the-hotkeys-model",
+        }))
+            .unwrap();
+
+    let client = voxctrl_inference::finalize::binding_llm_client(Some(&binding), &app).unwrap();
+    assert_eq!(client.process("hello").await, "[llama3.2:1b] HELLO");
+    assert_eq!(seen.requests.lock().unwrap().len(), 1);
+
+    // Off: the same step goes to the client's own service, not the server.
+    app.openai.on_server = false;
+    let client = voxctrl_inference::finalize::binding_llm_client(Some(&binding), &app).unwrap();
+    assert_eq!(client.process("hello").await, "hello");
+    assert_eq!(seen.requests.lock().unwrap().len(), 1);
 }

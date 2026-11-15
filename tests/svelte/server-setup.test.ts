@@ -33,6 +33,7 @@ function config(opts: { backend?: string; endpoint?: string; ttsEngine?: string;
     },
     features: { custom_vocabulary: [], snippets: {} },
     tts: { enabled: opts.ttsEnabled ?? false, engine: opts.ttsEngine ?? "piper" },
+    openai: { enabled: false, endpoint: "http://localhost:11434", api_key: null, model: "llama3.2:1b", on_server: false },
   } as any;
 }
 
@@ -41,6 +42,7 @@ let stt: any;
 let cleanup: any;
 let speech: any;
 let pairing: any;
+let llm: any;
 const FINGERPRINT = "0123456789abcdef".repeat(4);
 
 beforeEach(() => {
@@ -48,6 +50,7 @@ beforeEach(() => {
   stt = { success: true, message: "Connected to the server.", models: ["parakeet-tdt-0.6b-v3"] };
   cleanup = { available: true, message: "This server cleans up dictation (s1-mini)." };
   speech = { available: true, message: "This server offers 2 speech engines." };
+  llm = { available: true, model: "llama3.2:1b", message: "This server does AI processing with llama3.2:1b." };
   pairing = { endpoint: "https://192.168.1.162:8787/v1", api_key: "vx_from_code", tls_fingerprint: FINGERPRINT };
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
@@ -55,6 +58,7 @@ beforeEach(() => {
     if (cmd === "test_remote_stt") return stt;
     if (cmd === "check_server_cleanup") return cleanup;
     if (cmd === "check_server_tts") return speech;
+    if (cmd === "check_server_llm") return llm;
     if (cmd === "read_pairing_code") {
       if (pairing instanceof Error) throw pairing.message;
       return pairing;
@@ -112,17 +116,23 @@ describe("server setup rules", () => {
   });
 
   test("the summary names what the server offers, or says why it could not connect", () => {
+    const yes = { available: true, message: "" };
+    const no = { available: false, message: "" };
     const base = { recognition: { ok: true, message: "", models: [] } };
-    expect(
-      connectionSummary({ ...base, cleanup: { available: true, message: "" }, speech: { available: true, message: "" } }).text,
-    ).toBe("Connected. This server offers speech recognition, dictation cleanup and text-to-speech.");
-    expect(
-      connectionSummary({ ...base, cleanup: { available: false, message: "" }, speech: { available: false, message: "" } }).text,
-    ).toBe("Connected. This server offers speech recognition.");
+    expect(connectionSummary({ ...base, cleanup: yes, speech: yes, llm: no }).text).toBe(
+      "Connected. This server offers speech recognition, dictation cleanup and text-to-speech.",
+    );
+    expect(connectionSummary({ ...base, cleanup: no, speech: no, llm: yes }).text).toBe(
+      "Connected. This server offers speech recognition and AI processing.",
+    );
+    expect(connectionSummary({ ...base, cleanup: no, speech: no, llm: no }).text).toBe(
+      "Connected. This server offers speech recognition.",
+    );
     const failed = connectionSummary({
       recognition: { ok: false, message: "Could not connect to the server.", models: [] },
       cleanup: { available: false, message: "" },
       speech: { available: false, message: "" },
+      llm: { available: false, message: "" },
     });
     expect(failed).toEqual({ ok: false, text: "Could not connect to the server." });
   });
@@ -144,10 +154,10 @@ describe("Engine tab: Remote Speech Engine server setup", () => {
     await fireEvent.click(await screen.findByText(/Test Connection/));
     await waitFor(() =>
       expect(screen.getByTestId("remote-test-status").textContent).toContain(
-        "This server offers speech recognition, dictation cleanup and text-to-speech.",
+        "This server offers speech recognition, dictation cleanup, text-to-speech and AI processing.",
       ),
     );
-    for (const cmd of ["test_remote_stt", "check_server_cleanup", "check_server_tts"]) {
+    for (const cmd of ["test_remote_stt", "check_server_cleanup", "check_server_tts", "check_server_llm"]) {
       expect(calls.find((c) => c.cmd === cmd)!.args).toMatchObject({ endpoint: "http://box:8787/v1", apiKey: "vx_key" });
     }
     expect(cfg.engine.remote_openai.model).toBe("parakeet-tdt-0.6b-v3");
@@ -166,10 +176,12 @@ describe("Engine tab: Remote Speech Engine server setup", () => {
   test("what the server lacks is explained next to its option", async () => {
     cleanup = { available: false, message: "Cleanup is turned off on this server." };
     speech = { available: false, message: "Text-to-speech is turned off on this server." };
+    llm = { available: false, model: null, message: "AI processing is turned off on this server." };
     render(EngineTab, { cfg: config() });
     await fireEvent.click(await screen.findByText(/Test Connection/));
     await waitFor(() => expect(screen.getByText("Text-to-speech is turned off on this server.")).toBeTruthy());
     expect(screen.getByText(/Cleanup is turned off on this server\./)).toBeTruthy();
+    expect(screen.getByText("AI processing is turned off on this server.")).toBeTruthy();
     expect(screen.getByTestId("remote-test-status").textContent).toContain("This server offers speech recognition.");
   });
 
@@ -185,6 +197,18 @@ describe("Engine tab: Remote Speech Engine server setup", () => {
     expect(cfg.tts.engine).toBe("kitten_tts_2");
   });
 
+  test("the AI processing option routes it through the server and back", async () => {
+    const cfg = config();
+    render(EngineTab, { cfg });
+    const box = (await screen.findByTestId("llm-on-server")) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await fireEvent.click(box);
+    expect(cfg.openai.on_server).toBe(true);
+    await waitFor(() => expect(box.checked).toBe(true));
+    await fireEvent.click(box);
+    expect(cfg.openai.on_server).toBe(false);
+  });
+
   test("shows text-to-speech already on the server", async () => {
     render(EngineTab, { cfg: config({ ttsEngine: "server", ttsEnabled: true }) });
     expect(((await screen.findByTestId("speech-on-server")) as HTMLInputElement).checked).toBe(true);
@@ -194,6 +218,7 @@ describe("Engine tab: Remote Speech Engine server setup", () => {
     render(EngineTab, { cfg: config({ backend: "parakeet" }) });
     await waitFor(() => expect(screen.getByText("Parakeet Settings")).toBeTruthy());
     expect(screen.queryByTestId("speech-on-server")).toBeNull();
+    expect(screen.queryByTestId("llm-on-server")).toBeNull();
     expect(screen.queryByTestId("remote-endpoint")).toBeNull();
   });
 });
