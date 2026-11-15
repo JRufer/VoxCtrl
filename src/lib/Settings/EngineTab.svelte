@@ -876,7 +876,7 @@
           <p class="hint">
             Sends each transcript to the server for S1-mini cleanup, so this computer loads no cleanup
             model. Needs a VoxCtrl server with cleanup enabled. Whether a dictation is cleaned, and in
-            which style, is still set here under <strong>Features</strong> and per hotkey. If the server
+            which style, is still set under <strong>Post-Processing</strong> and per hotkey. If the server
             can't clean a dictation, it is typed as it was said.
           </p>
         </div>

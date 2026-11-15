@@ -345,24 +345,30 @@ instructions](#7-open-the-port), then connect a client.
 Do this on each computer that should use the server. You need the server's
 address and the API key.
 
-1. Open **Settings → Engine**.
-2. Under **Backend**, choose **Remote Speech Engine (OpenAI API)**.
-3. Fill in **Remote Speech Engine Settings**:
+1. Open **Settings → General** and find **VoxCtrl Server**.
+2. Enter the **Server address**. The machine's name or IP address is enough
+   (`192.168.1.50`); it is completed to `http://192.168.1.50:8787/v1`.
+3. Enter the **API key** from the server's log or `server.toml`.
+4. Click **Connect**. The line under it says whether the address and key are
+   good and what the server offers: speech recognition, dictation cleanup,
+   text-to-speech.
+5. Under **Use the server for**, switch on what you want:
 
-   | Field | Value |
-   |---|---|
-   | **Endpoint URL** | `http://<server address>:8787/v1` — for example `http://192.168.1.50:8787/v1` |
-   | **API Key** | The key from the server's log or `server.toml` |
-   | **Model** | Anything. The server runs the model it was configured with and ignores this name. After a test, the server's actual model appears as a chip you can click so the field shows it. |
-   | **Language** | A language code such as `en`, or blank to use the server's setting |
-   | **Timeout** | 30 seconds is fine on a local network. Raise it if you run a large model on a CPU. |
+   | Switch | What it does | Also found under |
+   |---|---|---|
+   | **Speech recognition** | Dictation is transcribed on the server. A second setting appears for the engine that takes over when the server can't be reached ([fallback](#when-the-server-cant-be-reached)) | Engine → Backend |
+   | **Dictation cleanup** | S1-mini cleanup runs on the server. Needs speech recognition on the server, and cleanup enabled there | Engine → Remote Speech Engine Settings |
+   | **Text-to-speech** | The server speaks and this computer plays the audio. Pick the engine and voice under TTS | TTS → Engine |
 
-4. Click **Test Connection**. A success message means the address, the key and
-   the server are all good.
-5. Save, then dictate as usual.
+Settings save as you change them. Switching one off goes back to what was in
+use before: the previous speech engine, or the previous TTS engine.
 
-The first-run wizard offers the same engine and the same fields, so a new
-install can be pointed at the server during setup.
+The panel is a shortcut, not a separate mode: each switch sets an ordinary
+setting that its own tab also shows. The finer options stay on those tabs:
+**Settings → Engine → Remote Speech Engine Settings** has the language, the
+timeout and the model name, and **Settings → TTS** has the server's engine and
+voice pickers. The first-run wizard can also point a new install at a server,
+but it is not needed for that.
 
 The same settings in `~/.config/voxctrl/config.json`:
 
@@ -475,7 +481,7 @@ the server at that address offers cleanup, and what to change on the server if
 it does not.
 
 What stays on the client: whether a dictation is cleaned at all (**Settings →
-Features → Enable S1-mini dictation cleanup**, and the per-hotkey override), the
+Post-Processing → Enable S1-mini dictation cleanup**, and the per-hotkey override), the
 cleanup style, and the per-app styles. The client sends the style with each
 request, so several clients can share one server with different settings. With
 the option ticked, the client does not download or load S1-mini, and
@@ -1074,7 +1080,7 @@ the line under **Run dictation cleanup on the server**:
   install it beside the server binary; it is far faster than the built-in
   engine.
 
-Also check that cleanup is on for that dictation at all: **Settings → Features →
+Also check that cleanup is on for that dictation at all: **Settings → Post-Processing →
 Enable S1-mini dictation cleanup**, or the hotkey's own setting.
 
 ### The tray icon has an amber badge
