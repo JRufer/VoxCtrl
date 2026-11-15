@@ -103,6 +103,9 @@ impl EngineSpeaker {
                     synth::engine_id(engine)
                 )
             })?;
+            if *engine == TtsEngine::PocketTts {
+                fetch_pocket_voices(&for_engine).await;
+            }
         }
         let worker_config = config.clone();
         let worker = tokio::task::spawn_blocking(move || {
@@ -116,6 +119,24 @@ impl EngineSpeaker {
         .context("Loading the text-to-speech model stopped unexpectedly")?
         .context("Could not load the text-to-speech model")?;
         Ok(Self { config, offered, worker })
+    }
+}
+
+/// Pocket-TTS's built-in voices are a small file each, and only the
+/// configured one comes with the model. Offering the engine means offering
+/// its voices, so fetch the rest. One that cannot be fetched is logged and
+/// left out of what clients are offered; the engine still works.
+async fn fetch_pocket_voices(config: &TtsConfig) {
+    let token = voxctrl_tts::effective_hf_token(config.hf_token.as_deref());
+    for voice in voxctrl_tts::POCKET_TTS_VOICES {
+        if voxctrl_tts::is_pocket_tts_ready(voice.id, &config.pocket_tts.voice_dir) {
+            continue;
+        }
+        if let Err(e) =
+            voxctrl_tts::download_pocket_tts_assets(voice.id, &config.pocket_tts.voice_dir, token.clone()).await
+        {
+            tracing::warn!("Could not download the Pocket-TTS voice '{}'; it will not be offered: {e:#}", voice.id);
+        }
     }
 }
 
@@ -153,9 +174,13 @@ fn builtin_voices(config: &TtsConfig, engine: &TtsEngine) -> Vec<String> {
             .filter(|v| voxctrl_tts::is_voice_downloaded(v.name, &config.voice_dir))
             .map(|v| v.name.to_string())
             .collect(),
-        TtsEngine::PocketTts => {
-            voxctrl_tts::pocket_tts_voice_catalogue(&config.pocket_tts.voice_dir).into_iter().map(|v| v.id).collect()
-        }
+        // Each built-in voice is a file of its own; one that is not on disk
+        // would fail when asked for, so it is not offered.
+        TtsEngine::PocketTts => voxctrl_tts::pocket_tts_voice_catalogue(&config.pocket_tts.voice_dir)
+            .into_iter()
+            .map(|v| v.id)
+            .filter(|id| voxctrl_tts::is_pocket_tts_ready(id, &config.pocket_tts.voice_dir))
+            .collect(),
         TtsEngine::KittenTts2 => voxctrl_tts::KITTEN_TTS_2_VOICES.iter().map(|v| v.to_string()).collect(),
         _ => Vec::new(),
     }
@@ -415,6 +440,23 @@ mod tests {
 
         let err = plan(&config, &offered, &request(Some("espeak"), Some("custom:Rick"), Some(mine.path()))).unwrap_err();
         assert!(err.contains("cannot speak with an uploaded voice"), "{err}");
+    }
+
+    #[test]
+    fn a_pocket_voice_that_is_not_on_disk_is_not_offered() {
+        // No Pocket-TTS model or voice files exist where tests run, so none
+        // of its built-in voices may be listed: each would fail if picked.
+        let config = TtsConfig { engine: TtsEngine::PocketTts, ..Default::default() };
+        if voxctrl_tts::POCKET_TTS_VOICES.iter().any(|v| voxctrl_tts::is_pocket_tts_ready(v.id, "")) {
+            eprintln!("skipped: Pocket-TTS voices are installed on this machine");
+            return;
+        }
+        let pocket = offer(&config, &TtsEngine::PocketTts);
+        assert!(pocket.voices.is_empty(), "{:?}", pocket.voices);
+        assert!(pocket.custom_voices, "uploaded voices still work");
+        // And a request for one is refused up front, not failed by the engine.
+        let err = plan(&config, &[TtsEngine::PocketTts], &request(Some("pocket_tts"), Some("anna"), None)).unwrap_err();
+        assert!(err.contains("no voice called"), "{err}");
     }
 
     #[test]

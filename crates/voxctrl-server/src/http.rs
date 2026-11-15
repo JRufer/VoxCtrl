@@ -461,6 +461,12 @@ async fn speech(
         voice: request.voice,
         client_voices,
     };
+    // What was asked for, for the log: the engine and voice, never the words.
+    let asked = format!(
+        "engine {}, voice {}",
+        job.engine.as_deref().map(str::trim).filter(|e| !e.is_empty()).unwrap_or("default"),
+        job.voice.as_deref().map(str::trim).filter(|v| !v.is_empty()).unwrap_or("default"),
+    );
     let started = std::time::Instant::now();
     let wav = tokio::task::spawn_blocking(move || speaker.speak(&job))
         .await
@@ -471,13 +477,17 @@ async fn speech(
         .map_err(|e| match e {
             SpeakError::Invalid(message) => ApiError::bad_request(message),
             SpeakError::Engine(e) => {
-                warn!("Speech failed: {e:#}");
+                warn!("Speech failed ({asked}): {e:#}");
                 ApiError::server("The speech engine failed. See the server log.")
             }
         })?;
 
     // Sizes, never the words: this log stays on disk.
-    info!("Spoke {chars} characters in {} ms ({} bytes of audio)", started.elapsed().as_millis(), wav.len());
+    info!(
+        "Spoke {chars} characters in {} ms ({} bytes of audio; asked for {asked})",
+        started.elapsed().as_millis(),
+        wav.len()
+    );
     Ok(([(header::CONTENT_TYPE, "audio/wav")], wav).into_response())
 }
 
