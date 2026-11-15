@@ -15,20 +15,29 @@ Use it when:
 The server has no window, no tray icon and no audio device. It is one program
 that listens on a network port.
 
+There are three ways to run it:
+
+| | Best for |
+|---|---|
+| [From the VoxCtrl AppImage](#run-it-from-the-voxctrl-appimage) (`--server`) | A desktop or laptop that has, or can have, the VoxCtrl app. Nothing to build |
+| [Docker](#install-with-docker) | A home server or NAS that already runs containers |
+| [A system service](#install-as-a-system-service) | A headless machine without Docker |
+
 **Contents**
 
 1. [What runs where](#what-runs-where)
 2. [Before you start](#before-you-start)
 3. [Choose a model](#choose-a-model)
-4. [Install with Docker](#install-with-docker)
-5. [Install as a system service](#install-as-a-system-service)
-6. [Connect the VoxCtrl app](#connect-the-voxctrl-app)
-7. [Configuration reference](#configuration-reference)
-8. [Security](#security)
-9. [GPU acceleration](#gpu-acceleration)
-10. [Day-to-day operation](#day-to-day-operation)
-11. [API reference](#api-reference)
-12. [Troubleshooting](#troubleshooting)
+4. [Run it from the VoxCtrl AppImage](#run-it-from-the-voxctrl-appimage)
+5. [Install with Docker](#install-with-docker)
+6. [Install as a system service](#install-as-a-system-service)
+7. [Connect the VoxCtrl app](#connect-the-voxctrl-app)
+8. [Configuration reference](#configuration-reference)
+9. [Security](#security)
+10. [GPU acceleration](#gpu-acceleration)
+11. [Day-to-day operation](#day-to-day-operation)
+12. [API reference](#api-reference)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -66,9 +75,10 @@ at both ends, so a client keeps using its own until then.
 **The network**
 
 - Clients reach the server on one TCP port, **8787** by default.
-- The connection is plain HTTP in this release: the audio is **not encrypted**
-  in transit. That is fine on a home or office network you trust. Do not expose
-  the port to the internet; for access from outside, see [Security](#security).
+- The connection is plain HTTP unless you turn [encryption](#encryption) on:
+  by default the audio is **not encrypted** in transit. That is fine on a home
+  or office network you trust. Do not expose the port to the internet; for
+  access from outside, see [Security](#security).
 
 **The client**
 
@@ -96,6 +106,110 @@ If you start the server with no settings at all it uses `whisper-cpp` with the
 `tiny` model, the same default as the app. That is enough to check everything
 works, and not what you want to dictate with: pick a model before real use. The
 Docker setup below defaults to `parakeet` / `tdt-0.6b-v3` instead.
+
+---
+
+## Run it from the VoxCtrl AppImage
+
+The VoxCtrl AppImage is also the server. Started with `--server` it runs the
+same server as `voxctrl-server`, with no window, tray icon or microphone, so
+one download covers both ends and there is nothing to build. (From 0.9.17.)
+
+```bash
+chmod +x VoxCtrl-linux-x86_64-vulkan.AppImage
+./VoxCtrl-linux-x86_64-vulkan.AppImage --server
+```
+
+The first start downloads the model, then prints the address, the API key and
+a pairing code:
+
+```text
+voxctrl-server 0.9.17 is ready
+  Endpoint: http://0.0.0.0:8787/v1  (use this machine's address from a client)
+  API key:  vx_…
+  Pairing code (paste it into the app instead of the address and key): vxpair_…
+```
+
+Paste the pairing code into the app on your other computer
+([Connect the VoxCtrl app](#connect-the-voxctrl-app)). Stop the server with
+Ctrl+C. To see the code again later:
+
+```bash
+./VoxCtrl-linux-x86_64-vulkan.AppImage --server --pairing-code
+```
+
+Everything after `--server` is a server option, the same ones `voxctrl-server`
+takes ([Command-line flags](#command-line-flags)): `--server --help`,
+`--server --print-config`, `--server --bind 0.0.0.0:9000`. The `.deb` package
+works the same way: `voxctrl --server`.
+
+**Settings** go in `~/.config/voxctrl/server.toml`, which the first start
+creates, or in environment variables
+([Configuration reference](#configuration-reference)):
+
+```bash
+VOXCTRL_SERVER_BACKEND=whisper-cpp VOXCTRL_SERVER_MODEL=large-v3-turbo \
+  ./VoxCtrl-linux-x86_64-vulkan.AppImage --server
+```
+
+**What it shares with the app on the same machine.** The server keeps its own
+settings file (`server.toml`, not the app's `config.json`) but uses the same
+model folder, so a model the app already downloaded is not downloaded again.
+The GPU build of the AppImage gives the server the same GPU acceleration as the
+app. You can run the app and the server on one machine at once; each loads its
+own copy of its model, so that takes the memory of both.
+
+**What the machine needs.** The AppImage is built for desktop Linux and loads
+the same system libraries in server mode as it does for the app (GTK, GLib,
+GStreamer, Wayland and OpenGL client libraries), even though it opens no
+window. Any desktop install has them, and it runs fine over SSH with nobody
+logged in. A minimal server install without a desktop usually lacks them, and
+the AppImage then stops with `error while loading shared libraries`. On such a
+machine use [Docker](#install-with-docker) or
+[a system service](#install-as-a-system-service).
+
+### Start it automatically
+
+To have the server start with the machine, without anyone logging in, run it
+as a systemd user service. Put the AppImage somewhere permanent first, for
+example `~/Applications/`, then save this as
+`~/.config/systemd/user/voxctrl-server.service`:
+
+```ini
+[Unit]
+Description=VoxCtrl speech server
+After=network-online.target
+
+[Service]
+ExecStart=%h/Applications/VoxCtrl-linux-x86_64-vulkan.AppImage --server
+Restart=on-failure
+RestartSec=5
+# A first start downloads the model before the server is up.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=default.target
+```
+
+The same file is in the repository as
+`packaging/systemd/voxctrl-server-appimage.service`. Then:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now voxctrl-server
+sudo loginctl enable-linger "$USER"     # keep it running when you are logged out
+```
+
+| Task | Command |
+|---|---|
+| See the logs (and the API key, first start) | `journalctl --user -u voxctrl-server -f` |
+| Restart after changing `server.toml` | `systemctl --user restart voxctrl-server` |
+| Stop and disable | `systemctl --user disable --now voxctrl-server` |
+
+To upgrade, replace the AppImage file with the new release and restart the
+service. The app's built-in updater updates the file it was started from, so an
+AppImage used for both the app and the server is updated by the app; restart
+the service afterwards.
 
 ---
 
@@ -939,6 +1053,9 @@ written into `server.toml`.
 | `-h`, `--help` | Usage |
 | `-V`, `--version` | Version |
 
+From the AppImage or the `.deb`, put `--server` first:
+`./VoxCtrl-linux-x86_64-vulkan.AppImage --server --print-config`.
+
 Set `RUST_LOG=debug` for more detailed logs.
 
 ---
@@ -1319,6 +1436,12 @@ pairing** under **Settings → Engine** if the server no longer encrypts.
 
 Expected: the server answers HTTPS only once `tls.enabled` is set. Pair each
 client with the [pairing code](#with-a-pairing-code).
+
+### The AppImage with `--server` stops with "error while loading shared libraries"
+
+The machine has no desktop libraries. The AppImage needs them even in server
+mode; see [What the machine needs](#run-it-from-the-voxctrl-appimage). Install
+a desktop environment's base libraries, or use Docker or the system service.
 
 ### Test Connection says "Connection failed"
 
