@@ -57,6 +57,7 @@ pub use kitten::{
 pub use engine::{stop_current_playback, TtsCommand, TtsEngineHandle, TtsEngineWorker};
 #[cfg(feature = "playback")]
 pub use fifo::run_fifo_responder;
+pub use audiocpp::set_helper_niceness;
 pub use utterance::{ErrorCallback, PlaybackCallback, Utterance};
 pub use hf::{
     apply_hf_token, classify_download_error, effective_hf_token, hf_token_from_env,

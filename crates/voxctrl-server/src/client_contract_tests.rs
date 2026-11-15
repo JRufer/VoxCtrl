@@ -250,6 +250,18 @@ impl crate::speech::Speaker for DescribingSpeaker {
                 )));
             }
         }
+        // A slow engine: busy until the client gives up, or five seconds.
+        if request.text == "take your time" {
+            let started = std::time::Instant::now();
+            while !request.abandoned.load(std::sync::atomic::Ordering::SeqCst)
+                && started.elapsed() < std::time::Duration::from_secs(5)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let gone = request.abandoned.load(std::sync::atomic::Ordering::SeqCst);
+            self.0.lock().unwrap().push(format!("slow request ended, client gone: {gone}"));
+            return Err(crate::speech::SpeakError::Abandoned);
+        }
         let line = format!("{}|{}|{}", request.engine.as_deref().unwrap_or("-"), request.voice.as_deref().unwrap_or("-"), request.text);
         let samples: Vec<u8> = (0..line.chars().count() as i16).flat_map(|s| s.to_le_bytes()).collect();
         self.0.lock().unwrap().push(line);
@@ -419,4 +431,44 @@ async fn voices_cannot_be_synced_without_a_client_id() {
     let (endpoint, _) = serve_speech(true).await;
     let err = tokio::task::spawn_blocking(move || sync_voices(&link(&endpoint, KEY), &[])).await.unwrap().unwrap_err();
     assert!(err.to_string().contains("no client id"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn speech_the_user_stopped_is_given_up_at_once_and_the_server_is_told() {
+    use voxctrl_tts::remote::fetch_speech_unless;
+    let (endpoint, speaker) = serve_speech(true).await;
+    let (outcome, waited) = tokio::task::spawn_blocking(move || {
+        let started = std::time::Instant::now();
+        // The user stops the speech 300 ms in.
+        let stopped = || started.elapsed() > std::time::Duration::from_millis(300);
+        let outcome = fetch_speech_unless(&link(&endpoint, KEY), "take your time", &stopped);
+        (outcome, started.elapsed())
+    })
+    .await
+    .unwrap();
+    assert_eq!(outcome.unwrap(), None, "given up, not an error");
+    assert!(waited < std::time::Duration::from_secs(2), "the client waited {waited:?} for speech nobody wanted");
+
+    // The server learns of it from the closed connection.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    loop {
+        if let Some(line) = speaker.0.lock().unwrap().first().cloned() {
+            assert_eq!(line, "slow request ended, client gone: true");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the server never noticed the client had gone");
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn speech_that_is_not_stopped_still_arrives_through_the_cancellable_path() {
+    use voxctrl_tts::remote::fetch_speech_unless;
+    let (endpoint, _) = serve_speech(true).await;
+    let wav = tokio::task::spawn_blocking(move || fetch_speech_unless(&link(&endpoint, KEY), "hello", &|| false))
+        .await
+        .unwrap()
+        .unwrap()
+        .expect("not cancelled");
+    assert_eq!(&wav[0..4], b"RIFF");
 }

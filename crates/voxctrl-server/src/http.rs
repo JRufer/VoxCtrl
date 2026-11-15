@@ -455,11 +455,24 @@ async fn speech(
 
     let client_voices =
         client_id(&headers).and_then(|id| state.voices.as_ref().and_then(|store| store.client_dir(&id)));
+    // If this handler is dropped before it finishes, the client closed the
+    // connection: it stopped the speech. Tell the speech thread, so a request
+    // still waiting its turn is skipped.
+    struct Abandon(Arc<std::sync::atomic::AtomicBool>, bool);
+    impl Drop for Abandon {
+        fn drop(&mut self) {
+            if !self.1 {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+    let mut abandon = Abandon(Arc::default(), false);
     let job = crate::speech::SpeechRequest {
         text: request.input,
         engine: request.model,
         voice: request.voice,
         client_voices,
+        abandoned: abandon.0.clone(),
     };
     // What was asked for, for the log: the engine and voice, never the words.
     let asked = format!(
@@ -475,6 +488,8 @@ async fn speech(
             ApiError::server("The speech engine stopped unexpectedly. See the server log.")
         })?
         .map_err(|e| match e {
+            // Unreachable in practice: nobody is left to read the reply.
+            SpeakError::Abandoned => ApiError::server("The request was abandoned."),
             SpeakError::Invalid(message) => ApiError::bad_request(message),
             SpeakError::Engine(e) => {
                 warn!("Speech failed ({asked}): {e:#}");
@@ -482,6 +497,7 @@ async fn speech(
             }
         })?;
 
+    abandon.1 = true;
     // Sizes, never the words: this log stays on disk.
     info!(
         "Spoke {chars} characters in {} ms ({} bytes of audio; asked for {asked})",
