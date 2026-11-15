@@ -552,7 +552,7 @@ nothing on a server.
 |---|---|---|
 | `piper` | The Piper program and the chosen voice (20 to 120 MB) | `voice` |
 | `espeak` | Nothing. Needs `espeak-ng` installed; the Docker image includes it | none |
-| `pocket_tts` | The audio.cpp runtime and the Pocket-TTS model | `[tts.pocket_tts] voice` |
+| `pocket_tts` | The audio.cpp runtime, the Pocket-TTS model and its five built-in voices | `[tts.pocket_tts] voice` |
 | `kitten_tts_2` | The audio.cpp runtime and the Kitten TTS 2 model | `[tts.kitten_tts_2] voice` |
 | `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
 | `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
@@ -640,7 +640,8 @@ Things to know:
   the reason. There is no local fallback for speech.
 - **Memory on the server:** the model stays loaded for as long as the server
   runs.
-- The server logs how long each request took and its size, never the text.
+- The server logs how long each request took, its size and which engine and
+  voice were asked for, never the text.
 
 ### Free the disk space your local models used
 
