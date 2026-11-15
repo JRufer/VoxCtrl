@@ -1,13 +1,9 @@
-// What the General tab's "VoxCtrl Server" panel changes in the config, kept
-// apart from the component so the rules can be tested on their own.
-//
-// The panel is a single place to point the app at a server and say what to
-// use it for. Everything it sets is an ordinary setting that the Engine,
-// Features and TTS tabs also show; there is no separate "client mode".
+// The rules behind the Engine tab's Remote Speech Engine section, where a
+// server is set up and what to use it for is chosen. Kept apart from the
+// component so they can be tested on their own.
 
 import type { AppConfig } from "../../stores/config";
 
-type Backend = AppConfig["engine"]["backend"];
 type TtsEngine = AppConfig["tts"]["engine"];
 
 /** The address a VoxCtrl server listens on by default. */
@@ -34,48 +30,16 @@ export function ensureServerConfig(cfg: AppConfig) {
 export function normalizeServerAddress(typed: string): string {
   let address = typed.trim().replace(/\/+$/, "");
   if (!address) return "";
-  if (!/^https?:\/\//i.test(address)) address = `http://${address}`;
-  const rest = address.replace(/^https?:\/\//i, "");
-  // Just a machine name or IP address: add the server's default port.
-  if (!rest.includes("/") && !/:\d+$/.test(rest) && !rest.startsWith("[")) {
-    address = `${address}:${DEFAULT_SERVER_PORT}`;
+  // Only what was typed without "http://" is treated as a VoxCtrl server on
+  // the network and given its default port. An address typed in full may be
+  // any OpenAI-compatible service and keeps the port it was given.
+  if (!/^https?:\/\//i.test(address)) {
+    const bare = !address.includes("/") && !/:\d+$/.test(address) && !address.startsWith("[");
+    address = `http://${address}${bare ? `:${DEFAULT_SERVER_PORT}` : ""}`;
   }
-  if (!/\/v1(\/|$)/.test(address)) address = `${address}/v1`;
+  const path = address.replace(/^https?:\/\/[^/]*/i, "");
+  if (!path) address = `${address}/v1`;
   return address;
-}
-
-/** What the server is currently used for. */
-export function serverUses(cfg: AppConfig) {
-  const recognition = cfg.engine.backend === "remote-openai";
-  return {
-    recognition,
-    // Cleanup follows the recognition setting: with a local engine the app
-    // cleans up locally whatever this flag says.
-    cleanup: recognition && !!cfg.engine.remote_openai?.cleanup_on_server,
-    speech: cfg.tts.enabled && cfg.tts.engine === "server",
-  };
-}
-
-/**
- * The local engine to go back to when the server stops doing recognition:
- * the one in use before the server was switched on in this window, else the
- * fallback engine (its model is known to be wanted), else Whisper.cpp.
- */
-export function localBackendToRestore(cfg: AppConfig, before: Backend | null): Exclude<Backend, "remote-openai"> {
-  if (before && before !== "remote-openai") return before;
-  const fallback = cfg.engine.remote_openai?.fallback;
-  if (fallback && fallback !== "none") return fallback;
-  return "whisper-cpp";
-}
-
-export function setRecognitionOnServer(cfg: AppConfig, on: boolean, before: Backend | null) {
-  ensureServerConfig(cfg);
-  cfg.engine.backend = on ? "remote-openai" : localBackendToRestore(cfg, before);
-}
-
-export function setCleanupOnServer(cfg: AppConfig, on: boolean) {
-  ensureServerConfig(cfg);
-  cfg.engine.remote_openai.cleanup_on_server = on;
 }
 
 /**
@@ -106,4 +70,9 @@ export function connectionSummary(report: ServerReport): { ok: boolean; text: st
   if (report.speech.available) offers.push("text-to-speech");
   const list = offers.length > 1 ? `${offers.slice(0, -1).join(", ")} and ${offers[offers.length - 1]}` : offers[0];
   return { ok: true, text: `Connected. This server offers ${list}.` };
+}
+
+/** Whether text-to-speech currently goes through the server. */
+export function speechOnServer(cfg: AppConfig): boolean {
+  return !!cfg.tts?.enabled && cfg.tts.engine === "server";
 }

@@ -345,30 +345,31 @@ instructions](#7-open-the-port), then connect a client.
 Do this on each computer that should use the server. You need the server's
 address and the API key.
 
-1. Open **Settings → General** and find **VoxCtrl Server**.
-2. Enter the **Server address**. The machine's name or IP address is enough
-   (`192.168.1.50`); it is completed to `http://192.168.1.50:8787/v1`.
-3. Enter the **API key** from the server's log or `server.toml`.
-4. Click **Connect**. The line under it says whether the address and key are
-   good and what the server offers: speech recognition, dictation cleanup,
-   text-to-speech.
-5. Under **Use the server for**, switch on what you want:
+1. Open **Settings → Engine** and set **Backend** to **Remote Speech
+   Engine**. The server settings appear below it.
+2. Enter the **Endpoint URL**. For a VoxCtrl server the machine's name or IP
+   address is enough (`192.168.1.50`); it is completed to
+   `http://192.168.1.50:8787/v1`.
+3. Enter the **API Key** from the server's log or `server.toml`.
+4. Click **Test Connection**. The line under it says whether the address and
+   key are good and what the server offers: speech recognition, dictation
+   cleanup, text-to-speech. The model name is filled in from the server.
+5. Choose what else the server does, in the same section:
 
-   | Switch | What it does | Also found under |
-   |---|---|---|
-   | **Speech recognition** | Dictation is transcribed on the server. A second setting appears for the engine that takes over when the server can't be reached ([fallback](#when-the-server-cant-be-reached)) | Engine → Backend |
-   | **Dictation cleanup** | S1-mini cleanup runs on the server. Needs speech recognition on the server, and cleanup enabled there | Engine → Remote Speech Engine Settings |
-   | **Text-to-speech** | The server speaks and this computer plays the audio. Pick the engine and voice under TTS | TTS → Engine |
+   | Setting | What it does |
+   |---|---|
+   | **Fallback engine** | The local engine that takes over when the server can't be reached ([fallback](#when-the-server-cant-be-reached)) |
+   | **Run dictation cleanup on the server** | S1-mini cleanup runs on the server. Needs cleanup enabled there |
+   | **Use the server for text-to-speech** | The server speaks and this computer plays the audio. This sets the TTS engine to **VoxCtrl server**; pick the server's engine and voice under **Settings → TTS**. Switching it off goes back to the TTS engine in use before |
 
-Settings save as you change them. Switching one off goes back to what was in
-use before: the previous speech engine, or the previous TTS engine.
+Settings save as you change them. Dictation goes to the server for as long as
+**Remote Speech Engine** is the backend; choose another backend to go back to
+a local engine.
 
-The panel is a shortcut, not a separate mode: each switch sets an ordinary
-setting that its own tab also shows. The finer options stay on those tabs:
-**Settings → Engine → Remote Speech Engine Settings** has the language, the
-timeout and the model name, and **Settings → TTS** has the server's engine and
-voice pickers. The first-run wizard can also point a new install at a server,
-but it is not needed for that.
+Text-to-speech can use the server without dictation doing so: set **Settings →
+TTS → Engine** to **VoxCtrl server**. It uses the address and key entered
+here. The first-run wizard can also point a new install at a server, but it is
+not needed for that.
 
 The same settings in `~/.config/voxctrl/config.json`:
 

@@ -3,7 +3,6 @@
   import { config, configDirty } from "../../stores/config";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import ServerSetupPanel from "./ServerSetupPanel.svelte";
 
   let { cfg = $bindable() } = $props<{ cfg: AppConfig }>();
 
@@ -110,8 +109,6 @@
       <p class="hint error">Could not open the wizard: {wizardError}</p>
     {/if}
   </div>
-
-  <ServerSetupPanel bind:cfg />
 
   <div class="field-group">
     <h3>Hugging Face Access Token</h3>

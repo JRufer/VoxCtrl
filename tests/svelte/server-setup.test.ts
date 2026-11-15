@@ -1,28 +1,36 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/svelte";
 import { invoke } from "@tauri-apps/api/core";
-import ServerSetupPanel from "../../src/lib/Settings/ServerSetupPanel.svelte";
+import EngineTab from "../../src/lib/Settings/EngineTab.svelte";
+import { readFileSync } from "node:fs";
 import {
   connectionSummary,
-  localBackendToRestore,
   normalizeServerAddress,
-  serverUses,
   setSpeechOnServer,
+  speechOnServer,
 } from "../../src/lib/Settings/server-setup";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
-function config(opts: { backend?: string; endpoint?: string; ttsEngine?: string; ttsEnabled?: boolean; noServer?: boolean } = {}) {
+function config(opts: { backend?: string; endpoint?: string; ttsEngine?: string; ttsEnabled?: boolean } = {}) {
   return {
     engine: {
-      backend: opts.backend ?? "parakeet",
-      whisper_cpp: { model_size: "base" },
-      moonshine: { model_size: "base" },
-      parakeet: { model_size: "tdt-0.6b-v3" },
-      remote_openai: opts.noServer
-        ? undefined
-        : { endpoint: opts.endpoint ?? "", api_key: null, model: "whisper-1", language: "", timeout_secs: 30, fallback: "none" },
+      backend: opts.backend ?? "remote-openai",
+      whisper_cpp: { model_dir: "", model_size: "base", device: "auto", threads: 0 },
+      moonshine: { model_size: "base", language: "en", device: "auto" },
+      parakeet: { model_size: "tdt-0.6b-v3", language: "auto", device: "cpu" },
+      remote_openai: {
+        endpoint: opts.endpoint ?? "http://box:8787/v1",
+        api_key: "vx_key",
+        model: "",
+        language: "",
+        timeout_secs: 30,
+        fallback: "none",
+      },
+      s1_mini: { enabled: false, styling: "semi-formal", gpu: true, app_styles: [] },
     },
+    features: { custom_vocabulary: [], snippets: {} },
     tts: { enabled: opts.ttsEnabled ?? false, engine: opts.ttsEngine ?? "piper" },
   } as any;
 }
@@ -43,35 +51,30 @@ beforeEach(() => {
     if (cmd === "test_remote_stt") return stt;
     if (cmd === "check_server_cleanup") return cleanup;
     if (cmd === "check_server_tts") return speech;
+    if (cmd === "get_remote_status") return { state: "online", reason: null, fallback: null };
+    if (cmd === "check_s1_mini_downloaded") return false;
+    if (cmd === "accelerator_support") return { s1_mini_gpu: null };
+    if (cmd === "paste_support") return { supported: true, reason: null };
     return true;
   });
 });
 
 describe("server setup rules", () => {
-  test("a bare machine name or IP becomes a full address, and a full one is left alone", () => {
+  test("a bare machine name or IP becomes a VoxCtrl server address", () => {
     expect(normalizeServerAddress("192.168.1.162")).toBe("http://192.168.1.162:8787/v1");
     expect(normalizeServerAddress(" mybox ")).toBe("http://mybox:8787/v1");
     expect(normalizeServerAddress("192.168.1.162:9000")).toBe("http://192.168.1.162:9000/v1");
-    expect(normalizeServerAddress("http://192.168.1.162:8787/v1/")).toBe("http://192.168.1.162:8787/v1");
-    expect(normalizeServerAddress("https://speech.example.com")).toBe("https://speech.example.com:8787/v1");
-    expect(normalizeServerAddress("https://speech.example.com/voxctrl")).toBe("https://speech.example.com/voxctrl/v1");
     expect(normalizeServerAddress("")).toBe("");
   });
 
-  test("cleanup only counts as on the server while recognition is", () => {
-    const cfg = config({ backend: "parakeet", endpoint: "http://box:8787/v1" });
-    cfg.engine.remote_openai.cleanup_on_server = true;
-    expect(serverUses(cfg)).toEqual({ recognition: false, cleanup: false, speech: false });
-    cfg.engine.backend = "remote-openai";
-    expect(serverUses(cfg).cleanup).toBe(true);
-  });
-
-  test("turning recognition off goes back to what was in use, then the fallback, then Whisper", () => {
-    const cfg = config({ backend: "remote-openai" });
-    expect(localBackendToRestore(cfg, "moonshine")).toBe("moonshine");
-    expect(localBackendToRestore(cfg, null)).toBe("whisper-cpp");
-    cfg.engine.remote_openai.fallback = "parakeet";
-    expect(localBackendToRestore(cfg, null)).toBe("parakeet");
+  test("an address typed in full keeps its port and path, since it may be another service", () => {
+    expect(normalizeServerAddress("http://192.168.1.162:8787/v1/")).toBe("http://192.168.1.162:8787/v1");
+    expect(normalizeServerAddress("https://api.openai.com/v1")).toBe("https://api.openai.com/v1");
+    expect(normalizeServerAddress("https://speech.example.com")).toBe("https://speech.example.com/v1");
+    expect(normalizeServerAddress("http://box:8000/v1/audio/transcriptions")).toBe(
+      "http://box:8000/v1/audio/transcriptions",
+    );
+    expect(normalizeServerAddress("mybox/custom/path")).toBe("http://mybox/custom/path");
   });
 
   test("speech on the server switches text-to-speech on, and off again restores the engine", () => {
@@ -82,6 +85,12 @@ describe("server setup rules", () => {
     expect(cfg.tts.engine).toBe("kitten_tts_2");
     setSpeechOnServer(cfg, false, null);
     expect(cfg.tts.engine).toBe("espeak");
+  });
+
+  test("speech counts as on the server only while text-to-speech is enabled", () => {
+    expect(speechOnServer(config({ ttsEngine: "server", ttsEnabled: true }))).toBe(true);
+    expect(speechOnServer(config({ ttsEngine: "server", ttsEnabled: false }))).toBe(false);
+    expect(speechOnServer(config({ ttsEngine: "piper", ttsEnabled: true }))).toBe(false);
   });
 
   test("the summary names what the server offers, or says why it could not connect", () => {
@@ -101,94 +110,79 @@ describe("server setup rules", () => {
   });
 });
 
-describe("ServerSetupPanel", () => {
-  test("with no server set, nothing can be switched on until an address is entered", async () => {
-    render(ServerSetupPanel, { cfg: config({ noServer: true }) });
-    expect((screen.getByTestId("server-connect") as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByTestId("server-use-recognition") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByTestId("server-use-speech") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByTestId("server-address") as HTMLInputElement).value).toBe("");
+describe("Engine tab: Remote Speech Engine server setup", () => {
+  test("a machine name typed as the endpoint is completed to the server's address", async () => {
+    const cfg = config({ endpoint: "" });
+    render(EngineTab, { cfg });
+    const endpoint = (await screen.findByTestId("remote-endpoint")) as HTMLInputElement;
+    await fireEvent.input(endpoint, { target: { value: "192.168.1.162" } });
+    await fireEvent.change(endpoint);
+    expect(cfg.engine.remote_openai.endpoint).toBe("http://192.168.1.162:8787/v1");
   });
 
-  test("connecting fills in the address, saves it with the key, and reports what the server offers", async () => {
+  test("testing the connection reports everything the server offers and takes its model name", async () => {
     const cfg = config();
-    render(ServerSetupPanel, { cfg });
-    await fireEvent.input(screen.getByTestId("server-address"), { target: { value: "192.168.1.162" } });
-    await fireEvent.input(screen.getByTestId("server-key"), { target: { value: " vx_secret " } });
-    await fireEvent.click(screen.getByTestId("server-connect"));
-
+    render(EngineTab, { cfg });
+    await fireEvent.click(await screen.findByText(/Test Connection/));
     await waitFor(() =>
-      expect(screen.getByTestId("server-summary").textContent).toContain(
+      expect(screen.getByTestId("remote-test-status").textContent).toContain(
         "This server offers speech recognition, dictation cleanup and text-to-speech.",
       ),
     );
-    expect(cfg.engine.remote_openai.endpoint).toBe("http://192.168.1.162:8787/v1");
-    expect(cfg.engine.remote_openai.api_key).toBe("vx_secret");
-    // The speech model's name comes from the server, not from the user.
+    for (const cmd of ["test_remote_stt", "check_server_cleanup", "check_server_tts"]) {
+      expect(calls.find((c) => c.cmd === cmd)!.args).toMatchObject({ endpoint: "http://box:8787/v1", apiKey: "vx_key" });
+    }
     expect(cfg.engine.remote_openai.model).toBe("parakeet-tdt-0.6b-v3");
-    expect(calls.find((c) => c.cmd === "test_remote_stt")!.args).toMatchObject({
-      endpoint: "http://192.168.1.162:8787/v1",
-      apiKey: "vx_secret",
-    });
-    // Connecting changes what is known about the server, not what it is used for.
-    expect(cfg.engine.backend).toBe("parakeet");
   });
 
-  test("a failed connection says why", async () => {
+  test("a failed connection says why and asks the server nothing more", async () => {
     stt = { success: false, message: "The server rejected the API key (HTTP 401).", models: [] };
-    render(ServerSetupPanel, { cfg: config({ endpoint: "http://box:8787/v1" }) });
-    await fireEvent.click(screen.getByTestId("server-connect"));
+    render(EngineTab, { cfg: config() });
+    await fireEvent.click(await screen.findByText(/Test Connection/));
     await waitFor(() =>
-      expect(screen.getByTestId("server-summary").textContent).toContain("rejected the API key"),
+      expect(screen.getByTestId("remote-test-status").textContent).toContain("rejected the API key"),
     );
+    expect(calls.some((c) => c.cmd === "check_server_tts")).toBe(false);
   });
 
-  test("the switches turn the server on for recognition, cleanup and speech, and off again", async () => {
-    const cfg = config({ backend: "parakeet", endpoint: "http://box:8787/v1", ttsEngine: "kitten_tts_2", ttsEnabled: true });
-    render(ServerSetupPanel, { cfg });
-    const recognition = screen.getByTestId("server-use-recognition") as HTMLInputElement;
-    const cleanupBox = screen.getByTestId("server-use-cleanup") as HTMLInputElement;
-    const speechBox = screen.getByTestId("server-use-speech") as HTMLInputElement;
-
-    // Cleanup depends on recognition.
-    expect(cleanupBox.disabled).toBe(true);
-    await fireEvent.click(recognition);
-    expect(cfg.engine.backend).toBe("remote-openai");
-    await waitFor(() => expect(cleanupBox.disabled).toBe(false));
-    expect(screen.getByText("If the server can't be reached")).toBeTruthy();
-
-    await fireEvent.click(cleanupBox);
-    expect(cfg.engine.remote_openai.cleanup_on_server).toBe(true);
-
-    await fireEvent.click(speechBox);
-    expect(cfg.tts.engine).toBe("server");
-
-    // Off again: back to what was in use when the panel opened.
-    await fireEvent.click(speechBox);
-    expect(cfg.tts.engine).toBe("kitten_tts_2");
-    await fireEvent.click(recognition);
-    expect(cfg.engine.backend).toBe("parakeet");
-    await waitFor(() => expect(cleanupBox.disabled).toBe(true));
-    expect(cleanupBox.checked).toBe(false);
-  });
-
-  test("shows the current use of an already configured server", async () => {
-    const cfg = config({ backend: "remote-openai", endpoint: "http://box:8787/v1", ttsEngine: "server", ttsEnabled: true });
-    cfg.engine.remote_openai.cleanup_on_server = true;
-    render(ServerSetupPanel, { cfg });
-    expect((screen.getByTestId("server-address") as HTMLInputElement).value).toBe("http://box:8787/v1");
-    expect((screen.getByTestId("server-use-recognition") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByTestId("server-use-cleanup") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByTestId("server-use-speech") as HTMLInputElement).checked).toBe(true);
-  });
-
-  test("what the server lacks is explained next to the switch", async () => {
+  test("what the server lacks is explained next to its option", async () => {
     cleanup = { available: false, message: "Cleanup is turned off on this server." };
     speech = { available: false, message: "Text-to-speech is turned off on this server." };
-    render(ServerSetupPanel, { cfg: config({ backend: "remote-openai", endpoint: "http://box:8787/v1" }) });
-    await fireEvent.click(screen.getByTestId("server-connect"));
-    await waitFor(() => expect(screen.getByText("Cleanup is turned off on this server.")).toBeTruthy());
-    expect(screen.getByText("Text-to-speech is turned off on this server.")).toBeTruthy();
-    expect(screen.getByTestId("server-summary").textContent).toContain("This server offers speech recognition.");
+    render(EngineTab, { cfg: config() });
+    await fireEvent.click(await screen.findByText(/Test Connection/));
+    await waitFor(() => expect(screen.getByText("Text-to-speech is turned off on this server.")).toBeTruthy());
+    expect(screen.getByText(/Cleanup is turned off on this server\./)).toBeTruthy();
+    expect(screen.getByTestId("remote-test-status").textContent).toContain("This server offers speech recognition.");
+  });
+
+  test("the text-to-speech option switches the TTS engine to the server and back", async () => {
+    const cfg = config({ ttsEngine: "kitten_tts_2", ttsEnabled: false });
+    render(EngineTab, { cfg });
+    const box = (await screen.findByTestId("speech-on-server")) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await fireEvent.click(box);
+    expect(cfg.tts).toMatchObject({ engine: "server", enabled: true });
+    await waitFor(() => expect(box.checked).toBe(true));
+    await fireEvent.click(box);
+    expect(cfg.tts.engine).toBe("kitten_tts_2");
+  });
+
+  test("shows text-to-speech already on the server", async () => {
+    render(EngineTab, { cfg: config({ ttsEngine: "server", ttsEnabled: true }) });
+    expect(((await screen.findByTestId("speech-on-server")) as HTMLInputElement).checked).toBe(true);
+  });
+
+  test("the server options belong to the remote backend only", async () => {
+    render(EngineTab, { cfg: config({ backend: "parakeet" }) });
+    await waitFor(() => expect(screen.getByText("Parakeet Settings")).toBeTruthy());
+    expect(screen.queryByTestId("speech-on-server")).toBeNull();
+    expect(screen.queryByTestId("remote-endpoint")).toBeNull();
+  });
+});
+
+describe("General tab", () => {
+  test("no longer carries the server setup", () => {
+    const source = readFileSync("src/lib/Settings/GeneralTab.svelte", "utf8");
+    expect(source).not.toMatch(/ServerSetupPanel|VoxCtrl Server/);
   });
 });
