@@ -9,6 +9,10 @@
 //! Pinning replaces the usual checks rather than adding to them: the name in
 //! the certificate is not compared with the address, because a server on a
 //! home network is reached by whatever IP address it has that day.
+//!
+//! The pairing-code format and the fingerprint are also read by clients in
+//! other repositories (the Android keyboard, JRufer/voxctrl-keys), which
+//! reimplement this file. Check a change here against `docs/clients.md`.
 
 use std::sync::Arc;
 

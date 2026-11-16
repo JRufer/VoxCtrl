@@ -1241,6 +1241,11 @@ overlay** on the client. The server log shows these as ordinary
 The server implements the part of the OpenAI API that speech-to-text clients
 use, so tools other than VoxCtrl can use it too.
 
+Some of those clients are released separately from this repository, such as
+[VoxCtrl Keys](https://github.com/JRufer/voxctrl-keys), the Android voice
+keyboard. Before changing an endpoint, see
+[Clients Outside This Repository](./clients.md) for what they rely on.
+
 | Method and path | Key needed | Purpose |
 |---|---|---|
 | `GET /health` | No | Liveness check |
@@ -1259,7 +1264,7 @@ use, so tools other than VoxCtrl can use it too.
 The voice endpoints, and speech with an uploaded voice, need an
 `X-VoxCtrl-Client` header of 16 to 64 hex digits naming the client.
 
-`GET /health` also reports `"cleanup"` and `"tts"` as `true` or `false`. `/v1/cleanup` is
+`GET /health` also reports `"cleanup"`, `"tts"` and `"llm"` as `true` or `false`. `/v1/cleanup` is
 VoxCtrl's own and not part of the OpenAI API.
 
 Send the key as `Authorization: Bearer <key>`.
