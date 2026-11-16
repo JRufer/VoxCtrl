@@ -310,6 +310,19 @@ voxctrl-myfeature = { path = "../crates/voxctrl-myfeature" }
 
 ---
 
+## Clients in other repositories
+
+The server and the pairing-code format are used by clients that are not built
+or tested here, such as the Android voice keyboard
+([JRufer/voxctrl-keys](https://github.com/JRufer/voxctrl-keys)). A change to
+`crates/voxctrl-server/src/http.rs`, `crates/voxctrl-server/src/audio.rs`,
+`crates/voxctrl-pairing` or the address rules in
+`src/lib/Settings/server-setup.ts` can break them without anything in this
+repository failing. Check such a change against
+[Clients Outside This Repository](./clients.md) before merging it.
+
+---
+
 ## Key Files to Understand
 
 ### `src-tauri/src/lib.rs`

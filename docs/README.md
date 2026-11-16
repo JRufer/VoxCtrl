@@ -26,6 +26,7 @@ Global shortcuts are registered with your desktop through the XDG `GlobalShortcu
 | [Configuration](./configuration.md) | All config files, schemas, and options |
 | [Installation & Setup](./installation.md) | Dependencies, building, running |
 | [VoxCtrl Server](./server.md) | Run the speech models on another machine: Docker and systemd setup, connecting the app, configuration, security, troubleshooting |
+| [Clients Outside This Repository](./clients.md) | Clients of the server that live in other repositories (VoxCtrl Keys, the Android voice keyboard), what each relies on, and what to check before changing the server |
 | [AUR packages](./aur.md) | How the Arch packages are built, checked and published, and the one-time AUR setup |
 | [Development Guide](./development.md) | Dev environment, build system, crate structure |
 | [Windows Build](./windows_build.md) | Building VoxCtrl on Windows |

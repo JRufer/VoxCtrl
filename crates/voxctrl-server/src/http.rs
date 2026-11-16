@@ -19,6 +19,11 @@
 //! OpenAI" engine use this server unchanged, and lets any other client that
 //! speaks the same API use it too. `/v1/cleanup` is VoxCtrl's own: OpenAI has
 //! no equivalent of a model that only tidies a transcript.
+//!
+//! Some of those clients are released from other repositories (the Android
+//! keyboard, JRufer/voxctrl-keys) and are not compiled or tested here. Before
+//! changing a route, a request field, a response field or an error status,
+//! check `docs/clients.md` for what they rely on.
 
 use std::sync::Arc;
 
