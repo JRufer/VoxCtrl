@@ -64,8 +64,12 @@ lists it but doesn't install it for you:
 sudo pacman -S --needed xdotool     # X11 only
 ```
 
-Three packages are available; they replace one another, so you can switch
-between them:
+To run the VoxCtrl [server](server.md) on a machine without a desktop, there is
+a separate package, `voxctrl-server`; see
+[Server → Arch Linux](server.md#arch-linux-aur).
+
+Three packages of the app are available; they replace one another, so you can
+switch between them:
 
 | Package | What it installs | Install time |
 |---|---|---|

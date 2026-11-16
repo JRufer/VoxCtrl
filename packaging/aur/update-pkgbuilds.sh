@@ -29,7 +29,7 @@ done
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for pkg in voxctrl-bin voxctrl; do
+for pkg in voxctrl-bin voxctrl voxctrl-server; do
   dir="$here/$pkg"
   echo "── $pkg $version-$pkgrel"
   sed -i -e "s/^pkgver=.*/pkgver=$version/" -e "s/^pkgrel=.*/pkgrel=$pkgrel/" "$dir/PKGBUILD"
@@ -41,8 +41,9 @@ for pkg in voxctrl-bin voxctrl; do
       exit 1
     fi
     makepkg --printsrcinfo > .SRCINFO
-    # updpkgsums leaves the downloaded sources here; they are not part of the package repo.
-    find . -maxdepth 1 -type f ! -name PKGBUILD ! -name .SRCINFO -delete
+    # updpkgsums leaves the downloaded sources here; they are not part of the
+    # package repo. A package's .install script is.
+    find . -maxdepth 1 -type f ! -name PKGBUILD ! -name .SRCINFO ! -name '*.install' -delete
   )
 done
 

@@ -1,0 +1,21 @@
+post_install() {
+  cat <<'MSG'
+==> VoxCtrl server installed. It is not started yet.
+    Start it now and at every boot:
+        systemctl enable --now voxctrl-server
+    The first start downloads the speech model, then logs the API key once:
+        journalctl -u voxctrl-server -f
+    The pairing code to paste into the VoxCtrl app (Settings → Engine):
+        sudo -u voxctrl -H voxctrl-server --pairing-code
+    Settings (model, encryption, text-to-speech, ...), created by the first start:
+        /var/lib/voxctrl/.config/voxctrl/server.toml
+    Clients reach it on TCP port 8787; open that port in your firewall.
+    Guide: https://github.com/JRufer/VoxCtrl/blob/master/docs/server.md
+MSG
+}
+
+post_upgrade() {
+  if systemctl is-active --quiet voxctrl-server 2>/dev/null; then
+    echo '==> Restart the VoxCtrl server to run the new version: systemctl restart voxctrl-server'
+  fi
+}

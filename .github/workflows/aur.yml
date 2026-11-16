@@ -7,6 +7,9 @@ name: AUR packages
 #   - On a PR touching packaging/aur or this file: build and install
 #     voxctrl-bin from the latest published release's .deb and check it
 #     (packaging/aur/smoke-test.sh).
+#   - On a PR, weekly and on demand: build voxctrl-server from this checkout,
+#     install it and check it. It has no prebuilt binary to repackage, so the
+#     build is the only test there is; it is a fraction of the app's.
 #   - Weekly, and on demand: build the source package from master in a clean
 #     Arch container, to catch toolchain drift (a new Rust, CMake or shaderc)
 #     before a user's `paru -S voxctrl` does. Too slow (30+ min) for every PR.
@@ -56,6 +59,91 @@ jobs:
 
       - name: Smoke test
         run: packaging/aur/smoke-test.sh voxctrl.deb
+
+  server-build:
+    name: voxctrl-server from this checkout
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 90
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed base-devel git namcap
+
+      - uses: actions/checkout@v4
+
+      # The PKGBUILD downloads the tag's tarball; stand this checkout in for it,
+      # under the name and top-level directory GitHub's archive would have.
+      - name: Build the package from this checkout
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$PWD"
+          useradd -m builder
+          work=$(mktemp -d)
+          cp packaging/aur/voxctrl-server/PKGBUILD packaging/aur/voxctrl-server/*.install "$work/"
+          pkgver=$(sed -n 's/^pkgver=//p' "$work/PKGBUILD")
+          git archive --format=tar.gz --prefix="VoxCtrl-$pkgver/" -o "$work/voxctrl-$pkgver.tar.gz" HEAD
+          chown -R builder: "$work"
+          namcap "$work/PKGBUILD"
+          # -s installs makedepends; builder needs pacman for that.
+          echo 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman' > /etc/sudoers.d/builder
+          su builder -c "cd '$work' && makepkg -s --noconfirm --skipchecksums -f"
+          cp "$work"/voxctrl-server-*.pkg.tar.zst /tmp/voxctrl-server.pkg.tar.zst
+
+      - name: Install and check
+        run: |
+          set -euo pipefail
+          pkg=/tmp/voxctrl-server.pkg.tar.zst
+          namcap "$pkg" | tee /tmp/namcap.txt
+          if grep -E ' E: ' /tmp/namcap.txt; then
+            echo "::error::namcap reported errors"; exit 1
+          fi
+          # pacman -U resolves every `depends` entry for real.
+          pacman -U --noconfirm "$pkg"
+
+          echo "── files"
+          pacman -Qlq voxctrl-server | grep -v '/$' | sort | tee /tmp/files.txt
+          for path in /usr/bin/voxctrl-server \
+                      /usr/lib/voxctrl-server/voxctrl-server \
+                      /usr/lib/voxctrl-server/voxctrl-llm-sidecar \
+                      /usr/lib/systemd/system/voxctrl-server.service \
+                      /usr/lib/sysusers.d/voxctrl-server.conf \
+                      /usr/lib/tmpfiles.d/voxctrl-server.conf \
+                      /usr/share/licenses/voxctrl-server/LICENSE; do
+            grep -qx "$path" /tmp/files.txt || { echo "::error::$path is not in the package"; exit 1; }
+          done
+          # Nothing the app packages own, so both can be installed together.
+          if grep -qx '/usr/bin/voxctrl-llm-sidecar' /tmp/files.txt; then
+            echo "::error::/usr/bin/voxctrl-llm-sidecar belongs to the voxctrl packages"; exit 1
+          fi
+
+          echo "── libraries"
+          for bin in /usr/lib/voxctrl-server/voxctrl-server /usr/lib/voxctrl-server/voxctrl-llm-sidecar; do
+            ldd "$bin" | (! grep 'not found')
+          done
+
+          echo "── it runs"
+          voxctrl-server --version
+          voxctrl-server --version | grep -q "voxctrl-server $(sed -n 's/^pkgver=//p' packaging/aur/voxctrl-server/PKGBUILD)"
+          voxctrl-server --print-config --config /tmp/none.toml >/dev/null
+
+          echo "── service account and unit"
+          # pacman's hooks run systemd-sysusers and systemd-tmpfiles in a real
+          # install; a container has no systemd running, so apply them here.
+          systemd-sysusers /usr/lib/sysusers.d/voxctrl-server.conf
+          systemd-tmpfiles --create /usr/lib/tmpfiles.d/voxctrl-server.conf
+          id voxctrl
+          [ "$(getent passwd voxctrl | cut -d: -f6)" = /var/lib/voxctrl ]
+          [ "$(stat -c '%U:%G %a' /var/lib/voxctrl)" = "voxctrl:voxctrl 750" ]
+          grep -qx 'ExecStart=/usr/bin/voxctrl-server' /usr/lib/systemd/system/voxctrl-server.service
+          systemd-analyze verify /usr/lib/systemd/system/voxctrl-server.service
+
+          echo "── as the service account: first-start files land in its home"
+          # The same thing the unit does, as far as a container allows: the
+          # service's user and HOME. --pairing-code needs a key, which only a
+          # first start makes, so it must say so rather than invent one.
+          out=$(su -s /bin/sh voxctrl -c 'HOME=/var/lib/voxctrl voxctrl-server --pairing-code' 2>&1 || true)
+          echo "$out"
+          grep -q 'no API key yet' <<< "$out"
 
   source-build:
     name: voxctrl (source) from master
