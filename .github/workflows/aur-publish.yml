@@ -1,6 +1,7 @@
 name: Publish to AUR
 
-# Pushes voxctrl-bin and voxctrl to the AUR when a GitHub release is published.
+# Pushes voxctrl-bin, voxctrl and voxctrl-server to the AUR when a GitHub
+# release is published.
 # Never from a draft: drafts have no public download, so a PKGBUILD pointing at
 # one would fail for every user.
 #
@@ -85,7 +86,7 @@ jobs:
 
       - name: Show the result
         run: |
-          for pkg in voxctrl-bin voxctrl; do
+          for pkg in voxctrl-bin voxctrl voxctrl-server; do
             echo "── $pkg/PKGBUILD"; cat "packaging/aur/$pkg/PKGBUILD"
             echo "── $pkg/.SRCINFO"; cat "packaging/aur/$pkg/.SRCINFO"
           done
@@ -109,14 +110,18 @@ jobs:
           printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > ~/.ssh/config
 
           version="${TAG#v}"
-          for pkg in voxctrl-bin voxctrl; do
+          for pkg in voxctrl-bin voxctrl voxctrl-server; do
             dir=$(mktemp -d)
+            # A package that is not on the AUR yet clones as an empty
+            # repository, and the push below creates it.
             git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$dir"
             cp "packaging/aur/$pkg/PKGBUILD" "packaging/aur/$pkg/.SRCINFO" "$dir/"
+            # A package's install script, where it has one.
+            find "packaging/aur/$pkg" -maxdepth 1 -name '*.install' -exec cp {} "$dir/" \;
             cd "$dir"
             git config user.name "$AUR_USERNAME"
             git config user.email "$AUR_EMAIL"
-            git add PKGBUILD .SRCINFO
+            git add -A
             if git diff --cached --quiet; then
               echo "$pkg: already at $version-$PKGREL, nothing to push"
             else

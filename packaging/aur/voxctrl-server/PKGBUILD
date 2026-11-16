@@ -1,0 +1,82 @@
+# Maintainer: Josh Rufer <jrufer at gmail dot com>
+#
+# Source of truth: packaging/aur/voxctrl-server/PKGBUILD in github.com/JRufer/VoxCtrl.
+# The AUR copy is pushed by .github/workflows/aur-publish.yml when a release is
+# published; pkgver and the checksum below are filled in by
+# packaging/aur/update-pkgbuilds.sh. Edit this file in the app repo, not on the AUR.
+#
+# Please report bugs on GitHub, not in AUR comments:
+# https://github.com/JRufer/VoxCtrl/issues
+
+pkgname=voxctrl-server
+pkgver=0.9.18
+pkgrel=1
+pkgdesc='Headless speech server for VoxCtrl: speech recognition, cleanup and text-to-speech for clients on your network'
+arch=('x86_64')
+url='https://jrufer.com/voxctrl'
+license=('MIT')
+# No GTK, WebKit or audio libraries: the server has no window and no
+# microphone. That is the point of this package next to `voxctrl`, whose
+# `voxctrl --server` runs the same server but needs the whole desktop stack.
+depends=('gcc-libs' 'glibc' 'openssl' 'vulkan-icd-loader')
+# clang: bindgen for whisper.cpp and llama.cpp. shaderc: glslc, which compiles
+# ggml's Vulkan shaders at build time.
+makedepends=('cargo' 'clang' 'cmake' 'git' 'pkgconf' 'shaderc' 'vulkan-headers')
+optdepends=('vulkan-driver: GPU acceleration for whisper.cpp and dictation cleanup'
+            'espeak-ng: the eSpeak text-to-speech engine, and phonemes for Kitten TTS')
+install=voxctrl-server.install
+# makepkg's -flto in CFLAGS/CXXFLAGS breaks the vendored whisper.cpp and
+# llama.cpp CMake builds.
+options=('!lto' '!debug')
+source=("voxctrl-$pkgver.tar.gz::https://github.com/JRufer/VoxCtrl/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# On top of the server's default engines (Moonshine and Parakeet on ONNX
+# Runtime, whisper.cpp always): Vulkan for whisper.cpp. Without a GPU or a
+# Vulkan driver the server runs on the CPU.
+_features='vulkan'
+
+prepare() {
+  cd "VoxCtrl-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
+}
+
+build() {
+  cd "VoxCtrl-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+
+  # Note: ort downloads its prebuilt ONNX Runtime during this step, so the
+  # build needs network access, as it does for the `voxctrl` package.
+  cargo build --frozen --release -p voxctrl-server --features "$_features"
+  # The llama.cpp helper that runs dictation cleanup. A separate build because
+  # the two crates do not share feature names.
+  cargo build --frozen --release -p voxctrl-llm-sidecar --features vulkan
+}
+
+package() {
+  cd "VoxCtrl-$pkgver"
+
+  # The server looks for the cleanup helper beside its own binary. Both live
+  # in a private directory so this package can be installed next to
+  # `voxctrl`, which owns /usr/bin/voxctrl-llm-sidecar; the server finds its
+  # real location through the symlink.
+  install -Dm755 target/release/voxctrl-server      "$pkgdir/usr/lib/voxctrl-server/voxctrl-server"
+  install -Dm755 target/release/voxctrl-llm-sidecar "$pkgdir/usr/lib/voxctrl-server/voxctrl-llm-sidecar"
+  install -d "$pkgdir/usr/bin"
+  ln -s ../lib/voxctrl-server/voxctrl-server "$pkgdir/usr/bin/voxctrl-server"
+
+  # The repo's unit starts /usr/local/bin/voxctrl-server, for a hand install.
+  install -Dm644 packaging/systemd/voxctrl-server.service \
+    "$pkgdir/usr/lib/systemd/system/voxctrl-server.service"
+  sed -i 's|^ExecStart=/usr/local/bin/voxctrl-server|ExecStart=/usr/bin/voxctrl-server|' \
+    "$pkgdir/usr/lib/systemd/system/voxctrl-server.service"
+  grep -q '^ExecStart=/usr/bin/voxctrl-server$' "$pkgdir/usr/lib/systemd/system/voxctrl-server.service"
+
+  # The `voxctrl` user the unit runs as, and its home, /var/lib/voxctrl.
+  install -Dm644 packaging/systemd/voxctrl-server.sysusers "$pkgdir/usr/lib/sysusers.d/voxctrl-server.conf"
+  install -Dm644 packaging/systemd/voxctrl-server.tmpfiles "$pkgdir/usr/lib/tmpfiles.d/voxctrl-server.conf"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

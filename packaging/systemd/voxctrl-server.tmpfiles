@@ -1,0 +1,4 @@
+# tmpfiles.d: the voxctrl-server service's home. Installed by the
+# voxctrl-server AUR package as /usr/lib/tmpfiles.d/voxctrl-server.conf.
+# Not world-readable: server.toml in it holds the API key.
+d /var/lib/voxctrl 0750 voxctrl voxctrl -

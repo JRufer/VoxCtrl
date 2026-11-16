@@ -21,7 +21,7 @@ There are three ways to run it:
 |---|---|
 | [From the VoxCtrl AppImage](#run-it-from-the-voxctrl-appimage) (`--server`) | A desktop or laptop that has, or can have, the VoxCtrl app. Nothing to build |
 | [Docker](#install-with-docker) | A home server or NAS that already runs containers |
-| [A system service](#install-as-a-system-service) | A headless machine without Docker |
+| [A system service](#install-as-a-system-service) | A headless machine without Docker. On Arch Linux there is [a package](#arch-linux-aur) for it |
 
 **Contents**
 
@@ -349,6 +349,31 @@ docker logs -f voxctrl-server
 ## Install as a system service
 
 Use this to run the server directly on the machine, managed by systemd.
+
+### Arch Linux (AUR)
+
+On Arch and Arch-based systems the `voxctrl-server` package does all of the
+steps below: it builds the server, installs the service, and creates the
+`voxctrl` user and `/var/lib/voxctrl`. (From 0.9.18.)
+
+```bash
+paru -S voxctrl-server        # or: yay -S voxctrl-server
+sudo systemctl enable --now voxctrl-server
+sudo journalctl -u voxctrl-server -f      # first start: model download, then the API key
+sudo -u voxctrl -H voxctrl-server --pairing-code
+```
+
+It is built from source on your machine, which takes a while (it compiles
+whisper.cpp and llama.cpp) and needs network access during the build. It has
+no desktop dependencies, and can be installed next to the `voxctrl` app
+package. whisper.cpp and dictation cleanup use a GPU when a Vulkan driver is
+installed (`vulkan-driver`), and the CPU otherwise.
+
+Then continue at [5. Choose a model](#5-choose-a-model); the settings file is
+`/var/lib/voxctrl/.config/voxctrl/server.toml`. After an upgrade, restart the
+service: `sudo systemctl restart voxctrl-server`.
+
+On other distributions, follow the steps below.
 
 There is no prebuilt server binary in the releases yet, so this also builds
 from source.

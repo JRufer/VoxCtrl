@@ -3,16 +3,17 @@
 For installing from the AUR, see [Installation → Arch Linux](installation.md#arch-linux-aur).
 This page is for maintaining the packages.
 
-## The three packages
+## The packages
 
 | Package | Source | Updated |
 |---|---|---|
 | `voxctrl-bin` | The release's `VoxCtrl-linux-x86_64-vulkan-webgpu.deb`, repackaged | Automatically, when a release is published |
 | `voxctrl` | The release tag's source tarball, built on the user's machine | Automatically, when a release is published |
 | `voxctrl-git` | `master`, built on the user's machine | By hand, only when its build steps change |
+| `voxctrl-server` | The release tag's source tarball: the headless server only, see [below](#voxctrl-server) | Automatically, when a release is published |
 
-All three `provide` `voxctrl` and conflict with each other. They install the
-same files:
+The three app packages `provide` `voxctrl` and conflict with each other. They
+install the same files:
 
 | Path | What |
 |---|---|
@@ -27,6 +28,37 @@ The `.deb`'s own `VoxCtrl.desktop` is deliberately not installed: the desktop
 portal can't match that name to `ai.voxctrl.app`, so KDE's shortcut settings
 would show a bare identifier.
 
+## voxctrl-server
+
+The headless [server](server.md) as a system service, for a machine without a
+desktop. The app packages already contain the same server as `voxctrl
+--server`, but they depend on GTK, WebKit and the rest of the desktop stack;
+this package depends on `glibc`, `gcc-libs`, `openssl` and
+`vulkan-icd-loader` only. It does not conflict with the app packages, so both
+can be installed on one machine.
+
+| Path | What |
+|---|---|
+| `/usr/bin/voxctrl-server` | Symlink to the binary below |
+| `/usr/lib/voxctrl-server/voxctrl-server` | The server |
+| `/usr/lib/voxctrl-server/voxctrl-llm-sidecar` | S1-mini sidecar for dictation cleanup. Beside the server, where `find_llm_sidecar_binary()` looks (it resolves the symlink), and not in `/usr/bin`, which the app packages own |
+| `/usr/lib/systemd/system/voxctrl-server.service` | `packaging/systemd/voxctrl-server.service` with `ExecStart` pointed at `/usr/bin` |
+| `/usr/lib/sysusers.d/voxctrl-server.conf` | The `voxctrl` system user, in the `render` and `video` groups for GPU access |
+| `/usr/lib/tmpfiles.d/voxctrl-server.conf` | `/var/lib/voxctrl`, mode 0750: settings, certificate, models, clients' voices |
+| `/usr/share/licenses/voxctrl-server/LICENSE` | MIT licence |
+
+Built with the server's default engines plus `vulkan` (whisper.cpp and the
+sidecar use a GPU when a Vulkan driver is installed, and the CPU otherwise).
+There is no `-bin` variant: releases carry no standalone server binary.
+
+`voxctrl-server.install` prints how to start the service and get the pairing
+code. The service is not enabled by the package. Nothing under
+`/var/lib/voxctrl` is owned by the package, so removing it keeps the settings
+and models; `userdel voxctrl` and `rm -r /var/lib/voxctrl` remove them.
+
+The sysusers and tmpfiles files come from the release tarball
+(`packaging/systemd/`), so the package builds from tag `v0.9.18` on.
+
 ## Where things live
 
 | File | Role |
@@ -34,9 +66,11 @@ would show a bare identifier.
 | `packaging/aur/<pkg>/PKGBUILD` | Source of truth. Edit here, never on the AUR |
 | `packaging/aur/update-pkgbuilds.sh` | Sets `pkgver`/`pkgrel`, fills real checksums, writes `.SRCINFO` (needs Arch) |
 | `packaging/aur/smoke-test.sh` | Builds `voxctrl-bin` from a given `.deb`, installs it, checks it |
-| `.github/workflows/aur.yml` | On PRs touching `packaging/aur`: smoke test against the latest release. Weekly: full source build from `master` |
+| `packaging/aur/voxctrl-server/voxctrl-server.install` | The server package's post-install message; published next to its PKGBUILD |
+| `packaging/systemd/voxctrl-server.{service,sysusers,tmpfiles}` | What the server package installs for systemd; read from the release tarball |
+| `.github/workflows/aur.yml` | On PRs touching `packaging/aur`: smoke test of `voxctrl-bin` against the latest release, and a full build, install and check of `voxctrl-server`. Weekly: the same, plus a full source build of `voxctrl` from `master` |
 | `.github/workflows/release.yml`, job `aur-smoke` | Smoke test against each new build's `.deb`, before the draft is published |
-| `.github/workflows/aur-publish.yml` | Pushes `voxctrl-bin` and `voxctrl` to the AUR when a release is published |
+| `.github/workflows/aur-publish.yml` | Pushes `voxctrl-bin`, `voxctrl` and `voxctrl-server` to the AUR when a release is published |
 
 The repo's PKGBUILDs carry `SKIP` checksums; real ones are computed at publish
 time from the actual downloads, and the `.deb`'s is cross-checked against the
@@ -104,7 +138,9 @@ Done once by the maintainer, on their own machine:
    done
    git checkout -- packaging/aur   # keep the repo copies at SKIP
    ```
-   The AUR creates a package on its first push.
+   The AUR creates a package on its first push. `voxctrl-server` needs no
+   such step: the publish workflow creates it the first time it runs for a
+   release that has it (0.9.18 or newer).
 5. On GitHub, **Settings → Secrets and variables → Actions**: secret
    `AUR_SSH_PRIVATE_KEY` (contents of `~/.ssh/aur_voxctrl`), variables
    `AUR_USERNAME` and `AUR_EMAIL` (the AUR commit author).

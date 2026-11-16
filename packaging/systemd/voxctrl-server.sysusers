@@ -1,0 +1,8 @@
+# sysusers.d: the account voxctrl-server.service runs as. Installed by the
+# voxctrl-server AUR package as /usr/lib/sysusers.d/voxctrl-server.conf.
+# Its home holds the server's settings, certificate, models and clients' voices.
+u voxctrl - "VoxCtrl speech server" /var/lib/voxctrl
+# GPU device nodes (/dev/dri/renderD*) belong to these groups; without them a
+# Vulkan build of the server runs on the CPU.
+m voxctrl render
+m voxctrl video
