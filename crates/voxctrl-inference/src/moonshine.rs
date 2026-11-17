@@ -206,7 +206,8 @@ impl MoonshineBackend {
         // `std::error::Error`, so it can't flow through `anyhow::Context`. Format
         // it via Display instead. `commit_from_file` returns a plain `ort::Error`
         // that anyhow can absorb directly.
-        let builder = Session::builder()
+        let env = voxctrl_ort::environment().map_err(|e| anyhow!("ONNX Runtime environment: {e}"))?;
+        let builder = Session::builder(env)
             .map_err(|e| anyhow!("ort session builder: {e}"))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("set optimization level: {e}"))?

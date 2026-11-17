@@ -86,6 +86,14 @@
         <a class="credit-name-link" href="https://github.com/microsoft/onnxruntime" target="_blank">ONNX Runtime</a>
         <span class="credit-license">MIT / Apache 2.0</span>
       </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://dawn.googlesource.com/dawn" target="_blank">Dawn (WebGPU, in GPU builds)</a>
+        <span class="credit-license">BSD 3-Clause</span>
+      </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://github.com/microsoft/DirectXShaderCompiler" target="_blank">DirectX Shader Compiler (Windows)</a>
+        <span class="credit-license">NCSA / LLVM</span>
+      </div>
     </div>
 
     <p class="credits-hint">Text-to-speech</p>

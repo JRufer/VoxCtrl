@@ -70,6 +70,7 @@ VoxCtrl/
 │   ├── voxctrl-audio/
 │   ├── voxctrl-hotkeys/
 │   ├── voxctrl-inference/
+│   ├── voxctrl-ort/        # Shared ONNX Runtime environment
 │   ├── voxctrl-routing/
 │   ├── voxctrl-inject/     # Paste-or-type delivery; key sending per platform
 │   ├── voxctrl-clipboard/  # Full-format clipboard backup/restore
@@ -84,6 +85,7 @@ VoxCtrl/
 │   ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
 │   └── voxctrl-server/     # Headless speech server binary (docs/server.md)
 │
+├── packaging/third-party-licenses/ # Licence texts shipped with bundled native libraries
 ├── packaging/aur/          # AUR PKGBUILDs, publish + smoke-test scripts (docs/aur.md)
 ├── packaging/docker/       # Dockerfile + Compose files for voxctrl-server (docs/server.md)
 ├── packaging/systemd/      # systemd unit for voxctrl-server (docs/server.md)

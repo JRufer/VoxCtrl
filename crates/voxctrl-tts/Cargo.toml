@@ -32,8 +32,10 @@ rodio = { workspace = true, optional = true }
 # binary needs no system library. Building this feature therefore needs network
 # access to the ONNX Runtime binary host at compile time; for a fully offline
 # build, switch to `default-features = false, features = ["load-dynamic", "std",
-# "api-24"]` and ship a libonnxruntime alongside the app.
-ort = { version = "2.0.0-rc.12", optional = true }
+# "api-31"]` and ship a libonnxruntime alongside the app.
+ort = { version = "2.0.0-rc.15", optional = true }
+# The one ONNX Runtime environment, shared with voxctrl-inference.
+voxctrl-ort = { workspace = true, optional = true }
 
 # Linux only: PR_SET_PDEATHSIG so a spawned `audiocpp_server` never outlives
 # this process, even on an ungraceful exit. See `audiocpp::AudioCppServer::spawn`.
@@ -50,7 +52,7 @@ playback = ["dep:rodio"]
 # voxctrl-inference, and for the same reason: it pulls in ONNX Runtime. The
 # eSpeak-NG phoneme frontend is a runtime dependency, checked for before
 # synthesis.
-inflect-micro = ["dep:ort"]
+inflect-micro = ["dep:ort", "dep:voxctrl-ort"]
 
 [build-dependencies]
 cc = "1"
