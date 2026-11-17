@@ -62,13 +62,7 @@ pub fn find<'a>(asset: &ReleaseAsset, assets: &'a [ReleaseAsset]) -> Option<&'a 
 /// from `public_key` (the base64 key line), made for `asset_name` in `tag`.
 ///
 /// The file is read in chunks, never whole: the AppImage is around 100 MB.
-pub fn verify_file(
-    path: &Path,
-    signature_text: &str,
-    public_key: &str,
-    asset_name: &str,
-    tag: &str,
-) -> Result<()> {
+pub fn verify_file(path: &Path, signature_text: &str, public_key: &str, asset_name: &str, tag: &str) -> Result<()> {
     let fail = |why: String| {
         UpdateError::Other(format!(
             "the download's signature did not verify ({why}), so it was not installed. \
@@ -76,37 +70,28 @@ pub fn verify_file(
         ))
     };
 
-    let key = PublicKey::from_base64(public_key)
-        .map_err(|e| fail(format!("this build's update key is unusable: {e}")))?;
-    let signature =
-        Signature::decode(signature_text).map_err(|e| fail(format!("malformed signature: {e}")))?;
+    let key =
+        PublicKey::from_base64(public_key).map_err(|e| fail(format!("this build's update key is unusable: {e}")))?;
+    let signature = Signature::decode(signature_text).map_err(|e| fail(format!("malformed signature: {e}")))?;
 
-    let mut verifier = key
-        .verify_stream(&signature)
-        .map_err(|e| fail(format!("signed with a different key: {e}")))?;
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
+    let mut verifier = key.verify_stream(&signature).map_err(|e| fail(format!("signed with a different key: {e}")))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
     let mut buf = vec![0u8; 1 << 16];
     loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
+        let n =
+            file.read(&mut buf).map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
         if n == 0 {
             break;
         }
         verifier.update(&buf[..n]);
     }
-    verifier
-        .finalize()
-        .map_err(|_| fail("the file does not match its signature".to_string()))?;
+    verifier.finalize().map_err(|_| fail("the file does not match its signature".to_string()))?;
 
     // Only meaningful once the signature is known good: it covers this text.
     let expected = expected_trusted_comment(asset_name, tag);
     if signature.trusted_comment() != expected {
-        return Err(fail(format!(
-            "it was signed as \"{}\", not \"{expected}\"",
-            signature.trusted_comment()
-        )));
+        return Err(fail(format!("it was signed as \"{}\", not \"{expected}\"", signature.trusted_comment())));
     }
     Ok(())
 }
@@ -120,31 +105,19 @@ pub async fn verify_file_blocking(
     tag: String,
 ) -> Result<()> {
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        verify_file(&path, &signature_text, public_key, &asset_name, &tag)
-    })
-    .await
-    .map_err(|e| UpdateError::Other(format!("signature check failed to run: {e}")))?
+    tokio::task::spawn_blocking(move || verify_file(&path, &signature_text, public_key, &asset_name, &tag))
+        .await
+        .map_err(|e| UpdateError::Other(format!("signature check failed to run: {e}")))?
 }
 
 /// Download a signature file.
 pub async fn fetch(client: &reqwest::Client, signature: &ReleaseAsset) -> Result<String> {
-    let response = client
-        .get(&signature.browser_download_url)
-        .send()
-        .await
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let response =
+        client.get(&signature.browser_download_url).send().await.map_err(|e| UpdateError::Network(e.to_string()))?;
     if !response.status().is_success() {
-        return Err(UpdateError::Response(format!(
-            "HTTP {} downloading {}",
-            response.status(),
-            signature.name
-        )));
+        return Err(UpdateError::Response(format!("HTTP {} downloading {}", response.status(), signature.name)));
     }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let body = response.bytes().await.map_err(|e| UpdateError::Network(e.to_string()))?;
     if body.len() > MAX_SIGNATURE_BYTES {
         return Err(UpdateError::Response(format!(
             "{} is {} bytes, too large to be a signature",
@@ -200,9 +173,7 @@ qh+WaDYh1GaRLL57aT0oQUGzXp+ji/SXtabAbzWnel485BlWWpXPTXVXEeBgPkjZIqgxJtxoz9bNjDZP
 
     #[test]
     fn a_tampered_file_is_rejected() {
-        let err = verify(b"VoxCtrl test payl0ad\n", SIGNATURE, TEST_KEY, ASSET, "v9.9.9")
-            .unwrap_err()
-            .to_string();
+        let err = verify(b"VoxCtrl test payl0ad\n", SIGNATURE, TEST_KEY, ASSET, "v9.9.9").unwrap_err().to_string();
         assert!(err.contains("does not match its signature"), "{err}");
     }
 
@@ -218,9 +189,7 @@ qh+WaDYh1GaRLL57aT0oQUGzXp+ji/SXtabAbzWnel485BlWWpXPTXVXEeBgPkjZIqgxJtxoz9bNjDZP
     /// that is how a fixed vulnerability would be brought back.
     #[test]
     fn a_signed_older_release_cannot_be_replayed_under_a_new_tag() {
-        let err = verify(PAYLOAD, OLD_RELEASE_SIGNATURE, TEST_KEY, ASSET, "v9.9.9")
-            .unwrap_err()
-            .to_string();
+        let err = verify(PAYLOAD, OLD_RELEASE_SIGNATURE, TEST_KEY, ASSET, "v9.9.9").unwrap_err().to_string();
         assert!(err.contains("tag:v0.1.0"), "{err}");
     }
 

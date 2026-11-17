@@ -120,10 +120,7 @@ async fn connect() -> Result<Live> {
 }
 
 async fn tap(live: &Live, code: i32, state: KeyState) -> Result<()> {
-    live.proxy
-        .notify_keyboard_keycode(&live.session, code, state, Default::default())
-        .await
-        .map_err(|e| anyhow!("{e}"))
+    live.proxy.notify_keyboard_keycode(&live.session, code, state, Default::default()).await.map_err(|e| anyhow!("{e}"))
 }
 
 async fn press(live: &Live, shortcut: Shortcut) -> Result<()> {

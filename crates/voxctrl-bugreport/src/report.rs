@@ -42,11 +42,7 @@ pub struct LogSection {
 
 impl From<LogExcerpt> for LogSection {
     fn from(excerpt: LogExcerpt) -> Self {
-        Self {
-            text: excerpt.text,
-            lines: excerpt.lines,
-            truncated: excerpt.truncated,
-        }
+        Self { text: excerpt.text, lines: excerpt.lines, truncated: excerpt.truncated }
     }
 }
 
@@ -98,11 +94,11 @@ impl BugReport {
         out.push_str("| | |\n|---|---|\n");
         out.push_str(&format!("| Area | {} |\n", md_cell(&s.area)));
         out.push_str(&format!("| How often | {} |\n", md_cell(&s.frequency)));
+        out.push_str(&format!("| Reported | {} |\n", self.created_at.format("%Y-%m-%d %H:%M UTC")));
         out.push_str(&format!(
-            "| Reported | {} |\n",
-            self.created_at.format("%Y-%m-%d %H:%M UTC")
+            "| Report ID | `{}` |\n\n",
+            md_cell(&self.fingerprint[..12.min(self.fingerprint.len())])
         ));
-        out.push_str(&format!("| Report ID | `{}` |\n\n", md_cell(&self.fingerprint[..12.min(self.fingerprint.len())])));
 
         out.push_str("### System\n\n");
         out.push_str(&self.system_table());
@@ -114,11 +110,7 @@ impl BugReport {
         ));
         out.push_str(&details(
             "Output targets and hotkeys (shape only — labels, commands and URLs removed)",
-            &format!(
-                "{}\n{}",
-                fenced("json", &pretty(&self.targets)),
-                fenced("json", &pretty(&self.bindings))
-            ),
+            &format!("{}\n{}", fenced("json", &pretty(&self.targets)), fenced("json", &pretty(&self.bindings))),
         ));
 
         let log_heading = if self.log.truncated {
@@ -166,17 +158,10 @@ impl BugReport {
                 format!(
                     "{} ({} logical cores)",
                     s.cpu_model.as_deref().unwrap_or("unknown"),
-                    s.cpu_logical_cores
-                        .map(|n| n.to_string())
-                        .unwrap_or_else(|| "?".into())
+                    s.cpu_logical_cores.map(|n| n.to_string()).unwrap_or_else(|| "?".into())
                 ),
             ),
-            (
-                "Memory",
-                s.memory_total_mb
-                    .map(|mb| format!("{} MB", mb))
-                    .unwrap_or_else(|| "unknown".into()),
-            ),
+            ("Memory", s.memory_total_mb.map(|mb| format!("{} MB", mb)).unwrap_or_else(|| "unknown".into())),
             ("Display adapter", or_none(&s.gpus.join(" · "))),
         ];
         if let Some(desktop) = &s.desktop {
@@ -194,10 +179,7 @@ impl BugReport {
             table.push_str(&format!("| {label} | {} |\n", md_cell(&value)));
         }
         if !s.collection_notes.is_empty() {
-            table.push_str(&format!(
-                "\n_Not collected: {}._\n",
-                s.collection_notes.join("; ")
-            ));
+            table.push_str(&format!("\n_Not collected: {}._\n", s.collection_notes.join("; ")));
         }
         table
     }
@@ -264,11 +246,7 @@ fn details(summary: &str, body: &str) -> String {
 /// line holding three backticks would otherwise end the block early and spill
 /// the rest of the report into the page as markup.
 fn fenced(language: &str, body: &str) -> String {
-    let longest_run = body
-        .split(|c| c != '`')
-        .map(|run| run.len())
-        .max()
-        .unwrap_or(0);
+    let longest_run = body.split(|c| c != '`').map(|run| run.len()).max().unwrap_or(0);
     let fence = "`".repeat(longest_run.max(2) + 1);
     format!("{fence}{language}\n{body}\n{fence}\n")
 }
@@ -304,8 +282,7 @@ mod tests {
             fingerprint: "abcdef0123456789".into(),
             statement: UserStatement {
                 summary: "Recording stops after one second".into(),
-                description: "I press the hotkey and it records for about a second, then stops."
-                    .into(),
+                description: "I press the hotkey and it records for about a second, then stops.".into(),
                 area: "Hotkeys".into(),
                 frequency: "always".into(),
             },
@@ -320,20 +297,13 @@ mod tests {
             config: json!({"engine": {"backend": "whisper-cpp"}}),
             targets: json!([]),
             bindings: json!([]),
-            log: LogSection {
-                text: "2026-01-01 [WARN] voxctrl: something".into(),
-                lines: 1,
-                truncated: false,
-            },
+            log: LogSection { text: "2026-01-01 [WARN] voxctrl: something".into(), lines: 1, truncated: false },
         }
     }
 
     #[test]
     fn the_title_leads_with_the_platform() {
-        assert_eq!(
-            report().issue_title(),
-            "[Windows] Recording stops after one second"
-        );
+        assert_eq!(report().issue_title(), "[Windows] Recording stops after one second");
     }
 
     #[test]
@@ -366,10 +336,7 @@ mod tests {
         r.log.text = "user typed ``` and then ```` more".into();
         let markdown = r.to_markdown();
         let fence = "`".repeat(5);
-        assert!(
-            markdown.contains(&format!("{fence}text")),
-            "expected a fence longer than the content: {markdown}"
-        );
+        assert!(markdown.contains(&format!("{fence}text")), "expected a fence longer than the content: {markdown}");
     }
 
     #[test]

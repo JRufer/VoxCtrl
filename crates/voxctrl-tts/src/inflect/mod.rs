@@ -100,8 +100,7 @@ impl Layout {
 /// are positions in this list, so nothing else will substitute for it. The file
 /// is located by listing each repository recursively rather than by assuming a
 /// path, since guessing one has proven unreliable.
-const SYMBOL_LIST_REPOS: [&str; 2] =
-    ["owensong/Inflect-Micro-v2", "owensong/Inflect-Micro-v2-ONNX"];
+const SYMBOL_LIST_REPOS: [&str; 2] = ["owensong/Inflect-Micro-v2", "owensong/Inflect-Micro-v2-ONNX"];
 
 /// Upper bound on an auxiliary file fetched alongside the graphs. The phoneme
 /// table is a few kilobytes; this only exists to stop a stray large asset from
@@ -113,11 +112,7 @@ const MAX_AUX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 /// Default model directory: `<data-local>/voxctrl/models/inflect-micro/`, keeping
 /// the same `models/<engine>` layout the STT backends use.
 pub fn inflect_micro_model_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("models")
-        .join("inflect-micro")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("models").join("inflect-micro")
 }
 
 /// Resolve the configured directory, falling back to the platform default.
@@ -158,9 +153,7 @@ static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// them.
 pub async fn download_inflect_micro_assets(model_dir: &str) -> Result<()> {
     let dir = resolve_model_dir(model_dir);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .with_context(|| format!("create model dir {}", dir.display()))?;
+    tokio::fs::create_dir_all(&dir).await.with_context(|| format!("create model dir {}", dir.display()))?;
 
     let _guard = DOWNLOAD_LOCK.lock().await;
 
@@ -173,9 +166,7 @@ pub async fn download_inflect_micro_assets(model_dir: &str) -> Result<()> {
         }
         let url = layout.file_url(file);
         info!("Downloading Inflect-Micro-v2 graph: {url}");
-        download_to(&url, &path)
-            .await
-            .with_context(|| format!("download {file}"))?;
+        download_to(&url, &path).await.with_context(|| format!("download {file}"))?;
     }
 
     // Fetch every small text-ish file alongside the graphs rather than guessing
@@ -255,9 +246,7 @@ impl RepoFile {
         if lower.ends_with(".onnx") || lower.ends_with(".onnx_data") {
             return false;
         }
-        [".json", ".txt", ".csv", ".tsv", ".py"]
-            .iter()
-            .any(|e| lower.ends_with(e))
+        [".json", ".txt", ".csv", ".tsv", ".py"].iter().any(|e| lower.ends_with(e))
     }
 }
 
@@ -328,14 +317,9 @@ async fn fetch_symbol_list(dir: &std::path::Path, report: &mut Vec<String>) -> R
             }
         };
 
-        let candidate = files
-            .iter()
-            .find(|f| f.name == "symbols.py")
-            .or_else(|| {
-                files.iter().find(|f| {
-                    f.name.ends_with(".py") && f.name.to_ascii_lowercase().contains("symbol")
-                })
-            });
+        let candidate = files.iter().find(|f| f.name == "symbols.py").or_else(|| {
+            files.iter().find(|f| f.name.ends_with(".py") && f.name.to_ascii_lowercase().contains("symbol"))
+        });
 
         let Some(file) = candidate else {
             report.push(format!("  {repo} → listed {} files, no symbols.py", files.len()));
@@ -393,18 +377,11 @@ async fn download_to(url: &str, path: &std::path::Path) -> Result<()> {
         .with_context(|| format!("request {url}"))?
         .error_for_status()
         .with_context(|| format!("fetch {url}"))?;
-    let bytes = response
-        .bytes()
-        .await
-        .with_context(|| format!("read {url}"))?;
+    let bytes = response.bytes().await.with_context(|| format!("read {url}"))?;
 
     let tmp = path.with_extension("part");
-    tokio::fs::write(&tmp, &bytes)
-        .await
-        .with_context(|| format!("write {}", tmp.display()))?;
-    tokio::fs::rename(&tmp, path)
-        .await
-        .with_context(|| format!("finalize {}", path.display()))?;
+    tokio::fs::write(&tmp, &bytes).await.with_context(|| format!("write {}", tmp.display()))?;
+    tokio::fs::rename(&tmp, path).await.with_context(|| format!("finalize {}", path.display()))?;
     Ok(())
 }
 
@@ -434,8 +411,7 @@ pub fn boundary_pause_seconds(chunk: &str) -> f32 {
 /// Taper the first and last 5 ms of a chunk so concatenation doesn't click.
 /// Mirrors the reference script's `edge_fade`.
 pub fn edge_fade(waveform: &mut [f32], sample_rate: u32, milliseconds: f32) {
-    let frames = ((sample_rate as f32 * milliseconds / 1000.0).round() as usize)
-        .min(waveform.len() / 2);
+    let frames = ((sample_rate as f32 * milliseconds / 1000.0).round() as usize).min(waveform.len() / 2);
     if frames == 0 {
         return;
     }
@@ -492,10 +468,7 @@ fn pick_split_point(sentence: &str, limit: usize) -> usize {
     let search_end = (limit + 1).min(chars.len());
     let window = &chars[..search_end];
 
-    let punctuation = window
-        .iter()
-        .rposition(|c| matches!(c, ',' | ';' | ':'))
-        .map(|i| i + 1);
+    let punctuation = window.iter().rposition(|c| matches!(c, ',' | ';' | ':')).map(|i| i + 1);
 
     match punctuation {
         Some(p) if p >= limit / 2 => p,
@@ -631,20 +604,11 @@ pub(crate) fn speak_inflect_micro(
             let pause = boundary_pause_seconds(&chunks[index - 1]);
             let frames = (SAMPLE_RATE as f32 * pause).round() as usize;
             if frames > 0 {
-                sink.append(rodio::buffer::SamplesBuffer::new(
-                    1,
-                    SAMPLE_RATE,
-                    vec![0.0f32; frames],
-                ));
+                sink.append(rodio::buffer::SamplesBuffer::new(1, SAMPLE_RATE, vec![0.0f32; frames]));
             }
         }
 
-        tracing::debug!(
-            "Inflect-Micro-v2 chunk {}/{}: {} samples",
-            index + 1,
-            chunks.len(),
-            audio.len()
-        );
+        tracing::debug!("Inflect-Micro-v2 chunk {}/{}: {} samples", index + 1, chunks.len(), audio.len());
         sink.append(rodio::buffer::SamplesBuffer::new(1, SAMPLE_RATE, audio));
     }
 
@@ -668,10 +632,7 @@ pub(crate) fn speak_inflect_micro(
 /// load, so a pre-load is a no-op rather than an error (the real message comes
 /// from `speak_inflect_micro` if the engine is actually used).
 #[cfg(not(feature = "inflect-micro"))]
-pub(crate) fn ensure_inflect_micro_loaded(
-    _config: &voxctrl_config::TtsConfig,
-    _model: &mut Option<()>,
-) -> Result<()> {
+pub(crate) fn ensure_inflect_micro_loaded(_config: &voxctrl_config::TtsConfig, _model: &mut Option<()>) -> Result<()> {
     Ok(())
 }
 
@@ -864,7 +825,8 @@ mod tests {
         assert!(!RepoFile { path: "decode.onnx".into(), name: "decode.onnx".into(), size: 100 }.is_auxiliary());
         assert!(!RepoFile { path: "model.onnx_data".into(), name: "model.onnx_data".into(), size: 100 }.is_auxiliary());
         assert!(
-            !RepoFile { path: "huge.json".into(), name: "huge.json".into(), size: MAX_AUX_FILE_BYTES + 1 }.is_auxiliary(),
+            !RepoFile { path: "huge.json".into(), name: "huge.json".into(), size: MAX_AUX_FILE_BYTES + 1 }
+                .is_auxiliary(),
             "oversized files are not auxiliary"
         );
         assert!(!RepoFile { path: "README.md".into(), name: "README.md".into(), size: 100 }.is_auxiliary());
@@ -973,11 +935,7 @@ mod tests {
         let chunks = chunk_text(&format!("{long}end."));
         assert!(chunks.len() > 1, "a 500-char sentence must be split");
         for c in &chunks {
-            assert!(
-                c.chars().count() <= CHUNK_LIMIT_CHARS,
-                "chunk of {} chars exceeds the limit",
-                c.chars().count()
-            );
+            assert!(c.chars().count() <= CHUNK_LIMIT_CHARS, "chunk of {} chars exceeds the limit", c.chars().count());
         }
     }
 

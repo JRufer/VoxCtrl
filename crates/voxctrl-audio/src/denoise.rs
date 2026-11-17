@@ -75,8 +75,7 @@ impl Denoiser {
 
         self.at_48k.clear();
         resample_into(input, self.input_rate, RNNOISE_SAMPLE_RATE, &mut self.at_48k);
-        self.pending
-            .extend(self.at_48k.iter().map(|s| s * I16_SCALE));
+        self.pending.extend(self.at_48k.iter().map(|s| s * I16_SCALE));
 
         self.cleaned.clear();
         let mut frame = [0.0f32; FRAME];
@@ -99,12 +98,7 @@ impl Denoiser {
         self.pending.drain(..consumed);
 
         let mut resampled = Vec::new();
-        resample_into(
-            &self.cleaned,
-            RNNOISE_SAMPLE_RATE,
-            TARGET_SAMPLE_RATE,
-            &mut resampled,
-        );
+        resample_into(&self.cleaned, RNNOISE_SAMPLE_RATE, TARGET_SAMPLE_RATE, &mut resampled);
         resampled
     }
 }
@@ -176,9 +170,8 @@ mod tests {
         let noise_out = Denoiser::new(48_000).process(&noise_in);
         let noise_ratio = rms(&noise_out) / rms(&noise_in);
 
-        let tone_in: Vec<f32> = (0..48_000 * seconds)
-            .map(|i| (i as f32 * std::f32::consts::TAU * 440.0 / 48_000.0).sin() * 0.3)
-            .collect();
+        let tone_in: Vec<f32> =
+            (0..48_000 * seconds).map(|i| (i as f32 * std::f32::consts::TAU * 440.0 / 48_000.0).sin() * 0.3).collect();
         let tone_out = Denoiser::new(48_000).process(&tone_in);
         let tone_ratio = rms(&tone_out) / rms(&tone_in);
 
@@ -203,11 +196,7 @@ mod tests {
         let out = d.process(&noise(44_100));
         let expected = TARGET_SAMPLE_RATE as usize;
         let slack = expected / 20; // 5%: frame alignment plus the discarded first frame
-        assert!(
-            out.len().abs_diff(expected) < slack,
-            "expected ~{expected} samples at 16 kHz, got {}",
-            out.len()
-        );
+        assert!(out.len().abs_diff(expected) < slack, "expected ~{expected} samples at 16 kHz, got {}", out.len());
     }
 
     #[test]

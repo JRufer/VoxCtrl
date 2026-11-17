@@ -19,26 +19,38 @@ pub struct VoiceInfo {
 }
 
 pub static PIPER_VOICES: &[VoiceInfo] = &[
-    VoiceInfo { name: "en-us-libritts-high",   quality: "high",   sample_rate: 22050, filename: "en_US-libritts-high.onnx" },
-    VoiceInfo { name: "en-us-amy-low",         quality: "low",    sample_rate: 16000, filename: "en_US-amy-low.onnx" },
-    VoiceInfo { name: "en-us-kathleen-low",    quality: "low",    sample_rate: 16000, filename: "en_US-kathleen-low.onnx" },
-    VoiceInfo { name: "en-gb-southern_english_female-low", quality: "low", sample_rate: 16000, filename: "en_GB-southern_english_female-low.onnx" },
-    VoiceInfo { name: "en-us-ryan-high",       quality: "high",   sample_rate: 22050, filename: "en_US-ryan-high.onnx" },
-    VoiceInfo { name: "en-us-ryan-medium",     quality: "medium", sample_rate: 22050, filename: "en_US-ryan-medium.onnx" },
-    VoiceInfo { name: "en-us-ryan-low",        quality: "low",    sample_rate: 16000, filename: "en_US-ryan-low.onnx" },
-    VoiceInfo { name: "en-us-lessac-medium",   quality: "medium", sample_rate: 16000, filename: "en_US-lessac-medium.onnx" },
-    VoiceInfo { name: "en-us-lessac-low",      quality: "low",    sample_rate: 16000, filename: "en_US-lessac-low.onnx" },
-    VoiceInfo { name: "en-us-danny-low",       quality: "low",    sample_rate: 16000, filename: "en_US-danny-low.onnx" },
-    VoiceInfo { name: "en-gb-alan-low",        quality: "low",    sample_rate: 16000, filename: "en_GB-alan-low.onnx" },
+    VoiceInfo {
+        name: "en-us-libritts-high",
+        quality: "high",
+        sample_rate: 22050,
+        filename: "en_US-libritts-high.onnx",
+    },
+    VoiceInfo { name: "en-us-amy-low", quality: "low", sample_rate: 16000, filename: "en_US-amy-low.onnx" },
+    VoiceInfo { name: "en-us-kathleen-low", quality: "low", sample_rate: 16000, filename: "en_US-kathleen-low.onnx" },
+    VoiceInfo {
+        name: "en-gb-southern_english_female-low",
+        quality: "low",
+        sample_rate: 16000,
+        filename: "en_GB-southern_english_female-low.onnx",
+    },
+    VoiceInfo { name: "en-us-ryan-high", quality: "high", sample_rate: 22050, filename: "en_US-ryan-high.onnx" },
+    VoiceInfo { name: "en-us-ryan-medium", quality: "medium", sample_rate: 22050, filename: "en_US-ryan-medium.onnx" },
+    VoiceInfo { name: "en-us-ryan-low", quality: "low", sample_rate: 16000, filename: "en_US-ryan-low.onnx" },
+    VoiceInfo {
+        name: "en-us-lessac-medium",
+        quality: "medium",
+        sample_rate: 16000,
+        filename: "en_US-lessac-medium.onnx",
+    },
+    VoiceInfo { name: "en-us-lessac-low", quality: "low", sample_rate: 16000, filename: "en_US-lessac-low.onnx" },
+    VoiceInfo { name: "en-us-danny-low", quality: "low", sample_rate: 16000, filename: "en_US-danny-low.onnx" },
+    VoiceInfo { name: "en-gb-alan-low", quality: "low", sample_rate: 16000, filename: "en_GB-alan-low.onnx" },
 ];
 
 // ── Piper helpers ─────────────────────────────────────────────────────────────
 
 pub fn piper_voices_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("piper-voices")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("piper-voices")
 }
 
 /// Expands a leading `~` to the user's home directory. Shared with `pocket.rs`,
@@ -82,9 +94,7 @@ fn scan_custom_piper_voices(voice_dir: &str) -> Vec<PiperVoiceOption> {
     let mut found: Vec<PiperVoiceOption> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("onnx"))
-            != Some(true)
-        {
+        if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("onnx")) != Some(true) {
             continue;
         }
         // Piper cannot load a model without its config, so a lone .onnx is not
@@ -119,29 +129,21 @@ fn scan_custom_piper_voices(voice_dir: &str) -> Vec<PiperVoiceOption> {
 /// catalogue voice's files (#190). Anything with a model and its config beside
 /// it is offered now.
 pub fn piper_voice_catalogue(voice_dir: &str) -> Vec<PiperVoiceOption> {
-    let mut options: Vec<PiperVoiceOption> = PIPER_VOICES
-        .iter()
-        .map(|v| PiperVoiceOption { id: v.name.to_string(), label: v.name.to_string() })
-        .collect();
+    let mut options: Vec<PiperVoiceOption> =
+        PIPER_VOICES.iter().map(|v| PiperVoiceOption { id: v.name.to_string(), label: v.name.to_string() }).collect();
     options.extend(scan_custom_piper_voices(voice_dir));
     options
 }
 
 pub fn piper_binary() -> Option<PathBuf> {
     let exe = if cfg!(target_os = "windows") { "piper.exe" } else { "piper" };
-    let local_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("piper");
+    let local_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("piper");
     let local = local_dir.join(exe);
     // On unix the local install is voxctrl-managed: only use it when healthy
     // (binary + espeak-ng-data directory), so a broken install falls through to
     // a system-wide piper and gets repaired on the next voice download.
-    let local_healthy = if cfg!(unix) {
-        local.exists() && local_dir.join("espeak-ng-data").is_dir()
-    } else {
-        local.exists()
-    };
+    let local_healthy =
+        if cfg!(unix) { local.exists() && local_dir.join("espeak-ng-data").is_dir() } else { local.exists() };
     if local_healthy {
         return Some(local);
     }
@@ -151,19 +153,12 @@ pub fn piper_binary() -> Option<PathBuf> {
 // ── Voice catalogue helpers ───────────────────────────────────────────────────
 
 fn voice_name_to_filename(name: &str) -> Option<String> {
-    PIPER_VOICES
-        .iter()
-        .find(|v| v.name == name)
-        .map(|v| v.filename.to_string())
+    PIPER_VOICES.iter().find(|v| v.name == name).map(|v| v.filename.to_string())
 }
 
 /// Used by `TtsEngineWorker::speak_piper` to pick the correct playback sample rate.
 pub(crate) fn sample_rate_for_voice(name: &str) -> u32 {
-    PIPER_VOICES
-        .iter()
-        .find(|v| v.name == name)
-        .map(|v| v.sample_rate)
-        .unwrap_or(22050)
+    PIPER_VOICES.iter().find(|v| v.name == name).map(|v| v.sample_rate).unwrap_or(22050)
 }
 
 /// The playback sample rate for the voice loaded from `voice_path`, taken from
@@ -200,12 +195,10 @@ pub fn is_voice_downloaded(voice_name: &str, voice_dir: &str) -> bool {
 
 // ── Piper voice download ──────────────────────────────────────────────────────
 
-const PIPER_RELEASE_BASE: &str =
-    "https://github.com/rhasspy/piper/releases/download/v0.0.2/";
+const PIPER_RELEASE_BASE: &str = "https://github.com/rhasspy/piper/releases/download/v0.0.2/";
 
 pub fn get_voice_path(voice_name: &str, voice_dir: &str) -> Option<PathBuf> {
-    let filename = voice_name_to_filename(voice_name)
-        .unwrap_or_else(|| format!("{voice_name}.onnx"));
+    let filename = voice_name_to_filename(voice_name).unwrap_or_else(|| format!("{voice_name}.onnx"));
 
     let voices_dir = resolve_voices_dir(voice_dir);
 
@@ -223,8 +216,7 @@ pub fn get_voice_path(voice_name: &str, voice_dir: &str) -> Option<PathBuf> {
     }
 
     let path_raw_lower = voices_dir.join(format!("{}.onnx", voice_name.to_lowercase()));
-    let path_raw_json_lower =
-        voices_dir.join(format!("{}.onnx.json", voice_name.to_lowercase()));
+    let path_raw_json_lower = voices_dir.join(format!("{}.onnx.json", voice_name.to_lowercase()));
     if path_raw_lower.exists() && path_raw_json_lower.exists() {
         return Some(path_raw_lower);
     }
@@ -252,11 +244,7 @@ fn extract_piper_archive(bytes: &[u8], dest_dir: &Path) -> Result<()> {
         let path = entry.path()?.into_owned();
 
         // Strip the top-level "piper/" component; skip unsafe paths.
-        let rel: PathBuf = path
-            .components()
-            .skip(1)
-            .filter(|c| matches!(c, std::path::Component::Normal(_)))
-            .collect();
+        let rel: PathBuf = path.components().skip(1).filter(|c| matches!(c, std::path::Component::Normal(_))).collect();
         if rel.as_os_str().is_empty() {
             continue;
         }
@@ -295,10 +283,7 @@ fn extract_piper_archive(bytes: &[u8], dest_dir: &Path) -> Result<()> {
 #[cfg(not(unix))]
 pub async fn download_piper_binary() -> Result<()> {
     {
-        let dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("voxctrl")
-            .join("piper");
+        let dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("piper");
         anyhow::bail!(
             "VoxCtrl cannot install Piper automatically on this platform yet. \
              Download the Piper release for Windows from \
@@ -313,10 +298,7 @@ pub async fn download_piper_binary() -> Result<()> {
 #[cfg(unix)]
 pub async fn download_piper_binary() -> Result<()> {
     {
-        let local_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("voxctrl")
-            .join("piper");
+        let local_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("piper");
 
         let dest_exe = local_dir.join("piper");
         // A correct install has the binary AND the espeak-ng-data directory.
@@ -332,8 +314,7 @@ pub async fn download_piper_binary() -> Result<()> {
         tokio::fs::create_dir_all(&local_dir).await?;
 
         info!("Downloading standalone Piper binary...");
-        let url =
-            "https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_amd64.tar.gz";
+        let url = "https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_amd64.tar.gz";
 
         let response = reqwest::get(url).await?.error_for_status()?;
         let bytes = response.bytes().await?;
@@ -719,10 +700,7 @@ mod tests {
 
     #[test]
     fn test_voice_name_to_filename_known() {
-        assert_eq!(
-            voice_name_to_filename("en-us-lessac-medium"),
-            Some("en_US-lessac-medium.onnx".to_string())
-        );
+        assert_eq!(voice_name_to_filename("en-us-lessac-medium"), Some("en_US-lessac-medium.onnx".to_string()));
     }
 
     #[test]
@@ -773,18 +751,10 @@ mod voice_sample_rate_tests {
     #[test]
     fn an_unknown_voice_is_read_from_its_config() {
         let dir = tempfile::tempdir().unwrap();
-        let model = voice_with_config(
-            dir.path(),
-            "pl_PL-gosia-medium",
-            r#"{"audio": {"sample_rate": 22050}}"#,
-        );
+        let model = voice_with_config(dir.path(), "pl_PL-gosia-medium", r#"{"audio": {"sample_rate": 22050}}"#);
         assert_eq!(sample_rate_for_voice_at("pl-pl-gosia-medium", &model), 22050);
 
-        let model16 = voice_with_config(
-            dir.path(),
-            "pl_PL-darkman-low",
-            r#"{"audio": {"sample_rate": 16000}}"#,
-        );
+        let model16 = voice_with_config(dir.path(), "pl_PL-darkman-low", r#"{"audio": {"sample_rate": 16000}}"#);
         assert_eq!(sample_rate_for_voice_at("pl-pl-darkman-low", &model16), 16000);
     }
 
@@ -816,11 +786,7 @@ mod voice_catalogue_tests {
     fn write_voice(dir: &Path, filename: &str, with_config: bool) {
         std::fs::write(dir.join(filename), b"model").unwrap();
         if with_config {
-            std::fs::write(
-                dir.join(format!("{filename}.json")),
-                br#"{"audio": {"sample_rate": 22050}}"#,
-            )
-            .unwrap();
+            std::fs::write(dir.join(format!("{filename}.json")), br#"{"audio": {"sample_rate": 22050}}"#).unwrap();
         }
     }
 
@@ -833,10 +799,8 @@ mod voice_catalogue_tests {
         write_voice(dir.path(), "pl_PL-gosia-medium.onnx", true);
 
         let options = piper_voice_catalogue(dir.path().to_str().unwrap());
-        let custom = options
-            .iter()
-            .find(|o| o.id == "pl_PL-gosia-medium")
-            .expect("the dropped-in voice should be offered");
+        let custom =
+            options.iter().find(|o| o.id == "pl_PL-gosia-medium").expect("the dropped-in voice should be offered");
         assert_eq!(custom.label, "pl_PL-gosia-medium (Custom)");
         // And the catalogue is still all there.
         for v in PIPER_VOICES {
@@ -855,10 +819,7 @@ mod voice_catalogue_tests {
         let voice_dir = dir.path().to_str().unwrap();
         let options = piper_voice_catalogue(voice_dir);
         let custom = options.iter().find(|o| o.id == "pl_PL-gosia-medium").unwrap();
-        assert!(
-            get_voice_path(&custom.id, voice_dir).is_some(),
-            "a voice the picker offers must resolve"
-        );
+        assert!(get_voice_path(&custom.id, voice_dir).is_some(), "a voice the picker offers must resolve");
     }
 
     /// Piper cannot load a model without its config, so a lone .onnx is not

@@ -11,10 +11,7 @@ use crate::state::AppState;
 /// Called when the user opens the keybind recorder in Settings so they cannot
 /// accidentally trigger dictation while pressing keys for a new binding.
 #[tauri::command]
-pub async fn set_hotkeys_inhibited(
-    inhibited: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn set_hotkeys_inhibited(inhibited: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.set_hotkeys_inhibited(inhibited);
     info!("Hotkeys inhibited: {inhibited}");
     Ok(())
@@ -93,10 +90,7 @@ fn desktop_environment() -> Option<String> {
     if current.split(':').any(|d| d.eq_ignore_ascii_case("GNOME")) {
         return Some("GNOME".to_string());
     }
-    current
-        .split(':')
-        .find(|d| !d.is_empty())
-        .map(|d| d.to_string())
+    current.split(':').find(|d| !d.is_empty()).map(|d| d.to_string())
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -132,11 +126,7 @@ fn count_input_devices() -> (u32, u32) {
     let mut total = 0;
     let mut readable = 0;
     for entry in entries.flatten() {
-        let is_event = entry
-            .file_name()
-            .to_str()
-            .map(|n| n.starts_with("event"))
-            .unwrap_or(false);
+        let is_event = entry.file_name().to_str().map(|n| n.starts_with("event")).unwrap_or(false);
         if !is_event {
             continue;
         }
@@ -170,23 +160,18 @@ pub fn hotkey_status(health: &voxctrl_hotkeys::ListenerHealth) -> HotkeyStatusPa
     let backend = health.backend();
     let desktop = desktop_environment();
     let is_mint_desktop = crate::mint_shortcuts::is_mint_desktop();
-    let mint_shortcut_registered = if is_mint_desktop {
-        crate::mint_shortcuts::is_mint_shortcut_registered()
-    } else {
-        false
-    };
+    let mint_shortcut_registered =
+        if is_mint_desktop { crate::mint_shortcuts::is_mint_shortcut_registered() } else { false };
 
     // A Mint shortcut that is registered and bound is a working backend even if
     // the listener never claimed one — the desktop, not VoxCtrl, is holding it.
-    let effective_backend = if backend == voxctrl_hotkeys::Backend::None && mint_shortcut_registered
-    {
+    let effective_backend = if backend == voxctrl_hotkeys::Backend::None && mint_shortcut_registered {
         voxctrl_hotkeys::Backend::MintDbus
     } else {
         backend
     };
 
-    let needs_manual_enable = backend == voxctrl_hotkeys::Backend::Portal
-        && desktop.as_deref() == Some("KDE");
+    let needs_manual_enable = backend == voxctrl_hotkeys::Backend::Portal && desktop.as_deref() == Some("KDE");
     let (devices_total, devices_readable) = match effective_backend {
         // None of these open an input device, so a device count would only
         // invite the user to fix a permission problem they do not have.
@@ -472,13 +457,7 @@ pub async fn retry_portal_shortcuts(state: State<'_, Arc<AppState>>) -> Result<(
             *reloader = Some(reloader_tx);
         }
 
-        voxctrl_hotkeys::retry_portal(
-            bindings,
-            gesture_tx,
-            reloader_rx,
-            state.hotkey_health.clone(),
-        )
-        .await
+        voxctrl_hotkeys::retry_portal(bindings, gesture_tx, reloader_rx, state.hotkey_health.clone()).await
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -522,11 +501,7 @@ fn spawn_shortcut_settings(bin: &str, args: &[&str]) -> Result<(), String> {
             return Ok(());
         }
     }
-    crate::host_env::host_command(bin)
-        .args(args)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    crate::host_env::host_command(bin).args(args).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Verdict on a key combination the user just recorded.
@@ -550,13 +525,7 @@ pub struct HotkeyKeysCheck {
 
 impl HotkeyKeysCheck {
     fn ok(accelerator: Option<String>) -> Self {
-        Self {
-            accepted: true,
-            enforced: false,
-            accelerator,
-            problem: None,
-            message: None,
-        }
+        Self { accepted: true, enforced: false, accelerator, problem: None, message: None }
     }
 }
 
@@ -575,8 +544,7 @@ fn standing_grab_check(
     accelerator: String,
     health: &voxctrl_hotkeys::ListenerHealth,
 ) -> HotkeyKeysCheck {
-    let takes_the_key = voxctrl_hotkeys::is_reserved_for_the_desktop(keys)
-        && !health.backend().sees_raw_keys();
+    let takes_the_key = voxctrl_hotkeys::is_reserved_for_the_desktop(keys) && !health.backend().sees_raw_keys();
     if !takes_the_key {
         return HotkeyKeysCheck::ok(Some(accelerator));
     }
@@ -603,10 +571,7 @@ fn standing_grab_check(
 /// The settings UI calls this instead of reimplementing the rules, so the key
 /// recorder and the portal registration can never disagree about what is
 /// valid. `voxctrl_hotkeys::accelerator` is the single definition.
-pub fn check_hotkey_keys_with(
-    keys: &[String],
-    health: &voxctrl_hotkeys::ListenerHealth,
-) -> HotkeyKeysCheck {
+pub fn check_hotkey_keys_with(keys: &[String], health: &voxctrl_hotkeys::ListenerHealth) -> HotkeyKeysCheck {
     use voxctrl_hotkeys::TriggerProblem;
 
     let problem = match voxctrl_hotkeys::accelerator(keys) {
@@ -621,12 +586,10 @@ pub fn check_hotkey_keys_with(
     let enforced = !health.backend().sees_raw_keys();
 
     let hint = match problem {
-        TriggerProblem::ModifiersOnly => Some(
-            "Add a regular key to the combination — Super+Space and Ctrl+Alt+D both work.",
-        ),
-        TriggerProblem::MultipleKeys => {
-            Some("Keep one regular key and use modifiers for the rest.")
+        TriggerProblem::ModifiersOnly => {
+            Some("Add a regular key to the combination — Super+Space and Ctrl+Alt+D both work.")
         }
+        TriggerProblem::MultipleKeys => Some("Keep one regular key and use modifiers for the rest."),
         TriggerProblem::UnsupportedKey(_) => Some("Try a letter, number, function or arrow key."),
         TriggerProblem::Empty => None,
     };
@@ -684,9 +647,7 @@ pub async fn register_mint_shortcut(
     state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Result<String, String> {
     let result = crate::mint_shortcuts::register_mint_shortcut(None)?;
-    state
-        .hotkey_health
-        .set_backend(voxctrl_hotkeys::Backend::MintDbus);
+    state.hotkey_health.set_backend(voxctrl_hotkeys::Backend::MintDbus);
     Ok(result)
 }
 
@@ -694,13 +655,9 @@ pub async fn register_mint_shortcut(
 pub async fn approve_shortcuts(
     state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Result<HotkeyStatusPayload, String> {
-    if crate::mint_shortcuts::is_mint_desktop()
-        && state.hotkey_health.backend() == voxctrl_hotkeys::Backend::None
-    {
+    if crate::mint_shortcuts::is_mint_desktop() && state.hotkey_health.backend() == voxctrl_hotkeys::Backend::None {
         crate::mint_shortcuts::register_mint_shortcut(None)?;
-        state
-            .hotkey_health
-            .set_backend(voxctrl_hotkeys::Backend::MintDbus);
+        state.hotkey_health.set_backend(voxctrl_hotkeys::Backend::MintDbus);
     } else if state.hotkey_health.backend() == voxctrl_hotkeys::Backend::Portal {
         let _ = open_shortcut_settings().await;
     } else {

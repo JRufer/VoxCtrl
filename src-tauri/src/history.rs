@@ -65,11 +65,7 @@ fn limits(cfg: &HistoryConfig) -> Limits {
 impl HistoryService {
     /// The history file's default location.
     pub fn default_path() -> PathBuf {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("voxctrl")
-            .join("history")
-            .join("history.bin")
+        dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("history").join("history.bin")
     }
 
     /// A service with nothing loaded yet: an empty, in-memory history. Call
@@ -78,12 +74,7 @@ impl HistoryService {
     pub fn new(path: PathBuf, keys: Box<dyn KeyStore>) -> Self {
         let cfg = HistoryConfig { persist: false, ..HistoryConfig::default() };
         Self {
-            inner: Mutex::new(Inner {
-                history: History::new(limits(&cfg)),
-                cfg,
-                key: None,
-                persist_error: None,
-            }),
+            inner: Mutex::new(Inner { history: History::new(limits(&cfg)), cfg, key: None, persist_error: None }),
             path,
             keys,
         }

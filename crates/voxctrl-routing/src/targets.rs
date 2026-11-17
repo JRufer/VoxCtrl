@@ -49,10 +49,7 @@ pub fn notify_command_withdrawn() {
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .expect("build reqwest client")
+        reqwest::Client::builder().timeout(std::time::Duration::from_secs(5)).build().expect("build reqwest client")
     })
 }
 
@@ -68,19 +65,19 @@ pub trait DeliveryTarget: Send + Sync {
 
 pub fn build_target(config: OutputTarget) -> Box<dyn DeliveryTarget> {
     match config.delivery {
-        DeliveryType::Inject    => Box::new(InjectTarget(config)),
+        DeliveryType::Inject => Box::new(InjectTarget(config)),
         DeliveryType::Clipboard => Box::new(ClipboardTarget(config)),
-        DeliveryType::Exec      => Box::new(ExecTarget(config)),
-        DeliveryType::Pipe      => Box::new(PipeTarget(config)),
-        DeliveryType::Socket    => Box::new(SocketTarget(config)),
-        DeliveryType::File      => Box::new(FileTarget(config)),
-        DeliveryType::Dbus      => Box::new(DbusTarget(config)),
-        DeliveryType::Http      => Box::new(HttpTarget(config)),
-        DeliveryType::Webhook   => Box::new(WebhookTarget(config)),
-        DeliveryType::Mcp       => Box::new(McpTarget(config)),
-        DeliveryType::Speak     => Box::new(SpeakTarget(config)),
-        DeliveryType::Chat      => Box::new(ChatTarget(config)),
-        DeliveryType::Command   => Box::new(CommandTarget(config)),
+        DeliveryType::Exec => Box::new(ExecTarget(config)),
+        DeliveryType::Pipe => Box::new(PipeTarget(config)),
+        DeliveryType::Socket => Box::new(SocketTarget(config)),
+        DeliveryType::File => Box::new(FileTarget(config)),
+        DeliveryType::Dbus => Box::new(DbusTarget(config)),
+        DeliveryType::Http => Box::new(HttpTarget(config)),
+        DeliveryType::Webhook => Box::new(WebhookTarget(config)),
+        DeliveryType::Mcp => Box::new(McpTarget(config)),
+        DeliveryType::Speak => Box::new(SpeakTarget(config)),
+        DeliveryType::Chat => Box::new(ChatTarget(config)),
+        DeliveryType::Command => Box::new(CommandTarget(config)),
     }
 }
 
@@ -143,16 +140,10 @@ impl DeliveryTarget for InjectTarget {
             if which("xdotool") {
                 return TestResult { reachable: true, detail: "xdotool found on PATH".into() };
             }
-            return TestResult {
-                reachable: false,
-                detail: "Neither wtype nor xdotool found".into(),
-            };
+            return TestResult { reachable: false, detail: "Neither wtype nor xdotool found".into() };
         }
         #[cfg(target_os = "windows")]
-        return TestResult {
-            reachable: true,
-            detail: "SendInput available (types Unicode directly)".into(),
-        };
+        return TestResult { reachable: true, detail: "SendInput available (types Unicode directly)".into() };
         #[allow(unreachable_code)]
         TestResult { reachable: false, detail: "Platform not supported".into() }
     }
@@ -175,13 +166,11 @@ impl DeliveryTarget for ClipboardTarget {
         {
             let wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
             if wayland && which("wl-copy") {
-                let mut child = match tokio::process::Command::new("wl-copy")
-                    .stdin(std::process::Stdio::piped())
-                    .spawn()
-                {
-                    Ok(child) => child,
-                    Err(e) => return DeliveryResult::err(format!("Failed to spawn wl-copy: {e}")),
-                };
+                let mut child =
+                    match tokio::process::Command::new("wl-copy").stdin(std::process::Stdio::piped()).spawn() {
+                        Ok(child) => child,
+                        Err(e) => return DeliveryResult::err(format!("Failed to spawn wl-copy: {e}")),
+                    };
                 if let Some(mut stdin) = child.stdin.take() {
                     if let Err(e) = stdin.write_all(payload.as_bytes()).await {
                         return DeliveryResult::err(format!("Failed to write to wl-copy stdin: {e}"));
@@ -218,10 +207,7 @@ impl DeliveryTarget for ClipboardTarget {
 
         let p = payload.clone();
         match tokio::task::spawn_blocking(move || {
-            arboard::Clipboard::new()
-                .context("open clipboard")?
-                .set_text(&p)
-                .context("set text")
+            arboard::Clipboard::new().context("open clipboard")?.set_text(&p).context("set text")
         })
         .await
         {
@@ -243,9 +229,7 @@ impl DeliveryTarget for ClipboardTarget {
             }
         }
 
-        let ok = tokio::task::spawn_blocking(|| arboard::Clipboard::new().is_ok())
-            .await
-            .unwrap_or(false);
+        let ok = tokio::task::spawn_blocking(|| arboard::Clipboard::new().is_ok()).await.unwrap_or(false);
         if ok {
             TestResult { reachable: true, detail: "Clipboard accessible".into() }
         } else {
@@ -334,11 +318,10 @@ impl DeliveryTarget for PipeTarget {
         }
         let payload = format!("{text}\n").into_bytes();
         // Open FIFO for writing via std (non-blocking open)
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .open(&path)
-            .and_then(|mut f| { use std::io::Write; f.write_all(&payload) })
-        {
+        match std::fs::OpenOptions::new().write(true).open(&path).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(&payload)
+        }) {
             Ok(_) => DeliveryResult::ok(text.into()),
             Err(e) => DeliveryResult::err(e.to_string()),
         }
@@ -441,12 +424,7 @@ impl DeliveryTarget for FileTarget {
             new_content.push_str(&existing_content);
             tokio::fs::write(&path, new_content.as_bytes()).await
         } else {
-            match tokio::fs::OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(&path)
-                .await
-            {
+            match tokio::fs::OpenOptions::new().append(true).create(true).open(&path).await {
                 Ok(mut f) => {
                     let res = f.write_all(line.as_bytes()).await;
                     let _ = f.flush().await;
@@ -469,13 +447,7 @@ impl DeliveryTarget for FileTarget {
         let path = shellexpand_tilde(path_str);
         let p = std::path::Path::new(&path);
         let _parent = p.parent().unwrap_or(std::path::Path::new("."));
-        TestResult {
-            reachable: true,
-            detail: format!(
-                "{path}{}",
-                if p.exists() { "" } else { " (will be created)" }
-            ),
-        }
+        TestResult { reachable: true, detail: format!("{path}{}", if p.exists() { "" } else { " (will be created)" }) }
     }
 }
 
@@ -493,11 +465,7 @@ impl DeliveryTarget for DbusTarget {
     async fn deliver(&self, text: &str) -> DeliveryResult {
         #[cfg(target_os = "linux")]
         {
-            let signal = self
-                .0
-                .dbus_signal
-                .as_deref()
-                .unwrap_or("ai.voxctrl.Routing.TextRouted");
+            let signal = self.0.dbus_signal.as_deref().unwrap_or("ai.voxctrl.Routing.TextRouted");
             match emit_dbus_signal(signal, text).await {
                 Ok(_) => return DeliveryResult::ok(text.into()),
                 Err(e) => return DeliveryResult::err(e.to_string()),
@@ -530,14 +498,9 @@ async fn emit_dbus_signal(signal_name: &str, text: &str) -> anyhow::Result<()> {
 
     let conn = Connection::session().await?;
     let parts: Vec<&str> = signal_name.rsplitn(2, '.').collect();
-    let (member, iface) = if parts.len() == 2 {
-        (parts[0], parts[1])
-    } else {
-        (signal_name, signal_name)
-    };
+    let (member, iface) = if parts.len() == 2 { (parts[0], parts[1]) } else { (signal_name, signal_name) };
     let obj_path = format!("/{}", iface.replace('.', "/"));
-    conn.emit_signal(None::<&str>, obj_path.as_str(), iface, member, &(text,))
-        .await?;
+    conn.emit_signal(None::<&str>, obj_path.as_str(), iface, member, &(text,)).await?;
     Ok(())
 }
 
@@ -553,16 +516,12 @@ impl DeliveryTarget for HttpTarget {
         };
         let payload = build_json_payload(&self.0.http_json_template, text);
         let client = http_client();
-        let mut req = client.request(
-            self.0.http_method.parse().unwrap_or(reqwest::Method::POST),
-            url,
-        );
+        let mut req = client.request(self.0.http_method.parse().unwrap_or(reqwest::Method::POST), url);
         if let Some(headers) = &self.0.http_headers {
             for (k, v) in headers {
-                if let (Ok(name), Ok(val)) = (
-                    k.parse::<reqwest::header::HeaderName>(),
-                    v.parse::<reqwest::header::HeaderValue>(),
-                ) {
+                if let (Ok(name), Ok(val)) =
+                    (k.parse::<reqwest::header::HeaderName>(), v.parse::<reqwest::header::HeaderValue>())
+                {
                     req = req.header(name, val);
                 }
             }
@@ -603,8 +562,7 @@ impl DeliveryTarget for WebhookTarget {
         let payload = build_json_payload(&self.0.webhook_json_template, text);
         let body = serde_json::to_vec(&payload).unwrap_or_default();
 
-        let mut mac = <Hmac<Sha256>>::new_from_slice(secret.as_bytes())
-            .expect("HMAC accepts any key size");
+        let mut mac = <Hmac<Sha256>>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key size");
         mac.update(&body);
         let sig = hex::encode(mac.finalize().into_bytes());
 
@@ -646,7 +604,8 @@ impl DeliveryTarget for McpTarget {
         #[cfg(target_os = "linux")]
         let s = {
             let default_path = voxctrl_mcp::socket_path();
-            let path = self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
+            let path =
+                self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
             match UnixStream::connect(path).await {
                 Ok(s) => s,
                 Err(e) => return DeliveryResult::err(format!("Failed to connect to MCP socket {path}: {e}")),
@@ -764,7 +723,8 @@ impl DeliveryTarget for McpTarget {
         #[cfg(target_os = "linux")]
         {
             let default_path = voxctrl_mcp::socket_path();
-            let path = self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
+            let path =
+                self.0.mcp_path.as_deref().unwrap_or(default_path.to_str().unwrap_or(voxctrl_mcp::LEGACY_SOCKET_PATH));
             match UnixStream::connect(path).await {
                 Ok(_) => TestResult { reachable: true, detail: format!("MCP socket {path} reachable") },
                 Err(e) => TestResult { reachable: false, detail: e.to_string() },
@@ -801,19 +761,12 @@ impl DeliveryTarget for SpeakTarget {
 
     async fn test(&self) -> TestResult {
         if SPEAK_CALLBACK.get().is_some() {
-            TestResult {
-                reachable: true,
-                detail: "TTS speaker callback is registered".into(),
-            }
+            TestResult { reachable: true, detail: "TTS speaker callback is registered".into() }
         } else {
-            TestResult {
-                reachable: false,
-                detail: "TTS speaker callback not registered".into(),
-            }
+            TestResult { reachable: false, detail: "TTS speaker callback not registered".into() }
         }
     }
 }
-
 
 // ── ChatTarget ────────────────────────────────────────────────────────────────
 //
@@ -841,19 +794,12 @@ type Conversation = Arc<tokio::sync::Mutex<Vec<ChatMessage>>>;
 /// Each conversation carries its own lock so a slow model on one target can't
 /// stall a dictation routed to another.
 fn chat_histories() -> &'static std::sync::Mutex<std::collections::HashMap<String, Conversation>> {
-    static HISTORIES: OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, Conversation>>,
-    > = OnceLock::new();
+    static HISTORIES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, Conversation>>> = OnceLock::new();
     HISTORIES.get_or_init(Default::default)
 }
 
 fn conversation_for(target_id: &str) -> Conversation {
-    chat_histories()
-        .lock()
-        .unwrap()
-        .entry(target_id.to_string())
-        .or_default()
-        .clone()
+    chat_histories().lock().unwrap().entry(target_id.to_string()).or_default().clone()
 }
 
 /// Drop the stored conversation for one target. Returns the number of messages
@@ -950,12 +896,7 @@ impl DeliveryTarget for ChatTarget {
         };
 
         // A spoken reset phrase clears the conversation instead of becoming a turn.
-        if let Some(phrase) = self
-            .0
-            .chat_reset_phrase
-            .as_deref()
-            .filter(|p| !p.trim().is_empty())
-        {
+        if let Some(phrase) = self.0.chat_reset_phrase.as_deref().filter(|p| !p.trim().is_empty()) {
             if normalize_phrase(text) == normalize_phrase(phrase) {
                 let dropped = reset_chat_history(&self.0.id).await;
                 tracing::info!(
@@ -971,31 +912,15 @@ impl DeliveryTarget for ChatTarget {
         // the same target can't interleave and corrupt the turn order.
         let convo = conversation_for(&self.0.id);
         let mut history = convo.lock().await;
-        history.push(ChatMessage {
-            role: "user".into(),
-            content: text.to_string(),
-        });
+        history.push(ChatMessage { role: "user".into(), content: text.to_string() });
 
         // Build the wire messages: system prompt (never trimmed) + recent turns.
         let mut messages: Vec<ChatMessage> = Vec::with_capacity(history.len() + 1);
-        if let Some(system) = self
-            .0
-            .chat_system_prompt
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            messages.push(ChatMessage {
-                role: "system".into(),
-                content: system.to_string(),
-            });
+        if let Some(system) = self.0.chat_system_prompt.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            messages.push(ChatMessage { role: "system".into(), content: system.to_string() });
         }
         let keep = self.0.chat_max_history as usize;
-        let start = if keep > 0 {
-            history.len().saturating_sub(keep)
-        } else {
-            0
-        };
+        let start = if keep > 0 { history.len().saturating_sub(keep) } else { 0 };
         messages.extend(history[start..].iter().cloned());
 
         let url = format!("{}/chat/completions", chat_api_base(endpoint));
@@ -1005,35 +930,25 @@ impl DeliveryTarget for ChatTarget {
             "stream": false,
         });
 
-        let mut req = http_client()
-            .post(&url)
-            .timeout(std::time::Duration::from_secs(self.0.chat_timeout_secs))
-            .json(&body);
-        if let Some(key) = self
-            .0
-            .chat_api_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|k| !k.is_empty())
-        {
+        let mut req =
+            http_client().post(&url).timeout(std::time::Duration::from_secs(self.0.chat_timeout_secs)).json(&body);
+        if let Some(key) = self.0.chat_api_key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
             req = req.bearer_auth(key);
         }
 
         let reply = match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<serde_json::Value>().await {
-                    Ok(val) => val
-                        .pointer("/choices/0/message/content")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string(),
-                    Err(e) => {
-                        history.pop();
-                        return DeliveryResult::err(format!("Chat response parse error: {e}"));
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+                Ok(val) => val
+                    .pointer("/choices/0/message/content")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+                Err(e) => {
+                    history.pop();
+                    return DeliveryResult::err(format!("Chat response parse error: {e}"));
                 }
-            }
+            },
             Ok(resp) => {
                 let status = resp.status();
                 let detail = resp.text().await.unwrap_or_default();
@@ -1054,10 +969,7 @@ impl DeliveryTarget for ChatTarget {
             return DeliveryResult::err("Chat API returned no content");
         }
 
-        history.push(ChatMessage {
-            role: "assistant".into(),
-            content: reply.clone(),
-        });
+        history.push(ChatMessage { role: "assistant".into(), content: reply.clone() });
         // Trim stored history so a long-running conversation can't grow forever.
         // Kept at twice the send window so context survives a couple of turns
         // beyond what is actually transmitted.
@@ -1077,27 +989,13 @@ impl DeliveryTarget for ChatTarget {
         let Some(endpoint) = self.0.chat_url.as_deref().filter(|u| !u.trim().is_empty()) else {
             return TestResult { reachable: false, detail: "No chat_url configured".into() };
         };
-        if self
-            .0
-            .chat_model
-            .as_deref()
-            .map(|m| m.trim().is_empty())
-            .unwrap_or(true)
-        {
+        if self.0.chat_model.as_deref().map(|m| m.trim().is_empty()).unwrap_or(true) {
             return TestResult { reachable: false, detail: "No chat_model configured".into() };
         }
 
         let url = format!("{}/models", chat_api_base(endpoint));
-        let mut req = http_client()
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(5));
-        if let Some(key) = self
-            .0
-            .chat_api_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|k| !k.is_empty())
-        {
+        let mut req = http_client().get(&url).timeout(std::time::Duration::from_secs(5));
+        if let Some(key) = self.0.chat_api_key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
             req = req.bearer_auth(key);
         }
         match req.send().await {
@@ -1148,10 +1046,7 @@ fn shellexpand_tilde(s: &str) -> String {
     s.to_string()
 }
 
-fn build_json_payload(
-    template: &Option<serde_json::Value>,
-    text: &str,
-) -> serde_json::Value {
+fn build_json_payload(template: &Option<serde_json::Value>, text: &str) -> serde_json::Value {
     if let Some(tmpl) = template {
         substitute_text(tmpl.clone(), text)
     } else {
@@ -1161,17 +1056,13 @@ fn build_json_payload(
 
 fn substitute_text(val: serde_json::Value, text: &str) -> serde_json::Value {
     match val {
-        serde_json::Value::String(s) => {
-            serde_json::Value::String(s.replace("{TEXT}", text).replace("{text}", text))
-        }
+        serde_json::Value::String(s) => serde_json::Value::String(s.replace("{TEXT}", text).replace("{text}", text)),
         serde_json::Value::Array(arr) => {
             serde_json::Value::Array(arr.into_iter().map(|v| substitute_text(v, text)).collect())
         }
-        serde_json::Value::Object(map) => serde_json::Value::Object(
-            map.into_iter()
-                .map(|(k, v)| (k, substitute_text(v, text)))
-                .collect(),
-        ),
+        serde_json::Value::Object(map) => {
+            serde_json::Value::Object(map.into_iter().map(|(k, v)| (k, substitute_text(v, text))).collect())
+        }
         other => other,
     }
 }
@@ -1188,10 +1079,7 @@ impl DeliveryTarget for CommandTarget {
     }
 
     async fn test(&self) -> TestResult {
-        TestResult {
-            reachable: true,
-            detail: "Voice Command router active".into(),
-        }
+        TestResult { reachable: true, detail: "Voice Command router active".into() }
     }
 }
 
@@ -1213,15 +1101,85 @@ fn is_valid_pre_target_fillers(pre: &str) -> bool {
     }
 
     let filler_words = [
-        "add", "put", "send", "write", "save", "log", "append", "record", "post", "push",
-        "dispatch", "deliver", "type", "copy", "place", "insert", "route", "direct", "pass",
-        "transfer", "go", "get", "take", "set", "store", "keep",
-        "this", "that", "it", "us", "me", "is", "them", "some", "these", "those",
-        "message", "text", "note", "entry", "content", "data", "info", "information", "payload",
-        "to", "in", "into", "for", "on", "at", "with", "from", "onto", "through",
-        "my", "the", "a", "an", "our", "your", "its",
-        "please", "can", "you", "could", "would", "i", "want", "like", "need", "have", "too", "2",
-        "so", "just", "now", "here", "also",
+        "add",
+        "put",
+        "send",
+        "write",
+        "save",
+        "log",
+        "append",
+        "record",
+        "post",
+        "push",
+        "dispatch",
+        "deliver",
+        "type",
+        "copy",
+        "place",
+        "insert",
+        "route",
+        "direct",
+        "pass",
+        "transfer",
+        "go",
+        "get",
+        "take",
+        "set",
+        "store",
+        "keep",
+        "this",
+        "that",
+        "it",
+        "us",
+        "me",
+        "is",
+        "them",
+        "some",
+        "these",
+        "those",
+        "message",
+        "text",
+        "note",
+        "entry",
+        "content",
+        "data",
+        "info",
+        "information",
+        "payload",
+        "to",
+        "in",
+        "into",
+        "for",
+        "on",
+        "at",
+        "with",
+        "from",
+        "onto",
+        "through",
+        "my",
+        "the",
+        "a",
+        "an",
+        "our",
+        "your",
+        "its",
+        "please",
+        "can",
+        "you",
+        "could",
+        "would",
+        "i",
+        "want",
+        "like",
+        "need",
+        "have",
+        "too",
+        "2",
+        "so",
+        "just",
+        "now",
+        "here",
+        "also",
     ];
 
     for word in words {
@@ -1240,7 +1198,18 @@ fn is_valid_pre_target_fillers(pre: &str) -> bool {
 fn clean_payload(post: &str) -> String {
     let trimmed = post.trim();
     let text_without_punct = trimmed
-        .trim_start_matches(|c: char| c.is_whitespace() || c == ':' || c == ',' || c == '.' || c == ';' || c == '-' || c == '!' || c == '?' || c == '"' || c == '\'')
+        .trim_start_matches(|c: char| {
+            c.is_whitespace()
+                || c == ':'
+                || c == ','
+                || c == '.'
+                || c == ';'
+                || c == '-'
+                || c == '!'
+                || c == '?'
+                || c == '"'
+                || c == '\''
+        })
         .trim();
 
     let lower = text_without_punct.to_lowercase();
@@ -1250,7 +1219,18 @@ fn clean_payload(post: &str) -> String {
         if lower.starts_with(connector) {
             let after_conn = &text_without_punct[connector.len()..];
             let cleaned = after_conn
-                .trim_start_matches(|c: char| c.is_whitespace() || c == ':' || c == ',' || c == '.' || c == ';' || c == '-' || c == '!' || c == '?' || c == '"' || c == '\'')
+                .trim_start_matches(|c: char| {
+                    c.is_whitespace()
+                        || c == ':'
+                        || c == ','
+                        || c == '.'
+                        || c == ';'
+                        || c == '-'
+                        || c == '!'
+                        || c == '?'
+                        || c == '"'
+                        || c == '\''
+                })
                 .trim();
             if !cleaned.is_empty() {
                 return cleaned.to_string();
@@ -1291,9 +1271,7 @@ const MAX_LEAD_IN_WORDS: usize = 3;
 /// would find an earlier occurrence of the same word instead.)
 fn words_with_offsets(text: &str) -> Vec<(usize, &str)> {
     let base = text.as_ptr() as usize;
-    text.split_whitespace()
-        .map(|w| (w.as_ptr() as usize - base, w))
-        .collect()
+    text.split_whitespace().map(|w| (w.as_ptr() as usize - base, w)).collect()
 }
 
 /// True when `word` sounds like "vox" as speech recognition tends to mishear it
@@ -1309,19 +1287,14 @@ fn sounds_like_vox(word: &str) -> bool {
 /// Without an explicit trigger nothing matches, so normal dictation is never
 /// misclassified as a command. Returns `Some(VoiceCommandParseResult)` if the
 /// trigger was found AND a target matched; otherwise `None`.
-pub fn parse_voice_command(
-    text: &str,
-    targets: &[OutputTarget],
-) -> Option<VoiceCommandParseResult> {
+pub fn parse_voice_command(text: &str, targets: &[OutputTarget]) -> Option<VoiceCommandParseResult> {
     let lower_text = fold_case(text);
     let mut found_pos = None;
     let mut trigger_len = 0;
 
     // 1. Exact & standard triggers
-    let exact_triggers = [
-        "voxctrl", "vox ctrl", "vox-ctrl", "vox control",
-        "hey vox", "hey, vox", "hey-vox", "hey_vox",
-    ];
+    let exact_triggers =
+        ["voxctrl", "vox ctrl", "vox-ctrl", "vox control", "hey vox", "hey, vox", "hey-vox", "hey_vox"];
     for trigger in &exact_triggers {
         let mut search_start = 0;
         while let Some(match_idx) = lower_text[search_start..].find(trigger) {
@@ -1392,8 +1365,7 @@ pub fn parse_voice_command(
         // *opens* with a near-miss of the wake word, so a loose match there
         // is safe; mid-sentence it is not — "I lost control" is three edits
         // from "vox control" and is ordinary dictation, not a command.
-        let (max_voxctrl, max_vox_control, max_hey_vox) =
-            if skip == 0 { (2, 3, 1) } else { (1, 1, 1) };
+        let (max_voxctrl, max_vox_control, max_hey_vox) = if skip == 0 { (2, 3, 1) } else { (1, 1, 1) };
         for len in (1..=2.min(words.len() - skip)).rev() {
             let span = &words[skip..skip + len];
             let candidate = span.iter().map(|(_, w)| *w).collect::<Vec<_>>().join(" ");
@@ -1408,11 +1380,8 @@ pub fn parse_voice_command(
                 .filter(|w| !w.is_empty())
                 .collect();
             let hey_vox_cand = clean_tokens.join(" ");
-            let dist_hey_vox = if !hey_vox_cand.is_empty() {
-                levenshtein_distance(&hey_vox_cand, "hey vox")
-            } else {
-                usize::MAX
-            };
+            let dist_hey_vox =
+                if !hey_vox_cand.is_empty() { levenshtein_distance(&hey_vox_cand, "hey vox") } else { usize::MAX };
 
             if dist1 <= max_voxctrl || dist2 <= max_vox_control || dist_hey_vox <= max_hey_vox {
                 let (start_idx, _) = span[0];
@@ -1470,19 +1439,15 @@ pub fn parse_voice_command(
                     let post_target = &after_trigger[abs_match_end..];
                     let payload = clean_payload(post_target);
 
-                    return Some(VoiceCommandParseResult {
-                        matched_target_id: target_id.to_string(),
-                        payload,
-                    });
+                    return Some(VoiceCommandParseResult { matched_target_id: target_id.to_string(), payload });
                 }
             }
 
             // Step past the whole first character: target names need not be ASCII.
-            search_start = abs_match_start
-                + after_trigger_lower[abs_match_start..].chars().next().map_or(1, char::len_utf8);
+            search_start =
+                abs_match_start + after_trigger_lower[abs_match_start..].chars().next().map_or(1, char::len_utf8);
         }
     }
 
     None
 }
-

@@ -21,11 +21,10 @@ use tracing::info;
 use voxctrl_config::{KittenTts2Config, TtsConfig};
 
 use crate::audiocpp::{
-    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppRuntime, AudioCppSession,
-    SpeakRequest, SpeakerRef,
+    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppRuntime, AudioCppSession, SpeakRequest, SpeakerRef,
 };
-use crate::utterance::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
+use crate::utterance::{PlaybackCallback, Utterance};
 
 pub const KITTEN_TTS_2_SAMPLE_RATE: u32 = 24_000;
 const KITTEN_TTS_2_GGUF_REPO: &str = "audio-cpp/audio.cpp-gguf";
@@ -38,8 +37,7 @@ pub const KITTEN_TTS_2_DOWNLOAD_BYTES: u64 = 3_340_000_000;
 /// Surfaced by Settings and the setup wizard before a Kitten TTS 2 download,
 /// and on the About tab. "Powered by Stellon Labs" is the attribution the
 /// licence asks an app that ships with the model to display.
-pub const KITTEN_TTS_2_LICENSE_NOTE: &str =
-    "Kitten TTS 2 model weights are released under the Stellon Labs Community \
+pub const KITTEN_TTS_2_LICENSE_NOTE: &str = "Kitten TTS 2 model weights are released under the Stellon Labs Community \
      License. Personal, research and non-commercial use are free. Commercial use \
      requires registering with Stellon Labs and stops being free above USD $1M in \
      annual revenue or funding. Audio it produces may not be used to train other \
@@ -51,12 +49,53 @@ pub const KITTEN_TTS_2_LICENSE_NOTE: &str =
 /// model carry more character voices; Settings lets you type any name, and
 /// audio.cpp reports an unknown one clearly.
 pub const KITTEN_TTS_2_VOICES: &[&str] = &[
-    "Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo", "Matthew", "Elliot",
-    "Willow", "Dolores", "Victor", "Dante", "Alfred", "Saoirse", "Claire", "Raven", "Marcus",
-    "Herbert", "Diana", "Laurence", "Maeve", "Walter", "Edith", "Miles", "Grace", "Reginald",
-    "Iris", "Frank", "Serena", "Julian", "Eleanor", "Otis", "Vincent", "Martha", "Sable",
-    "Victoria", "Arabic", "Chinese", "French", "German", "Hindi", "Italian", "Portuguese",
-    "Russian", "Spanish",
+    "Bella",
+    "Jasper",
+    "Luna",
+    "Bruno",
+    "Rosie",
+    "Hugo",
+    "Kiki",
+    "Leo",
+    "Matthew",
+    "Elliot",
+    "Willow",
+    "Dolores",
+    "Victor",
+    "Dante",
+    "Alfred",
+    "Saoirse",
+    "Claire",
+    "Raven",
+    "Marcus",
+    "Herbert",
+    "Diana",
+    "Laurence",
+    "Maeve",
+    "Walter",
+    "Edith",
+    "Miles",
+    "Grace",
+    "Reginald",
+    "Iris",
+    "Frank",
+    "Serena",
+    "Julian",
+    "Eleanor",
+    "Otis",
+    "Vincent",
+    "Martha",
+    "Sable",
+    "Victoria",
+    "Arabic",
+    "Chinese",
+    "French",
+    "German",
+    "Hindi",
+    "Italian",
+    "Portuguese",
+    "Russian",
+    "Spanish",
 ];
 
 /// Language-named presets: text for these is not English, so the English
@@ -67,11 +106,7 @@ const NON_ENGLISH_PRESETS: &[&str] =
 const DEFAULT_VOICE: &str = "Bruno";
 
 pub fn kitten_tts_2_model_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("models")
-        .join("kitten-tts-2")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("models").join("kitten-tts-2")
 }
 
 pub fn resolve_kitten_tts_2_dir(model_dir: &str) -> PathBuf {
@@ -135,7 +170,11 @@ fn is_clone_mode(cfg: &KittenTts2Config) -> bool {
 
 fn preset_voice(cfg: &KittenTts2Config) -> &str {
     let v = cfg.voice.trim();
-    if v.is_empty() { DEFAULT_VOICE } else { v }
+    if v.is_empty() {
+        DEFAULT_VOICE
+    } else {
+        v
+    }
 }
 
 /// The reference clip and its (mandatory) transcript, or `None` in preset mode.
@@ -149,8 +188,8 @@ fn resolve_clone_reference(cfg: &KittenTts2Config, hf_token: Option<&str>) -> Re
     }
     let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
         .ok_or_else(|| anyhow::anyhow!("Kitten TTS 2 voice clip '{voice_id}' was not found in the voice folder."))?;
-    let path = resolve_hf_reference_blocking(&reference, hf_token)
-        .context("resolve Kitten TTS 2 reference voice clip")?;
+    let path =
+        resolve_hf_reference_blocking(&reference, hf_token).context("resolve Kitten TTS 2 reference voice clip")?;
     // audio.cpp refuses a kitten_tts2 clone without `reference_text`.
     let transcript = read_voice_transcript_file(&path).ok_or_else(|| {
         anyhow::anyhow!(
@@ -174,7 +213,11 @@ fn request_options(cfg: &KittenTts2Config) -> [(&'static str, &'static str); 1] 
 /// not English. Expression tags (`[excited]`, `<laugh>`) pass through as-is.
 fn prepare_text(cfg: &KittenTts2Config, text: &str) -> String {
     let english = is_clone_mode(cfg) || !NON_ENGLISH_PRESETS.contains(&preset_voice(cfg));
-    if english { voxctrl_text::spell_out_numbers_en(text) } else { text.to_string() }
+    if english {
+        voxctrl_text::spell_out_numbers_en(text)
+    } else {
+        text.to_string()
+    }
 }
 
 fn ensure_session<'a>(config: &TtsConfig, session: &'a mut Option<AudioCppSession>) -> Result<&'a AudioCppSession> {

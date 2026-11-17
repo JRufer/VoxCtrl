@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
@@ -58,13 +58,8 @@ pub fn trim_log(path: &std::path::Path, max: u64, keep: usize) {
 impl StartupErrorLayer {
     pub fn new(path: std::path::PathBuf) -> std::io::Result<Self> {
         trim_log(&path, MAX_LOG_BYTES, KEEP_BYTES);
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        Ok(Self {
-            file: Mutex::new(file),
-        })
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        Ok(Self { file: Mutex::new(file) })
     }
 }
 
@@ -98,13 +93,7 @@ impl<S: Subscriber> Layer<S> for StartupErrorLayer {
 
         if is_error_or_warn || (is_startup && *level == tracing::Level::INFO) {
             let timestamp = chrono::Utc::now().to_rfc3339();
-            let log_line = format!(
-                "{} [{}] {}: {}\n",
-                timestamp,
-                level,
-                metadata.target(),
-                msg
-            );
+            let log_line = format!("{} [{}] {}: {}\n", timestamp, level, metadata.target(), msg);
             if let Ok(mut file) = self.file.lock() {
                 let _ = file.write_all(log_line.as_bytes());
                 let _ = file.flush();

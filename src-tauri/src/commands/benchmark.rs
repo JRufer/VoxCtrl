@@ -30,9 +30,8 @@ pub struct BenchmarkPlan {
 #[tauri::command]
 pub async fn benchmark_plan(state: State<'_, Arc<AppState>>) -> Result<BenchmarkPlan, String> {
     let cfg = state.config.lock().await.data.clone();
-    let (steps, skipped) = tauri::async_runtime::spawn_blocking(move || bench::plan_with_skips(&cfg))
-        .await
-        .map_err(|e| e.to_string())?;
+    let (steps, skipped) =
+        tauri::async_runtime::spawn_blocking(move || bench::plan_with_skips(&cfg)).await.map_err(|e| e.to_string())?;
     let est_secs = steps.iter().map(|s| s.est_secs).sum();
     Ok(BenchmarkPlan { steps, skipped, est_secs })
 }
@@ -58,19 +57,11 @@ pub struct BenchmarkOutcome {
     pub cancelled: bool,
 }
 
-const PHASE_NAMES: [&str; bench::PHASES_PER_STEP] = [
-    "Loading the model",
-    "Warming up",
-    "Timing run 1 of 3",
-    "Timing run 2 of 3",
-    "Timing run 3 of 3",
-];
+const PHASE_NAMES: [&str; bench::PHASES_PER_STEP] =
+    ["Loading the model", "Warming up", "Timing run 1 of 3", "Timing run 2 of 3", "Timing run 3 of 3"];
 
 #[tauri::command]
-pub async fn run_benchmark(
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<BenchmarkOutcome, String> {
+pub async fn run_benchmark(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<BenchmarkOutcome, String> {
     if state.is_recording() || state.is_processing() {
         return Err("Finish the current dictation before running the benchmark.".into());
     }
@@ -91,8 +82,7 @@ pub async fn run_benchmark(
                 break;
             }
             let mut report = |phase: usize| {
-                let fraction =
-                    (i as f64 + phase as f64 / bench::PHASES_PER_STEP as f64) / total as f64;
+                let fraction = (i as f64 + phase as f64 / bench::PHASES_PER_STEP as f64) / total as f64;
                 let _ = app.emit(
                     "benchmark-progress",
                     Progress {
@@ -116,10 +106,7 @@ pub async fn run_benchmark(
                 fraction: if cancelled { 0.0 } else { 1.0 },
             },
         );
-        let recommended = bench::recommend(&results)
-            .into_iter()
-            .map(|(e, d)| (e.to_string(), d.to_string()))
-            .collect();
+        let recommended = bench::recommend(&results).into_iter().map(|(e, d)| (e.to_string(), d.to_string())).collect();
         BenchmarkOutcome { results, recommended, cancelled }
     })
     .await;

@@ -64,16 +64,9 @@ pub const PREPROCESSOR_FILE: &str = "nemo128.onnx";
 pub const ENCODER_FILE: &str = "encoder-model.int8.onnx";
 pub const DECODER_FILE: &str = "decoder_joint-model.int8.onnx";
 
-pub const MODEL_FILES: [&str; 5] = [
-    CONFIG_FILE,
-    VOCAB_FILE,
-    PREPROCESSOR_FILE,
-    ENCODER_FILE,
-    DECODER_FILE,
-];
+pub const MODEL_FILES: [&str; 5] = [CONFIG_FILE, VOCAB_FILE, PREPROCESSOR_FILE, ENCODER_FILE, DECODER_FILE];
 
-pub const HF_BASE_URL: &str =
-    "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main";
+pub const HF_BASE_URL: &str = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main";
 
 /// Model size id for Moondream's 1.58-bit ternary Parakeet Redux.
 pub const REDUX_SIZE: &str = "tdt-0.6b-v3-redux";
@@ -81,8 +74,7 @@ pub const REDUX_SIZE: &str = "tdt-0.6b-v3-redux";
 /// Community ONNX export of `moondream/parakeet-redux` (ternary weights stored
 /// as ONNX Runtime `MatMulNBits` blocks, bit-exact with the source). Same tensor
 /// names and logit layout as the NVIDIA export, so the pipeline is unchanged.
-const REDUX_BASE_URL: &str =
-    "https://huggingface.co/eschmidbauer/parakeet-redux-onnx/resolve/main";
+const REDUX_BASE_URL: &str = "https://huggingface.co/eschmidbauer/parakeet-redux-onnx/resolve/main";
 
 /// `(remote file, local file)` pairs for the Redux export. Remote names differ
 /// from ours, so they are saved under the standard local names.
@@ -104,8 +96,7 @@ pub const PHONON2_SIZE: &str = "phonon-2";
 /// them into the onnx-asr `nemo-conformer-tdt` layout, so it shares this
 /// backend's tensor names, shapes and logit layout (8,192 pieces plus blank,
 /// five duration classes).
-const PHONON2_BASE_URL: &str =
-    "https://huggingface.co/tiyuvta/Phonon-2-ONNX/resolve/main";
+const PHONON2_BASE_URL: &str = "https://huggingface.co/tiyuvta/Phonon-2-ONNX/resolve/main";
 
 /// `(remote file, local file)` pairs for the Phonon-2 export.
 ///
@@ -148,11 +139,7 @@ pub fn default_model_dir() -> PathBuf {
 
 /// Directory holding one model's files: `<model_dir>/<size>/`.
 fn model_size_dir(model_dir: &str, size: &str) -> PathBuf {
-    let base = if model_dir.is_empty() {
-        default_model_dir()
-    } else {
-        crate::util::expand_tilde(model_dir)
-    };
+    let base = if model_dir.is_empty() { default_model_dir() } else { crate::util::expand_tilde(model_dir) };
     base.join(size)
 }
 
@@ -217,9 +204,7 @@ async fn download_file(url: &str, path: &Path) -> Result<()> {
         let _ = tokio::fs::remove_file(&tmp).await;
     }
     result?;
-    tokio::fs::rename(&tmp, path)
-        .await
-        .with_context(|| format!("finalize {}", path.display()))
+    tokio::fs::rename(&tmp, path).await.with_context(|| format!("finalize {}", path.display()))
 }
 
 async fn stream_to(url: &str, tmp: &Path) -> Result<()> {
@@ -233,24 +218,16 @@ async fn stream_to(url: &str, tmp: &Path) -> Result<()> {
         .with_context(|| format!("fetch {url}"))?;
     let expected = response.content_length();
 
-    let mut file = tokio::fs::File::create(tmp)
-        .await
-        .with_context(|| format!("create {}", tmp.display()))?;
+    let mut file = tokio::fs::File::create(tmp).await.with_context(|| format!("create {}", tmp.display()))?;
     let mut written: u64 = 0;
     let mut body = response.bytes_stream();
     while let Some(chunk) = body.next().await {
         let chunk = chunk.with_context(|| format!("read {url}"))?;
-        file.write_all(&chunk)
-            .await
-            .with_context(|| format!("write {}", tmp.display()))?;
+        file.write_all(&chunk).await.with_context(|| format!("write {}", tmp.display()))?;
         written += chunk.len() as u64;
     }
-    file.flush()
-        .await
-        .with_context(|| format!("flush {}", tmp.display()))?;
-    file.sync_all()
-        .await
-        .with_context(|| format!("sync {}", tmp.display()))?;
+    file.flush().await.with_context(|| format!("flush {}", tmp.display()))?;
+    file.sync_all().await.with_context(|| format!("sync {}", tmp.display()))?;
 
     if let Some(expected) = expected {
         if written != expected {
@@ -336,11 +313,7 @@ pub struct ParakeetBackend {
 
 impl ParakeetBackend {
     pub fn new(cfg: ParakeetConfig) -> Self {
-        Self {
-            cfg,
-            state: Mutex::new(None),
-            loaded: false,
-        }
+        Self { cfg, state: Mutex::new(None), loaded: false }
     }
 
     fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
@@ -353,9 +326,7 @@ impl ParakeetBackend {
 
         let mut builder = Self::with_gpu(builder, use_gpu);
 
-        builder
-            .commit_from_file(path)
-            .with_context(|| format!("load ONNX graph {}", path.display()))
+        builder.commit_from_file(path).with_context(|| format!("load ONNX graph {}", path.display()))
     }
 
     fn with_gpu(builder: SessionBuilder, use_gpu: bool) -> SessionBuilder {
@@ -363,20 +334,13 @@ impl ParakeetBackend {
         if !use_gpu {
             return builder;
         }
-        #[cfg(any(
-            feature = "parakeet-cuda",
-            feature = "parakeet-coreml",
-            feature = "parakeet-webgpu"
-        ))]
+        #[cfg(any(feature = "parakeet-cuda", feature = "parakeet-coreml", feature = "parakeet-webgpu"))]
         {
             #[cfg(feature = "parakeet-cuda")]
             let ep = ort::ep::CUDA::default().build().error_on_failure();
             #[cfg(all(feature = "parakeet-coreml", not(feature = "parakeet-cuda")))]
             let ep = ort::ep::CoreML::default().build().error_on_failure();
-            #[cfg(all(
-                feature = "parakeet-webgpu",
-                not(any(feature = "parakeet-cuda", feature = "parakeet-coreml"))
-            ))]
+            #[cfg(all(feature = "parakeet-webgpu", not(any(feature = "parakeet-cuda", feature = "parakeet-coreml"))))]
             let ep = ort::ep::WebGPU::default().build().error_on_failure();
 
             let name = crate::parakeet_gpu_provider().unwrap_or("GPU");
@@ -387,19 +351,13 @@ impl ParakeetBackend {
                     return with_ep;
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Parakeet: {name} execution provider unavailable ({e}); running on CPU"
-                    );
+                    tracing::warn!("Parakeet: {name} execution provider unavailable ({e}); running on CPU");
                     return e.recover();
                 }
             }
         }
 
-        #[cfg(not(any(
-            feature = "parakeet-cuda",
-            feature = "parakeet-coreml",
-            feature = "parakeet-webgpu"
-        )))]
+        #[cfg(not(any(feature = "parakeet-cuda", feature = "parakeet-coreml", feature = "parakeet-webgpu")))]
         builder
     }
 }
@@ -440,9 +398,7 @@ impl TranscriptionBackend for ParakeetBackend {
             .iter()
             .find(|i| i.name() == "targets")
             .map(|i| match i.dtype() {
-                ort::value::ValueType::Tensor { ty, .. } => {
-                    *ty == ort::value::TensorElementType::Int32
-                }
+                ort::value::ValueType::Tensor { ty, .. } => *ty == ort::value::TensorElementType::Int32,
                 _ => true,
             })
             .unwrap_or(true);
@@ -452,30 +408,16 @@ impl TranscriptionBackend for ParakeetBackend {
             .iter()
             .find(|i| i.name() == "encoder_outputs")
             .map(|i| match i.dtype() {
-                ort::value::ValueType::Tensor { shape, .. } => {
-                    shape.get(2).copied() == Some(ENCODER_DIM as i64)
-                }
+                ort::value::ValueType::Tensor { shape, .. } => shape.get(2).copied() == Some(ENCODER_DIM as i64),
                 _ => false,
             })
             .unwrap_or(false);
 
-        let logits_idx = decoder
-            .outputs()
-            .iter()
-            .position(|o| o.name() == "outputs")
-            .unwrap_or(0);
+        let logits_idx = decoder.outputs().iter().position(|o| o.name() == "outputs").unwrap_or(0);
 
-        let state_1_idx = decoder
-            .outputs()
-            .iter()
-            .position(|o| o.name() == "output_states_1")
-            .unwrap_or(2);
+        let state_1_idx = decoder.outputs().iter().position(|o| o.name() == "output_states_1").unwrap_or(2);
 
-        let state_2_idx = decoder
-            .outputs()
-            .iter()
-            .position(|o| o.name() == "output_states_2")
-            .unwrap_or(3);
+        let state_2_idx = decoder.outputs().iter().position(|o| o.name() == "output_states_2").unwrap_or(3);
 
         *self.state.lock().unwrap() = Some(Loaded {
             preprocessor,
@@ -531,11 +473,7 @@ impl TranscriptionBackend for ParakeetBackend {
         let text = parts.join(" ");
         let inference_ms = t0.elapsed().as_millis() as u32;
 
-        let language = if is_english_only(&self.cfg.model_size) {
-            "en".to_string()
-        } else {
-            self.cfg.language.clone()
-        };
+        let language = if is_english_only(&self.cfg.model_size) { "en".to_string() } else { self.cfg.language.clone() };
 
         Ok(TranscriptionResult {
             text,
@@ -652,33 +590,23 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let n_samples = audio.len();
 
     // ── 1. Preprocessor: Waveform → 128-channel Mel Spectrogram ──────────────
-    let wave_tensor = Tensor::from_array(([1_usize, n_samples], audio.to_vec()))
-        .context("build audio waveform tensor")?;
-    let wave_lens_tensor = Tensor::from_array(([1_usize], vec![n_samples as i64]))
-        .context("build audio waveform_lens tensor")?;
+    let wave_tensor =
+        Tensor::from_array(([1_usize, n_samples], audio.to_vec())).context("build audio waveform tensor")?;
+    let wave_lens_tensor =
+        Tensor::from_array(([1_usize], vec![n_samples as i64])).context("build audio waveform_lens tensor")?;
 
-    let prep_feed: Vec<(&str, SessionInputValue)> = vec![
-        ("waveforms", wave_tensor.into()),
-        ("waveforms_lens", wave_lens_tensor.into()),
-    ];
+    let prep_feed: Vec<(&str, SessionInputValue)> =
+        vec![("waveforms", wave_tensor.into()), ("waveforms_lens", wave_lens_tensor.into())];
 
     let prep_out = state.preprocessor.run(prep_feed).context("preprocessor run")?;
-    let (feat_shape, feat_data) = prep_out[0]
-        .try_extract_tensor::<f32>()
-        .context("extract mel features")?;
+    let (feat_shape, feat_data) = prep_out[0].try_extract_tensor::<f32>().context("extract mel features")?;
     let feat_shape_vec = feat_shape.to_vec();
     let feat_data_vec = feat_data.to_vec();
 
-    let num_mel_frames = if feat_shape_vec.len() >= 3 {
-        feat_shape_vec[2] as i64
-    } else {
-        (n_samples / 160) as i64
-    };
+    let num_mel_frames = if feat_shape_vec.len() >= 3 { feat_shape_vec[2] as i64 } else { (n_samples / 160) as i64 };
 
     let feat_lens_vec = if prep_out.len() > 1 {
-        let (_, lens_data) = prep_out[1]
-            .try_extract_tensor::<i64>()
-            .context("extract mel features_lens")?;
+        let (_, lens_data) = prep_out[1].try_extract_tensor::<i64>().context("extract mel features_lens")?;
         lens_data.to_vec()
     } else {
         vec![num_mel_frames]
@@ -686,21 +614,14 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
 
     // ── 2. Encoder: Mel Spectrogram → Conformer Acoustic Features ────────────
     let audio_signal_tensor =
-        Tensor::from_array((dims(&feat_shape_vec), feat_data_vec))
-            .context("build audio_signal tensor")?;
-    let length_tensor =
-        Tensor::from_array(([1_usize], feat_lens_vec))
-            .context("build length tensor")?;
+        Tensor::from_array((dims(&feat_shape_vec), feat_data_vec)).context("build audio_signal tensor")?;
+    let length_tensor = Tensor::from_array(([1_usize], feat_lens_vec)).context("build length tensor")?;
 
-    let enc_feed: Vec<(&str, SessionInputValue)> = vec![
-        ("audio_signal", audio_signal_tensor.into()),
-        ("length", length_tensor.into()),
-    ];
+    let enc_feed: Vec<(&str, SessionInputValue)> =
+        vec![("audio_signal", audio_signal_tensor.into()), ("length", length_tensor.into())];
 
     let enc_out = state.encoder.run(enc_feed).context("encoder run")?;
-    let (enc_shape, enc_data) = enc_out[0]
-        .try_extract_tensor::<f32>()
-        .context("extract encoder outputs")?;
+    let (enc_shape, enc_data) = enc_out[0].try_extract_tensor::<f32>().context("extract encoder outputs")?;
 
     // Determine time dimension T'
     // enc_shape can be [1, 1024, T'] (channels first) or [1, T', 1024] (time first)
@@ -729,11 +650,8 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let mut emitted_tokens: Vec<usize> = Vec::new();
     let mut t = 0;
 
-    let enc_slice_shape = if state.decoder_enc_shape_time_first {
-        vec![1_usize, 1, ENCODER_DIM]
-    } else {
-        vec![1_usize, ENCODER_DIM, 1]
-    };
+    let enc_slice_shape =
+        if state.decoder_enc_shape_time_first { vec![1_usize, 1, ENCODER_DIM] } else { vec![1_usize, ENCODER_DIM, 1] };
 
     let mut enc_frame = vec![0.0f32; ENCODER_DIM];
 
@@ -753,34 +671,24 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
         loop {
             let enc_tensor = Tensor::from_array((enc_slice_shape.clone(), enc_frame.clone()))
                 .context("build decoder encoder_outputs tensor")?;
-            let s1_tensor = Tensor::from_array((
-                [DECODER_NUM_LAYERS, 1_usize, DECODER_STATE_DIM],
-                state_1.clone(),
-            ))
-            .context("build decoder state_1 tensor")?;
-            let s2_tensor = Tensor::from_array((
-                [DECODER_NUM_LAYERS, 1_usize, DECODER_STATE_DIM],
-                state_2.clone(),
-            ))
-            .context("build decoder state_2 tensor")?;
+            let s1_tensor = Tensor::from_array(([DECODER_NUM_LAYERS, 1_usize, DECODER_STATE_DIM], state_1.clone()))
+                .context("build decoder state_1 tensor")?;
+            let s2_tensor = Tensor::from_array(([DECODER_NUM_LAYERS, 1_usize, DECODER_STATE_DIM], state_2.clone()))
+                .context("build decoder state_2 tensor")?;
 
             let (target_input, target_len_input) = if state.targets_is_i32 {
                 (
                     Tensor::from_array(([1_usize, 1], vec![current_token as i32]))
                         .context("build targets tensor")?
                         .into(),
-                    Tensor::from_array(([1_usize], vec![1_i32]))
-                        .context("build target_length tensor")?
-                        .into(),
+                    Tensor::from_array(([1_usize], vec![1_i32])).context("build target_length tensor")?.into(),
                 )
             } else {
                 (
                     Tensor::from_array(([1_usize, 1], vec![current_token as i64]))
                         .context("build targets tensor")?
                         .into(),
-                    Tensor::from_array(([1_usize], vec![1_i64]))
-                        .context("build target_length tensor")?
-                        .into(),
+                    Tensor::from_array(([1_usize], vec![1_i64])).context("build target_length tensor")?.into(),
                 )
             };
 
@@ -793,15 +701,9 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
             ];
 
             let dec_out = state.decoder.run(dec_feed).context("decoder step run")?;
-            let (_, ldata) = dec_out[state.logits_idx]
-                .try_extract_tensor::<f32>()
-                .context("extract decoder logits")?;
+            let (_, ldata) = dec_out[state.logits_idx].try_extract_tensor::<f32>().context("extract decoder logits")?;
 
-            let row_offset = if ldata.len() >= output_dim {
-                ldata.len() - output_dim
-            } else {
-                0
-            };
+            let row_offset = if ldata.len() >= output_dim { ldata.len() - output_dim } else { 0 };
             let row = &ldata[row_offset..];
             let token_logits = &row[..vocab_size];
             let duration_logits = &row[vocab_size..vocab_size + NUM_DURATION_CLASSES];
@@ -813,12 +715,10 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
                 emitted_tokens.push(best_token);
                 current_token = best_token;
 
-                let (_, next_s1) = dec_out[state.state_1_idx]
-                    .try_extract_tensor::<f32>()
-                    .context("extract next state_1")?;
-                let (_, next_s2) = dec_out[state.state_2_idx]
-                    .try_extract_tensor::<f32>()
-                    .context("extract next state_2")?;
+                let (_, next_s1) =
+                    dec_out[state.state_1_idx].try_extract_tensor::<f32>().context("extract next state_1")?;
+                let (_, next_s2) =
+                    dec_out[state.state_2_idx].try_extract_tensor::<f32>().context("extract next state_2")?;
                 state_1 = next_s1.to_vec();
                 state_2 = next_s2.to_vec();
 
@@ -877,9 +777,7 @@ mod tests {
     fn test_phonon2_download_spec() {
         let (base, files) = download_spec(PHONON2_SIZE);
         assert_eq!(base, PHONON2_BASE_URL);
-        let remote_for = |local: &str| {
-            files.iter().find(|(_, l)| *l == local).map(|(r, _)| *r).unwrap()
-        };
+        let remote_for = |local: &str| files.iter().find(|(_, l)| *l == local).map(|(r, _)| *r).unwrap();
         assert_eq!(remote_for(PREPROCESSOR_FILE), "preprocessor-model.onnx");
         assert_eq!(remote_for(ENCODER_FILE), "encoder-model.exact4x2.onnx");
         assert_eq!(remote_for(DECODER_FILE), "decoder_joint-model.onnx");
@@ -958,18 +856,16 @@ mod tests {
 
     #[test]
     fn test_detokenize_sentencepiece() {
-        let vocab = vec![
-            "Hello".to_string(),
-            " world".to_string(),
-            "!".to_string(),
-        ];
+        let vocab = vec!["Hello".to_string(), " world".to_string(), "!".to_string()];
         let tokens = vec![0, 1, 2];
         let text = detokenize(&tokens, &vocab);
         assert_eq!(text, "Hello world!");
     }
     #[test]
     fn test_inspect_decoder() {
-        let path = std::path::Path::new("/home/jrufer/.local/share/voxctrl/models/parakeet/tdt-0.6b-v3/decoder_joint-model.int8.onnx");
+        let path = std::path::Path::new(
+            "/home/jrufer/.local/share/voxctrl/models/parakeet/tdt-0.6b-v3/decoder_joint-model.int8.onnx",
+        );
         if !path.exists() {
             return;
         }
@@ -1016,10 +912,7 @@ mod tests {
         backend.load().expect("load redux");
         let path = std::env::var("REDUX_TEST_PCM").expect("REDUX_TEST_PCM");
         let bytes = std::fs::read(path).unwrap();
-        let audio: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .collect();
+        let audio: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
         let req = TranscribeRequest {
             audio,
             language: None,
@@ -1049,10 +942,7 @@ mod tests {
         backend.load().expect("load phonon-2");
         let path = std::env::var("PHONON2_TEST_PCM").expect("PHONON2_TEST_PCM");
         let bytes = std::fs::read(path).unwrap();
-        let audio: Vec<f32> = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .collect();
+        let audio: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
         let req = TranscribeRequest {
             audio,
             language: None,

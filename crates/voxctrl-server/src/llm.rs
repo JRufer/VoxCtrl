@@ -212,7 +212,11 @@ pub mod testing {
         (address, seen)
     }
 
-    async fn chat(State(seen): State<Arc<Seen>>, headers: HeaderMap, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
+    async fn chat(
+        State(seen): State<Arc<Seen>>,
+        headers: HeaderMap,
+        Json(body): Json<Value>,
+    ) -> (StatusCode, Json<Value>) {
         let key = headers.get("authorization").and_then(|v| v.to_str().ok()).map(str::to_string);
         seen.keys.lock().unwrap().push(key);
         let model = body["model"].as_str().unwrap_or_default().to_string();
@@ -232,7 +236,13 @@ mod tests {
     use serde_json::json;
 
     fn config(endpoint: &str, model: &str) -> LlmConfig {
-        LlmConfig { enabled: true, endpoint: endpoint.into(), model: model.into(), api_key: "sk-upstream".into(), timeout_secs: 10 }
+        LlmConfig {
+            enabled: true,
+            endpoint: endpoint.into(),
+            model: model.into(),
+            api_key: "sk-upstream".into(),
+            timeout_secs: 10,
+        }
     }
 
     #[tokio::test]
@@ -268,7 +278,10 @@ mod tests {
         // Starting with the service down is allowed: it may come up later.
         let relay = LlmRelay::prepare(&config(&closed, "llama3.2:1b")).await.unwrap();
         let error = relay.relay(json!({ "messages": [{ "role": "user", "content": "hi" }] })).await.unwrap_err();
-        assert!(matches!(&error, RelayError::Upstream(m) if m.contains("could not reach its language model")), "{error:?}");
+        assert!(
+            matches!(&error, RelayError::Upstream(m) if m.contains("could not reach its language model")),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

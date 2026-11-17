@@ -16,9 +16,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tracing::{debug, info};
 #[cfg(not(target_os = "windows"))]
 use tracing::warn;
+use tracing::{debug, info};
 
 /// Where the MCP server listens, in the form clients need.
 ///
@@ -86,24 +86,11 @@ struct JsonRpcError {
 
 impl JsonRpcResponse {
     fn ok(id: Option<Value>, result: Value) -> Self {
-        Self {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        }
+        Self { jsonrpc: "2.0", id, result: Some(result), error: None }
     }
 
     fn err(id: Option<Value>, code: i32, message: impl Into<String>) -> Self {
-        Self {
-            jsonrpc: "2.0",
-            id,
-            result: None,
-            error: Some(JsonRpcError {
-                code,
-                message: message.into(),
-            }),
-        }
+        Self { jsonrpc: "2.0", id, result: None, error: Some(JsonRpcError { code, message: message.into() }) }
     }
 }
 
@@ -152,10 +139,7 @@ pub trait McpCallbacks: Send + Sync + 'static {
 
     /// Send the next dictations to `target_id` (until a hotkey picks another
     /// target). Returns the target's label; errors for an unknown id.
-    fn set_target(
-        &self,
-        target_id: String,
-    ) -> impl std::future::Future<Output = Result<String>> + Send;
+    fn set_target(&self, target_id: String) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// The user's configured recording timeout (Settings → General → Record
     /// timeout), in seconds. Used for `transcribe_voice` whenever the caller
@@ -194,11 +178,7 @@ fn link_legacy_path(real: &std::path::Path, legacy: &std::path::Path) {
         // SAFETY: getuid has no preconditions and cannot fail.
         let me = unsafe { libc::getuid() };
         if meta.uid() != me {
-            warn!(
-                "{} belongs to another user; MCP clients must use {}",
-                legacy.display(),
-                real.display()
-            );
+            warn!("{} belongs to another user; MCP clients must use {}", legacy.display(), real.display());
             return;
         }
         let _ = std::fs::remove_file(legacy);
@@ -273,9 +253,7 @@ async fn run_named_pipe_server<C: McpCallbacks>(callbacks: Arc<C>) -> Result<()>
     info!("MCP server listening on {pipe_name}");
 
     loop {
-        let server = ServerOptions::new()
-            .pipe_mode(PipeMode::Byte)
-            .create(pipe_name)?;
+        let server = ServerOptions::new().pipe_mode(PipeMode::Byte).create(pipe_name)?;
 
         server.connect().await?;
 
@@ -304,8 +282,9 @@ async fn dispatch<C: McpCallbacks>(raw: &str, cb: &Arc<C>) -> Option<JsonRpcResp
     }
 
     let response = match req.method.as_str() {
-        "initialize" => {
-            JsonRpcResponse::ok(id, json!({
+        "initialize" => JsonRpcResponse::ok(
+            id,
+            json!({
                 "protocolVersion": "2024-11-05",
                 "serverInfo": {
                     "name": "voxctrl",
@@ -314,31 +293,23 @@ async fn dispatch<C: McpCallbacks>(raw: &str, cb: &Arc<C>) -> Option<JsonRpcResp
                 "capabilities": {
                     "tools": {}
                 }
-            }))
-        }
-        "notifications/initialized" => {
-            JsonRpcResponse::ok(id, json!({}))
-        }
+            }),
+        ),
+        "notifications/initialized" => JsonRpcResponse::ok(id, json!({})),
         "tools/list" => {
             let history = cb.recent_transcripts(0, String::new()).await.is_some();
             JsonRpcResponse::ok(id, get_tool_list(cb.default_record_timeout().await, history))
         }
         "tools/call" => {
-            let name = req.params.as_ref()
-                .and_then(|p| p.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("");
-            let args = req.params.as_ref()
-                .and_then(|p| p.get("arguments"));
+            let name = req.params.as_ref().and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("");
+            let args = req.params.as_ref().and_then(|p| p.get("arguments"));
 
             match call_tool(name, args, cb).await {
                 Ok(res) => JsonRpcResponse::ok(id, res),
                 Err(e) => JsonRpcResponse::err(id, -32603, e.to_string()),
             }
         }
-        other => {
-            JsonRpcResponse::err(id, -32601, format!("Method not found: {other}"))
-        }
+        other => JsonRpcResponse::err(id, -32601, format!("Method not found: {other}")),
     };
 
     Some(response)
@@ -469,9 +440,7 @@ async fn call_tool<C: McpCallbacks>(name: &str, args: Option<&Value>, cb: &Arc<C
             }))
         }
         "set_target" => {
-            let wanted = args
-                .and_then(|a| a.get("target_id"))
-                .and_then(|t| t.as_str());
+            let wanted = args.and_then(|a| a.get("target_id")).and_then(|t| t.as_str());
             let text = match wanted {
                 None => serde_json::to_string(&cb.list_targets().await)?,
                 Some(id) => cb.set_target(id.to_string()).await?,
@@ -479,23 +448,15 @@ async fn call_tool<C: McpCallbacks>(name: &str, args: Option<&Value>, cb: &Arc<C
             Ok(json!({ "content": [ { "type": "text", "text": text } ] }))
         }
         "get_recent_transcripts" => {
-            let limit = args
-                .and_then(|a| a.get("limit"))
-                .and_then(|l| l.as_f64())
-                .map_or(10, |l| l.clamp(1.0, 50.0) as usize);
-            let query = args
-                .and_then(|a| a.get("query"))
-                .and_then(|q| q.as_str())
-                .unwrap_or("")
-                .to_string();
+            let limit =
+                args.and_then(|a| a.get("limit")).and_then(|l| l.as_f64()).map_or(10, |l| l.clamp(1.0, 50.0) as usize);
+            let query = args.and_then(|a| a.get("query")).and_then(|q| q.as_str()).unwrap_or("").to_string();
             let transcripts = cb.recent_transcripts(limit, query).await.ok_or_else(|| {
                 anyhow::anyhow!(
                     "Reading dictation history is turned off. The user can allow it in VoxCtrl's History window (tray menu → History → Privacy settings)."
                 )
             })?;
-            Ok(
-                json!({ "content": [ { "type": "text", "text": serde_json::to_string(&transcripts)? } ] }),
-            )
+            Ok(json!({ "content": [ { "type": "text", "text": serde_json::to_string(&transcripts)? } ] }))
         }
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     }
@@ -559,24 +520,13 @@ mod tests {
 
         async fn recent_transcripts(&self, limit: usize, query: String) -> Option<Vec<Transcript>> {
             let all = self.history.clone()?;
-            Some(
-                all.into_iter()
-                    .filter(|t| t.text.contains(&query))
-                    .take(limit)
-                    .collect(),
-            )
+            Some(all.into_iter().filter(|t| t.text.contains(&query)).take(limit).collect())
         }
 
         async fn list_targets(&self) -> Vec<TargetInfo> {
             vec![
-                TargetInfo {
-                    id: "default".into(),
-                    label: "Focused Window".into(),
-                },
-                TargetInfo {
-                    id: "notes".into(),
-                    label: "Notes".into(),
-                },
+                TargetInfo { id: "default".into(), label: "Focused Window".into() },
+                TargetInfo { id: "notes".into(), label: "Notes".into() },
             ]
         }
 
@@ -615,19 +565,12 @@ mod tests {
     }
 
     fn text_of(res: JsonRpcResponse) -> String {
-        res.result.expect("an error, not a result")["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .to_string()
+        res.result.expect("an error, not a result")["content"][0]["text"].as_str().unwrap().to_string()
     }
 
     fn transcripts() -> Vec<Transcript> {
         vec![
-            Transcript {
-                at: "2026-10-27T10:00:00Z".into(),
-                target: "Notes".into(),
-                text: "buy milk".into(),
-            },
+            Transcript { at: "2026-10-27T10:00:00Z".into(), target: "Notes".into(), text: "buy milk".into() },
             Transcript {
                 at: "2026-10-27T09:00:00Z".into(),
                 target: "Focused Window".into(),
@@ -652,13 +595,8 @@ mod tests {
     fn history_is_readable_once_allowed() {
         let app = FakeApp::with_history(transcripts());
         assert!(tool_names(&app).contains(&"get_recent_transcripts".to_string()));
-        let text = text_of(
-            block_on(dispatch(
-                &call("get_recent_transcripts", json!({"query": "milk"})),
-                &app,
-            ))
-            .unwrap(),
-        );
+        let text =
+            text_of(block_on(dispatch(&call("get_recent_transcripts", json!({"query": "milk"})), &app)).unwrap());
         let got: Vec<Value> = serde_json::from_str(&text).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0]["text"], "buy milk");
@@ -671,27 +609,13 @@ mod tests {
         assert!(tool_names(&app).contains(&"set_target".to_string()));
         let listed = text_of(block_on(dispatch(&call("set_target", json!({})), &app)).unwrap());
         assert!(listed.contains("\"notes\""), "{listed}");
-        assert_eq!(
-            *app.target.lock().unwrap(),
-            "default",
-            "listing changes nothing"
-        );
+        assert_eq!(*app.target.lock().unwrap(), "default", "listing changes nothing");
 
-        let picked = text_of(
-            block_on(dispatch(
-                &call("set_target", json!({"target_id": "notes"})),
-                &app,
-            ))
-            .unwrap(),
-        );
+        let picked = text_of(block_on(dispatch(&call("set_target", json!({"target_id": "notes"})), &app)).unwrap());
         assert_eq!(picked, "Notes");
         assert_eq!(*app.target.lock().unwrap(), "notes");
 
-        let res = block_on(dispatch(
-            &call("set_target", json!({"target_id": "nope"})),
-            &app,
-        ))
-        .unwrap();
+        let res = block_on(dispatch(&call("set_target", json!({"target_id": "nope"})), &app)).unwrap();
         assert!(res.error.is_some());
         assert_eq!(*app.target.lock().unwrap(), "notes");
     }
@@ -700,19 +624,10 @@ mod tests {
     #[test]
     fn the_socket_lives_in_the_private_runtime_folder() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(
-            runtime_socket_path(Some(dir.path().into())),
-            dir.path().join("voxctrl-mcp.sock")
-        );
+        assert_eq!(runtime_socket_path(Some(dir.path().into())), dir.path().join("voxctrl-mcp.sock"));
         assert_eq!(runtime_socket_path(None), PathBuf::from(LEGACY_SOCKET_PATH));
-        assert_eq!(
-            runtime_socket_path(Some("relative".into())),
-            PathBuf::from(LEGACY_SOCKET_PATH)
-        );
-        assert_eq!(
-            runtime_socket_path(Some(dir.path().join("missing"))),
-            PathBuf::from(LEGACY_SOCKET_PATH)
-        );
+        assert_eq!(runtime_socket_path(Some("relative".into())), PathBuf::from(LEGACY_SOCKET_PATH));
+        assert_eq!(runtime_socket_path(Some(dir.path().join("missing"))), PathBuf::from(LEGACY_SOCKET_PATH));
     }
 
     #[cfg(target_os = "linux")]
@@ -732,10 +647,7 @@ mod tests {
     }
 
     fn block_on<F: std::future::Future>(f: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(f)
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(f)
     }
 
     fn transcribe_request(arguments: Value) -> String {
@@ -775,10 +687,7 @@ mod tests {
     #[test]
     fn explicit_timeout_wins_over_the_configured_one() {
         let app = FakeApp::new(42.0);
-        block_on(dispatch(
-            &transcribe_request(json!({"timeout_seconds": 3.0})),
-            &app,
-        ));
+        block_on(dispatch(&transcribe_request(json!({"timeout_seconds": 3.0})), &app));
         assert_eq!(app.seen_timeout(), 3.0);
     }
 

@@ -10,12 +10,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 /// The repository releases are published from.
-pub const RELEASES_API_URL: &str =
-    "https://api.github.com/repos/JRufer/VoxCtrl/releases/latest";
+pub const RELEASES_API_URL: &str = "https://api.github.com/repos/JRufer/VoxCtrl/releases/latest";
 
 /// The most recent releases, for assembling a change log across versions.
-pub const RELEASES_LIST_URL: &str =
-    "https://api.github.com/repos/JRufer/VoxCtrl/releases?per_page=30";
+pub const RELEASES_LIST_URL: &str = "https://api.github.com/repos/JRufer/VoxCtrl/releases?per_page=30";
 
 /// Where a user is sent when VoxCtrl cannot update itself.
 pub const RELEASES_PAGE_URL: &str = "https://github.com/JRufer/VoxCtrl/releases/latest";
@@ -105,17 +103,13 @@ pub async fn fetch_latest_from(client: &reqwest::Client, url: &str) -> Result<Re
         // that waiting is the fix.
         if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(UpdateError::Response(
-                "GitHub is rate-limiting update checks from this network. Try again later."
-                    .to_string(),
+                "GitHub is rate-limiting update checks from this network. Try again later.".to_string(),
             ));
         }
         return Err(UpdateError::Response(format!("HTTP {status}")));
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let body = response.text().await.map_err(|e| UpdateError::Network(e.to_string()))?;
 
     parse_release(&body)
 }
@@ -133,10 +127,7 @@ pub async fn fetch_recent(client: &reqwest::Client) -> Result<Vec<Release>> {
     if !response.status().is_success() {
         return Err(UpdateError::Response(format!("HTTP {}", response.status())));
     }
-    let body = response
-        .text()
-        .await
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let body = response.text().await.map_err(|e| UpdateError::Network(e.to_string()))?;
     serde_json::from_str::<Vec<Release>>(&body).map_err(|e| UpdateError::Response(e.to_string()))
 }
 

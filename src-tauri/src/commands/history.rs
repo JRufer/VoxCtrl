@@ -40,11 +40,7 @@ pub fn clear_history(state: State<'_, Arc<AppState>>, app: tauri::AppHandle) {
 }
 
 fn entry_text(state: &AppState, id: u64) -> Result<String, String> {
-    state
-        .history
-        .get(id)
-        .map(|e| e.text)
-        .ok_or_else(|| "That dictation is no longer in the history.".to_string())
+    state.history.get(id).map(|e| e.text).ok_or_else(|| "That dictation is no longer in the history.".to_string())
 }
 
 /// Type an entry into whatever window had focus before VoxCtrl's. The History
@@ -68,11 +64,7 @@ pub async fn paste_history_entry(
 
 /// Deliver an entry again, to any output target.
 #[tauri::command]
-pub async fn send_history_entry(
-    state: State<'_, Arc<AppState>>,
-    id: u64,
-    target_id: String,
-) -> Result<(), String> {
+pub async fn send_history_entry(state: State<'_, Arc<AppState>>, id: u64, target_id: String) -> Result<(), String> {
     let text = entry_text(&state, id)?;
     state.router.deliver_direct(&target_id, &text).await;
     Ok(())

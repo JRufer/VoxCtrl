@@ -152,22 +152,14 @@ impl RecordingContext {
         let target_id = state.active_target.blocking_lock().clone();
         let binding_id = state.active_binding_id.blocking_lock().clone();
         Self {
-            processing: voxctrl_inference::finalize::target_processing(
-                &target_id,
-                &state.targets.blocking_lock(),
-            ),
+            processing: voxctrl_inference::finalize::target_processing(&target_id, &state.targets.blocking_lock()),
             binding: state.binding(&binding_id),
             target_id,
             binding_id,
         }
     }
 
-    fn request(
-        &self,
-        audio: Vec<f32>,
-        is_interim: bool,
-        session_id: u64,
-    ) -> voxctrl_inference::InferenceRequest {
+    fn request(&self, audio: Vec<f32>, is_interim: bool, session_id: u64) -> voxctrl_inference::InferenceRequest {
         voxctrl_inference::InferenceRequest {
             audio,
             target_id: self.target_id.clone(),
@@ -277,15 +269,12 @@ pub fn spawn_audio_coordinator(
                         .blocking_lock()
                         .iter()
                         .any(|t| t.delivery != voxctrl_routing::DeliveryType::Command);
-                    let commands_enabled = cfg.features.early_command_detection
-                        && live_text_capable(&cfg)
-                        && has_command_targets;
+                    let commands_enabled =
+                        cfg.features.early_command_detection && live_text_capable(&cfg) && has_command_targets;
                     // Live text is only worth its transcription cost while an
                     // overlay that shows it is on screen.
                     live_text_enabled = live_text_for(&cfg);
-                    state_for_audio
-                        .live_text_wanted
-                        .store(live_text_enabled, std::sync::atomic::Ordering::SeqCst);
+                    state_for_audio.live_text_wanted.store(live_text_enabled, std::sync::atomic::Ordering::SeqCst);
                     *state_for_audio.live_session.lock().unwrap_or_else(|e| e.into_inner()) =
                         crate::live_text::LiveSession::new(session_id);
                     // Per-app cleanup styling: note which app this dictation is
@@ -304,9 +293,7 @@ pub fn spawn_audio_coordinator(
                         });
                     }
                     interim_enabled = commands_enabled || live_text_enabled;
-                    state_for_audio
-                        .interim_for_commands
-                        .store(commands_enabled, std::sync::atomic::Ordering::SeqCst);
+                    state_for_audio.interim_for_commands.store(commands_enabled, std::sync::atomic::Ordering::SeqCst);
                     let server_offline = voxctrl_inference::remote_status::is_offline();
                     if cfg.engine.backend == voxctrl_config::BackendChoice::RemoteOpenAi
                         && !skip_server_for(&cfg, server_offline)
@@ -361,14 +348,8 @@ pub fn spawn_audio_coordinator(
                         state_for_audio.set_interim_in_flight(true);
                         last_interim_sample_count = total;
                         last_interim_instant = std::time::Instant::now();
-                        state_for_audio
-                            .interim_from_start
-                            .store(range.start == 0, std::sync::atomic::Ordering::SeqCst);
-                        let _ = inference_tx.send(ctx.request(
-                            accumulated_audio[range].to_vec(),
-                            true,
-                            session_id,
-                        ));
+                        state_for_audio.interim_from_start.store(range.start == 0, std::sync::atomic::Ordering::SeqCst);
+                        let _ = inference_tx.send(ctx.request(accumulated_audio[range].to_vec(), true, session_id));
                     }
                 }
             } else {
@@ -406,11 +387,7 @@ pub fn spawn_audio_coordinator(
                         }
                     } else {
                         if !accumulated_audio.is_empty() {
-                            let req = ctx.request(
-                                std::mem::take(&mut accumulated_audio),
-                                false,
-                                session_id,
-                            );
+                            let req = ctx.request(std::mem::take(&mut accumulated_audio), false, session_id);
                             state_for_audio.set_processing(true);
                             let _ = inference_tx.send(req);
                         }
@@ -595,22 +572,21 @@ pub fn spawn_text_delivery_worker(
             // The in-memory cache `save_targets` keeps current — the same set
             // the router delivers to, so a matched target is always deliverable.
             let targets = state.targets.blocking_lock().clone();
-            let (target_id, raw_text) = if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
-                let matched_label =
-                    voxctrl_routing::targets_display_label(&parsed.matched_target_id, &targets);
-                voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
-                (parsed.matched_target_id, parsed.payload)
-            } else {
-                withdraw_early_command();
-                (output.target_id.clone(), output.text.clone())
-            };
+            let (target_id, raw_text) =
+                if let Some(parsed) = voxctrl_routing::targets::parse_voice_command(&output.text, &targets) {
+                    let matched_label = voxctrl_routing::targets_display_label(&parsed.matched_target_id, &targets);
+                    voxctrl_routing::targets::notify_command_trigger(&matched_label, &parsed.payload);
+                    (parsed.matched_target_id, parsed.payload)
+                } else {
+                    withdraw_early_command();
+                    (output.target_id.clone(), output.text.clone())
+                };
 
             // Text bound for a Speak target is read aloud verbatim: S1-mini
             // would add latency before the first word and may rewrite what
             // the user meant to have spoken.
-            let is_speak_target = targets
-                .iter()
-                .any(|t| t.id == target_id && t.delivery == voxctrl_routing::DeliveryType::Speak);
+            let is_speak_target =
+                targets.iter().any(|t| t.id == target_id && t.delivery == voxctrl_routing::DeliveryType::Speak);
             let transcript_after_release = state.ms_since_release();
             let cleanup_started = std::time::Instant::now();
             let cleaned = !is_speak_target && s1_mini_enabled && !raw_text.trim().is_empty();
@@ -705,26 +681,15 @@ pub fn spawn_text_delivery_worker(
 /// Add a delivered dictation to the history, unless every target it went to
 /// opted out ("Don't keep in history"). A dictation to several targets is
 /// kept once, under all their names, if any of them allows it.
-pub(crate) fn record_history(
-    state: &AppState,
-    targets: &[voxctrl_routing::OutputTarget],
-    target_id: &str,
-    text: &str,
-) {
+pub(crate) fn record_history(state: &AppState, targets: &[voxctrl_routing::OutputTarget], target_id: &str, text: &str) {
     let ids: Vec<&str> = target_id.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-    let kept: Vec<&str> = ids
-        .iter()
-        .copied()
-        .filter(|id| !targets.iter().any(|t| t.id == *id && t.skip_history))
-        .collect();
+    let kept: Vec<&str> =
+        ids.iter().copied().filter(|id| !targets.iter().any(|t| t.id == *id && t.skip_history)).collect();
     if kept.is_empty() {
         return;
     }
-    let label = kept
-        .iter()
-        .map(|id| voxctrl_routing::targets_display_label(id, targets))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let label =
+        kept.iter().map(|id| voxctrl_routing::targets_display_label(id, targets)).collect::<Vec<_>>().join(", ");
     if state.history.record(&kept.join(","), &label, text).is_some() {
         if let Some(app) = crate::window::get_app_handle() {
             use tauri::Emitter;
@@ -733,10 +698,7 @@ pub(crate) fn record_history(
     }
 }
 
-pub fn spawn_hotkey_gesture_handler(
-    state_for_gesture: Arc<AppState>,
-    gesture_rx: voxctrl_hotkeys::GestureReceiver,
-) {
+pub fn spawn_hotkey_gesture_handler(state_for_gesture: Arc<AppState>, gesture_rx: voxctrl_hotkeys::GestureReceiver) {
     // Notices for the silent failure modes of a fresh install: dictating with
     // an unfinished setup, and recording with a mic stream that never delivers
     // audio. The setup notice repeats (throttled) rather than firing once —
@@ -817,16 +779,12 @@ async fn run_gesture_loop(
                 // is pressing keys to configure a new binding — acting on them
                 // would start an unwanted dictation session mid-setup.
                 if state_for_gesture.is_hotkeys_inhibited() {
-                    tracing::debug!(
-                        "Hotkey '{}' gesture suppressed: keybind recorder is active",
-                        event.binding_id
-                    );
+                    tracing::debug!("Hotkey '{}' gesture suppressed: keybind recorder is active", event.binding_id);
                     continue;
                 }
 
                 *state_for_gesture.active_target.lock().await = event.target_id.clone();
-                *state_for_gesture.active_binding_label.lock().await =
-                    event.binding_label.clone();
+                *state_for_gesture.active_binding_label.lock().await = event.binding_label.clone();
                 *state_for_gesture.active_binding_id.lock().await = event.binding_id.clone();
                 state_for_gesture.begin_recording().await;
 
@@ -872,10 +830,7 @@ async fn run_gesture_loop(
                     let now = std::time::Instant::now();
                     let stale = {
                         let last = last_setup_notice.lock().await;
-                        last.map(|t: std::time::Instant| {
-                            now.duration_since(t) > SETUP_NOTICE_INTERVAL
-                        })
-                        .unwrap_or(true)
+                        last.map(|t: std::time::Instant| now.duration_since(t) > SETUP_NOTICE_INTERVAL).unwrap_or(true)
                     };
                     if stale {
                         *last_setup_notice.lock().await = Some(now);
@@ -890,10 +845,7 @@ async fn run_gesture_loop(
                 let mic_shown = mic_notice_shown.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(2)).await;
-                    if st.is_recording()
-                        && !st.is_audio_ready()
-                        && !mic_shown.swap(true, Ordering::SeqCst)
-                    {
+                    if st.is_recording() && !st.is_audio_ready() && !mic_shown.swap(true, Ordering::SeqCst) {
                         voxctrl_inject::show_notification(
                             "VoxCtrl",
                             "Recording is active but no microphone audio is arriving. Check the input device in Settings → Audio.",
@@ -909,10 +861,7 @@ async fn run_gesture_loop(
 }
 
 #[cfg(target_os = "linux")]
-pub fn spawn_setup_watcher(
-    app_handle: tauri::AppHandle,
-    health: Arc<voxctrl_hotkeys::ListenerHealth>,
-) {
+pub fn spawn_setup_watcher(app_handle: tauri::AppHandle, health: Arc<voxctrl_hotkeys::ListenerHealth>) {
     tauri::async_runtime::spawn(async move {
         // Give the listener one scan before judging it.
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -930,10 +879,7 @@ pub fn spawn_setup_watcher(
             let active = health.is_active();
 
             if active && was_active == Some(false) {
-                voxctrl_inject::show_notification(
-                    "VoxCtrl",
-                    "Your global shortcuts are registered and working now.",
-                );
+                voxctrl_inject::show_notification("VoxCtrl", "Your global shortcuts are registered and working now.");
             }
 
             if !active {
@@ -942,9 +888,7 @@ pub fn spawn_setup_watcher(
                 // is the alert the first time; after that a toast,
                 // since the window may be buried behind whatever
                 // the user is actually working in.
-                let due = last_alert
-                    .map(|t| t.elapsed() >= BLIND_ALERT_INTERVAL)
-                    .unwrap_or(true);
+                let due = last_alert.map(|t| t.elapsed() >= BLIND_ALERT_INTERVAL).unwrap_or(true);
                 if due {
                     last_alert = Some(std::time::Instant::now());
                     if first_pass {
@@ -1030,4 +974,3 @@ pub fn spawn_audio_level_forwarder(
         }
     });
 }
-

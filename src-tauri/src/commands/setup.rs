@@ -74,15 +74,13 @@ pub async fn get_setup_status(
             eng.whisper_cpp.model_size.clone(),
             eng.whisper_cpp.model_dir.clone(),
             eng.backend != voxctrl_config::BackendChoice::RemoteOpenAi
-                && (eng.backend != voxctrl_config::BackendChoice::Moonshine
-                    || !voxctrl_inference::MOONSHINE_COMPILED)
-                && (eng.backend != voxctrl_config::BackendChoice::Parakeet
-                    || !voxctrl_inference::PARAKEET_COMPILED),
+                && (eng.backend != voxctrl_config::BackendChoice::Moonshine || !voxctrl_inference::MOONSHINE_COMPILED)
+                && (eng.backend != voxctrl_config::BackendChoice::Parakeet || !voxctrl_inference::PARAKEET_COMPILED),
         )
     };
 
-    let model_ready = !uses_whisper_model
-        || voxctrl_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir);
+    let model_ready =
+        !uses_whisper_model || voxctrl_inference::whisper_cpp::is_model_downloaded(&model_size, &model_dir);
     let model_auto_downloads =
         uses_whisper_model && voxctrl_inference::whisper_cpp::is_small_auto_downloadable(&model_size);
 
@@ -90,9 +88,7 @@ pub async fn get_setup_status(
     let package_managed = voxctrl_update::install::is_package_managed();
     let pkg_mgr = crate::installer::detect_pkg_manager();
     let manual_package_commands = if package_managed {
-        missing_tool
-            .and_then(|tool| crate::installer::single_package_command(pkg_mgr, tool))
-            .unwrap_or_default()
+        missing_tool.and_then(|tool| crate::installer::single_package_command(pkg_mgr, tool)).unwrap_or_default()
     } else {
         crate::installer::manual_setup_commands(pkg_mgr)
     };
@@ -122,14 +118,9 @@ pub async fn download_configured_model(
 ) -> Result<(), String> {
     let (model_size, model_dir) = {
         let cfg = state.config.lock().await;
-        (
-            cfg.data.engine.whisper_cpp.model_size.clone(),
-            cfg.data.engine.whisper_cpp.model_dir.clone(),
-        )
+        (cfg.data.engine.whisper_cpp.model_size.clone(), cfg.data.engine.whisper_cpp.model_dir.clone())
     };
-    voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir)
-        .await
-        .map_err(|e| format!("{e:#}"))
+    voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir).await.map_err(|e| format!("{e:#}"))
 }
 
 /// Re-open the first-run wizard on demand.

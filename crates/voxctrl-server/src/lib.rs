@@ -275,10 +275,7 @@ async fn run(cli: Cli) -> Result<()> {
         }
     }
     if !effective.require_api_key {
-        warn!(
-            "require_api_key is off: anyone who can reach {} can send audio to this server",
-            effective.bind
-        );
+        warn!("require_api_key is off: anyone who can reach {} can send audio to this server", effective.bind);
     }
 
     let engine = engine::Engine::prepare(&effective).await?;
@@ -433,7 +430,8 @@ fn healthcheck(bind: &str, fingerprint: Option<&str>) -> Result<()> {
             let name = rustls::pki_types::ServerName::try_from("localhost").expect("a valid name");
             let session = rustls::ClientConnection::new(config, name).context("Could not set up encryption")?;
             let mut tls = rustls::StreamOwned::new(session, stream);
-            tls.write_all(REQUEST).with_context(|| format!("The server on {target} did not accept an encrypted connection"))?;
+            tls.write_all(REQUEST)
+                .with_context(|| format!("The server on {target} did not accept an encrypted connection"))?;
             let _ = tls.read_to_string(&mut response);
         }
         None => {
@@ -539,11 +537,13 @@ mod tests {
             pairing_code: false,
         });
         assert_eq!(
-            parse_args(args(&["--config", "/etc/voxctrl/server.toml", "-b", "127.0.0.1:9000", "--print-config"])).unwrap(),
+            parse_args(args(&["--config", "/etc/voxctrl/server.toml", "-b", "127.0.0.1:9000", "--print-config"]))
+                .unwrap(),
             expected
         );
         assert_eq!(
-            parse_args(args(&["--config=/etc/voxctrl/server.toml", "--bind=127.0.0.1:9000", "--print-config"])).unwrap(),
+            parse_args(args(&["--config=/etc/voxctrl/server.toml", "--bind=127.0.0.1:9000", "--print-config"]))
+                .unwrap(),
             expected
         );
     }
@@ -562,7 +562,8 @@ mod tests {
 
     #[test]
     fn the_pairing_code_carries_what_a_client_needs() {
-        let mut config = ServerConfig { api_key: "vx_key".into(), public_host: "speechbox.lan".into(), ..Default::default() };
+        let mut config =
+            ServerConfig { api_key: "vx_key".into(), public_host: "speechbox.lan".into(), ..Default::default() };
         config.bind = "0.0.0.0:9000".into();
         let encrypted = pairing_code(&config, Some("ab".repeat(32)));
         assert_eq!(encrypted.endpoint("").unwrap(), "https://speechbox.lan:9000/v1");
@@ -599,7 +600,9 @@ mod tests {
 
     #[test]
     fn the_pairing_code_flag_is_understood() {
-        let Invocation::Run(cli) = parse_args(["--pairing-code".to_string()]).unwrap() else { panic!("expected a run") };
+        let Invocation::Run(cli) = parse_args(["--pairing-code".to_string()]).unwrap() else {
+            panic!("expected a run")
+        };
         assert!(cli.pairing_code);
     }
 

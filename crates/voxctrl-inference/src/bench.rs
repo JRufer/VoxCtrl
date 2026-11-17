@@ -90,11 +90,33 @@ fn estimate_secs(engine: &str, device: &str, model: &str) -> u32 {
                 m if m.starts_with("medium") => 7,
                 _ => 12,
             };
-            if gpu { load } else { cpu }
+            if gpu {
+                load
+            } else {
+                cpu
+            }
         }
-        "moonshine" => if gpu { 5 } else { 2 },
-        "parakeet" => if gpu { 8 } else { 3 },
-        _ => if gpu { 3 } else { 2 },
+        "moonshine" => {
+            if gpu {
+                5
+            } else {
+                2
+            }
+        }
+        "parakeet" => {
+            if gpu {
+                8
+            } else {
+                3
+            }
+        }
+        _ => {
+            if gpu {
+                3
+            } else {
+                2
+            }
+        }
     }
 }
 
@@ -308,10 +330,7 @@ fn measure(step: &BenchStep, cfg: &AppConfig, progress: &mut dyn FnMut(usize)) -
     let t = Instant::now();
     backend.load().context("load model")?;
     let load_ms = t.elapsed().as_secs_f64() * 1000.0;
-    let outcome = time_runs(
-        || backend.transcribe(&req).map(|_| ()),
-        progress,
-    );
+    let outcome = time_runs(|| backend.transcribe(&req).map(|_| ()), progress);
     backend.unload();
     Ok((load_ms, outcome?))
 }
@@ -323,12 +342,8 @@ fn measure(step: &BenchStep, cfg: &AppConfig, progress: &mut dyn FnMut(usize)) -
 pub fn recommend(results: &[BenchResult]) -> Vec<(&'static str, &'static str)> {
     let mut out = Vec::new();
     for engine in ["whisper", "moonshine", "parakeet", "s1_mini"] {
-        let time_for = |device: &str| {
-            results
-                .iter()
-                .find(|r| r.engine == engine && r.device == device)
-                .and_then(|r| r.median_ms)
-        };
+        let time_for =
+            |device: &str| results.iter().find(|r| r.engine == engine && r.device == device).and_then(|r| r.median_ms);
         if let (Some(cpu), Some(gpu)) = (time_for("cpu"), time_for("gpu")) {
             out.push((engine, if gpu < cpu * 0.9 { "gpu" } else { "cpu" }));
         }

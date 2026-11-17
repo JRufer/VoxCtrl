@@ -60,10 +60,7 @@ mod tests {
     /// length; returns its address.
     async fn serve() -> std::net::SocketAddr {
         let router = body_timeout_of(
-            Router::new().route(
-                "/",
-                post(|body: axum::body::Bytes| async move { body.len().to_string() }),
-            ),
+            Router::new().route("/", post(|body: axum::body::Bytes| async move { body.len().to_string() })),
             SHORT,
         );
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -94,10 +91,7 @@ mod tests {
     async fn a_body_that_stops_part_way_is_cut_off() {
         let addr = serve().await;
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        stream
-            .write_all(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nonly ten b")
-            .await
-            .unwrap();
+        stream.write_all(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nonly ten b").await.unwrap();
         let reply = read_until_closed(&mut stream, Duration::from_secs(5)).await.expect("the server kept it open");
         assert!(!reply.contains("\r\n\r\n100"), "the stalled body was accepted: {reply}");
     }
@@ -106,7 +100,10 @@ mod tests {
     async fn a_body_that_keeps_coming_is_not_cut_off() {
         let addr = serve().await;
         let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        stream.write_all(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 8\r\nConnection: close\r\n\r\n").await.unwrap();
+        stream
+            .write_all(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 8\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
         // Longer in all than the limit, but no pause as long as it.
         for _ in 0..8 {
             tokio::time::sleep(SHORT / 3).await;

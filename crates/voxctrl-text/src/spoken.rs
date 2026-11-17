@@ -13,11 +13,28 @@ use std::sync::OnceLock;
 use regex::{Captures, Regex};
 
 const ONES: [&str; 20] = [
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
-    "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
 ];
-const TENS: [&str; 10] =
-    ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const TENS: [&str; 10] = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 const SCALES: [&str; 5] = ["", "thousand", "million", "billion", "trillion"];
 
 fn below_thousand(n: u64, out: &mut Vec<String>) {
@@ -89,12 +106,7 @@ fn ordinal_words(n: u64) -> Option<String> {
 
 /// Digits read one by one, for the part after a decimal point.
 fn digit_words(digits: &str) -> String {
-    digits
-        .chars()
-        .filter_map(|c| c.to_digit(10))
-        .map(|d| ONES[d as usize])
-        .collect::<Vec<_>>()
-        .join(" ")
+    digits.chars().filter_map(|c| c.to_digit(10)).map(|d| ONES[d as usize]).collect::<Vec<_>>().join(" ")
 }
 
 fn parse_grouped(s: &str) -> Option<u64> {
@@ -110,7 +122,11 @@ fn cardinal_text(int: &str, frac: Option<&str>) -> Option<String> {
 }
 
 fn plural(n: u64, one: &str, many: &str) -> String {
-    if n == 1 { one.to_string() } else { many.to_string() }
+    if n == 1 {
+        one.to_string()
+    } else {
+        many.to_string()
+    }
 }
 
 fn money_re() -> &'static Regex {
@@ -170,12 +186,11 @@ pub fn spell_out_numbers_en(text: &str) -> String {
         return text;
     }
     let text = money_re().replace_all(&text, |c: &Captures| money(c));
-    let text = percent_re().replace_all(&text, |c: &Captures| {
-        match cardinal_text(&c[1], c.get(2).map(|m| m.as_str())) {
+    let text =
+        percent_re().replace_all(&text, |c: &Captures| match cardinal_text(&c[1], c.get(2).map(|m| m.as_str())) {
             Some(words) => format!("{words} percent"),
             None => c[0].to_string(),
-        }
-    });
+        });
     let text = ordinal_re().replace_all(&text, |c: &Captures| {
         c[1].parse().ok().and_then(ordinal_words).unwrap_or_else(|| c[0].to_string())
     });
@@ -189,15 +204,14 @@ pub fn spell_out_numbers_en(text: &str) -> String {
             _ => format!("{hour_words} {}", number_to_words(minute).unwrap_or_default()),
         }
     });
-    let text = number_re().replace_all(&text, |c: &Captures| {
-        match cardinal_text(&c[3], c.get(4).map(|m| m.as_str())) {
+    let text =
+        number_re().replace_all(&text, |c: &Captures| match cardinal_text(&c[3], c.get(4).map(|m| m.as_str())) {
             Some(words) => {
                 let sign = if &c[2] == "-" { "minus " } else { "" };
                 format!("{}{sign}{words}", &c[1])
             }
             None => c[0].to_string(),
-        }
-    });
+        });
     text.into_owned()
 }
 

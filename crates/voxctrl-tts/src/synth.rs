@@ -162,11 +162,7 @@ pub(crate) fn synth_piper(config: &TtsConfig, u: &Utterance) -> Result<(Vec<u8>,
 
     let length_scale = 1.0 / config.speed;
     let mut cmd = std::process::Command::new(&binary);
-    cmd.arg("--model")
-        .arg(&voice_path)
-        .arg("--length-scale")
-        .arg(length_scale.to_string())
-        .arg("--output-raw");
+    cmd.arg("--model").arg(&voice_path).arg("--length-scale").arg(length_scale.to_string()).arg("--output-raw");
 
     if config.gpu {
         cmd.arg("--cuda");

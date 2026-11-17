@@ -115,10 +115,7 @@ fn load_model(
                 return Ok((model, 99, "vulkan".to_string()));
             }
             Err(e) => {
-                tracing::warn!(
-                    "Failed to load model on Vulkan GPU ({}); falling back to CPU",
-                    e
-                );
+                tracing::warn!("Failed to load model on Vulkan GPU ({}); falling back to CPU", e);
             }
         }
     }
@@ -148,9 +145,7 @@ fn clean_text(
     }
 
     let n_ctx = ((tokens.len() + 512) as u32).max(1024);
-    let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(n_ctx))
-        .with_n_batch(512);
+    let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(n_ctx)).with_n_batch(512);
 
     let mut ctx = state.model.new_context(backend, ctx_params)?;
     let mut batch = LlamaBatch::new(tokens.len().max(512), 1);
@@ -204,11 +199,7 @@ fn strip_artifacts(text: &str) -> String {
 }
 
 fn send_response<T: Serialize>(stdout: &mut io::StdoutLock, id: serde_json::Value, result: T) {
-    let resp = ResponseSuccess {
-        jsonrpc: "2.0",
-        id,
-        result,
-    };
+    let resp = ResponseSuccess { jsonrpc: "2.0", id, result };
     if let Ok(json) = serde_json::to_string(&resp) {
         let _ = writeln!(stdout, "{}", json);
         let _ = stdout.flush();
@@ -216,14 +207,7 @@ fn send_response<T: Serialize>(stdout: &mut io::StdoutLock, id: serde_json::Valu
 }
 
 fn send_error(stdout: &mut io::StdoutLock, id: serde_json::Value, code: i32, message: &str) {
-    let resp = ResponseError {
-        jsonrpc: "2.0",
-        id,
-        error: ErrorBody {
-            code,
-            message: message.to_string(),
-        },
-    };
+    let resp = ResponseError { jsonrpc: "2.0", id, error: ErrorBody { code, message: message.to_string() } };
     if let Ok(json) = serde_json::to_string(&resp) {
         let _ = writeln!(stdout, "{}", json);
         let _ = stdout.flush();
@@ -265,12 +249,7 @@ fn main() {
         let req: Request = match serde_json::from_str(line) {
             Ok(r) => r,
             Err(e) => {
-                send_error(
-                    &mut stdout_lock,
-                    serde_json::Value::Null,
-                    -32700,
-                    &format!("Parse error: {e}"),
-                );
+                send_error(&mut stdout_lock, serde_json::Value::Null, -32700, &format!("Parse error: {e}"));
                 continue;
             }
         };
@@ -279,24 +258,12 @@ fn main() {
 
         match req.method.as_str() {
             "ping" => {
-                let gpu_enabled = state
-                    .as_ref()
-                    .map(|s| s.gpu_layers > 0)
-                    .unwrap_or(cfg!(feature = "vulkan"));
-                let backend_name = if cfg!(feature = "vulkan") {
-                    "vulkan".to_string()
-                } else {
-                    "cpu".to_string()
-                };
+                let gpu_enabled = state.as_ref().map(|s| s.gpu_layers > 0).unwrap_or(cfg!(feature = "vulkan"));
+                let backend_name = if cfg!(feature = "vulkan") { "vulkan".to_string() } else { "cpu".to_string() };
                 send_response(
                     &mut stdout_lock,
                     id,
-                    PingResult {
-                        status: "ok",
-                        backend: backend_name,
-                        gpu_enabled,
-                        model_loaded: state.is_some(),
-                    },
+                    PingResult { status: "ok", backend: backend_name, gpu_enabled, model_loaded: state.is_some() },
                 );
             }
             "load" => {
@@ -344,21 +311,11 @@ fn main() {
                         send_response(
                             &mut stdout_lock,
                             id,
-                            LoadResult {
-                                status: "ok",
-                                model_path: params.model_path,
-                                device: device_desc,
-                                gpu_layers,
-                            },
+                            LoadResult { status: "ok", model_path: params.model_path, device: device_desc, gpu_layers },
                         );
                     }
                     Err(e) => {
-                        send_error(
-                            &mut stdout_lock,
-                            id,
-                            -32603,
-                            &format!("Failed to load model: {e}"),
-                        );
+                        send_error(&mut stdout_lock, id, -32603, &format!("Failed to load model: {e}"));
                     }
                 }
             }
@@ -380,9 +337,7 @@ fn main() {
                 // Load when nothing is loaded yet, or reload when the caller's
                 // GPU/CPU choice changed since the model was loaded.
                 let want_gpu = params.gpu.unwrap_or(true);
-                if params.model_path.is_some()
-                    && state.as_ref().is_some_and(|s| s.gpu_requested != want_gpu)
-                {
+                if params.model_path.is_some() && state.as_ref().is_some_and(|s| s.gpu_requested != want_gpu) {
                     // Free the old model before allocating the new one.
                     tracing::info!("Device setting changed (gpu={want_gpu}); reloading model");
                     state = None;
@@ -401,12 +356,7 @@ fn main() {
                                 });
                             }
                             Err(e) => {
-                                send_error(
-                                    &mut stdout_lock,
-                                    id,
-                                    -32603,
-                                    &format!("Failed to auto-load model: {e}"),
-                                );
+                                send_error(&mut stdout_lock, id, -32603, &format!("Failed to auto-load model: {e}"));
                                 continue;
                             }
                         }
@@ -433,13 +383,7 @@ fn main() {
                 let styling = params.styling.as_deref().unwrap_or("casual");
                 let context = params.context.as_deref().unwrap_or("general");
 
-                match clean_text(
-                    &backend,
-                    current_state,
-                    &params.raw_text,
-                    styling,
-                    context,
-                ) {
+                match clean_text(&backend, current_state, &params.raw_text, styling, context) {
                     Ok(cleaned) => {
                         let elapsed_ms = t0.elapsed().as_millis() as u64;
                         send_response(
@@ -453,22 +397,12 @@ fn main() {
                         );
                     }
                     Err(e) => {
-                        send_error(
-                            &mut stdout_lock,
-                            id,
-                            -32603,
-                            &format!("Inference failed: {e}"),
-                        );
+                        send_error(&mut stdout_lock, id, -32603, &format!("Inference failed: {e}"));
                     }
                 }
             }
             other => {
-                send_error(
-                    &mut stdout_lock,
-                    id,
-                    -32601,
-                    &format!("Method not found: {other}"),
-                );
+                send_error(&mut stdout_lock, id, -32601, &format!("Method not found: {other}"));
             }
         }
     }

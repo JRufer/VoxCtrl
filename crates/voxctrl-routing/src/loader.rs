@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use thiserror::Error;
 
-use crate::models::{
-    DeliveryType, GestureType, HotkeyBinding, OutputTarget, TargetProcessingConfig,
-};
+use crate::models::{DeliveryType, GestureType, HotkeyBinding, OutputTarget, TargetProcessingConfig};
 
 const FORMAT_VERSION: &str = "1.1";
 const KEEP_BACKUPS: usize = 20;
@@ -21,9 +19,7 @@ pub enum LoaderError {
 }
 
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
+    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl")
 }
 
 // ── TOML round-trip via serde ────────────────────────────────────────────────
@@ -191,15 +187,9 @@ fn raw_to_target(r: RawTarget) -> OutputTarget {
     };
 
     // Convert toml::Value http/webhook templates to serde_json::Value
-    let http_json_template = r
-        .http_json_template
-        .and_then(|v| serde_json::to_value(v).ok());
-    let webhook_json_template = r
-        .webhook_json_template
-        .and_then(|v| serde_json::to_value(v).ok());
-    let mcp_args = r
-        .mcp_args
-        .and_then(|v| serde_json::to_value(v).ok());
+    let http_json_template = r.http_json_template.and_then(|v| serde_json::to_value(v).ok());
+    let webhook_json_template = r.webhook_json_template.and_then(|v| serde_json::to_value(v).ok());
+    let mcp_args = r.mcp_args.and_then(|v| serde_json::to_value(v).ok());
 
     OutputTarget {
         id: r.id,
@@ -290,22 +280,13 @@ fn target_to_raw(t: &OutputTarget) -> RawTarget {
         http_url: t.http_url.clone(),
         http_method: t.http_method.clone(),
         http_headers: t.http_headers.clone(),
-        http_json_template: t
-            .http_json_template
-            .as_ref()
-            .and_then(|v| serde_json::from_value(v.clone()).ok()),
+        http_json_template: t.http_json_template.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()),
         webhook_url: t.webhook_url.clone(),
         webhook_secret: t.webhook_secret.clone(),
-        webhook_json_template: t
-            .webhook_json_template
-            .as_ref()
-            .and_then(|v| serde_json::from_value(v.clone()).ok()),
+        webhook_json_template: t.webhook_json_template.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()),
         mcp_path: t.mcp_path.clone(),
         mcp_tool: t.mcp_tool.clone(),
-        mcp_args: t
-            .mcp_args
-            .as_ref()
-            .and_then(|v| serde_json::from_value(v.clone()).ok()),
+        mcp_args: t.mcp_args.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()),
         chat_url: t.chat_url.clone(),
         chat_model: t.chat_model.clone(),
         chat_api_key: t.chat_api_key.clone(),
@@ -435,11 +416,7 @@ pub fn default_bindings() -> Vec<HotkeyBinding> {
         HotkeyBinding {
             id: "default_toggle".into(),
             label: "Dictate (Toggle)".into(),
-            keys: vec![
-                "KEY_LEFTCTRL".into(),
-                "KEY_LEFTMETA".into(),
-                "KEY_SPACE".into(),
-            ],
+            keys: vec!["KEY_LEFTCTRL".into(), "KEY_LEFTMETA".into(), "KEY_SPACE".into()],
             gesture: GestureType::Toggle,
             target_id: "default".into(),
             target_ids: vec!["default".into()],
@@ -484,11 +461,7 @@ fn prune_backups(filename: &str, config_dir: &Path) {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with(&pattern)
-        })
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&pattern))
         .map(|e| e.path())
         .collect();
     entries.sort();
@@ -509,11 +482,7 @@ pub fn load_targets(config_dir: &Path) -> Result<Vec<OutputTarget>, LoaderError>
     let text = std::fs::read_to_string(&path)?;
     let file: TargetsFile = toml::from_str(&text)?;
     let targets: Vec<_> = file.targets.into_iter().map(raw_to_target).collect();
-    Ok(if targets.is_empty() {
-        default_targets()
-    } else {
-        targets
-    })
+    Ok(if targets.is_empty() { default_targets() } else { targets })
 }
 
 pub fn load_bindings(config_dir: &Path) -> Result<Vec<HotkeyBinding>, LoaderError> {
@@ -524,20 +493,14 @@ pub fn load_bindings(config_dir: &Path) -> Result<Vec<HotkeyBinding>, LoaderErro
     let text = std::fs::read_to_string(&path)?;
     let file: BindingsFile = toml::from_str(&text)?;
     let bindings: Vec<_> = file.bindings.into_iter().map(raw_to_binding).collect();
-    Ok(if bindings.is_empty() {
-        default_bindings()
-    } else {
-        bindings
-    })
+    Ok(if bindings.is_empty() { default_bindings() } else { bindings })
 }
 
 pub fn save_targets(targets: &[OutputTarget], config_dir: &Path) -> Result<(), LoaderError> {
     std::fs::create_dir_all(config_dir)?;
     backup("targets.toml", config_dir)?;
-    let file = TargetsFile {
-        format_version: FORMAT_VERSION.into(),
-        targets: targets.iter().map(target_to_raw).collect(),
-    };
+    let file =
+        TargetsFile { format_version: FORMAT_VERSION.into(), targets: targets.iter().map(target_to_raw).collect() };
     let text = toml::to_string_pretty(&file)?;
     voxctrl_config::write_private(&config_dir.join("targets.toml"), &text)?;
     Ok(())
@@ -546,10 +509,8 @@ pub fn save_targets(targets: &[OutputTarget], config_dir: &Path) -> Result<(), L
 pub fn save_bindings(bindings: &[HotkeyBinding], config_dir: &Path) -> Result<(), LoaderError> {
     std::fs::create_dir_all(config_dir)?;
     backup("bindings.toml", config_dir)?;
-    let file = BindingsFile {
-        format_version: FORMAT_VERSION.into(),
-        bindings: bindings.iter().map(binding_to_raw).collect(),
-    };
+    let file =
+        BindingsFile { format_version: FORMAT_VERSION.into(), bindings: bindings.iter().map(binding_to_raw).collect() };
     let text = toml::to_string_pretty(&file)?;
     voxctrl_config::write_private(&config_dir.join("bindings.toml"), &text)?;
     Ok(())

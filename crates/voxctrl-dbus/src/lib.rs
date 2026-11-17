@@ -97,10 +97,7 @@ mod linux {
         /// asking. Found updates also appear in the tray.
         async fn check_for_update(&self) -> zbus::fdo::Result<String> {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            self.update_tx
-                .send(tx)
-                .await
-                .map_err(|_| zbus::fdo::Error::Failed("VoxCtrl is shutting down".into()))?;
+            self.update_tx.send(tx).await.map_err(|_| zbus::fdo::Error::Failed("VoxCtrl is shutting down".into()))?;
             rx.await
                 .map_err(|_| zbus::fdo::Error::Failed("The update check was dropped".into()))?
                 .map_err(zbus::fdo::Error::Failed)
@@ -140,48 +137,29 @@ mod linux {
         stop_tx: tokio::sync::mpsc::Sender<()>,
         update_tx: tokio::sync::mpsc::Sender<UpdateReply>,
     ) -> Result<Connection> {
-        let iface = DictationInterface {
-            state,
-            start_tx,
-            stop_tx,
-            update_tx,
-        };
+        let iface = DictationInterface { state, start_tx, stop_tx, update_tx };
 
         let conn = Connection::session().await?;
-        conn.object_server()
-            .at("/ai/voxctrl/Dictation", iface)
-            .await?;
+        conn.object_server().at("/ai/voxctrl/Dictation", iface).await?;
         conn.request_name("ai.voxctrl.Dictation").await?;
         info!("DBus service registered: ai.voxctrl.Dictation");
         Ok(conn)
     }
 
-    pub async fn emit_status_changed(
-        conn: &Connection,
-        status: &str,
-    ) -> Result<()> {
-        let iface_ref = conn
-            .object_server()
-            .interface::<_, DictationInterface>("/ai/voxctrl/Dictation")
-            .await?;
+    pub async fn emit_status_changed(conn: &Connection, status: &str) -> Result<()> {
+        let iface_ref = conn.object_server().interface::<_, DictationInterface>("/ai/voxctrl/Dictation").await?;
         DictationInterface::status_changed(iface_ref.signal_context(), status).await?;
         Ok(())
     }
 
     pub async fn emit_text_injected(conn: &Connection, text: &str) -> Result<()> {
-        let iface_ref = conn
-            .object_server()
-            .interface::<_, DictationInterface>("/ai/voxctrl/Dictation")
-            .await?;
+        let iface_ref = conn.object_server().interface::<_, DictationInterface>("/ai/voxctrl/Dictation").await?;
         DictationInterface::text_injected(iface_ref.signal_context(), text).await?;
         Ok(())
     }
 
     pub async fn emit_update_available(conn: &Connection, version: &str) -> Result<()> {
-        let iface_ref = conn
-            .object_server()
-            .interface::<_, DictationInterface>("/ai/voxctrl/Dictation")
-            .await?;
+        let iface_ref = conn.object_server().interface::<_, DictationInterface>("/ai/voxctrl/Dictation").await?;
         DictationInterface::update_available(iface_ref.signal_context(), version).await?;
         Ok(())
     }
@@ -260,10 +238,7 @@ mod linux {
 
             // Subscribed before the drop: the release is asynchronous, and
             // polling for it would either race or need an arbitrary sleep.
-            let mut lost = dbus
-                .receive_name_owner_changed_with_args(&[(0, name), (2, "")])
-                .await
-                .unwrap();
+            let mut lost = dbus.receive_name_owner_changed_with_args(&[(0, name), (2, "")]).await.unwrap();
 
             drop(conn);
 

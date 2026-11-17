@@ -6,10 +6,7 @@ fn a_name_on_path_is_found() {
     std::fs::write(dir.path().join(&name), b"").unwrap();
 
     let _guard = PathGuard::prepending(dir.path());
-    assert_eq!(
-        find_in_path("voxctrl_path_probe").as_deref(),
-        Some(dir.path().join(&name).as_path())
-    );
+    assert_eq!(find_in_path("voxctrl_path_probe").as_deref(), Some(dir.path().join(&name).as_path()));
 }
 
 #[test]
@@ -169,11 +166,7 @@ fn migrates_per_engine_hf_tokens_onto_one_key() {
     assert!(data.tts.breeze_tts_2.legacy_hf_token.is_none());
 
     let written = serde_json::to_string(&data.tts).unwrap();
-    assert_eq!(
-        written.matches("hf_token").count(),
-        1,
-        "the token must be stored once, not per engine: {written}"
-    );
+    assert_eq!(written.matches("hf_token").count(), 1, "the token must be stored once, not per engine: {written}");
 }
 
 /// A token set only on Breeze is lifted too — either copy will do.
@@ -204,10 +197,7 @@ fn a_config_with_one_token_is_left_alone() {
 
     assert!(!migrate_hf_token(&mut data), "nothing to migrate");
     assert_eq!(data.tts.hf_token.as_deref(), Some("hf_single"));
-    assert_eq!(
-        serde_json::to_string(&data.tts).unwrap().matches("hf_token").count(),
-        1
-    );
+    assert_eq!(serde_json::to_string(&data.tts).unwrap().matches("hf_token").count(), 1);
 }
 
 /// The single key wins over a stale per-engine copy rather than being
@@ -258,10 +248,7 @@ fn cloned_voices_migration_is_a_noop_without_the_old_folder() {
     std::fs::create_dir_all(&new_dir).unwrap();
     std::fs::write(new_dir.join("b.wav"), b"new").unwrap();
 
-    assert!(
-        !migrate_cloned_voices_dir_at(base.path()),
-        "must not clobber an existing new folder"
-    );
+    assert!(!migrate_cloned_voices_dir_at(base.path()), "must not clobber an existing new folder");
     assert!(new_dir.join("b.wav").exists());
     assert!(old_dir.join("a.wav").exists());
 }
@@ -279,22 +266,10 @@ fn legacy_auto_backend_loads_as_whisper_cpp() {
 
 #[test]
 fn backend_choice_serializes_kebab_case() {
-    assert_eq!(
-        serde_json::to_string(&BackendChoice::WhisperCpp).unwrap(),
-        r#""whisper-cpp""#
-    );
-    assert_eq!(
-        serde_json::to_string(&BackendChoice::Moonshine).unwrap(),
-        r#""moonshine""#
-    );
-    assert_eq!(
-        serde_json::to_string(&BackendChoice::Parakeet).unwrap(),
-        r#""parakeet""#
-    );
-    assert_eq!(
-        serde_json::to_string(&BackendChoice::RemoteOpenAi).unwrap(),
-        r#""remote-openai""#
-    );
+    assert_eq!(serde_json::to_string(&BackendChoice::WhisperCpp).unwrap(), r#""whisper-cpp""#);
+    assert_eq!(serde_json::to_string(&BackendChoice::Moonshine).unwrap(), r#""moonshine""#);
+    assert_eq!(serde_json::to_string(&BackendChoice::Parakeet).unwrap(), r#""parakeet""#);
+    assert_eq!(serde_json::to_string(&BackendChoice::RemoteOpenAi).unwrap(), r#""remote-openai""#);
     let parsed: BackendChoice = serde_json::from_str(r#""remote-openai""#).unwrap();
     assert_eq!(parsed, BackendChoice::RemoteOpenAi);
     let parsed_alias: BackendChoice = serde_json::from_str(r#""openai-compatible""#).unwrap();
@@ -378,19 +353,13 @@ fn test_legacy_notification_migration() {
     let config_file_path = temp_dir.path().join("config.json");
     std::fs::write(&config_file_path, legacy_json).unwrap();
 
-    let config = Config {
-        data: parsed,
-        path: config_file_path.clone(),
-    };
+    let config = Config { data: parsed, path: config_file_path.clone() };
 
     // Trigger load which executes the migration
     let _migrated_config = Config::load();
-    
+
     // Assertions on the loaded instance
-    let mut custom_config = Config {
-        data: config.data.clone(),
-        path: config_file_path.clone(),
-    };
+    let mut custom_config = Config { data: config.data.clone(), path: config_file_path.clone() };
     if let Some(legacy_notif) = custom_config.data.features.show_notification {
         custom_config.data.ui.show_notification = legacy_notif;
         custom_config.data.features.show_notification = None;
@@ -403,12 +372,14 @@ fn test_legacy_notification_migration() {
     // Re-read file to verify the JSON content no longer has features.show_notification
     let re_read_content = std::fs::read_to_string(&config_file_path).unwrap();
     assert!(re_read_content.contains(r#""show_notification": true"#));
-    assert!(!re_read_content.contains(r#""features": {
+    assert!(!re_read_content.contains(
+        r#""features": {
 "remove_fillers": true,
 "custom_vocabulary": [],
 "spoken_punctuation": true,
 "auto_format_lists": true,
-"show_notification": true"#));
+"show_notification": true"#
+    ));
 }
 
 #[test]
@@ -503,10 +474,7 @@ fn test_openai_timeout_migration() {
     let config_file_path = temp_dir.path().join("config.json");
     std::fs::write(&config_file_path, &legacy_json).unwrap();
 
-    let mut config = Config {
-        data: parsed,
-        path: config_file_path.clone(),
-    };
+    let mut config = Config { data: parsed, path: config_file_path.clone() };
 
     if config.data.openai.timeout_secs == 8 {
         config.data.openai.timeout_secs = 30;
@@ -589,10 +557,10 @@ fn automatic_update_checks_are_off_by_default() {
 fn a_leftover_auto_check_from_an_old_config_does_not_opt_anyone_in() {
     let json = serde_json::to_string(&AppConfig::default()).unwrap();
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    value.as_object_mut().unwrap().insert(
-        "updates".to_string(),
-        serde_json::json!({ "auto_check": true, "skipped_version": "0.4.0" }),
-    );
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert("updates".to_string(), serde_json::json!({ "auto_check": true, "skipped_version": "0.4.0" }));
     let with_leftover = serde_json::to_string(&value).unwrap();
 
     let parsed = serde_json::from_str::<AppConfig>(&with_leftover).expect("older configs must still load");
@@ -705,9 +673,7 @@ fn history_entry_limit_is_validated() {
     let mut cfg = AppConfig::default();
     assert!(validate(&cfg).is_empty());
     cfg.history.max_entries = HISTORY_MAX_ENTRIES + 1;
-    assert!(validate(&cfg)
-        .iter()
-        .any(|e| e.contains("history.max_entries")));
+    assert!(validate(&cfg).iter().any(|e| e.contains("history.max_entries")));
 }
 
 #[test]

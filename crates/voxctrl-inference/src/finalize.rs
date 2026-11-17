@@ -63,10 +63,7 @@ const VOCAB_PROMPT_BUDGET: usize = 600;
 /// Only engines that accept a prompt use this — whisper.cpp and the remote
 /// OpenAI-compatible ones. Moonshine and Parakeet ignore it and already
 /// transcribe these words consistently.
-pub fn initial_prompt(
-    custom_vocabulary: &[String],
-    snippets: &std::collections::HashMap<String, String>,
-) -> String {
+pub fn initial_prompt(custom_vocabulary: &[String], snippets: &std::collections::HashMap<String, String>) -> String {
     // Triggers sorted, not taken in `HashMap` order: Rust re-seeds that every
     // run, and a prompt that changed between runs would make the engine
     // transcribe the same audio differently from one launch to the next.
@@ -101,34 +98,19 @@ pub fn initial_prompt(
 /// comma-separated list): the first listed target decides for all of them.
 /// No overrides when that target does not exist.
 pub fn target_processing(target_id: &str, targets: &[OutputTarget]) -> TargetProcessingConfig {
-    let primary = target_id
-        .split(',')
-        .map(str::trim)
-        .find(|s| !s.is_empty())
-        .unwrap_or("default");
-    targets
-        .iter()
-        .find(|t| t.id == primary)
-        .map(|t| t.processing.clone())
-        .unwrap_or_default()
+    let primary = target_id.split(',').map(str::trim).find(|s| !s.is_empty()).unwrap_or("default");
+    targets.iter().find(|t| t.id == primary).map(|t| t.processing.clone()).unwrap_or_default()
 }
 
 /// Post-processing settings: the target's own overrides where it has them,
 /// the global feature settings otherwise.
-pub fn post_process_config<'a>(
-    processing: &TargetProcessingConfig,
-    app: &'a AppConfig,
-) -> PostProcessConfig<'a> {
+pub fn post_process_config<'a>(processing: &TargetProcessingConfig, app: &'a AppConfig) -> PostProcessConfig<'a> {
     let features = &app.features;
 
     PostProcessConfig {
         remove_fillers: processing.remove_fillers.unwrap_or(features.remove_fillers),
-        spoken_punctuation: processing
-            .spoken_punctuation
-            .unwrap_or(features.spoken_punctuation),
-        auto_format_lists: processing
-            .auto_format_lists
-            .unwrap_or(features.auto_format_lists),
+        spoken_punctuation: processing.spoken_punctuation.unwrap_or(features.spoken_punctuation),
+        auto_format_lists: processing.auto_format_lists.unwrap_or(features.auto_format_lists),
         // Snippets always expand; the only thing that turns them off is having
         // none defined.
         apply_snippets: !features.snippets.is_empty(),
@@ -140,12 +122,7 @@ pub fn post_process_config<'a>(
 
 /// Run the text pipeline over a raw transcript, then drop it if it is a known
 /// silence hallucination and the audio (energy `rms`) really was silence.
-pub fn post_process(
-    raw_text: &str,
-    rms: f32,
-    processing: &TargetProcessingConfig,
-    app: &AppConfig,
-) -> String {
+pub fn post_process(raw_text: &str, rms: f32, processing: &TargetProcessingConfig, app: &AppConfig) -> String {
     let processed = run_pipeline(raw_text, &post_process_config(processing, app));
     if !processed.is_empty() && rms < SILENCE_RMS && is_silence_hallucination(&processed) {
         tracing::info!("Discarded silence hallucination '{processed}' (audio RMS: {rms:.5})");
@@ -172,10 +149,7 @@ pub fn binding_llm_client(binding: Option<&HotkeyBinding>, config: &AppConfig) -
     })
 }
 
-pub fn binding_openai_config(
-    binding: Option<&HotkeyBinding>,
-    base: &OpenAiConfig,
-) -> Option<OpenAiConfig> {
+pub fn binding_openai_config(binding: Option<&HotkeyBinding>, base: &OpenAiConfig) -> Option<OpenAiConfig> {
     let binding = binding.filter(|b| b.openai_enabled == Some(true))?;
     let non_empty = |s: &Option<String>| s.as_deref().filter(|s| !s.is_empty()).map(str::to_string);
 

@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -12,33 +11,33 @@ pub enum ConfigError {
     Validation(String),
 }
 
-mod engine;
 mod audio;
-mod ui;
+mod engine;
 mod features;
-mod openai;
-mod tts;
-mod mcp;
 mod history;
-mod updates;
+mod mcp;
 mod migrate;
-mod store;
+mod openai;
 mod paths;
+mod store;
+mod tts;
+mod ui;
+mod updates;
 mod validate;
 
-pub use engine::*;
 pub use audio::*;
-pub use ui::*;
+pub use engine::*;
 pub use features::*;
-pub use openai::*;
-pub use tts::*;
-pub use mcp::*;
 pub use history::*;
-pub use updates::*;
+pub use mcp::*;
 use migrate::*;
 pub use migrate::{canonical_key_name, canonicalize_key_names};
-pub use store::*;
+pub use openai::*;
 pub use paths::*;
+pub use store::*;
+pub use tts::*;
+pub use ui::*;
+pub use updates::*;
 pub use validate::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

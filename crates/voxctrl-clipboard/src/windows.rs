@@ -11,12 +11,10 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use windows_sys::Win32::Foundation::{GlobalFree, HANDLE, HWND};
 use windows_sys::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
-    GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+    CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
+    RegisterClipboardFormatW, SetClipboardData,
 };
-use windows_sys::Win32::System::Memory::{
-    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
-};
+use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE};
 
 const CF_UNICODETEXT: u32 = 13;
@@ -35,8 +33,14 @@ const CF_GDIOBJLAST: u32 = 0x03FF;
 fn is_handle_format(f: u32) -> bool {
     matches!(
         f,
-        CF_BITMAP | CF_METAFILEPICT | CF_PALETTE | CF_ENHMETAFILE | CF_OWNERDISPLAY
-            | CF_DSPBITMAP | CF_DSPMETAFILEPICT | CF_DSPENHMETAFILE
+        CF_BITMAP
+            | CF_METAFILEPICT
+            | CF_PALETTE
+            | CF_ENHMETAFILE
+            | CF_OWNERDISPLAY
+            | CF_DSPBITMAP
+            | CF_DSPMETAFILEPICT
+            | CF_DSPENHMETAFILE
     ) || (CF_PRIVATEFIRST..=CF_GDIOBJLAST).contains(&f)
 }
 
@@ -176,11 +180,8 @@ pub fn current_text() -> Option<String> {
     let _open = Open::new(owner.0).ok()?;
     let h = unsafe { GetClipboardData(CF_UNICODETEXT) };
     let bytes = read_global(h)?;
-    let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .take_while(|u| *u != 0)
-        .collect();
+    let units: Vec<u16> =
+        bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
     Some(String::from_utf16_lossy(&units))
 }
 

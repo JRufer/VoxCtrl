@@ -80,14 +80,9 @@ impl Portal {
         #[zbus(connection)] conn: &zbus5::Connection,
     ) -> zbus5::fdo::Result<ObjectPath<'static>> {
         let who = sender_part(&hdr);
-        let request = format!(
-            "/org/freedesktop/portal/desktop/request/{who}/{}",
-            token_of(&options, "handle_token")
-        );
-        let session = format!(
-            "/org/freedesktop/portal/desktop/session/{who}/{}",
-            token_of(&options, "session_handle_token")
-        );
+        let request = format!("/org/freedesktop/portal/desktop/request/{who}/{}", token_of(&options, "handle_token"));
+        let session =
+            format!("/org/freedesktop/portal/desktop/session/{who}/{}", token_of(&options, "session_handle_token"));
         let mut results = HashMap::new();
         results.insert("session_handle".to_string(), Value::from(session).try_into().unwrap());
         respond(conn, request.clone(), results);
@@ -102,10 +97,7 @@ impl Portal {
         #[zbus(connection)] conn: &zbus5::Connection,
     ) -> zbus5::fdo::Result<ObjectPath<'static>> {
         let who = sender_part(&hdr);
-        let request = format!(
-            "/org/freedesktop/portal/desktop/request/{who}/{}",
-            token_of(&options, "handle_token")
-        );
+        let request = format!("/org/freedesktop/portal/desktop/request/{who}/{}", token_of(&options, "handle_token"));
         let token = options.get("restore_token").and_then(|v| match v {
             Value::Str(s) => Some(s.to_string()),
             _ => None,
@@ -124,10 +116,7 @@ impl Portal {
         #[zbus(connection)] conn: &zbus5::Connection,
     ) -> zbus5::fdo::Result<ObjectPath<'static>> {
         let who = sender_part(&hdr);
-        let request = format!(
-            "/org/freedesktop/portal/desktop/request/{who}/{}",
-            token_of(&options, "handle_token")
-        );
+        let request = format!("/org/freedesktop/portal/desktop/request/{who}/{}", token_of(&options, "handle_token"));
         self.rec.lock().unwrap().starts += 1;
         let mut results = HashMap::new();
         results.insert("devices".to_string(), Value::from(1u32).try_into().unwrap());
@@ -207,8 +196,5 @@ async fn the_paste_shortcut_goes_through_the_remote_desktop_portal() {
     voxctrl_inject::portal_send_paste(voxctrl_inject::Shortcut::CtrlShiftV).await.unwrap();
     let r = rec.lock().unwrap();
     assert_eq!(r.starts, 1, "a second paste must reuse the session");
-    assert_eq!(
-        &r.keys[4..],
-        &[(29, 1), (42, 1), (47, 1), (47, 0), (42, 0), (29, 0)]
-    );
+    assert_eq!(&r.keys[4..], &[(29, 1), (42, 1), (47, 1), (47, 0), (42, 0), (29, 0)]);
 }

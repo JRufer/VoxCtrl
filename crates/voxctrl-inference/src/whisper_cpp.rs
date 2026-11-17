@@ -13,21 +13,20 @@ use crate::backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResul
 // ── GGUF model resolution ─────────────────────────────────────────────────────
 
 static GGUF_MAP: &[(&str, &[&str])] = &[
-    ("tiny",           &["ggml-tiny-q5_1.bin",           "ggml-tiny.bin"]),
-    ("tiny.en",        &["ggml-tiny.en-q5_1.bin",        "ggml-tiny.en.bin"]),
-    ("base",           &["ggml-base-q5_1.bin",           "ggml-base.bin"]),
-    ("base.en",        &["ggml-base.en-q5_1.bin",        "ggml-base.en.bin"]),
-    ("small",          &["ggml-small-q5_1.bin",          "ggml-small.bin"]),
-    ("small.en",       &["ggml-small.en-q5_1.bin",       "ggml-small.en.bin"]),
-    ("medium",         &["ggml-medium-q5_0.bin",         "ggml-medium.bin"]),
-    ("medium.en",      &["ggml-medium.en-q5_0.bin",      "ggml-medium.en.bin"]),
-    ("large-v2",       &["ggml-large-v2-q5_0.bin",       "ggml-large-v2.bin"]),
-    ("large-v3",       &["ggml-large-v3-q5_0.bin",       "ggml-large-v3.bin"]),
+    ("tiny", &["ggml-tiny-q5_1.bin", "ggml-tiny.bin"]),
+    ("tiny.en", &["ggml-tiny.en-q5_1.bin", "ggml-tiny.en.bin"]),
+    ("base", &["ggml-base-q5_1.bin", "ggml-base.bin"]),
+    ("base.en", &["ggml-base.en-q5_1.bin", "ggml-base.en.bin"]),
+    ("small", &["ggml-small-q5_1.bin", "ggml-small.bin"]),
+    ("small.en", &["ggml-small.en-q5_1.bin", "ggml-small.en.bin"]),
+    ("medium", &["ggml-medium-q5_0.bin", "ggml-medium.bin"]),
+    ("medium.en", &["ggml-medium.en-q5_0.bin", "ggml-medium.en.bin"]),
+    ("large-v2", &["ggml-large-v2-q5_0.bin", "ggml-large-v2.bin"]),
+    ("large-v3", &["ggml-large-v3-q5_0.bin", "ggml-large-v3.bin"]),
     ("large-v3-turbo", &["ggml-large-v3-turbo-q5_0.bin", "ggml-large-v3-turbo.bin"]),
 ];
 
-const GGUF_BASE_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
+const GGUF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 
 /// Model sizes small enough (~75MB or less) to auto-download silently in the
 /// background at first launch, so the app transcribes out of the box with no
@@ -66,9 +65,7 @@ pub fn resolve_device<'a>(requested: &str, compiled: Option<&'a str>) -> DeviceO
     }
     match compiled {
         None => DeviceOutcome::NoGpuInBuild,
-        Some(backend) if requested != "auto" && requested != backend => {
-            DeviceOutcome::DifferentGpuInBuild(backend)
-        }
+        Some(backend) if requested != "auto" && requested != backend => DeviceOutcome::DifferentGpuInBuild(backend),
         Some(backend) => DeviceOutcome::Gpu(backend),
     }
 }
@@ -107,13 +104,7 @@ pub struct WhisperCppBackend {
 
 impl WhisperCppBackend {
     pub fn new(cfg: WhisperCppConfig) -> Self {
-        Self {
-            cfg,
-            model_path: None,
-            loaded: false,
-            ctx: None,
-            state: Mutex::new(None),
-        }
+        Self { cfg, model_path: None, loaded: false, ctx: None, state: Mutex::new(None) }
     }
 
     pub fn default_model_dir() -> PathBuf {
@@ -186,8 +177,8 @@ impl TranscriptionBackend for WhisperCppBackend {
         params.use_gpu = requested != "cpu";
         log_device_choice(&requested, crate::whisper_gpu_backend());
 
-        let ctx = whisper_rs::WhisperContext::new_with_params(path.to_str().unwrap(), params)
-            .context("whisper-rs load")?;
+        let ctx =
+            whisper_rs::WhisperContext::new_with_params(path.to_str().unwrap(), params).context("whisper-rs load")?;
 
         // Create the inference state once. Allocates KV cache + attention buffers
         // up front so transcribe() never has to reallocate them.
@@ -336,9 +327,7 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     let response = reqwest::get(&url).await?.error_for_status()?;
     let bytes = response.bytes().await?;
 
-    tokio::fs::write(&path, bytes)
-        .await
-        .context("save model file")?;
+    tokio::fs::write(&path, bytes).await.context("save model file")?;
 
     info!("Whisper model downloaded successfully to: {}", path.display());
     Ok(())
@@ -363,10 +352,7 @@ mod tests {
     /// on the Vulkan AppImage. It runs — on Vulkan — and says so.
     #[test]
     fn naming_the_other_gpu_backend_reports_the_one_in_the_build() {
-        assert_eq!(
-            resolve_device("cuda", Some("vulkan")),
-            DeviceOutcome::DifferentGpuInBuild("vulkan")
-        );
+        assert_eq!(resolve_device("cuda", Some("vulkan")), DeviceOutcome::DifferentGpuInBuild("vulkan"));
     }
 
     /// A GPU asked for in a CPU-only build silently did nothing at all before.
@@ -517,15 +503,9 @@ mod tests {
         use std::io::Write;
         let dir = tempfile::tempdir().expect("tempdir");
         let model_path = dir.path().join("ggml-tiny-q5_1.bin");
-        std::fs::File::create(&model_path)
-            .unwrap()
-            .write_all(b"fake")
-            .unwrap();
+        std::fs::File::create(&model_path).unwrap().write_all(b"fake").unwrap();
 
-        assert!(is_model_downloaded(
-            "tiny",
-            dir.path().to_str().unwrap()
-        ));
+        assert!(is_model_downloaded("tiny", dir.path().to_str().unwrap()));
     }
 
     #[test]
@@ -546,10 +526,7 @@ mod tests {
         use std::io::Write;
         let dir = tempfile::tempdir().expect("tempdir");
         let model_path = dir.path().join("ggml-tiny-q5_1.bin");
-        std::fs::File::create(&model_path)
-            .unwrap()
-            .write_all(b"fake")
-            .unwrap();
+        std::fs::File::create(&model_path).unwrap().write_all(b"fake").unwrap();
 
         let cfg = WhisperCppConfig {
             model_dir: dir.path().to_str().unwrap().to_string(),
@@ -579,10 +556,9 @@ mod tests {
         let backend = WhisperCppBackend::new(cfg);
         let default_dir = WhisperCppBackend::default_model_dir();
         match backend.resolve_model_path() {
-            Err(e) => assert!(
-                e.to_string().contains(default_dir.to_str().unwrap()),
-                "error should mention default dir: {e}"
-            ),
+            Err(e) => {
+                assert!(e.to_string().contains(default_dir.to_str().unwrap()), "error should mention default dir: {e}")
+            }
             Ok(p) => {
                 // If there happens to be a model on this machine, just check it's under the default dir.
                 assert!(p.starts_with(&default_dir));
@@ -595,19 +571,16 @@ mod tests {
     #[test]
     fn test_is_model_downloaded_tilde_path() {
         use std::io::Write;
-        
+
         let old_home = std::env::var_os("HOME");
         let temp_home = tempfile::tempdir().expect("create temp home");
         let home = temp_home.path().to_path_buf();
-        
+
         std::env::set_var("HOME", &home);
 
         let dir = tempfile::tempdir_in(&home).expect("tempdir in home");
         let model_path = dir.path().join("ggml-tiny-q5_1.bin");
-        std::fs::File::create(&model_path)
-            .unwrap()
-            .write_all(b"fake")
-            .unwrap();
+        std::fs::File::create(&model_path).unwrap().write_all(b"fake").unwrap();
 
         // Construct a ~/... path pointing at the temp dir
         let rel = dir.path().strip_prefix(&home).unwrap();
@@ -624,4 +597,3 @@ mod tests {
         assert!(result);
     }
 }
-

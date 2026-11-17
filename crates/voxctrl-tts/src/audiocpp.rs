@@ -76,10 +76,7 @@ pub const FAMILY_VOXCPM2: &str = "voxcpm2";
 pub const FAMILY_KITTEN_TTS2: &str = "kitten_tts2";
 
 pub fn audiocpp_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("audiocpp")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("audiocpp")
 }
 
 /// Where VoxCtrl caches downloaded reference-voice clips (the `hf://` built-in
@@ -213,9 +210,7 @@ pub async fn download_audiocpp_binary() -> Result<()> {
     tokio::fs::create_dir_all(&dest_dir).await?;
 
     let asset = format!("audio-{AUDIOCPP_RELEASE_VERSION}-bin-{AUDIOCPP_LINUX_BUILD}.tar.gz");
-    let url = format!(
-        "https://github.com/0xShug0/audio.cpp/releases/download/{AUDIOCPP_RELEASE_VERSION}/{asset}"
-    );
+    let url = format!("https://github.com/0xShug0/audio.cpp/releases/download/{AUDIOCPP_RELEASE_VERSION}/{asset}");
     info!("Downloading audio.cpp runtime: {url}");
 
     let response = reqwest::get(&url).await?.error_for_status()?;
@@ -269,10 +264,7 @@ fn extract_audiocpp_archive(bytes: &[u8], dest_dir: &Path) -> Result<()> {
             continue;
         }
 
-        let rel: PathBuf = path
-            .components()
-            .filter(|c| matches!(c, std::path::Component::Normal(_)))
-            .collect();
+        let rel: PathBuf = path.components().filter(|c| matches!(c, std::path::Component::Normal(_))).collect();
         if rel.as_os_str().is_empty() {
             continue;
         }
@@ -310,9 +302,7 @@ fn extract_audiocpp_archive(bytes: &[u8], dest_dir: &Path) -> Result<()> {
 /// the local cache path it resolves to. Shared by the async, blocking, and
 /// cache-lookup-only variants below.
 fn hf_reference_parts(reference: &str) -> Result<(String, String, String, PathBuf)> {
-    let rest = reference
-        .strip_prefix("hf://")
-        .ok_or_else(|| anyhow::anyhow!("not an hf:// reference: {reference}"))?;
+    let rest = reference.strip_prefix("hf://").ok_or_else(|| anyhow::anyhow!("not an hf:// reference: {reference}"))?;
     let mut parts = rest.splitn(3, '/');
     let (owner, repo, filename_rev) = match (parts.next(), parts.next(), parts.next()) {
         (Some(o), Some(r), Some(f)) => (o, r, f),
@@ -395,9 +385,7 @@ async fn stream_to_file(mut resp: reqwest::Response, dest: &Path) -> Result<()> 
     let part = partial_path(dest);
     let total = resp.content_length();
     let result: Result<()> = async {
-        let mut file = tokio::fs::File::create(&part)
-            .await
-            .with_context(|| format!("create {}", part.display()))?;
+        let mut file = tokio::fs::File::create(&part).await.with_context(|| format!("create {}", part.display()))?;
         let mut written: u64 = 0;
         let mut next_log: u64 = 0;
         while let Some(chunk) = resp.chunk().await.context("read response body")? {
@@ -423,9 +411,7 @@ async fn stream_to_file(mut resp: reqwest::Response, dest: &Path) -> Result<()> 
     .await;
 
     match result {
-        Ok(()) => tokio::fs::rename(&part, dest)
-            .await
-            .with_context(|| format!("move {} into place", part.display())),
+        Ok(()) => tokio::fs::rename(&part, dest).await.with_context(|| format!("move {} into place", part.display())),
         Err(e) => {
             let _ = tokio::fs::remove_file(&part).await;
             Err(e)
@@ -641,10 +627,7 @@ impl AudioCppServer {
                 }
             }
             if let Ok(Some(status)) = child.try_wait() {
-                anyhow::bail!(
-                    "audiocpp_server exited during startup ({status:?}): {}",
-                    read_stderr(&mut child)
-                );
+                anyhow::bail!("audiocpp_server exited during startup ({status:?}): {}", read_stderr(&mut child));
             }
             if Instant::now() > deadline {
                 let _ = child.kill();
@@ -653,7 +636,15 @@ impl AudioCppServer {
             std::thread::sleep(Duration::from_millis(150));
         }
 
-        Ok(Self { child: std::sync::Mutex::new(child), base_url, http, family, model_dir: model_dir.to_path_buf(), gpu, _config_file: config_file })
+        Ok(Self {
+            child: std::sync::Mutex::new(child),
+            base_url,
+            http,
+            family,
+            model_dir: model_dir.to_path_buf(),
+            gpu,
+            _config_file: config_file,
+        })
     }
 
     fn speak(&self, req: &SpeakRequest) -> Result<Vec<u8>> {
@@ -786,9 +777,9 @@ impl AudioCppSession {
         model_dir: &Path,
         gpu: bool,
     ) -> Result<()> {
-        let matches = slot.as_ref().is_some_and(|s| {
-            s.server.family == family && s.server.model_dir == model_dir && s.server.gpu == gpu
-        });
+        let matches = slot
+            .as_ref()
+            .is_some_and(|s| s.server.family == family && s.server.model_dir == model_dir && s.server.gpu == gpu);
         // A server that has exited (crashed, ran out of memory, was killed)
         // cannot be reused: without this check every later request would be
         // sent to a port nobody listens on, until the app restarted.

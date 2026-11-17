@@ -99,10 +99,7 @@ pub struct GestureEngine {
 
 impl GestureEngine {
     pub fn new(bindings: Vec<HotkeyBinding>) -> Self {
-        let mut engine = Self {
-            states: Vec::new(),
-            index: HashMap::new(),
-        };
+        let mut engine = Self { states: Vec::new(), index: HashMap::new() };
         engine.reload(bindings);
         engine
     }
@@ -133,12 +130,7 @@ impl GestureEngine {
                 BindingState::new(b, contended)
             })
             .collect();
-        self.index = self
-            .states
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.binding.id.clone(), i))
-            .collect();
+        self.index = self.states.iter().enumerate().map(|(i, s)| (s.binding.id.clone(), i)).collect();
     }
 
     /// Bindings currently loaded, in configuration order.
@@ -152,13 +144,7 @@ impl GestureEngine {
 
     /// `at` is the moment the transition happened, which is what the tap
     /// windows are measured against.
-    pub fn apply_at(
-        &mut self,
-        binding_id: &str,
-        transition: Transition,
-        at: Instant,
-        tx: &GestureSender,
-    ) {
+    pub fn apply_at(&mut self, binding_id: &str, transition: Transition, at: Instant, tx: &GestureSender) {
         let Some(&i) = self.index.get(binding_id) else {
             return;
         };
@@ -180,15 +166,10 @@ impl GestureEngine {
         // while a hold-to-talk key is down (see `held`). From the press, not
         // from Start: a keystroke inside the hold threshold stops the
         // recording from ever beginning.
-        if matches!(
-            state.binding.gesture,
-            GestureType::Hold | GestureType::DoubleTapHold
-        ) {
+        if matches!(state.binding.gesture, GestureType::Hold | GestureType::DoubleTapHold) {
             match transition {
                 Transition::Activated => crate::held::pressed(&state.binding.id),
-                Transition::Deactivated | Transition::Released => {
-                    crate::held::released(&state.binding.id)
-                }
+                Transition::Deactivated | Transition::Released => crate::held::released(&state.binding.id),
             }
         }
         match transition {
@@ -276,26 +257,12 @@ impl BindingState {
             GestureType::Hold => self.start_hold_timer(tx),
             GestureType::Toggle => {
                 self.toggle_on = !self.toggle_on;
-                self.emit(
-                    if self.toggle_on {
-                        GestureKind::Start
-                    } else {
-                        GestureKind::Stop
-                    },
-                    tx,
-                );
+                self.emit(if self.toggle_on { GestureKind::Start } else { GestureKind::Stop }, tx);
             }
             GestureType::DoubleTap => {
                 if self.double_tap.on_press(at) == TapOutcome::Completed && !self.contended {
                     self.toggle_on = !self.toggle_on;
-                    self.emit(
-                        if self.toggle_on {
-                            GestureKind::Start
-                        } else {
-                            GestureKind::Stop
-                        },
-                        tx,
-                    );
+                    self.emit(if self.toggle_on { GestureKind::Start } else { GestureKind::Stop }, tx);
                 }
             }
             GestureType::DoubleTapHold => {
@@ -330,10 +297,7 @@ impl BindingState {
             cancel.cancel();
         }
 
-        if self
-            .double_tap_hold_active
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.double_tap_hold_active.load(std::sync::atomic::Ordering::SeqCst) {
             if self.double_tap_hold_release_cancel.is_none() {
                 let cancel = CancellationToken::new();
                 self.double_tap_hold_release_cancel = Some(cancel.clone());
@@ -363,8 +327,7 @@ impl BindingState {
                 if let Some(cancel) = self.hold_release_cancel.take() {
                     cancel.cancel();
                 }
-                let was_recording =
-                    self.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst);
+                let was_recording = self.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst);
                 // Cancelled whether or not Start had fired. Before the
                 // threshold this stops the recording from ever starting; after
                 // it, it retires the hold's `STUCK_HOLD_MAX` timeout. Dropping
@@ -388,14 +351,7 @@ impl BindingState {
                 // first, in which case this release belongs to the hold.
                 if completed && self.contended && !sibling_hold_active {
                     self.toggle_on = !self.toggle_on;
-                    self.emit(
-                        if self.toggle_on {
-                            GestureKind::Start
-                        } else {
-                            GestureKind::Stop
-                        },
-                        tx,
-                    );
+                    self.emit(if self.toggle_on { GestureKind::Start } else { GestureKind::Stop }, tx);
                 }
             }
             GestureType::DoubleTapHold => {
@@ -410,10 +366,7 @@ impl BindingState {
                 // recording is running, letting go stops it — full stop.
                 // Gating this on the state machine is how a desynchronised
                 // machine used to leave the microphone open for two minutes.
-                if self
-                    .double_tap_hold_active
-                    .swap(false, std::sync::atomic::Ordering::SeqCst)
-                {
+                if self.double_tap_hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
                     self.emit(GestureKind::Stop, tx);
                 }
             }
@@ -431,16 +384,10 @@ impl BindingState {
         }
         // Both swaps must run — `||` would short-circuit past the second and
         // leave a double-tap-hold flagged as recording forever.
-        let was_holding = self
-            .hold_active
-            .swap(false, std::sync::atomic::Ordering::SeqCst);
-        let was_tap_holding = self
-            .double_tap_hold_active
-            .swap(false, std::sync::atomic::Ordering::SeqCst);
-        let was_toggled = matches!(
-            self.binding.gesture,
-            GestureType::Toggle | GestureType::DoubleTap
-        ) && self.toggle_on;
+        let was_holding = self.hold_active.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let was_tap_holding = self.double_tap_hold_active.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let was_toggled =
+            matches!(self.binding.gesture, GestureType::Toggle | GestureType::DoubleTap) && self.toggle_on;
         let was_recording = was_holding || was_tap_holding || was_toggled;
         self.toggle_on = false;
         self.double_tap.reset();
@@ -450,9 +397,7 @@ impl BindingState {
     }
 
     fn start_hold_timer(&mut self, tx: &GestureSender) {
-        if self.hold_active.load(std::sync::atomic::Ordering::SeqCst)
-            || self.hold_cancel.is_some()
-        {
+        if self.hold_active.load(std::sync::atomic::Ordering::SeqCst) || self.hold_cancel.is_some() {
             return;
         }
         let cancel = CancellationToken::new();
@@ -495,10 +440,7 @@ impl BindingState {
         if let Some(cancel) = self.double_tap_hold_cancel.take() {
             cancel.cancel();
         }
-        if self
-            .double_tap_hold_active
-            .swap(false, std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.double_tap_hold_active.swap(false, std::sync::atomic::Ordering::SeqCst) {
             self.emit(GestureKind::Stop, tx);
         }
 
@@ -589,12 +531,7 @@ pub struct DoubleTapMachine {
 
 impl DoubleTapMachine {
     pub fn new(window: Duration) -> Self {
-        Self {
-            state: DtState::Idle,
-            window,
-            last_release: None,
-            first_press: None,
-        }
+        Self { state: DtState::Idle, window, last_release: None, first_press: None }
     }
 
     pub fn on_press(&mut self, now: Instant) -> TapOutcome {
@@ -605,10 +542,7 @@ impl DoubleTapMachine {
                 TapOutcome::None
             }
             DtState::FirstUp => {
-                let gap = self
-                    .last_release
-                    .map(|r| now.saturating_duration_since(r))
-                    .unwrap_or(Duration::MAX);
+                let gap = self.last_release.map(|r| now.saturating_duration_since(r)).unwrap_or(Duration::MAX);
                 if gap >= MIN_TAP_GAP && gap <= self.window {
                     self.state = DtState::SecondDown;
                     TapOutcome::Completed
@@ -631,10 +565,7 @@ impl DoubleTapMachine {
     pub fn on_release(&mut self, now: Instant) -> TapOutcome {
         match self.state {
             DtState::FirstDown => {
-                let held = self
-                    .first_press
-                    .map(|p| now.saturating_duration_since(p))
-                    .unwrap_or_default();
+                let held = self.first_press.map(|p| now.saturating_duration_since(p)).unwrap_or_default();
                 if held > MAX_TAP_HOLD {
                     // That was a hold, not a tap. Starting fresh stops a later
                     // quick press from completing a "double-tap" the user never
@@ -678,10 +609,7 @@ pub fn shadowed_by_longer(pressed: &HashSet<String>, bindings: &[HotkeyBinding])
     let mut shadowed = HashSet::new();
     for b in &active {
         for other in &active {
-            if b.id != other.id
-                && other.keys.len() > b.keys.len()
-                && b.keys.iter().all(|k| other.keys.contains(k))
-            {
+            if b.id != other.id && other.keys.len() > b.keys.len() && b.keys.iter().all(|k| other.keys.contains(k)) {
                 shadowed.insert(b.id.clone());
             }
         }
@@ -787,10 +715,7 @@ mod tests {
         sleep(60).await;
         engine.apply("dt", Transition::Activated, &tx);
 
-        assert_eq!(
-            rx.try_recv().expect("gesture survives a duplicated release").kind,
-            GestureKind::Start
-        );
+        assert_eq!(rx.try_recv().expect("gesture survives a duplicated release").kind, GestureKind::Start);
     }
 
     #[tokio::test]
@@ -823,17 +748,13 @@ mod tests {
 
         sleep(60).await;
         engine.apply("dt", Transition::Activated, &tx);
-        assert!(
-            rx.try_recv().is_err(),
-            "a long hold followed by a press is not a double-tap"
-        );
+        assert!(rx.try_recv().is_err(), "a long hold followed by a press is not a double-tap");
     }
 
     #[tokio::test]
     async fn double_tap_hold_records_while_held_and_stops_on_release() {
         let (tx, mut rx) = crate::channel();
-        let mut engine =
-            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
+        let mut engine = GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
 
         tap(&mut engine, "dth", &tx);
         sleep(60).await;
@@ -854,8 +775,7 @@ mod tests {
         // the state machine no longer agrees a gesture is in progress. Releasing
         // must still stop it, because the user let go.
         let (tx, mut rx) = crate::channel();
-        let mut engine =
-            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
+        let mut engine = GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
 
         tap(&mut engine, "dth", &tx);
         sleep(60).await;
@@ -867,10 +787,7 @@ mod tests {
         engine.states[0].double_tap.reset();
 
         engine.apply("dth", Transition::Released, &tx);
-        assert_eq!(
-            rx.try_recv().expect("release must always stop recording").kind,
-            GestureKind::Stop
-        );
+        assert_eq!(rx.try_recv().expect("release must always stop recording").kind, GestureKind::Stop);
     }
 
     #[tokio::test]
@@ -878,8 +795,7 @@ mod tests {
         // If the release goes missing entirely, the next double-tap-and-hold
         // must close the old recording rather than stacking a second one.
         let (tx, mut rx) = crate::channel();
-        let mut engine =
-            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
+        let mut engine = GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
 
         tap(&mut engine, "dth", &tx);
         sleep(60).await;
@@ -893,10 +809,7 @@ mod tests {
         sleep(60).await;
         engine.apply("dth", Transition::Activated, &tx);
 
-        assert_eq!(
-            rx.try_recv().expect("stale recording is closed first").kind,
-            GestureKind::Stop
-        );
+        assert_eq!(rx.try_recv().expect("stale recording is closed first").kind, GestureKind::Stop);
         sleep(150).await;
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
     }
@@ -904,8 +817,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn double_tap_hold_stops_itself_after_the_safety_timeout() {
         let (tx, mut rx) = crate::channel();
-        let mut engine =
-            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
+        let mut engine = GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTMETA"])]);
 
         tap(&mut engine, "dth", &tx);
         sleep(60).await;
@@ -1019,11 +931,7 @@ mod tests {
         // Stopping while a modifier is still down gets the transcription eaten
         // by the compositor as a shortcut.
         let (tx, mut rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "h",
-            GestureType::Hold,
-            &["KEY_LEFTMETA", "KEY_SPACE"],
-        )]);
+        let mut engine = GestureEngine::new(vec![binding("h", GestureType::Hold, &["KEY_LEFTMETA", "KEY_SPACE"])]);
 
         engine.apply("h", Transition::Activated, &tx);
         sleep(150).await;
@@ -1045,11 +953,7 @@ mod tests {
         // VoxCtrl synthesised a keystroke — ended a recording whose key the
         // user was still holding.
         let (tx, mut rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "h",
-            GestureType::Hold,
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-        )]);
+        let mut engine = GestureEngine::new(vec![binding("h", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_SPACE"])]);
 
         engine.apply("h", Transition::Activated, &tx);
         sleep(150).await;
@@ -1058,10 +962,7 @@ mod tests {
         engine.apply("h", Transition::Deactivated, &tx);
         engine.apply("h", Transition::Activated, &tx);
         sleep(200).await;
-        assert!(
-            rx.try_recv().is_err(),
-            "the key never came up, so the recording must still be running"
-        );
+        assert!(rx.try_recv().is_err(), "the key never came up, so the recording must still be running");
 
         // And the real release still ends it.
         engine.apply("h", Transition::Deactivated, &tx);
@@ -1072,8 +973,7 @@ mod tests {
     #[tokio::test]
     async fn a_double_tap_hold_survives_a_deactivate_that_is_taken_back() {
         let (tx, mut rx) = crate::channel();
-        let mut engine =
-            GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTALT"])]);
+        let mut engine = GestureEngine::new(vec![binding("dth", GestureType::DoubleTapHold, &["KEY_LEFTALT"])]);
 
         tap(&mut engine, "dth", &tx);
         sleep(60).await;
@@ -1099,11 +999,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_finished_holds_safety_timeout_does_not_stop_a_later_hold() {
         let (tx, mut rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "h",
-            GestureType::Hold,
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-        )]);
+        let mut engine = GestureEngine::new(vec![binding("h", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_SPACE"])]);
 
         // One ordinary dictation, released the way the portal reports it.
         engine.apply("h", Transition::Activated, &tx);
@@ -1122,10 +1018,7 @@ mod tests {
         // ...and is still holding the key when the first dictation's timeout
         // would have come due.
         sleep(15_000).await;
-        assert!(
-            rx.try_recv().is_err(),
-            "the key is still down: an earlier dictation's timeout must not end this one"
-        );
+        assert!(rx.try_recv().is_err(), "the key is still down: an earlier dictation's timeout must not end this one");
 
         engine.apply("h", Transition::Deactivated, &tx);
         engine.apply("h", Transition::Released, &tx);
@@ -1139,18 +1032,12 @@ mod tests {
     #[tokio::test]
     async fn a_hold_key_is_down_from_the_press_until_the_release() {
         let (tx, mut rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "held-hold",
-            GestureType::Hold,
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-        )]);
+        let mut engine =
+            GestureEngine::new(vec![binding("held-hold", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_SPACE"])]);
         assert!(!crate::held::is_down("held-hold"));
 
         engine.apply("held-hold", Transition::Activated, &tx);
-        assert!(
-            crate::held::is_down("held-hold"),
-            "down from the press, while the hold threshold is still running"
-        );
+        assert!(crate::held::is_down("held-hold"), "down from the press, while the hold threshold is still running");
         assert!(crate::hold_key_down());
         sleep(150).await;
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
@@ -1166,11 +1053,8 @@ mod tests {
     #[tokio::test]
     async fn a_toggle_key_is_never_counted_as_held() {
         let (tx, _rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "held-toggle",
-            GestureType::Toggle,
-            &["KEY_LEFTMETA", "KEY_SPACE"],
-        )]);
+        let mut engine =
+            GestureEngine::new(vec![binding("held-toggle", GestureType::Toggle, &["KEY_LEFTMETA", "KEY_SPACE"])]);
         engine.apply("held-toggle", Transition::Activated, &tx);
         assert!(!crate::held::is_down("held-toggle"));
     }
@@ -1180,11 +1064,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_hold_given_up_on_is_no_longer_down() {
         let (tx, mut rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "held-stuck",
-            GestureType::Hold,
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-        )]);
+        let mut engine =
+            GestureEngine::new(vec![binding("held-stuck", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_SPACE"])]);
         engine.apply("held-stuck", Transition::Activated, &tx);
         sleep(150).await;
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
@@ -1199,11 +1080,8 @@ mod tests {
     #[tokio::test]
     async fn an_abandoned_hold_is_no_longer_down() {
         let (tx, _rx) = crate::channel();
-        let mut engine = GestureEngine::new(vec![binding(
-            "held-reset",
-            GestureType::Hold,
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-        )]);
+        let mut engine =
+            GestureEngine::new(vec![binding("held-reset", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_SPACE"])]);
         engine.apply("held-reset", Transition::Activated, &tx);
         assert!(crate::held::is_down("held-reset"));
         engine.reset(&tx);
@@ -1251,16 +1129,10 @@ mod tests {
     fn shadowing_suppresses_the_shorter_combo() {
         let bindings = vec![
             binding("short", GestureType::Hold, &["KEY_LEFTMETA", "KEY_SPACE"]),
-            binding(
-                "long",
-                GestureType::Hold,
-                &["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"],
-            ),
+            binding("long", GestureType::Hold, &["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"]),
         ];
-        let pressed: HashSet<String> = ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let pressed: HashSet<String> =
+            ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"].iter().map(|s| s.to_string()).collect();
 
         let shadowed = shadowed_by_longer(&pressed, &bindings);
         assert!(shadowed.contains("short"));

@@ -127,10 +127,7 @@ pub mod secret_service {
     pub struct SecretServiceKeyStore;
 
     fn attributes() -> HashMap<&'static str, &'static str> {
-        HashMap::from([
-            ("application", "voxctrl"),
-            ("purpose", "dictation-history-key"),
-        ])
+        HashMap::from([("application", "voxctrl"), ("purpose", "dictation-history-key")])
     }
 
     struct Session {
@@ -142,18 +139,12 @@ pub mod secret_service {
     impl Session {
         fn open() -> Result<Self> {
             let conn = Connection::session().context("no D-Bus session bus")?;
-            let service = Proxy::new(&conn, DEST, SERVICE_PATH, SERVICE_IFACE)
-                .context("no Secret Service on the session bus")?;
+            let service =
+                Proxy::new(&conn, DEST, SERVICE_PATH, SERVICE_IFACE).context("no Secret Service on the session bus")?;
             let (_, session): (OwnedValue, OwnedObjectPath) = service
                 .call("OpenSession", &("plain", Value::from("")))
-                .context(
-                    "the keyring didn't open a session (is KWallet or GNOME Keyring running?)",
-                )?;
-            Ok(Self {
-                conn,
-                service,
-                session,
-            })
+                .context("the keyring didn't open a session (is KWallet or GNOME Keyring running?)")?;
+            Ok(Self { conn, service, session })
         }
 
         /// Run a prompt (unlocking the keyring, usually) and wait for it,
@@ -165,9 +156,7 @@ pub mod secret_service {
             let prompt = Proxy::new(&self.conn, DEST, path.as_str(), PROMPT_IFACE)?;
             let mut completed = prompt.receive_signal("Completed")?;
             let _: () = prompt.call("Prompt", &(""))?;
-            let msg = completed
-                .next()
-                .ok_or_else(|| anyhow!("the keyring prompt went away"))?;
+            let msg = completed.next().ok_or_else(|| anyhow!("the keyring prompt went away"))?;
             let (dismissed, result): (bool, OwnedValue) = msg.body().deserialize()?;
             if dismissed {
                 bail!("the keyring prompt was dismissed");
@@ -181,16 +170,12 @@ pub mod secret_service {
         /// desktop's own "choose a password for the new keyring" prompt.
         fn default_collection(&self) -> Result<OwnedObjectPath> {
             let alias: OwnedObjectPath = self.service.call("ReadAlias", &("default"))?;
-            let existing: Vec<OwnedObjectPath> =
-                self.service.get_property("Collections").unwrap_or_default();
+            let existing: Vec<OwnedObjectPath> = self.service.get_property("Collections").unwrap_or_default();
             if alias.as_str() != "/" && existing.iter().any(|c| c == &alias) {
                 return Ok(alias);
             }
             let mut props: HashMap<&str, Value> = HashMap::new();
-            props.insert(
-                "org.freedesktop.Secret.Collection.Label",
-                Value::from("Login"),
-            );
+            props.insert("org.freedesktop.Secret.Collection.Label", Value::from("Login"));
             let (collection, prompt): (OwnedObjectPath, OwnedObjectPath) = self
                 .service
                 .call("CreateCollection", &(&props, "default"))
@@ -198,11 +183,8 @@ pub mod secret_service {
             if collection.as_str() != "/" {
                 return Ok(collection);
             }
-            let created = self
-                .prompt(&prompt)?
-                .ok_or_else(|| anyhow!("the keyring didn't create a collection"))?;
-            OwnedObjectPath::try_from(created)
-                .map_err(|_| anyhow!("the keyring returned no collection"))
+            let created = self.prompt(&prompt)?.ok_or_else(|| anyhow!("the keyring didn't create a collection"))?;
+            OwnedObjectPath::try_from(created).map_err(|_| anyhow!("the keyring returned no collection"))
         }
 
         fn find(&self) -> Result<Option<OwnedObjectPath>> {
@@ -229,10 +211,8 @@ pub mod secret_service {
             };
             let proxy = Proxy::new(&s.conn, DEST, item.as_str(), ITEM_IFACE)?;
             let (_, _, value, _): Secret = proxy.call("GetSecret", &(&s.session))?;
-            let key: Key = value
-                .as_slice()
-                .try_into()
-                .map_err(|_| anyhow!("the keyring's history key has the wrong length"))?;
+            let key: Key =
+                value.as_slice().try_into().map_err(|_| anyhow!("the keyring's history key has the wrong length"))?;
             Ok(Some(key))
         }
 
@@ -242,16 +222,9 @@ pub mod secret_service {
             let collection = Proxy::new(&s.conn, DEST, path.as_str(), COLLECTION_IFACE)?;
             let mut props: HashMap<&str, Value> = HashMap::new();
             props.insert("org.freedesktop.Secret.Item.Label", Value::from(LABEL));
-            props.insert(
-                "org.freedesktop.Secret.Item.Attributes",
-                Value::from(attributes()),
-            );
-            let secret = (
-                ObjectPath::try_from(s.session.as_str())?,
-                Vec::<u8>::new(),
-                key.to_vec(),
-                "application/octet-stream",
-            );
+            props.insert("org.freedesktop.Secret.Item.Attributes", Value::from(attributes()));
+            let secret =
+                (ObjectPath::try_from(s.session.as_str())?, Vec::<u8>::new(), key.to_vec(), "application/octet-stream");
             let call = |c: &Proxy| -> zbus::Result<(OwnedObjectPath, OwnedObjectPath)> {
                 c.call("CreateItem", &(&props, &secret, true))
             };
@@ -317,14 +290,8 @@ pub mod dpapi {
     }
 
     fn transform(data: &[u8], protect: bool) -> Result<Vec<u8>> {
-        let input = CRYPT_INTEGER_BLOB {
-            cbData: data.len() as u32,
-            pbData: data.as_ptr() as *mut u8,
-        };
-        let mut output = CRYPT_INTEGER_BLOB {
-            cbData: 0,
-            pbData: std::ptr::null_mut(),
-        };
+        let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 };
+        let mut output = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
         // SAFETY: input points to `data` for the call; output is allocated by
         // the API and released with LocalFree below.
         let ok = unsafe {
@@ -354,8 +321,7 @@ pub mod dpapi {
             bail!("Windows data protection failed");
         }
         // SAFETY: the API returned `cbData` bytes at `pbData`.
-        let out =
-            unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+        let out = unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
         unsafe { LocalFree(output.pbData as _) };
         Ok(out)
     }
@@ -368,9 +334,7 @@ pub mod dpapi {
                 Err(e) => return Err(e.into()),
             };
             let key = transform(&protected, false)?;
-            Ok(Some(key.as_slice().try_into().map_err(|_| {
-                anyhow!("the history key has the wrong length")
-            })?))
+            Ok(Some(key.as_slice().try_into().map_err(|_| anyhow!("the history key has the wrong length"))?))
         }
 
         fn save(&self, key: &Key) -> Result<()> {
@@ -424,11 +388,7 @@ mod tests {
         assert_eq!(ks.load().unwrap(), Some(key));
         let other = crate::store::new_key();
         ks.save(&other).unwrap();
-        assert_eq!(
-            ks.load().unwrap(),
-            Some(other),
-            "saving replaces the earlier key"
-        );
+        assert_eq!(ks.load().unwrap(), Some(other), "saving replaces the earlier key");
         ks.delete().unwrap();
         assert_eq!(ks.load().unwrap(), None);
     }

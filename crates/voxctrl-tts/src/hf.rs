@@ -17,20 +17,12 @@ pub const HF_TOKEN_ENV: &str = "HF_TOKEN";
 /// An empty or whitespace-only value counts as absent — an `HF_TOKEN=` left in
 /// a shell profile should not lock the user out of the field in Settings.
 pub fn hf_token_from_env() -> Option<String> {
-    std::env::var(HF_TOKEN_ENV)
-        .ok()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
+    std::env::var(HF_TOKEN_ENV).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
 }
 
 /// The token the app will actually use: the environment's, else the config's.
 pub fn effective_hf_token(configured: Option<&str>) -> Option<String> {
-    hf_token_from_env().or_else(|| {
-        configured
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_string)
-    })
+    hf_token_from_env().or_else(|| configured.map(str::trim).filter(|t| !t.is_empty()).map(str::to_string))
 }
 
 /// Put the configured token where `hf-hub` will find it, without disturbing an

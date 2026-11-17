@@ -16,14 +16,8 @@ pub struct OutputTargetRouter {
 impl OutputTargetRouter {
     pub fn new(targets: Vec<OutputTarget>) -> Self {
         let configs = Arc::new(RwLock::new(targets.clone()));
-        let map = targets
-            .into_iter()
-            .map(|t| (t.id.clone(), build_target(t)))
-            .collect();
-        Self {
-            targets: Arc::new(RwLock::new(map)),
-            configs,
-        }
+        let map = targets.into_iter().map(|t| (t.id.clone(), build_target(t))).collect();
+        Self { targets: Arc::new(RwLock::new(map)), configs }
     }
 
     /// Deliver text to the named target. Returns the result, or an error
@@ -145,11 +139,7 @@ impl OutputTargetRouter {
 
     /// Hot-reload: replace all targets atomically.
     pub async fn reload(&self, targets: Vec<OutputTarget>) {
-        let map: HashMap<_, _> = targets
-            .iter()
-            .cloned()
-            .map(|t| (t.id.clone(), build_target(t)))
-            .collect();
+        let map: HashMap<_, _> = targets.iter().cloned().map(|t| (t.id.clone(), build_target(t))).collect();
         let mut configs_guard = self.configs.write().await;
         *configs_guard = targets;
         let mut guard = self.targets.write().await;

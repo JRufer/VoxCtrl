@@ -76,10 +76,7 @@ pub enum StopKeyGrab {
 /// this set, a stop key that would need arming is simply never registered, and
 /// a stop key with a modifier keeps working as it always has.
 fn arming_disabled() -> bool {
-    matches!(
-        std::env::var("VOXCTRL_STOP_KEY_ARMING").as_deref(),
-        Ok("0") | Ok("false") | Ok("no")
-    )
+    matches!(std::env::var("VOXCTRL_STOP_KEY_ARMING").as_deref(), Ok("0") | Ok("false") | Ok("no"))
 }
 
 /// How long VoxCtrl may hold `stop_key` on the backend that is running.
@@ -237,8 +234,7 @@ pub fn spawn(state: Arc<AppState>) {
             } else {
                 Some(release_at.unwrap_or_else(|| tokio::time::Instant::now() + RELEASE_AFTER))
             };
-            let wanted_now = speaking
-                || release_at.is_some_and(|deadline| tokio::time::Instant::now() < deadline);
+            let wanted_now = speaking || release_at.is_some_and(|deadline| tokio::time::Instant::now() < deadline);
 
             let stop_key = match state.config.try_lock() {
                 Ok(cfg) => cfg.data.tts.stop_key.clone(),
@@ -345,11 +341,7 @@ mod tests {
         // and relaxing later would hold Escape from startup until it resolves,
         // which is the state this whole module exists to avoid.
         for backend in [Backend::None, Backend::MintDbus] {
-            assert_eq!(
-                stop_key_grab(backend, &keys(&["KEY_ESC"])),
-                StopKeyGrab::WhileSpeaking,
-                "{backend:?}"
-            );
+            assert_eq!(stop_key_grab(backend, &keys(&["KEY_ESC"])), StopKeyGrab::WhileSpeaking, "{backend:?}");
         }
 
         // `Starting` is only undecided where a grab-owning backend is on the
@@ -383,18 +375,12 @@ mod tests {
         // SAFETY: single-threaded test, and the variable is read nowhere else.
         unsafe { std::env::set_var("VOXCTRL_STOP_KEY_ARMING", "0") };
         assert_eq!(stop_key_grab(Backend::Portal, &escape), StopKeyGrab::None);
-        assert_eq!(
-            stop_key_grab(Backend::Portal, &ctrl_escape),
-            StopKeyGrab::Always
-        );
+        assert_eq!(stop_key_grab(Backend::Portal, &ctrl_escape), StopKeyGrab::Always);
         // And where nothing is grabbed in the first place, it changes nothing.
         assert_eq!(stop_key_grab(Backend::X11, &escape), StopKeyGrab::Always);
 
         unsafe { std::env::remove_var("VOXCTRL_STOP_KEY_ARMING") };
-        assert_eq!(
-            stop_key_grab(Backend::Portal, &escape),
-            StopKeyGrab::WhileSpeaking
-        );
+        assert_eq!(stop_key_grab(Backend::Portal, &escape), StopKeyGrab::WhileSpeaking);
     }
 
     #[test]

@@ -349,8 +349,7 @@ impl SpeechWorker {
         let (reply, answer) = mpsc::channel();
         // Held to the end, so requests are answered in the order they came.
         let jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
-        jobs.send(Job { speech, reply })
-            .map_err(|_| anyhow!("The speech engine has stopped. Restart the server."))?;
+        jobs.send(Job { speech, reply }).map_err(|_| anyhow!("The speech engine has stopped. Restart the server."))?;
         answer.recv().map_err(|_| anyhow!("The speech engine stopped while speaking. Restart the server."))?
     }
 }
@@ -498,7 +497,8 @@ mod tests {
         assert_eq!(planned.kitten_tts_2.cloned_voice, "Rick");
         assert_eq!(planned.kitten_tts_2.voice_dir, mine.path().to_string_lossy());
 
-        let pocket = plan(&config, &offered, &request(Some("pocket_tts"), Some("custom:Rick"), Some(mine.path()))).unwrap();
+        let pocket =
+            plan(&config, &offered, &request(Some("pocket_tts"), Some("custom:Rick"), Some(mine.path()))).unwrap();
         assert_eq!(pocket.pocket_tts.voice, "Rick");
         assert_eq!(pocket.pocket_tts.voice_dir, mine.path().to_string_lossy());
 
@@ -513,7 +513,8 @@ mod tests {
             assert!(err.contains("has not been uploaded"), "{voice}: {err}");
         }
 
-        let err = plan(&config, &offered, &request(Some("espeak"), Some("custom:Rick"), Some(mine.path()))).unwrap_err();
+        let err =
+            plan(&config, &offered, &request(Some("espeak"), Some("custom:Rick"), Some(mine.path()))).unwrap_err();
         assert!(err.contains("cannot speak with an uploaded voice"), "{err}");
     }
 
@@ -616,9 +617,15 @@ mod tests {
     #[test]
     fn a_failed_request_does_not_stop_the_next_one() {
         let worker = SpeechWorker::start(|| {
-            Ok(|speech: &PlannedSpeech| {
-                if speech.text == "bad" { Err(anyhow!("could not say that")) } else { Ok(vec![1, 2, 3]) }
-            })
+            Ok(
+                |speech: &PlannedSpeech| {
+                    if speech.text == "bad" {
+                        Err(anyhow!("could not say that"))
+                    } else {
+                        Ok(vec![1, 2, 3])
+                    }
+                },
+            )
         })
         .unwrap();
         assert!(worker.speak(say("bad")).unwrap_err().to_string().contains("could not say that"));
@@ -632,9 +639,8 @@ mod tests {
             eprintln!("skipped: espeak-ng is not installed");
             return;
         }
-        let speaker = EngineSpeaker::prepare(TtsConfig { engine: TtsEngine::Espeak, ..Default::default() }, &[])
-            .await
-            .unwrap();
+        let speaker =
+            EngineSpeaker::prepare(TtsConfig { engine: TtsEngine::Espeak, ..Default::default() }, &[]).await.unwrap();
         let request = SpeechRequest { text: "Hello from the server.".into(), ..Default::default() };
         let wav = tokio::task::spawn_blocking(move || speaker.speak(&request)).await.unwrap().unwrap();
         assert_eq!(&wav[0..4], b"RIFF");

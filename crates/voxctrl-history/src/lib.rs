@@ -52,10 +52,7 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self {
-            max_entries: 50,
-            max_age_secs: 24 * 60 * 60,
-        }
+        Self { max_entries: 50, max_age_secs: 24 * 60 * 60 }
     }
 }
 
@@ -69,22 +66,14 @@ pub struct History {
 
 impl History {
     pub fn new(limits: Limits) -> Self {
-        Self {
-            entries: Vec::new(),
-            next_id: 1,
-            limits,
-        }
+        Self { entries: Vec::new(), next_id: 1, limits }
     }
 
     /// A history continuing from entries loaded from disk.
     pub fn from_entries(mut entries: Vec<Entry>, limits: Limits, now: i64) -> Self {
         entries.sort_by_key(|e| e.id);
         let next_id = entries.last().map_or(1, |e| e.id + 1);
-        let mut h = Self {
-            entries,
-            next_id,
-            limits,
-        };
+        let mut h = Self { entries, next_id, limits };
         h.prune(now);
         h
     }
@@ -164,13 +153,7 @@ impl History {
     /// `limit` of them. See [`matches`] for how a query matches.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Entry> {
         let terms = terms(query);
-        self.entries
-            .iter()
-            .rev()
-            .filter(|e| matches_terms(e, &terms))
-            .take(limit)
-            .cloned()
-            .collect()
+        self.entries.iter().rev().filter(|e| matches_terms(e, &terms)).take(limit).cloned().collect()
     }
 }
 
@@ -207,9 +190,7 @@ fn matches_terms(entry: &Entry, terms: &[String]) -> bool {
     }
     let text = entry.text.to_lowercase();
     let target = entry.target_label.to_lowercase();
-    terms
-        .iter()
-        .all(|t| text.contains(t.as_str()) || target.contains(t.as_str()))
+    terms.iter().all(|t| text.contains(t.as_str()) || target.contains(t.as_str()))
 }
 
 #[cfg(test)]
@@ -219,10 +200,7 @@ mod tests {
     const HOUR: i64 = 3600;
 
     fn limits(max_entries: usize, max_age_secs: i64) -> Limits {
-        Limits {
-            max_entries,
-            max_age_secs,
-        }
+        Limits { max_entries, max_age_secs }
     }
 
     #[test]
@@ -282,12 +260,7 @@ mod tests {
     #[test]
     fn search_matches_text_or_target_ignoring_case() {
         let mut h = History::new(Limits::default());
-        h.add(
-            1,
-            "default",
-            "Focused Window",
-            "Push the release to Thursday",
-        );
+        h.add(1, "default", "Focused Window", "Push the release to Thursday");
         h.add(2, "notes", "Meeting Notes", "groceries");
         assert_eq!(h.search("thursday", 10).len(), 1);
         assert_eq!(h.search("meeting", 10)[0].text, "groceries");
@@ -298,12 +271,7 @@ mod tests {
     #[test]
     fn every_word_must_match_in_any_order() {
         let mut h = History::new(Limits::default());
-        h.add(
-            1,
-            "default",
-            "Focused Window",
-            "Push the release to Thursday",
-        );
+        h.add(1, "default", "Focused Window", "Push the release to Thursday");
         h.add(2, "notes", "Meeting Notes", "Thursday groceries");
         assert_eq!(h.search("thursday release", 10)[0].id, 1);
         assert_eq!(h.search("RELEASE   thursday", 10).len(), 1);
@@ -327,10 +295,7 @@ mod tests {
 
     #[test]
     fn terms_splits_words_and_phrases() {
-        assert_eq!(
-            terms("  Hello \"New  York\" there "),
-            ["hello", "new york", "there"]
-        );
+        assert_eq!(terms("  Hello \"New  York\" there "), ["hello", "new york", "there"]);
         assert!(terms("  \"  \" ").is_empty());
     }
 
@@ -349,20 +314,8 @@ mod tests {
     #[test]
     fn ids_keep_increasing_after_loading_from_disk() {
         let loaded = vec![
-            Entry {
-                id: 7,
-                at: 100,
-                target_id: "t".into(),
-                target_label: "T".into(),
-                text: "a".into(),
-            },
-            Entry {
-                id: 3,
-                at: 50,
-                target_id: "t".into(),
-                target_label: "T".into(),
-                text: "b".into(),
-            },
+            Entry { id: 7, at: 100, target_id: "t".into(), target_label: "T".into(), text: "a".into() },
+            Entry { id: 3, at: 50, target_id: "t".into(), target_label: "T".into(), text: "b".into() },
         ];
         let mut h = History::from_entries(loaded, limits(50, 0), 200);
         assert_eq!(h.entries()[0].id, 3);

@@ -23,8 +23,7 @@ pub(crate) fn parse_tolerant(text: &str) -> AppConfig {
         Err(e) => e,
     };
 
-    let Ok(serde_json::Value::Object(file)) = serde_json::from_str::<serde_json::Value>(text)
-    else {
+    let Ok(serde_json::Value::Object(file)) = serde_json::from_str::<serde_json::Value>(text) else {
         tracing::warn!("Failed to load config, using defaults: {whole_file_error}");
         return AppConfig::default();
     };
@@ -34,8 +33,7 @@ pub(crate) fn parse_tolerant(text: &str) -> AppConfig {
          recovering it section by section"
     );
 
-    let Ok(serde_json::Value::Object(mut merged)) = serde_json::to_value(AppConfig::default())
-    else {
+    let Ok(serde_json::Value::Object(mut merged)) = serde_json::to_value(AppConfig::default()) else {
         return AppConfig::default();
     };
 
@@ -66,10 +64,7 @@ pub struct Config {
 
 impl Config {
     pub fn config_path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("voxctrl")
-            .join("config.json")
+        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("config.json")
     }
 
     pub fn load() -> Self {

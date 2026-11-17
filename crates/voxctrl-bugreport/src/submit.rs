@@ -53,7 +53,6 @@ pub const ISSUES_NEW_URL: &str = "https://github.com/JRufer/VoxCtrl/issues/new";
 /// rather than the form, so the prefilled body is kept compact and safe.
 const MAX_URL_BODY_CHARS: usize = 1200;
 
-
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
@@ -151,27 +150,19 @@ pub fn interpret(status: u16, body: &str) -> Result<SubmitResponse, SubmitError>
         200..=299 => Ok(parsed.unwrap_or_default()),
         // The relay's own rate limit, and the reason it is the one that counts:
         // it sees every reporter, not just this installation.
-        429 => Err(SubmitError::Refused(
+        429 => Err(SubmitError::Refused(parsed.and_then(|r| r.message).unwrap_or_else(|| {
+            "The bug-report service is rate-limiting reports right now. Please try again \
+                     later, or save the report to a file and send it directly."
+                .into()
+        }))),
+        400..=499 => Err(SubmitError::Refused(
             parsed
                 .and_then(|r| r.message)
-                .unwrap_or_else(|| {
-                    "The bug-report service is rate-limiting reports right now. Please try again \
-                     later, or save the report to a file and send it directly."
-                        .into()
-                }),
-        )),
-        400..=499 => Err(SubmitError::Refused(
-            parsed.and_then(|r| r.message).unwrap_or_else(|| {
-                format!("The bug-report service would not accept this report (HTTP {status}).")
-            }),
+                .unwrap_or_else(|| format!("The bug-report service would not accept this report (HTTP {status}).")),
         )),
         _ => Err(SubmitError::Unexpected(format!(
             "HTTP {status}{}",
-            if body.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", truncate_chars(body, 200))
-            }
+            if body.is_empty() { String::new() } else { format!(": {}", truncate_chars(body, 200)) }
         ))),
     }
 }
@@ -228,9 +219,7 @@ fn percent_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 3);
     for byte in text.as_bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(*byte as char)
-            }
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(*byte as char),
             other => out.push_str(&format!("%{other:02X}")),
         }
     }
@@ -287,10 +276,7 @@ mod tests {
     #[test]
     fn a_successful_relay_reply_carries_the_issue_url() {
         let response = interpret(201, r#"{"issue_url":"https://github.com/o/r/issues/7"}"#).unwrap();
-        assert_eq!(
-            response.issue_url.as_deref(),
-            Some("https://github.com/o/r/issues/7")
-        );
+        assert_eq!(response.issue_url.as_deref(), Some("https://github.com/o/r/issues/7"));
     }
 
     #[test]

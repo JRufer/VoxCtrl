@@ -10,21 +10,11 @@ use voxctrl_config::{OpenAiConfig, OpenAiMode, RemoteOpenAiConfig};
 /// returns an empty string (the user prompt carries the full instruction).
 pub fn preset_system_prompt(mode: &OpenAiMode) -> &'static str {
     match mode {
-        OpenAiMode::Clean => {
-            "Fix grammar and punctuation only. Return only the corrected text, no commentary."
-        }
-        OpenAiMode::Formal => {
-            "Rewrite the user's text in formal professional language. Return only the result."
-        }
-        OpenAiMode::Casual => {
-            "Rewrite the user's text in casual conversational language. Return only the result."
-        }
-        OpenAiMode::Bullet => {
-            "Convert the user's text to a bullet-point list. Return only the list."
-        }
-        OpenAiMode::Concise => {
-            "Summarize the user's text concisely in 1-2 sentences. Return only the summary."
-        }
+        OpenAiMode::Clean => "Fix grammar and punctuation only. Return only the corrected text, no commentary.",
+        OpenAiMode::Formal => "Rewrite the user's text in formal professional language. Return only the result.",
+        OpenAiMode::Casual => "Rewrite the user's text in casual conversational language. Return only the result.",
+        OpenAiMode::Bullet => "Convert the user's text to a bullet-point list. Return only the list.",
+        OpenAiMode::Concise => "Summarize the user's text concisely in 1-2 sentences. Return only the summary.",
         OpenAiMode::Custom => "",
     }
 }
@@ -157,11 +147,8 @@ impl OpenAiClient {
 
         // Build the user message from the configured template, substituting the
         // dictated text into the "{text}" placeholder.
-        let template = if self.config.user_prompt.trim().is_empty() {
-            "{text}"
-        } else {
-            self.config.user_prompt.as_str()
-        };
+        let template =
+            if self.config.user_prompt.trim().is_empty() { "{text}" } else { self.config.user_prompt.as_str() };
         let user_content = if template.contains("{text}") {
             template.replace("{text}", text)
         } else {
@@ -172,50 +159,34 @@ impl OpenAiClient {
         let system_content = self.config.system_prompt.trim();
         let mut messages = Vec::with_capacity(2);
         if !system_content.is_empty() {
-            messages.push(ChatMessage {
-                role: "system",
-                content: system_content,
-            });
+            messages.push(ChatMessage { role: "system", content: system_content });
         }
-        messages.push(ChatMessage {
-            role: "user",
-            content: &user_content,
-        });
+        messages.push(ChatMessage { role: "user", content: &user_content });
 
         let url = format!("{}/chat/completions", api_base(&self.config.endpoint));
-        let req = ChatRequest {
-            model: &self.config.model,
-            messages,
-            stream: false,
-        };
+        let req = ChatRequest { model: &self.config.model, messages, stream: false };
 
         match self.with_auth(self.http.post(&url).json(&req)).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<ChatResponse>().await {
-                    Ok(body) => {
-                        let result = body
-                            .choices
-                            .into_iter()
-                            .next()
-                            .map(|c| c.message.content.trim().to_string())
-                            .unwrap_or_default();
-                        if result.is_empty() {
-                            warn!("OpenAI API returned no content");
-                            return text.to_string();
-                        }
-                        debug!(
-                            input_len = text.len(),
-                            output_len = result.len(),
-                            "OpenAI API processed"
-                        );
-                        result
+            Ok(resp) if resp.status().is_success() => match resp.json::<ChatResponse>().await {
+                Ok(body) => {
+                    let result = body
+                        .choices
+                        .into_iter()
+                        .next()
+                        .map(|c| c.message.content.trim().to_string())
+                        .unwrap_or_default();
+                    if result.is_empty() {
+                        warn!("OpenAI API returned no content");
+                        return text.to_string();
                     }
-                    Err(e) => {
-                        warn!("OpenAI API response parse error: {e}");
-                        text.to_string()
-                    }
+                    debug!(input_len = text.len(), output_len = result.len(), "OpenAI API processed");
+                    result
                 }
-            }
+                Err(e) => {
+                    warn!("OpenAI API response parse error: {e}");
+                    text.to_string()
+                }
+            },
             Ok(resp) => {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
@@ -245,16 +216,16 @@ impl OpenAiClient {
     /// Retrieve the list of available models from the OpenAI-compatible server.
     pub async fn list_models(&self) -> Result<Vec<String>, String> {
         let url = format!("{}/models", api_base(&self.config.endpoint));
-        let resp = self
-            .with_auth(self.http.get(&url))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let resp = self.with_auth(self.http.get(&url)).send().await.map_err(|e| e.to_string())?;
         if resp.status().is_success() {
             #[derive(serde::Deserialize)]
-            struct ModelItem { id: String }
+            struct ModelItem {
+                id: String,
+            }
             #[derive(serde::Deserialize)]
-            struct ModelsResponse { data: Vec<ModelItem> }
+            struct ModelsResponse {
+                data: Vec<ModelItem>,
+            }
             let body = resp.json::<ModelsResponse>().await.map_err(|e| e.to_string())?;
             Ok(body.data.into_iter().map(|m| m.id).collect())
         } else {
@@ -301,10 +272,11 @@ pub async fn check_server_llm(endpoint: &str, api_key: Option<&str>, tls_fingerp
         );
     }
     let builder = reqwest::Client::builder().connect_timeout(SERVER_CONNECT_TIMEOUT).timeout(Duration::from_secs(6));
-    let client = match voxctrl_pairing::pin(builder, endpoint, tls_fingerprint).and_then(|b| b.build().map_err(Into::into)) {
-        Ok(client) => client,
-        Err(e) => return ServerLlmStatus::unavailable(format!("{e:#}")),
-    };
+    let client =
+        match voxctrl_pairing::pin(builder, endpoint, tls_fingerprint).and_then(|b| b.build().map_err(Into::into)) {
+            Ok(client) => client,
+            Err(e) => return ServerLlmStatus::unavailable(format!("{e:#}")),
+        };
     let mut request = client.get(format!("{}/chat/completions", server_base(endpoint)));
     if let Some(key) = api_key.map(str::trim).filter(|k| !k.is_empty()) {
         request = request.bearer_auth(key);
@@ -357,8 +329,8 @@ fn interpret_server_status(status: u16, body: &[u8]) -> ServerLlmStatus {
 #[cfg(test)]
 mod tests {
     use super::{api_base, interpret_server_status, preset_system_prompt, server_base, OpenAiClient};
-    use voxctrl_config::{OpenAiConfig, RemoteOpenAiConfig};
     use voxctrl_config::OpenAiMode;
+    use voxctrl_config::{OpenAiConfig, RemoteOpenAiConfig};
 
     #[test]
     fn api_base_appends_v1() {
@@ -374,7 +346,12 @@ mod tests {
 
     #[test]
     fn the_servers_base_follows_the_speech_endpoint_however_it_was_entered() {
-        for endpoint in ["http://box:8787/v1", "http://box:8787/v1/", "http://box:8787", " http://box:8787/v1/audio/transcriptions "] {
+        for endpoint in [
+            "http://box:8787/v1",
+            "http://box:8787/v1/",
+            "http://box:8787",
+            " http://box:8787/v1/audio/transcriptions ",
+        ] {
             assert_eq!(server_base(endpoint), "http://box:8787/v1", "{endpoint}");
         }
     }

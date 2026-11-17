@@ -127,8 +127,7 @@ pub fn start(
         return Err(X11Error::NoDisplay);
     }
 
-    let (conn, _screen) = RustConnection::connect(None)
-        .map_err(|e| X11Error::Connect(format!("{e}")))?;
+    let (conn, _screen) = RustConnection::connect(None).map_err(|e| X11Error::Connect(format!("{e}")))?;
 
     // The announced version decides the server's raw-event semantics, so this
     // asks for the lowest one whose semantics are correct — see `MIN_XI_MINOR`.
@@ -155,10 +154,7 @@ pub fn start(
         deviceid: XI_ALL_MASTER_DEVICES,
         mask: vec![xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE],
     };
-    let hierarchy_mask = xinput::EventMask {
-        deviceid: XI_ALL_DEVICES,
-        mask: vec![xinput::XIEventMask::HIERARCHY],
-    };
+    let hierarchy_mask = xinput::EventMask { deviceid: XI_ALL_DEVICES, mask: vec![xinput::XIEventMask::HIERARCHY] };
 
     // Raw events may only be selected on a root window. Every screen gets its
     // own selection so a multi-screen (not multi-monitor) display still works.
@@ -365,10 +361,7 @@ mod tests {
             deviceid: XI_ALL_MASTER_DEVICES,
             mask: vec![xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE],
         };
-        let hierarchy_mask = xinput::EventMask {
-            deviceid: XI_ALL_DEVICES,
-            mask: vec![xinput::XIEventMask::HIERARCHY],
-        };
+        let hierarchy_mask = xinput::EventMask { deviceid: XI_ALL_DEVICES, mask: vec![xinput::XIEventMask::HIERARCHY] };
         let root = conn.setup().roots[0].root;
 
         conn.xinput_xi_select_events(root, std::slice::from_ref(&raw_mask))
@@ -443,10 +436,7 @@ mod tests {
         // nothing at all is selected and not one key ever arrives. That shipped
         // once: "the X server refused raw key events ... bad_value: 11", 11
         // being this very mask bit.
-        assert_ne!(
-            XI_ALL_DEVICES, XI_ALL_MASTER_DEVICES,
-            "the two selections must target different devices"
-        );
+        assert_ne!(XI_ALL_DEVICES, XI_ALL_MASTER_DEVICES, "the two selections must target different devices");
 
         let raw = xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE;
         assert_eq!(

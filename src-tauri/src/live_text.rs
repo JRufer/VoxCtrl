@@ -100,10 +100,7 @@ pub fn plan_commit(audio: &[f32], tail_start: usize) -> Option<usize> {
         frames.push((at, rms(&audio[at..at + FRAME])));
         at += FRAME;
     }
-    let (quiet_at, quiet_rms) = frames
-        .iter()
-        .copied()
-        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let (quiet_at, quiet_rms) = frames.iter().copied().min_by(|a, b| a.1.total_cmp(&b.1))?;
 
     let mut levels: Vec<f32> = frames.iter().map(|f| f.1).collect();
     levels.sort_by(f32::total_cmp);
@@ -217,12 +214,7 @@ impl LiveSession {
                 self.view = LiveView { committed: self.committed.clone(), tentative: rest.join(" ") };
             }
             Some(PassKind::Live) | None => {
-                let agreed = self
-                    .prev_words
-                    .iter()
-                    .zip(&words)
-                    .take_while(|(a, b)| word_key(a) == word_key(b))
-                    .count();
+                let agreed = self.prev_words.iter().zip(&words).take_while(|(a, b)| word_key(a) == word_key(b)).count();
                 self.view = LiveView {
                     committed: join(&self.committed, &words[..agreed].join(" ")),
                     tentative: words[agreed..].join(" "),

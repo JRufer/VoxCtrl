@@ -38,9 +38,7 @@ pub struct Layout {
 
 impl Layout {
     pub fn system() -> Self {
-        Self {
-            data_dir: dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl"),
-        }
+        Self { data_dir: dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl") }
     }
 
     fn models(&self) -> PathBuf {
@@ -312,7 +310,13 @@ fn piper_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
 fn tts_folder_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
     let engines: [(&str, &str, &str, TtsEngine, bool); 5] = [
         ("pocket-tts", "pocket-tts", "Pocket-TTS", TtsEngine::PocketTts, true),
-        ("breeze-tts-2", "breeze-tts-2", "Breeze-TTS-2", TtsEngine::BreezeTts2, cfg.tts.breeze_tts_2.model_dir.trim().is_empty()),
+        (
+            "breeze-tts-2",
+            "breeze-tts-2",
+            "Breeze-TTS-2",
+            TtsEngine::BreezeTts2,
+            cfg.tts.breeze_tts_2.model_dir.trim().is_empty(),
+        ),
         ("voxcpm2", "voxcpm2", "VoxCPM2", TtsEngine::VoxCpm2, cfg.tts.vox_cpm_2.model_dir.trim().is_empty()),
         (
             "kitten-tts-2",
@@ -321,7 +325,13 @@ fn tts_folder_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
             TtsEngine::KittenTts2,
             cfg.tts.kitten_tts_2.model_dir.trim().is_empty(),
         ),
-        ("inflect-micro", "inflect-micro", "Inflect-Micro", TtsEngine::InflectMicro, cfg.tts.inflect_micro.model_dir.trim().is_empty()),
+        (
+            "inflect-micro",
+            "inflect-micro",
+            "Inflect-Micro",
+            TtsEngine::InflectMicro,
+            cfg.tts.inflect_micro.model_dir.trim().is_empty(),
+        ),
     ];
     engines
         .into_iter()
@@ -422,9 +432,7 @@ fn size_of(path: &Path) -> u64 {
     if meta.is_file() {
         meta.len()
     } else if meta.is_dir() {
-        std::fs::read_dir(path)
-            .map(|entries| entries.flatten().map(|e| size_of(&e.path())).sum())
-            .unwrap_or(0)
+        std::fs::read_dir(path).map(|entries| entries.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0)
     } else {
         0
     }
@@ -732,7 +740,8 @@ mod tests {
         let plan = plan(&cfg, &[], FallbackChoice::Parakeet, &fx.layout);
         let models = fx.layout.models();
 
-        let asked = vec!["whisper:base".to_string(), "moonshine:base".to_string(), "piper:en-us-lessac-low".to_string()];
+        let asked =
+            vec!["whisper:base".to_string(), "moonshine:base".to_string(), "piper:en-us-lessac-low".to_string()];
         let result = execute(&plan, &asked);
 
         assert_eq!(result.errors, Vec::<String>::new());
@@ -762,7 +771,11 @@ mod tests {
 
         assert_eq!(result.removed, vec!["Whisper.cpp tiny"]);
         assert_eq!(result.errors.len(), 2);
-        assert!(result.errors[0].contains("in use") && result.errors[0].contains("Fallback engine"), "{:?}", result.errors);
+        assert!(
+            result.errors[0].contains("in use") && result.errors[0].contains("Fallback engine"),
+            "{:?}",
+            result.errors
+        );
         assert!(result.errors[1].contains("no-such-model"));
         assert!(fx.layout.models().join("parakeet/tdt-0.6b-v3/encoder-model.int8.onnx").exists());
     }
@@ -792,7 +805,8 @@ mod tests {
         let elsewhere = fx.layout.data_dir.parent().unwrap().join("elsewhere");
         write(&elsewhere.join("precious.bin"), 777);
         // A known Whisper file name that is really a link to a file elsewhere.
-        std::os::unix::fs::symlink(elsewhere.join("precious.bin"), fx.layout.models().join("ggml-small-q5_1.bin")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("precious.bin"), fx.layout.models().join("ggml-small-q5_1.bin"))
+            .unwrap();
         // And a link inside a model folder that is about to be removed.
         std::os::unix::fs::symlink(&elsewhere, fx.layout.models().join("moonshine/base/link")).unwrap();
 

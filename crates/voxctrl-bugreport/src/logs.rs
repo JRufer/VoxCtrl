@@ -25,10 +25,7 @@ pub const MAX_BYTES: usize = 64 * 1024;
 
 /// Where the running app writes its log.
 pub fn log_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("startup_errors.log")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("startup_errors.log")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,11 +39,7 @@ pub struct LogExcerpt {
 
 impl LogExcerpt {
     fn empty(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            lines: 0,
-            truncated: false,
-        }
+        Self { text: text.to_string(), lines: 0, truncated: false }
     }
 }
 
@@ -63,10 +56,7 @@ pub fn read_from(path: &Path, scrubber: &Scrubber) -> LogExcerpt {
     if excerpt.text.trim().is_empty() {
         return LogExcerpt::empty("<the log file is empty>");
     }
-    LogExcerpt {
-        text: scrubber.scrub(&excerpt.text),
-        ..excerpt
-    }
+    LogExcerpt { text: scrubber.scrub(&excerpt.text), ..excerpt }
 }
 
 /// The last `max_lines` lines, then the last `max_bytes` bytes of those.
@@ -88,11 +78,7 @@ fn tail(text: &str, max_lines: usize, max_bytes: usize) -> LogExcerpt {
         kept = kept[from..].to_string();
     }
 
-    LogExcerpt {
-        lines: kept.lines().count(),
-        text: kept,
-        truncated,
-    }
+    LogExcerpt { lines: kept.lines().count(), text: kept, truncated }
 }
 
 #[cfg(test)]

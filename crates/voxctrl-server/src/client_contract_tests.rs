@@ -100,11 +100,8 @@ async fn test_connection_reports_a_wrong_key() {
 async fn a_whole_clip_upload_is_transcribed() {
     let (endpoint, seen) = serve("whole clip").await;
     let backend = RemoteOpenAiBackend::new(client_config(&endpoint, Some(KEY)));
-    let request = TranscribeRequest {
-        audio: vec![0.2; 24_000],
-        initial_prompt: Some("Hey Vox".into()),
-        ..Default::default()
-    };
+    let request =
+        TranscribeRequest { audio: vec![0.2; 24_000], initial_prompt: Some("Hey Vox".into()), ..Default::default() };
     let result = tokio::task::spawn_blocking(move || backend.transcribe(&request)).await.unwrap().unwrap();
     assert_eq!(result.text, "whole clip");
 
@@ -233,11 +230,8 @@ async fn a_failed_transcription_is_reported_once_not_uploaded_again() {
     // The engine fails every request: the server answers 500.
     let (engine, seen) = fake_engine("unused", true);
     let (endpoint, seen) = serve_with(engine, seen, None).await;
-    let session = RemoteStreamingSession::start(
-        client_config(&endpoint, Some(KEY)),
-        None,
-        &tokio::runtime::Handle::current(),
-    );
+    let session =
+        RemoteStreamingSession::start(client_config(&endpoint, Some(KEY)), None, &tokio::runtime::Handle::current());
     session.send_chunk(vec![0.2; 16_000]);
     let message = format!("{:#}", session.finish().await.unwrap_err());
     assert!(message.contains("HTTP 500"), "{message}");
@@ -290,7 +284,8 @@ async fn a_cleanup_the_server_cannot_do_is_an_error_carrying_its_reason() {
     let message = format!("{:#}", off.unwrap_err());
     assert!(message.contains("HTTP 501") && message.contains("not enabled"), "{message}");
 
-    let wrong_key = clean_on_server(&client_config(&serve_cleanup(true).await, Some("vx_wrong")), "hello", "casual").await;
+    let wrong_key =
+        clean_on_server(&client_config(&serve_cleanup(true).await, Some("vx_wrong")), "hello", "casual").await;
     assert!(format!("{:#}", wrong_key.unwrap_err()).contains("HTTP 401"));
 
     let nobody = clean_on_server(&client_config("http://127.0.0.1:1/v1", Some(KEY)), "hello", "casual").await;
@@ -342,7 +337,12 @@ impl crate::speech::Speaker for DescribingSpeaker {
             self.0.lock().unwrap().push(format!("slow request ended, client gone: {gone}"));
             return Err(crate::speech::SpeakError::Abandoned);
         }
-        let line = format!("{}|{}|{}", request.engine.as_deref().unwrap_or("-"), request.voice.as_deref().unwrap_or("-"), request.text);
+        let line = format!(
+            "{}|{}|{}",
+            request.engine.as_deref().unwrap_or("-"),
+            request.voice.as_deref().unwrap_or("-"),
+            request.text
+        );
         let samples: Vec<u8> = (0..line.chars().count() as i16).flat_map(|s| s.to_le_bytes()).collect();
         self.0.lock().unwrap().push(line);
         Ok(voxctrl_tts::synth::pcm16_to_wav(&samples, 16000))
@@ -409,7 +409,8 @@ fn voice_folder(voices: &[(&str, Option<&str>)]) -> tempfile::TempDir {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_gets_a_wav_it_can_play() {
     let (endpoint, speaker) = serve_speech(true).await;
-    let wav = tokio::task::spawn_blocking(move || fetch_speech(&link(&endpoint, KEY), "Hello there")).await.unwrap().unwrap();
+    let wav =
+        tokio::task::spawn_blocking(move || fetch_speech(&link(&endpoint, KEY), "Hello there")).await.unwrap().unwrap();
     assert_eq!(&wav[0..4], b"RIFF");
     assert_eq!(*speaker.0.lock().unwrap(), vec!["-|-|Hello there"], "nothing chosen: the server's defaults");
 }
@@ -429,7 +430,11 @@ async fn the_clients_choice_of_engine_and_voice_reaches_the_server() {
 async fn the_client_learns_whether_and_how_the_server_speaks() {
     let ((on, _), (off, _)) = (serve_speech(true).await, serve_speech(false).await);
     let (on, off, wrong_key) = tokio::task::spawn_blocking(move || {
-        (check_server_tts(&link(&on, KEY)), check_server_tts(&link(&off, KEY)), check_server_tts(&link(&on, "vx_wrong")))
+        (
+            check_server_tts(&link(&on, KEY)),
+            check_server_tts(&link(&off, KEY)),
+            check_server_tts(&link(&on, "vx_wrong")),
+        )
     })
     .await
     .unwrap();
@@ -482,7 +487,11 @@ async fn a_clients_own_voices_are_uploaded_used_kept_private_and_removed() {
         assert!(fetch_speech(&alice, "hi").is_ok());
         let err = fetch_speech(&bob, "hi").unwrap_err().to_string();
         assert!(err.contains("has not been uploaded"), "{err}");
-        assert_eq!(sync_voices(&bob, &[]).unwrap(), Default::default(), "nothing of Bob's to remove, nothing of Alice's touched");
+        assert_eq!(
+            sync_voices(&bob, &[]).unwrap(),
+            Default::default(),
+            "nothing of Bob's to remove, nothing of Alice's touched"
+        );
         assert!(fetch_speech(&alice, "still mine").is_ok());
 
         // A changed transcript is a new version: only that voice goes up again.
@@ -604,11 +613,10 @@ async fn a_paired_client_does_everything_over_the_encrypted_connection() {
     assert!(check_server_cleanup(&endpoint, Some(KEY), Some(&fingerprint)).await.available);
 
     let speech_link = ServerLink { tls_fingerprint: Some(fingerprint.clone()), ..link(&endpoint, KEY) };
-    let (status, wav) = tokio::task::spawn_blocking(move || {
-        (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello"))
-    })
-    .await
-    .unwrap();
+    let (status, wav) =
+        tokio::task::spawn_blocking(move || (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello")))
+            .await
+            .unwrap();
     assert!(status.available, "{}", status.message);
     assert!(wav.unwrap().starts_with(b"RIFF"));
 }
@@ -621,18 +629,20 @@ async fn a_different_certificate_is_refused_and_the_reason_is_given() {
     let test = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10, Some(&other)).await.unwrap();
     assert!(!test.success);
 
-    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), Some(&other)).await.unwrap_err().to_string();
+    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), Some(&other))
+        .await
+        .unwrap_err()
+        .to_string();
     assert_eq!(reason, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
 
     let cleanup = check_server_cleanup(&endpoint, Some(KEY), Some(&other)).await;
     assert_eq!(cleanup.message, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
 
     let speech_link = ServerLink { tls_fingerprint: Some(other), ..link(&endpoint, KEY) };
-    let (status, spoken) = tokio::task::spawn_blocking(move || {
-        (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello"))
-    })
-    .await
-    .unwrap();
+    let (status, spoken) =
+        tokio::task::spawn_blocking(move || (check_server_tts(&speech_link), fetch_speech(&speech_link, "hello")))
+            .await
+            .unwrap();
     assert_eq!(status.message, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
     assert_eq!(spoken.unwrap_err().to_string(), voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
 }
@@ -640,7 +650,8 @@ async fn a_different_certificate_is_refused_and_the_reason_is_given() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unpaired_client_does_not_trust_the_servers_own_certificate() {
     let (endpoint, _fingerprint) = serve_encrypted().await;
-    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap_err().to_string();
+    let reason =
+        voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap_err().to_string();
     assert!(reason.contains("Could not connect"), "{reason}");
 }
 
@@ -649,7 +660,10 @@ async fn a_paired_client_never_falls_back_to_an_unencrypted_address() {
     let (plain, _seen) = serve("sent in the clear").await;
     let fingerprint = "ab".repeat(32);
 
-    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), Some(&fingerprint)).await.unwrap_err().to_string();
+    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), Some(&fingerprint))
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(reason.contains("must start with https://"), "{reason}");
 
     let backend = RemoteOpenAiBackend::new(paired(&plain, &fingerprint));
@@ -673,11 +687,8 @@ async fn plain_http_to_an_encrypted_server_is_told_to_pair() {
     assert!(test.message.contains("pairing code"), "{}", test.message);
 
     // A dictation fails once with that message; it is not uploaded twice.
-    let session = RemoteStreamingSession::start(
-        client_config(&plain, Some(KEY)),
-        None,
-        &tokio::runtime::Handle::current(),
-    );
+    let session =
+        RemoteStreamingSession::start(client_config(&plain, Some(KEY)), None, &tokio::runtime::Handle::current());
     session.send_chunk(vec![0.1; 16_000]);
     let failed = session.finish().await.unwrap_err();
     assert!(format!("{failed:#}").contains("pairing code"), "{failed:#}");
@@ -791,12 +802,11 @@ async fn a_hotkeys_ai_step_follows_the_use_the_server_setting() {
     let (endpoint, seen) = serve_with_llm("llama3.2:1b").await;
     let mut app = voxctrl_config::AppConfig { openai: ai_settings(), ..Default::default() };
     app.engine.remote_openai = client_config(&endpoint, Some(KEY));
-    let binding: voxctrl_routing::HotkeyBinding =
-        serde_json::from_value(serde_json::json!({
-            "id": "b", "keys": ["KEY_F9"], "gesture": "hold", "target_id": "default",
-            "openai_enabled": true, "openai_model": "the-hotkeys-model",
-        }))
-            .unwrap();
+    let binding: voxctrl_routing::HotkeyBinding = serde_json::from_value(serde_json::json!({
+        "id": "b", "keys": ["KEY_F9"], "gesture": "hold", "target_id": "default",
+        "openai_enabled": true, "openai_model": "the-hotkeys-model",
+    }))
+    .unwrap();
 
     let client = voxctrl_inference::finalize::binding_llm_client(Some(&binding), &app).unwrap();
     assert_eq!(client.process("hello").await, "[llama3.2:1b] HELLO");

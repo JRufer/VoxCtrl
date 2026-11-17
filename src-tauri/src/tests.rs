@@ -1,56 +1,56 @@
-use std::sync::Arc;
+use crate::state::AppState;
+use crate::window::setup_blocker;
 use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use voxctrl_config::Config;
 use voxctrl_routing::OutputTargetRouter;
-use crate::state::AppState;
-use crate::window::setup_blocker;
 
 #[test]
 fn test_startup_error_layer_privacy_and_levels() {
-    use tracing_subscriber::prelude::*;
     use std::io::Read;
-    
+    use tracing_subscriber::prelude::*;
+
     let temp_dir = tempfile::tempdir().unwrap();
     let log_path = temp_dir.path().join("test_startup_errors.log");
-    
+
     let layer = crate::startup_log::StartupErrorLayer::new(log_path.clone()).unwrap();
     let subscriber = tracing_subscriber::registry().with(layer);
-    
+
     crate::startup_log::STARTUP_COMPLETE.store(false, std::sync::atomic::Ordering::SeqCst);
-    
+
     tracing::subscriber::with_default(subscriber, || {
         // 1. Startup INFO log (should be written)
         tracing::info!("System startup: device init");
-        
+
         // 2. Transcription text (should be blocked by privacy filters)
         tracing::info!("Received transcription: Hello user");
-        
+
         // 3. Spoken text warn (should be blocked by privacy filters)
         tracing::warn!("Failed to speak the text: Hello user");
-        
+
         // 4. OpenAI payload error (should be blocked by privacy filters)
         tracing::error!("OpenAI request payload: test prompt");
-        
+
         // Transition to post-startup
         crate::startup_log::STARTUP_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+
         // 5. Post-startup INFO log (should be ignored by level filter)
         tracing::info!("Normal runtime info log");
-        
+
         // 6. Post-startup ERROR log (should be written)
         tracing::error!("System audio device connection lost");
     });
-    
+
     // Read file contents
     let mut file = std::fs::File::open(log_path).unwrap();
     let mut content = String::new();
     file.read_to_string(&mut content).unwrap();
-    
+
     // Assertions
     assert!(content.contains("System startup: device init"));
     assert!(content.contains("System audio device connection lost"));
-    
+
     assert!(!content.contains("Hello user"));
     assert!(!content.contains("Normal runtime info log"));
     assert!(!content.contains("OpenAI"));
@@ -164,7 +164,6 @@ async fn test_app_state_words_increment() {
     state.increment_words(10);
     assert_eq!(state.total_words(), 25);
 }
-
 
 #[tokio::test]
 async fn test_sequential_multi_target_delivery() {
@@ -293,10 +292,7 @@ fn bare_modifier_shortcuts_are_refused_on_the_portal() {
     health.set_supported(true);
     health.set_backend(voxctrl_hotkeys::Backend::Portal);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_LEFTMETA".to_string()],
-        &health,
-    );
+    let check = crate::commands::check_hotkey_keys_with(&["KEY_LEFTMETA".to_string()], &health);
     assert!(!check.accepted);
     assert!(check.enforced);
     assert_eq!(check.problem.as_deref(), Some("modifiers_only"));
@@ -314,10 +310,8 @@ fn a_valid_combination_reports_what_the_desktop_will_bind() {
     health.set_supported(true);
     health.set_backend(voxctrl_hotkeys::Backend::Portal);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_LEFTMETA".to_string(), "KEY_SPACE".to_string()],
-        &health,
-    );
+    let check =
+        crate::commands::check_hotkey_keys_with(&["KEY_LEFTMETA".to_string(), "KEY_SPACE".to_string()], &health);
     assert!(check.accepted);
     assert_eq!(check.accelerator.as_deref(), Some("LOGO+space"));
     assert!(check.problem.is_none());
@@ -333,17 +327,11 @@ fn bare_modifiers_are_allowed_where_voxctrl_watches_the_keyboard() {
     health.set_backend(voxctrl_hotkeys::Backend::Evdev);
     health.set_keyboards_open(1);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_LEFTMETA".to_string()],
-        &health,
-    );
+    let check = crate::commands::check_hotkey_keys_with(&["KEY_LEFTMETA".to_string()], &health);
     assert!(check.accepted, "this combination works on this machine");
     assert!(!check.enforced);
     assert_eq!(check.problem.as_deref(), Some("modifiers_only"));
-    assert!(check
-        .message
-        .expect("an advisory still needs wording")
-        .contains("stop working"));
+    assert!(check.message.expect("an advisory still needs wording").contains("stop working"));
 }
 
 /// The stop-key arbiter, end to end: the grab is taken when playback starts and
@@ -359,9 +347,7 @@ async fn the_stop_key_is_taken_for_playback_and_given_back_after() {
     // The desktop owns the grab here, so a standing Escape registration would
     // take the key from every other app: this is the case the arbiter exists for.
     state.hotkey_health.set_supported(true);
-    state
-        .hotkey_health
-        .set_backend(voxctrl_hotkeys::Backend::Portal);
+    state.hotkey_health.set_backend(voxctrl_hotkeys::Backend::Portal);
     {
         let mut cfg = state.config.lock().await;
         cfg.data.tts.stop_key = vec!["KEY_ESC".to_string()];
@@ -374,11 +360,8 @@ async fn the_stop_key_is_taken_for_playback_and_given_back_after() {
 
     crate::stop_key::spawn(state.clone());
 
-    let has_stop_key = |bindings: &[voxctrl_routing::HotkeyBinding]| {
-        bindings
-            .iter()
-            .any(|b| b.id == crate::stop_key::STOP_BINDING_ID)
-    };
+    let has_stop_key =
+        |bindings: &[voxctrl_routing::HotkeyBinding]| bindings.iter().any(|b| b.id == crate::stop_key::STOP_BINDING_ID);
 
     // Nothing is speaking, so nothing should be registered yet.
     assert!(
@@ -388,20 +371,14 @@ async fn the_stop_key_is_taken_for_playback_and_given_back_after() {
     assert!(!state.stop_key_held.load(std::sync::atomic::Ordering::SeqCst));
 
     state.set_speaking(true);
-    let armed = reloader_rx
-        .recv_timeout(Duration::from_secs(3))
-        .expect("playback must arm the stop key");
+    let armed = reloader_rx.recv_timeout(Duration::from_secs(3)).expect("playback must arm the stop key");
     assert!(has_stop_key(&armed), "Escape has to reach VoxCtrl while it speaks");
     assert!(state.stop_key_held.load(std::sync::atomic::Ordering::SeqCst));
 
     state.set_speaking(false);
-    let released = reloader_rx
-        .recv_timeout(Duration::from_secs(8))
-        .expect("the key must be given back once playback ends");
-    assert!(
-        !has_stop_key(&released),
-        "with playback over, Escape belongs to whatever the user is looking at"
-    );
+    let released =
+        reloader_rx.recv_timeout(Duration::from_secs(8)).expect("the key must be given back once playback ends");
+    assert!(!has_stop_key(&released), "with playback over, Escape belongs to whatever the user is looking at");
     assert!(!state.stop_key_held.load(std::sync::atomic::Ordering::SeqCst));
 }
 
@@ -434,11 +411,9 @@ fn a_standing_binding_on_bare_escape_warns_what_it_costs() {
 fn bare_escape_is_unremarkable_where_voxctrl_watches_the_keyboard() {
     // X11 raw events, evdev and the Windows hook grab nothing — every app still
     // receives Escape — so there is no cost to warn about on any of them.
-    for backend in [
-        voxctrl_hotkeys::Backend::X11,
-        voxctrl_hotkeys::Backend::Evdev,
-        voxctrl_hotkeys::Backend::WindowsHook,
-    ] {
+    for backend in
+        [voxctrl_hotkeys::Backend::X11, voxctrl_hotkeys::Backend::Evdev, voxctrl_hotkeys::Backend::WindowsHook]
+    {
         let health = voxctrl_hotkeys::ListenerHealth::default();
         health.set_supported(true);
         health.set_backend(backend);
@@ -457,10 +432,7 @@ fn escape_with_a_modifier_is_accepted_everywhere() {
     health.set_supported(true);
     health.set_backend(voxctrl_hotkeys::Backend::Portal);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_LEFTCTRL".to_string(), "KEY_ESC".to_string()],
-        &health,
-    );
+    let check = crate::commands::check_hotkey_keys_with(&["KEY_LEFTCTRL".to_string(), "KEY_ESC".to_string()], &health);
     assert!(check.accepted);
     assert_eq!(check.accelerator.as_deref(), Some("CTRL+Escape"));
     assert!(check.problem.is_none());
@@ -472,10 +444,7 @@ fn two_regular_keys_are_refused_with_their_own_reason() {
     health.set_supported(true);
     health.set_backend(voxctrl_hotkeys::Backend::Portal);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_A".to_string(), "KEY_B".to_string()],
-        &health,
-    );
+    let check = crate::commands::check_hotkey_keys_with(&["KEY_A".to_string(), "KEY_B".to_string()], &health);
     assert!(!check.accepted);
     assert_eq!(check.problem.as_deref(), Some("multiple_keys"));
 }
@@ -488,10 +457,7 @@ fn validation_is_enforced_before_the_backend_has_answered() {
     health.set_supported(true);
     assert_eq!(health.backend(), voxctrl_hotkeys::Backend::Starting);
 
-    let check = crate::commands::check_hotkey_keys_with(
-        &["KEY_LEFTMETA".to_string()],
-        &health,
-    );
+    let check = crate::commands::check_hotkey_keys_with(&["KEY_LEFTMETA".to_string()], &health);
     assert!(!check.accepted);
     assert!(check.enforced);
 }
@@ -510,10 +476,7 @@ fn hotkey_status_reports_the_portal_as_active_and_private() {
     assert!(res.is_active);
     assert!(res.is_private);
     assert!(!res.needs_attention);
-    assert_eq!(
-        res.devices_readable, 0,
-        "the portal path must not probe input devices at all"
-    );
+    assert_eq!(res.devices_readable, 0, "the portal path must not probe input devices at all");
     assert!(!res.detail.is_empty(), "every state needs an explanation");
 }
 
@@ -552,11 +515,7 @@ fn hotkey_status_flags_an_elevated_foreground_window() {
     assert!(res.elevated_window_focused);
     assert!(!res.is_active);
     assert!(res.needs_attention);
-    assert!(
-        res.detail.to_lowercase().contains("administrator"),
-        "{}",
-        res.detail
-    );
+    assert!(res.detail.to_lowercase().contains("administrator"), "{}", res.detail);
 }
 
 #[test]
@@ -759,8 +718,7 @@ async fn test_setup_blocker_flags_a_missing_model_at_keypress() {
         let mut cfg = state.config.lock().await;
         cfg.data.engine.backend = voxctrl_config::BackendChoice::WhisperCpp;
         cfg.data.engine.whisper_cpp.model_size = "large-v3".to_string();
-        cfg.data.engine.whisper_cpp.model_dir =
-            tempfile::tempdir().unwrap().path().to_string_lossy().to_string();
+        cfg.data.engine.whisper_cpp.model_dir = tempfile::tempdir().unwrap().path().to_string_lossy().to_string();
     }
 
     // The injection-tool check runs first and depends on the host, so only
@@ -784,17 +742,16 @@ async fn test_setup_blocker_stays_quiet_for_the_auto_downloading_default() {
         let mut cfg = state.config.lock().await;
         cfg.data.engine.backend = voxctrl_config::BackendChoice::WhisperCpp;
         cfg.data.engine.whisper_cpp.model_size = "tiny".to_string();
-        cfg.data.engine.whisper_cpp.model_dir =
-            tempfile::tempdir().unwrap().path().to_string_lossy().to_string();
+        cfg.data.engine.whisper_cpp.model_dir = tempfile::tempdir().unwrap().path().to_string_lossy().to_string();
     }
     assert!(setup_blocker(&state).await.is_none());
 }
 
 #[tokio::test]
 async fn test_speak_target_delivery() {
+    use std::sync::{Arc, Mutex};
     use voxctrl_routing::models::{DeliveryType, OutputTarget};
     use voxctrl_routing::targets::build_target;
-    use std::sync::{Arc, Mutex};
 
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::Speak;
@@ -807,9 +764,9 @@ async fn test_speak_target_delivery() {
 
     let target = build_target(config);
     let res = target.deliver("Test Speak Target from Tauri").await;
-    
+
     assert!(res.success);
-    
+
     let spoken_text = spoken.lock().unwrap();
     if !spoken_text.is_empty() {
         assert_eq!(*spoken_text, "Test Speak Target from Tauri");
@@ -825,20 +782,13 @@ fn test_setup_flag_recognised_in_its_common_spellings() {
     // every spelling anyone would reasonably reach for is accepted.
     for flag in ["--setup", "--wizard", "--setup-wizard", "--first-run"] {
         let args = vec!["voxctrl".to_string(), flag.to_string()];
-        assert!(
-            crate::wants_setup_wizard(&args),
-            "expected {flag} to open the setup wizard"
-        );
+        assert!(crate::wants_setup_wizard(&args), "expected {flag} to open the setup wizard");
     }
 }
 
 #[test]
 fn test_setup_flag_found_after_other_arguments() {
-    let args = vec![
-        "voxctrl".to_string(),
-        "--some-other-flag".to_string(),
-        "--setup".to_string(),
-    ];
+    let args = vec!["voxctrl".to_string(), "--some-other-flag".to_string(), "--setup".to_string()];
     assert!(crate::wants_setup_wizard(&args));
 }
 
@@ -847,10 +797,7 @@ fn test_normal_launch_does_not_open_the_wizard() {
     // A plain launch, and the installer path, must both leave the wizard alone
     // — otherwise every start would reopen setup on a configured machine.
     assert!(!crate::wants_setup_wizard(&["voxctrl".to_string()]));
-    assert!(!crate::wants_setup_wizard(&[
-        "voxctrl".to_string(),
-        "--install".to_string()
-    ]));
+    assert!(!crate::wants_setup_wizard(&["voxctrl".to_string(), "--install".to_string()]));
     assert!(!crate::wants_setup_wizard(&[]));
 }
 
@@ -860,10 +807,7 @@ fn test_setup_flag_is_not_matched_by_lookalike_arguments() {
     // wizard on startup.
     for flag in ["--setup-something", "setup", "--no-setup", "--wizardry"] {
         let args = vec!["voxctrl".to_string(), flag.to_string()];
-        assert!(
-            !crate::wants_setup_wizard(&args),
-            "{flag} must not be mistaken for the setup flag"
-        );
+        assert!(!crate::wants_setup_wizard(&args), "{flag} must not be mistaken for the setup flag");
     }
 }
 
@@ -881,10 +825,7 @@ async fn replacing_targets_marks_them_changed() {
     state.set_targets(vec![target]).await;
 
     assert_ne!(state.targets_version(), before, "a targets save did not invalidate cached labels");
-    assert_eq!(
-        voxctrl_routing::targets_display_label("notes", &state.targets.lock().await),
-        "Renamed"
-    );
+    assert_eq!(voxctrl_routing::targets_display_label("notes", &state.targets.lock().await), "Renamed");
 }
 
 /// The dictation path resolves a hotkey's per-binding settings from the

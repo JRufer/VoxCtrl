@@ -13,9 +13,7 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
-use voxctrl_bugreport::{
-    submit, BugReport, BuildFacts, Limits, Sources, SystemInfo, UserStatement,
-};
+use voxctrl_bugreport::{submit, BugReport, BuildFacts, Limits, Sources, SystemInfo, UserStatement};
 
 use crate::state::AppState;
 
@@ -84,10 +82,7 @@ fn cached_system_info() -> SystemInfo {
     if let Some(info) = guard.as_ref() {
         return info.clone();
     }
-    let info = voxctrl_bugreport::sysinfo::collect(
-        &build_facts(),
-        &voxctrl_bugreport::scrub::Scrubber::from_env(),
-    );
+    let info = voxctrl_bugreport::sysinfo::collect(&build_facts(), &voxctrl_bugreport::scrub::Scrubber::from_env());
     *guard = Some(info.clone());
     info
 }
@@ -137,10 +132,7 @@ fn history_with_identity() -> (voxctrl_bugreport::History, String) {
 /// nothing else the app does with the async runtime would run. It is only
 /// noticeable once per launch, but "only noticeable once" is how a frozen
 /// window gets shipped.
-async fn assemble(
-    state: &State<'_, Arc<AppState>>,
-    statement: UserStatement,
-) -> Result<BugReport, String> {
+async fn assemble(state: &State<'_, Arc<AppState>>, statement: UserStatement) -> Result<BugReport, String> {
     let config = {
         let guard = state.config.lock().await;
         serde_json::to_value(&guard.data).map_err(|e| format!("could not read settings: {e}"))?
@@ -152,12 +144,7 @@ async fn assemble(
         voxctrl_bugreport::build(
             statement,
             install_id,
-            Sources {
-                system: cached_system_info(),
-                config: &config,
-                targets: &targets,
-                bindings: &bindings,
-            },
+            Sources { system: cached_system_info(), config: &config, targets: &targets, bindings: &bindings },
         )
     })
     .await
@@ -195,19 +182,13 @@ pub async fn bug_report_context() -> Result<BugReportContext, String> {
     let (history, install_id) = history_with_identity();
     let now = Utc::now();
     let within = |days: i64| {
-        history
-            .submissions
-            .iter()
-            .filter(|s| now - s.at < chrono::Duration::days(days) && s.at <= now)
-            .count()
+        history.submissions.iter().filter(|s| now - s.at < chrono::Duration::days(days) && s.at <= now).count()
     };
 
     Ok(BugReportContext {
         relay_configured: submit::relay_endpoint().is_some(),
         issues_new_url: submit::ISSUES_NEW_URL.to_string(),
-        log_path: voxctrl_bugreport::logs::log_path()
-            .to_string_lossy()
-            .into_owned(),
+        log_path: voxctrl_bugreport::logs::log_path().to_string_lossy().into_owned(),
         install_id,
         limits: LimitsView {
             cooldown_seconds: limits.cooldown.num_seconds(),
@@ -243,13 +224,7 @@ pub async fn preview_bug_report(
 ) -> Result<BugReportPreview, String> {
     let report = assemble(&state, statement).await?;
     let history = voxctrl_bugreport::load_history();
-    let blocked = history
-        .check(
-            &report.statement.fingerprint_source(),
-            &Limits::default(),
-            Utc::now(),
-        )
-        .err();
+    let blocked = history.check(&report.statement.fingerprint_source(), &Limits::default(), Utc::now()).err();
 
     Ok(BugReportPreview {
         markdown: report.to_markdown(),
@@ -281,16 +256,8 @@ pub async fn submit_bug_report(
     // been sitting open since before the last submission.
     let mut history = voxctrl_bugreport::load_history();
     let now = Utc::now();
-    if let Err(refusal) = history.check(
-        &report.statement.fingerprint_source(),
-        &Limits::default(),
-        now,
-    ) {
-        return Ok(BugReportOutcome {
-            ok: false,
-            issue_url: None,
-            message: refusal.message(),
-        });
+    if let Err(refusal) = history.check(&report.statement.fingerprint_source(), &Limits::default(), now) {
+        return Ok(BugReportOutcome { ok: false, issue_url: None, message: refusal.message() });
     }
 
     match submit::submit(&report).await {
@@ -311,11 +278,7 @@ pub async fn submit_bug_report(
                 }
             });
             tracing::info!("Bug report submitted");
-            Ok(BugReportOutcome {
-                ok: true,
-                issue_url: response.issue_url,
-                message,
-            })
+            Ok(BugReportOutcome { ok: true, issue_url: response.issue_url, message })
         }
         Err(e) => {
             tracing::warn!("Bug report could not be submitted: {e}");
@@ -370,17 +333,14 @@ pub async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(),
         let _ = &app;
         let mut cmd = crate::host_env::host_command("xdg-open");
         cmd.arg(&url);
-        cmd.spawn()
-            .map_err(|e| format!("Could not open link with xdg-open: {e}"))?;
+        cmd.spawn().map_err(|e| format!("Could not open link with xdg-open: {e}"))?;
         Ok(())
     }
     #[cfg(not(target_os = "linux"))]
     #[allow(deprecated)]
     {
         use tauri_plugin_shell::ShellExt;
-        app.shell()
-            .open(&url, None)
-            .map_err(|e| format!("Could not open link: {e}"))
+        app.shell().open(&url, None).map_err(|e| format!("Could not open link: {e}"))
     }
 }
 
@@ -396,36 +356,28 @@ pub async fn open_report_folder(app: tauri::AppHandle, path: Option<String>) -> 
                 path_buf
             }
         }
-        None => dirs::download_dir()
-            .or_else(dirs::document_dir)
-            .unwrap_or_else(|| std::path::PathBuf::from(".")),
+        None => dirs::download_dir().or_else(dirs::document_dir).unwrap_or_else(|| std::path::PathBuf::from(".")),
     };
     #[cfg(target_os = "linux")]
     {
         let _ = &app;
         let mut cmd = crate::host_env::host_command("xdg-open");
         cmd.arg(target.to_string_lossy().as_ref());
-        cmd.spawn()
-            .map_err(|e| format!("Could not open file manager: {e}"))?;
+        cmd.spawn().map_err(|e| format!("Could not open file manager: {e}"))?;
         Ok(())
     }
     #[cfg(not(target_os = "linux"))]
     #[allow(deprecated)]
     {
         use tauri_plugin_shell::ShellExt;
-        app.shell()
-            .open(target.to_string_lossy().into_owned(), None)
-            .map_err(|e| format!("Could not open folder: {e}"))
+        app.shell().open(target.to_string_lossy().into_owned(), None).map_err(|e| format!("Could not open folder: {e}"))
     }
 }
 
 /// A suggested filename for the save dialog.
 #[tauri::command]
 pub fn suggested_bug_report_filename() -> String {
-    format!(
-        "voxctrl-bug-report-{}.md",
-        Utc::now().format("%Y%m%d-%H%M%S")
-    )
+    format!("voxctrl-bug-report-{}.md", Utc::now().format("%Y%m%d-%H%M%S"))
 }
 
 /// Throw away the installation identifier and make a new one.
@@ -437,8 +389,7 @@ pub fn suggested_bug_report_filename() -> String {
 pub async fn reset_bug_report_identity() -> Result<String, String> {
     let mut history = voxctrl_bugreport::History::default();
     let fresh = history.install_id().to_string();
-    voxctrl_bugreport::save_history(&history)
-        .map_err(|e| format!("could not reset the report identity: {e}"))?;
+    voxctrl_bugreport::save_history(&history).map_err(|e| format!("could not reset the report identity: {e}"))?;
     tracing::info!("Bug-report identity reset at the user's request");
     Ok(fresh)
 }

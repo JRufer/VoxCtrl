@@ -130,26 +130,15 @@ pub struct RemoteSttTestResult {
 }
 
 /// Parse OpenAI `/v1/audio/transcriptions` response body.
-pub fn parse_transcription_response(
-    bytes: &[u8],
-    duration_ms: u32,
-    inference_ms: u32,
-) -> Result<TranscriptionResult> {
+pub fn parse_transcription_response(bytes: &[u8], duration_ms: u32, inference_ms: u32) -> Result<TranscriptionResult> {
     if let Ok(val) = serde_json::from_slice::<serde_json::Value>(bytes) {
         if let Some(err_obj) = val.get("error") {
-            let msg = err_obj
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown remote error");
+            let msg = err_obj.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown remote error");
             return Err(anyhow!("Remote speech engine error: {msg}"));
         }
 
         if let Some(text) = val.get("text").and_then(|t| t.as_str()) {
-            let language = val
-                .get("language")
-                .and_then(|l| l.as_str())
-                .unwrap_or("en")
-                .to_string();
+            let language = val.get("language").and_then(|l| l.as_str()).unwrap_or("en").to_string();
             return Ok(TranscriptionResult {
                 text: text.to_string(),
                 language,
@@ -174,10 +163,7 @@ pub fn parse_transcription_response(
         });
     }
 
-    Err(anyhow!(
-        "Unexpected response format from remote speech engine: {}",
-        String::from_utf8_lossy(bytes)
-    ))
+    Err(anyhow!("Unexpected response format from remote speech engine: {}", String::from_utf8_lossy(bytes)))
 }
 
 fn attach_auth(req: reqwest::RequestBuilder, api_key: Option<&str>) -> reqwest::RequestBuilder {
@@ -201,11 +187,7 @@ pub struct RemoteStreamingSession {
 impl RemoteStreamingSession {
     /// Start a new streaming session. Connects to the remote endpoint and starts streaming
     /// multipart body immediately.
-    pub fn start(
-        config: RemoteOpenAiConfig,
-        initial_prompt: Option<String>,
-        handle: &tokio::runtime::Handle,
-    ) -> Self {
+    pub fn start(config: RemoteOpenAiConfig, initial_prompt: Option<String>, handle: &tokio::runtime::Handle) -> Self {
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
@@ -334,10 +316,7 @@ impl RemoteStreamingSession {
             let url = normalize_transcription_url(&cfg_clone.endpoint);
             let mut req = client
                 .post(&url)
-                .header(
-                    CONTENT_TYPE,
-                    format!("multipart/form-data; boundary={boundary}"),
-                )
+                .header(CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
                 .body(reqwest::Body::wrap_stream(body_stream));
 
             req = attach_auth(req, cfg_clone.api_key.as_deref());
@@ -404,11 +383,7 @@ impl RemoteStreamingSession {
             }
         });
 
-        Self {
-            chunk_tx: Some(chunk_tx),
-            result_rx,
-            buffered_samples,
-        }
+        Self { chunk_tx: Some(chunk_tx), result_rx, buffered_samples }
     }
 
     /// Feed a newly recorded audio chunk to the live stream.
@@ -423,9 +398,7 @@ impl RemoteStreamingSession {
         // Drop the channel sender to signal end of stream
         drop(self.chunk_tx.take());
 
-        self.result_rx
-            .await
-            .map_err(|_| anyhow!("Streaming transcription task cancelled"))?
+        self.result_rx.await.map_err(|_| anyhow!("Streaming transcription task cancelled"))?
     }
 
     /// Blocking finish for synchronous execution in coordinator threads.
@@ -480,12 +453,7 @@ async fn execute_multipart_transcribe(
     let mut form = reqwest::multipart::Form::new()
         .text("model", cfg.model.clone())
         .text("response_format", "json")
-        .part(
-            "file",
-            reqwest::multipart::Part::bytes(wav_bytes)
-                .file_name("audio.wav")
-                .mime_str("audio/wav")?,
-        );
+        .part("file", reqwest::multipart::Part::bytes(wav_bytes).file_name("audio.wav").mime_str("audio/wav")?);
 
     if !cfg.language.trim().is_empty() && cfg.language.trim() != "auto" {
         form = form.text("language", cfg.language.trim().to_string());
@@ -505,10 +473,7 @@ async fn execute_multipart_transcribe(
     }
     req = attach_auth(req, cfg.api_key.as_deref());
 
-    let resp = req
-        .send()
-        .await
-        .with_context(|| format!("Failed to send transcription request to {url}"))?;
+    let resp = req.send().await.with_context(|| format!("Failed to send transcription request to {url}"))?;
 
     let inference_ms = start_inst.elapsed().as_millis() as u32;
     let status = resp.status();
@@ -534,12 +499,9 @@ pub struct RemoteOpenAiBackend {
 
 impl RemoteOpenAiBackend {
     pub fn new(config: RemoteOpenAiConfig) -> Self {
-        let client = http_client(
-            &config.endpoint,
-            config.tls_fingerprint.as_deref(),
-            Duration::from_secs(config.timeout_secs),
-        )
-        .map_err(|e| format!("{e:#}"));
+        let client =
+            http_client(&config.endpoint, config.tls_fingerprint.as_deref(), Duration::from_secs(config.timeout_secs))
+                .map_err(|e| format!("{e:#}"));
         Self { config, client }
     }
 }
@@ -574,19 +536,15 @@ impl TranscriptionBackend for RemoteOpenAiBackend {
         let live = req.interim_session.is_some();
 
         match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                std::thread::spawn(move || {
-                    handle.block_on(async move {
-                        execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start, live).await
-                    })
+            Ok(handle) => std::thread::spawn(move || {
+                handle.block_on(async move {
+                    execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start, live).await
                 })
-                .join()
-                .unwrap_or_else(|_| Err(anyhow!("Transcription thread panicked")))
-            }
+            })
+            .join()
+            .unwrap_or_else(|_| Err(anyhow!("Transcription thread panicked"))),
             Err(_) => {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()?;
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
                 rt.block_on(async move {
                     execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start, live).await
                 })
@@ -626,12 +584,7 @@ pub async fn test_remote_speech_engine(
     let form = reqwest::multipart::Form::new()
         .text("model", model.to_string())
         .text("response_format", "json")
-        .part(
-            "file",
-            reqwest::multipart::Part::bytes(wav_bytes)
-                .file_name("test_audio.wav")
-                .mime_str("audio/wav")?,
-        );
+        .part("file", reqwest::multipart::Part::bytes(wav_bytes).file_name("test_audio.wav").mime_str("audio/wav")?);
 
     let mut trans_req = client.post(&trans_url).multipart(form);
     trans_req = attach_auth(trans_req, api_key);
@@ -854,9 +807,7 @@ fn request_failure_reason(e: &reqwest::Error) -> String {
 /// Whether a request failed because the server could not be connected to at
 /// all, as opposed to answering late or with an error.
 pub fn is_connect_failure(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
-        .any(reqwest::Error::is_connect)
+    err.chain().filter_map(|cause| cause.downcast_ref::<reqwest::Error>()).any(reqwest::Error::is_connect)
 }
 
 /// A short, user-facing reason for a failed transcription request, for the
@@ -885,9 +836,7 @@ pub fn failure_reason(err: &anyhow::Error) -> String {
 }
 
 fn rand_u64() -> u64 {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     now.as_nanos() as u64
 }
 
@@ -1002,7 +951,9 @@ mod tests {
 
         // A newer contract, or a newer minimum app: update this app.
         let newer = json!({ "version": "2.0.0", "contract": 2 });
-        assert!(matches!(compatibility(&newer, "0.9.19"), Compatibility::AppOutdated(r) if r.contains("Update VoxCtrl")));
+        assert!(
+            matches!(compatibility(&newer, "0.9.19"), Compatibility::AppOutdated(r) if r.contains("Update VoxCtrl"))
+        );
         let picky = json!({ "version": "1.2.0", "contract": 1, "min_client": "1.1.0" });
         assert!(matches!(compatibility(&picky, "1.0.0"), Compatibility::AppOutdated(r) if r.contains("1.1.0")));
         assert_eq!(compatibility(&picky, "1.1.0"), Compatibility::Compatible);
@@ -1041,14 +992,8 @@ mod tests {
 
     #[test]
     fn test_normalize_models_url() {
-        assert_eq!(
-            normalize_models_url("http://localhost:8000"),
-            "http://localhost:8000/v1/models"
-        );
-        assert_eq!(
-            normalize_models_url("http://localhost:8000/v1"),
-            "http://localhost:8000/v1/models"
-        );
+        assert_eq!(normalize_models_url("http://localhost:8000"), "http://localhost:8000/v1/models");
+        assert_eq!(normalize_models_url("http://localhost:8000/v1"), "http://localhost:8000/v1/models");
         assert_eq!(
             normalize_models_url("http://localhost:8000/v1/audio/transcriptions"),
             "http://localhost:8000/v1/models"

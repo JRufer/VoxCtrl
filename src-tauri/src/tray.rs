@@ -1,10 +1,10 @@
+use crate::state::AppState;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use crate::state::AppState;
 
 /// The tray entry that doubles as the setup indicator.
 static SETUP_MENU_ITEM: OnceLock<tauri::menu::MenuItem<tauri::Wry>> = OnceLock::new();
@@ -165,8 +165,7 @@ pub fn create_tray(app: &tauri::App) -> Result<tauri::tray::TrayIcon, tauri::Err
     let settings_i = tauri::menu::MenuItem::with_id(app, "settings", "⚙  Settings", true, None::<&str>)?;
     let history_i = tauri::menu::MenuItem::with_id(app, "history", "🕘  History", true, None::<&str>)?;
     let setup_i = tauri::menu::MenuItem::with_id(app, "setup", TRAY_SETUP_OK, true, None::<&str>)?;
-    let update_i =
-        tauri::menu::MenuItem::with_id(app, "update", TRAY_CHECK_FOR_UPDATES, true, None::<&str>)?;
+    let update_i = tauri::menu::MenuItem::with_id(app, "update", TRAY_CHECK_FOR_UPDATES, true, None::<&str>)?;
     let tts_memory_i = tauri::menu::CheckMenuItem::with_id(
         app,
         "tts_memory",
@@ -413,21 +412,16 @@ pub fn spawn_status_ticker(
                     pos == &ui.overlay_position && mon == &ui.overlay_monitor && style == &ui.overlay_style
                 });
                 if !unchanged {
-                    last_pos = Some((
-                        ui.overlay_position.clone(),
-                        ui.overlay_monitor.clone(),
-                        ui.overlay_style.clone(),
-                    ));
+                    last_pos =
+                        Some((ui.overlay_position.clone(), ui.overlay_monitor.clone(), ui.overlay_style.clone()));
                     position_changed = true;
                 }
             }
             if position_changed || startup_tick_count < 40 {
                 // Send the anchor + monitor; the overlay computes pixel
                 // coordinates itself using its own display scale.
-                let (position, monitor) = last_pos
-                    .as_ref()
-                    .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
-                    .expect("set above");
+                let (position, monitor) =
+                    last_pos.as_ref().map(|(pos, mon, _)| (pos.as_str(), mon.as_str())).expect("set above");
                 let pos_msg = serde_json::json!({
                     "type": "position",
                     "position": position,
@@ -446,9 +440,7 @@ pub fn spawn_status_ticker(
             let should_show_overlay = {
                 let cfg = state_for_ticker.config.lock().await;
                 (is_recording && cfg.data.ui.show_overlay)
-                    || (state_for_ticker.is_speaking()
-                        && cfg.data.tts.enabled
-                        && cfg.data.tts.response_overlay)
+                    || (state_for_ticker.is_speaking() && cfg.data.tts.enabled && cfg.data.tts.response_overlay)
                     || (state_for_ticker.is_mcp_recording() && cfg.data.mcp.visual_feedback)
                     || state_for_ticker.is_command_overlay_active()
             };
@@ -457,10 +449,8 @@ pub fn spawn_status_ticker(
                 overlay_built = true;
                 overlay_mapped = true;
             }
-            let (position, monitor) = last_pos
-                .as_ref()
-                .map(|(pos, mon, _)| (pos.as_str(), mon.as_str()))
-                .unwrap_or(("center", "primary"));
+            let (position, monitor) =
+                last_pos.as_ref().map(|(pos, mon, _)| (pos.as_str(), mon.as_str())).unwrap_or(("center", "primary"));
             // Whether the overlay window went from "not there for an event"
             // to "there" on this tick, which is when a command pill that was
             // announced too early has to be replayed into it (#187).
@@ -572,19 +562,12 @@ pub fn spawn_status_ticker(
                 None => true,
             };
             if label_changed {
-                label_inputs = Some((
-                    active_target_id.clone(),
-                    binding_label.clone(),
-                    use_binding_label,
-                    targets_version,
-                ));
+                label_inputs =
+                    Some((active_target_id.clone(), binding_label.clone(), use_binding_label, targets_version));
                 cached_label = if use_binding_label {
                     binding_label
                 } else {
-                    voxctrl_routing::targets_display_label(
-                        &active_target_id,
-                        &state_for_ticker.targets.lock().await,
-                    )
+                    voxctrl_routing::targets_display_label(&active_target_id, &state_for_ticker.targets.lock().await)
                 };
             }
 

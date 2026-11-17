@@ -11,21 +11,16 @@ use crate::state::AppState;
 use super::*;
 
 #[tauri::command]
-pub async fn get_targets(
-    _state: State<'_, Arc<AppState>>,
-) -> Result<Vec<OutputTarget>, String> {
+pub async fn get_targets(_state: State<'_, Arc<AppState>>) -> Result<Vec<OutputTarget>, String> {
     let dir = voxctrl_routing::config_dir();
     voxctrl_routing::load_targets(&dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn save_targets(
-    state: State<'_, Arc<AppState>>,
-    targets: Vec<OutputTarget>,
-) -> Result<(), String> {
+pub async fn save_targets(state: State<'_, Arc<AppState>>, targets: Vec<OutputTarget>) -> Result<(), String> {
     let dir = voxctrl_routing::config_dir();
     voxctrl_routing::save_targets(&targets, &dir).map_err(|e| e.to_string())?;
-    
+
     // Update the in-memory targets cache
     state.set_targets(targets.clone()).await;
 
@@ -40,23 +35,18 @@ pub async fn save_targets(
 }
 
 #[tauri::command]
-pub async fn get_bindings(
-    _state: State<'_, Arc<AppState>>,
-) -> Result<Vec<HotkeyBinding>, String> {
+pub async fn get_bindings(_state: State<'_, Arc<AppState>>) -> Result<Vec<HotkeyBinding>, String> {
     let dir = voxctrl_routing::config_dir();
     voxctrl_routing::load_bindings(&dir).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn save_bindings(
-    state: State<'_, Arc<AppState>>,
-    bindings: Vec<HotkeyBinding>,
-) -> Result<(), String> {
+pub async fn save_bindings(state: State<'_, Arc<AppState>>, bindings: Vec<HotkeyBinding>) -> Result<(), String> {
     let dir = voxctrl_routing::config_dir();
     voxctrl_routing::save_bindings(&bindings, &dir).map_err(|e| e.to_string())?;
     *state.bindings.lock().await = bindings.clone();
     info!("Bindings saved");
-    
+
     // Hot reload the bindings in the active listener threads, re-injecting the
     // stop key when it is currently held — `stop_key`'s arbiter decides that,
     // and a save must not take a grab it released or drop one it is using.
@@ -69,7 +59,7 @@ pub async fn save_bindings(
             info!("Hot-reload signal sent to listener");
         }
     }
-    
+
     // Where the desktop owns the key grab, the saved bindings have to be pushed
     // to it — nothing else will notice they changed. Narrowly gated: the Mint
     // route is only right when it is already in use, or when nothing else
@@ -78,18 +68,12 @@ pub async fn save_bindings(
     // deciding yet.
     let backend = state.hotkey_health.backend();
     if backend == voxctrl_hotkeys::Backend::MintDbus
-        || (backend == voxctrl_hotkeys::Backend::None
-            && crate::mint_shortcuts::is_mint_desktop())
+        || (backend == voxctrl_hotkeys::Backend::None && crate::mint_shortcuts::is_mint_desktop())
     {
         match crate::mint_shortcuts::sync_mint_shortcuts(&bindings) {
             Ok(registered) => {
-                state
-                    .hotkey_health
-                    .set_backend(voxctrl_hotkeys::Backend::MintDbus);
-                info!(
-                    "Mirrored {} binding(s) into Linux Mint's own shortcut settings",
-                    registered.len()
-                );
+                state.hotkey_health.set_backend(voxctrl_hotkeys::Backend::MintDbus);
+                info!("Mirrored {} binding(s) into Linux Mint's own shortcut settings", registered.len());
             }
             Err(e) => tracing::warn!("Failed to sync Linux Mint native shortcut settings: {e}"),
         }
@@ -100,10 +84,7 @@ pub async fn save_bindings(
 
 /// Forget a Chat target's conversation so the next dictation starts fresh.
 #[tauri::command]
-pub async fn reset_chat_conversation(
-    _state: State<'_, Arc<AppState>>,
-    target_id: String,
-) -> Result<usize, String> {
+pub async fn reset_chat_conversation(_state: State<'_, Arc<AppState>>, target_id: String) -> Result<usize, String> {
     let dropped = voxctrl_routing::reset_chat_history(&target_id).await;
     info!("Chat conversation for '{target_id}' reset ({dropped} messages dropped)");
     Ok(dropped)

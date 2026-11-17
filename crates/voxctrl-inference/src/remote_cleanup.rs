@@ -57,8 +57,11 @@ fn error_message(body: &[u8]) -> Option<String> {
 /// An error means the caller should use the text as it was: the server is
 /// unreachable, has cleanup turned off, or is not a VoxCtrl server.
 pub async fn clean_on_server(cfg: &RemoteOpenAiConfig, text: &str, styling: &str) -> Result<String> {
-    let request = with_key(client(&cfg.endpoint, cfg.tls_fingerprint.as_deref(), request_timeout(cfg))?.post(cleanup_url(&cfg.endpoint)), cfg.api_key.as_deref())
-        .json(&serde_json::json!({ "text": text, "styling": styling }));
+    let request = with_key(
+        client(&cfg.endpoint, cfg.tls_fingerprint.as_deref(), request_timeout(cfg))?.post(cleanup_url(&cfg.endpoint)),
+        cfg.api_key.as_deref(),
+    )
+    .json(&serde_json::json!({ "text": text, "styling": styling }));
     let response = request.send().await.context("The cleanup request did not reach the server")?;
     let status = response.status();
     let body = response.bytes().await.context("The server's cleanup reply could not be read")?;
@@ -68,8 +71,7 @@ pub async fn clean_on_server(cfg: &RemoteOpenAiConfig, text: &str, styling: &str
             None => anyhow!("The server did not clean up the text (HTTP {})", status.as_u16()),
         });
     }
-    let value: serde_json::Value =
-        serde_json::from_slice(&body).context("The server's cleanup reply was not JSON")?;
+    let value: serde_json::Value = serde_json::from_slice(&body).context("The server's cleanup reply was not JSON")?;
     value
         .get("text")
         .and_then(|t| t.as_str())

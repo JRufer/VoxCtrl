@@ -124,10 +124,7 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
 ];
 
 fn handling_for(path: &str) -> Option<Handling> {
-    CONFIG_HANDLING
-        .iter()
-        .find(|(p, _)| *p == path)
-        .map(|(_, h)| *h)
+    CONFIG_HANDLING.iter().find(|(p, _)| *p == path).map(|(_, h)| *h)
 }
 
 /// Redact a serialised `AppConfig`.
@@ -146,11 +143,7 @@ fn walk(path: &str, value: &Value, scrubber: &Scrubber) -> Value {
         Value::Object(map) => {
             let mut out = Map::new();
             for (key, child) in map {
-                let child_path = if path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{path}.{key}")
-                };
+                let child_path = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
                 out.insert(key.clone(), walk(&child_path, child, scrubber));
             }
             Value::Object(out)
@@ -189,12 +182,7 @@ fn apply(handling: Handling, value: &Value, scrubber: &Scrubber) -> Value {
 fn scrub_value(value: &Value, scrubber: &Scrubber) -> Value {
     match value {
         Value::String(s) => Value::String(scrubber.scrub(s)),
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(|item| scrub_value(item, scrubber))
-                .collect(),
-        ),
+        Value::Array(items) => Value::Array(items.iter().map(|item| scrub_value(item, scrubber)).collect()),
         other => other.clone(),
     }
 }
@@ -228,11 +216,7 @@ pub fn summarize_endpoint(url: &str) -> String {
     };
     // Drop credentials, then the path and query.
     let rest = rest.rsplit_once('@').map(|(_, host)| host).unwrap_or(rest);
-    let authority = rest
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default().to_ascii_lowercase();
 
     let (host, port) = split_host_port(&authority);
     let class = classify_host(host);
@@ -250,9 +234,7 @@ fn split_host_port(authority: &str) -> (&str, Option<&str>) {
         return (host, tail.strip_prefix(':').filter(|p| !p.is_empty()));
     }
     match authority.rsplit_once(':') {
-        Some((host, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => {
-            (host, Some(port))
-        }
+        Some((host, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => (host, Some(port)),
         _ => (authority, None),
     }
 }
@@ -261,11 +243,7 @@ fn classify_host(host: &str) -> &'static str {
     if host.is_empty() {
         return "<no host>";
     }
-    if host == "localhost"
-        || host == "[::1]"
-        || host.starts_with("127.")
-        || host.ends_with(".localhost")
-    {
+    if host == "localhost" || host == "[::1]" || host.starts_with("127.") || host.ends_with(".localhost") {
         return "localhost";
     }
     if is_private_ipv4(host) || host.starts_with("[fd") || host.starts_with("[fc") {
@@ -289,13 +267,7 @@ fn is_private_ipv4(host: &str) -> bool {
 // ── Targets and hotkey bindings ──────────────────────────────────────────────
 
 /// Keys in `targets.json` whose string values are from a fixed vocabulary.
-const TARGET_SAFE_STRINGS: &[&str] = &[
-    "delivery",
-    "http_method",
-    "file_mode",
-    "chat_reply_mode",
-    "processing_mode",
-];
+const TARGET_SAFE_STRINGS: &[&str] = &["delivery", "http_method", "file_mode", "chat_reply_mode", "processing_mode"];
 
 /// Keys in `bindings.json` whose string values are from a fixed vocabulary.
 const BINDING_SAFE_STRINGS: &[&str] = &["gesture", "openai_mode"];
@@ -477,10 +449,7 @@ mod tests {
         assert_eq!(summarize_endpoint("http://localhost:11434"), "http://localhost:11434");
         assert_eq!(summarize_endpoint("http://127.0.0.1:8080/v1"), "http://localhost:8080");
         assert_eq!(summarize_endpoint("http://192.168.1.40:1234/v1"), "http://<private address>:1234");
-        assert_eq!(
-            summarize_endpoint("https://user:pw@llm.corp.example.com/v1/chat"),
-            "https://<remote host>"
-        );
+        assert_eq!(summarize_endpoint("https://user:pw@llm.corp.example.com/v1/chat"), "https://<remote host>");
         assert_eq!(summarize_endpoint("http://[::1]:8000"), "http://localhost:8000");
         assert_eq!(summarize_endpoint(""), "<not set>");
     }

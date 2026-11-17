@@ -16,8 +16,8 @@ use anyhow::{anyhow, bail, Result};
 use tracing::{debug, warn};
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, SelectionNotifyEvent,
-    Window, WindowClass, SELECTION_NOTIFY_EVENT,
+    Atom, AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, SelectionNotifyEvent, Window,
+    WindowClass, SELECTION_NOTIFY_EVENT,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -33,10 +33,8 @@ const KDE_EXCLUSION_MIME: &str = "x-kde-passwordManagerHint";
 const KDE_EXCLUSION_HINT: &[u8] = b"secret";
 
 /// Targets that describe the selection rather than being content.
-const META_TARGETS: &[&str] = &[
-    "TARGETS", "MULTIPLE", "TIMESTAMP", "DELETE", "INSERT_PROPERTY", "INSERT_SELECTION",
-    "SAVE_TARGETS",
-];
+const META_TARGETS: &[&str] =
+    &["TARGETS", "MULTIPLE", "TIMESTAMP", "DELETE", "INSERT_PROPERTY", "INSERT_SELECTION", "SAVE_TARGETS"];
 
 #[derive(Clone)]
 struct Item {
@@ -64,10 +62,8 @@ impl Snapshot {
     }
 
     pub fn from_generic(items: Vec<(String, Vec<u8>)>) -> Self {
-        let mut out: Vec<Item> = items
-            .iter()
-            .map(|(m, d)| Item { target: m.clone(), ty: m.clone(), format: 8, data: d.clone() })
-            .collect();
+        let mut out: Vec<Item> =
+            items.iter().map(|(m, d)| Item { target: m.clone(), ty: m.clone(), format: 8, data: d.clone() }).collect();
         // X11 applications ask for UTF8_STRING; Wayland ones offer MIME types.
         if !out.iter().any(|i| i.target == "UTF8_STRING") {
             if let Some((_, d)) = items
@@ -197,9 +193,7 @@ fn read_incr(conn: &RustConnection, win: Window, a: &Atoms, deadline: Instant) -
     loop {
         match conn.poll_for_event()? {
             Some(Event::PropertyNotify(e))
-                if e.window == win
-                    && e.atom == a.prop
-                    && e.state == x11rb::protocol::xproto::Property::NEW_VALUE =>
+                if e.window == win && e.atom == a.prop && e.state == x11rb::protocol::xproto::Property::NEW_VALUE =>
             {
                 let (t, f, chunk) = read_property(conn, win, a.prop, true)?;
                 if chunk.is_empty() {
@@ -237,10 +231,7 @@ pub fn snapshot() -> Result<Snapshot> {
             // saying so beats pretending the clipboard was empty.
             bail!("the clipboard owner did not list its formats");
         };
-        let targets: Vec<Atom> = raw
-            .chunks_exact(4)
-            .map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
+        let targets: Vec<Atom> = raw.chunks_exact(4).map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]])).collect();
 
         let mut items = Vec::new();
         let mut total = 0usize;
@@ -309,10 +300,20 @@ fn text_items(text: &str) -> Vec<Item> {
     let latin1: Vec<u8> = text.chars().map(|c| if (c as u32) <= 0xFF { c as u32 as u8 } else { b'?' }).collect();
     vec![
         Item { target: "UTF8_STRING".into(), ty: "UTF8_STRING".into(), format: 8, data: utf8.clone() },
-        Item { target: "text/plain;charset=utf-8".into(), ty: "text/plain;charset=utf-8".into(), format: 8, data: utf8.clone() },
+        Item {
+            target: "text/plain;charset=utf-8".into(),
+            ty: "text/plain;charset=utf-8".into(),
+            format: 8,
+            data: utf8.clone(),
+        },
         Item { target: "text/plain".into(), ty: "text/plain".into(), format: 8, data: utf8 },
         Item { target: "STRING".into(), ty: "STRING".into(), format: 8, data: latin1 },
-        Item { target: KDE_EXCLUSION_MIME.into(), ty: KDE_EXCLUSION_MIME.into(), format: 8, data: KDE_EXCLUSION_HINT.to_vec() },
+        Item {
+            target: KDE_EXCLUSION_MIME.into(),
+            ty: KDE_EXCLUSION_MIME.into(),
+            format: 8,
+            data: KDE_EXCLUSION_HINT.to_vec(),
+        },
     ]
 }
 
@@ -324,64 +325,61 @@ fn serve(items: Vec<Item>) -> Result<Held> {
     let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
 
     let (owned_t, served_t) = (owned.clone(), served.clone());
-    std::thread::Builder::new()
-        .name("voxctrl-clipboard-owner".into())
-        .spawn(move || {
-            let setup = (|| -> Result<(RustConnection, Window, Atoms, Vec<ServedItem>)> {
-                let (conn, win, a) = connect()?;
-                let mut table = Vec::new();
-                for it in &items {
-                    table.push((atom(&conn, &it.target)?, atom(&conn, &it.ty)?, it.format, it.data.clone()));
-                }
-                conn.set_selection_owner(win, a.clipboard, CURRENT_TIME)?;
-                conn.flush()?;
-                if conn.get_selection_owner(a.clipboard)?.reply()?.owner != win {
-                    bail!("could not become the clipboard owner");
-                }
-                Ok((conn, win, a, table))
-            })();
-            let (conn, win, a, table) = match setup {
-                Ok(v) => v,
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
-            };
-            owned_t.store(true, Ordering::SeqCst);
-            let _ = tx.send(Ok(()));
-
-            let max_bytes = conn.maximum_request_bytes().saturating_sub(64);
-            while let Ok(ev) = conn.wait_for_event() {
-                match ev {
-                    Event::SelectionClear(e) if e.selection == a.clipboard => break,
-                    Event::SelectionRequest(req) if req.selection == a.clipboard => {
-                        let property = if req.property == NONE { req.target } else { req.property };
-                        let delivered = answer(&conn, &a, &table, max_bytes, req.requestor, property, req.target);
-                        if delivered == Answer::Data {
-                            served_t.fetch_add(1, Ordering::SeqCst);
-                        }
-                        let notify = SelectionNotifyEvent {
-                            response_type: SELECTION_NOTIFY_EVENT,
-                            sequence: 0,
-                            time: req.time,
-                            requestor: req.requestor,
-                            selection: req.selection,
-                            target: req.target,
-                            property: if delivered == Answer::Refused { NONE } else { property },
-                        };
-                        let _ = conn.send_event(false, req.requestor, EventMask::NO_EVENT, notify);
-                        let _ = conn.flush();
-                    }
-                    _ => {}
-                }
+    std::thread::Builder::new().name("voxctrl-clipboard-owner".into()).spawn(move || {
+        let setup = (|| -> Result<(RustConnection, Window, Atoms, Vec<ServedItem>)> {
+            let (conn, win, a) = connect()?;
+            let mut table = Vec::new();
+            for it in &items {
+                table.push((atom(&conn, &it.target)?, atom(&conn, &it.ty)?, it.format, it.data.clone()));
             }
-            owned_t.store(false, Ordering::SeqCst);
-            let _ = conn.destroy_window(win);
-            let _ = conn.flush();
-        })?;
+            conn.set_selection_owner(win, a.clipboard, CURRENT_TIME)?;
+            conn.flush()?;
+            if conn.get_selection_owner(a.clipboard)?.reply()?.owner != win {
+                bail!("could not become the clipboard owner");
+            }
+            Ok((conn, win, a, table))
+        })();
+        let (conn, win, a, table) = match setup {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = tx.send(Err(e));
+                return;
+            }
+        };
+        owned_t.store(true, Ordering::SeqCst);
+        let _ = tx.send(Ok(()));
 
-    rx.recv_timeout(Duration::from_secs(3))
-        .map_err(|_| anyhow!("timed out taking the clipboard"))??;
+        let max_bytes = conn.maximum_request_bytes().saturating_sub(64);
+        while let Ok(ev) = conn.wait_for_event() {
+            match ev {
+                Event::SelectionClear(e) if e.selection == a.clipboard => break,
+                Event::SelectionRequest(req) if req.selection == a.clipboard => {
+                    let property = if req.property == NONE { req.target } else { req.property };
+                    let delivered = answer(&conn, &a, &table, max_bytes, req.requestor, property, req.target);
+                    if delivered == Answer::Data {
+                        served_t.fetch_add(1, Ordering::SeqCst);
+                    }
+                    let notify = SelectionNotifyEvent {
+                        response_type: SELECTION_NOTIFY_EVENT,
+                        sequence: 0,
+                        time: req.time,
+                        requestor: req.requestor,
+                        selection: req.selection,
+                        target: req.target,
+                        property: if delivered == Answer::Refused { NONE } else { property },
+                    };
+                    let _ = conn.send_event(false, req.requestor, EventMask::NO_EVENT, notify);
+                    let _ = conn.flush();
+                }
+                _ => {}
+            }
+        }
+        owned_t.store(false, Ordering::SeqCst);
+        let _ = conn.destroy_window(win);
+        let _ = conn.flush();
+    })?;
+
+    rx.recv_timeout(Duration::from_secs(3)).map_err(|_| anyhow!("timed out taking the clipboard"))??;
     Ok(Held { owned, served })
 }
 

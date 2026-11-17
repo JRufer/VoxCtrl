@@ -24,11 +24,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use tracing::warn;
 use voxctrl_routing::HotkeyBinding;
 
-use crate::{
-    gestures::GestureEngine,
-    keys::KeyMatcher,
-    Backend, GestureSender, ListenerHealth,
-};
+use crate::{gestures::GestureEngine, keys::KeyMatcher, Backend, GestureSender, ListenerHealth};
 
 /// How often the supervisor rescans `/dev/input` while it has no keyboard.
 const RESCAN_BLOCKED_INTERVAL: Duration = Duration::from_secs(2);
@@ -38,7 +34,10 @@ const RESCAN_HEALTHY_INTERVAL: Duration = Duration::from_secs(10);
 
 /// What a key-reading backend's threads report to the coordinator.
 pub(crate) enum ReaderEvent {
-    Key { name: String, down: bool },
+    Key {
+        name: String,
+        down: bool,
+    },
     /// A keyboard went away. Anything held on it is never coming back up.
     SourceLost,
 }
@@ -74,12 +73,7 @@ pub fn start(
                 // X11 before evdev: it needs no permissions at all, so it works
                 // on a stock desktop where the evdev path can only report that
                 // it is locked out.
-                match crate::x11::start(
-                    bindings.clone(),
-                    tx.clone(),
-                    rx_reload.clone(),
-                    health.clone(),
-                ) {
+                match crate::x11::start(bindings.clone(), tx.clone(), rx_reload.clone(), health.clone()) {
                     Ok(()) => {}
                     Err(e) => {
                         tracing::info!(
@@ -103,9 +97,7 @@ async fn portal_start(
     health: Arc<ListenerHealth>,
 ) -> Result<(), crate::portal::PortalError> {
     if std::env::var_os("VOXCTRL_DISABLE_PORTAL_HOTKEYS").is_some() {
-        return Err(crate::portal::PortalError::Unavailable(
-            "disabled by VOXCTRL_DISABLE_PORTAL_HOTKEYS".to_string(),
-        ));
+        return Err(crate::portal::PortalError::Unavailable("disabled by VOXCTRL_DISABLE_PORTAL_HOTKEYS".to_string()));
     }
     crate::portal::start(bindings, tx, rx_reload, health).await
 }
@@ -146,13 +138,10 @@ fn start_evdev(
     let (event_tx, event_rx) = crossbeam_channel::unbounded::<ReaderEvent>();
 
     let rt = rt_handle.clone();
-    if let Err(e) = std::thread::Builder::new()
-        .name("voxctrl-hotkey-coord".into())
-        .spawn(move || {
-            let _guard = rt.as_ref().map(|h| h.enter());
-            run_coordinator(bindings, tx, rx_reload, event_rx);
-        })
-    {
+    if let Err(e) = std::thread::Builder::new().name("voxctrl-hotkey-coord".into()).spawn(move || {
+        let _guard = rt.as_ref().map(|h| h.enter());
+        run_coordinator(bindings, tx, rx_reload, event_rx);
+    }) {
         health.set_backend_failed(format!("cannot start the hotkey coordinator: {e}"));
         return;
     }
@@ -196,12 +185,10 @@ fn run_supervisor(
             let tx_clone = event_tx.clone();
             let exit_clone = exit_tx.clone();
             let reader_path = path.clone();
-            match std::thread::Builder::new()
-                .name("voxctrl-evdev".into())
-                .spawn(move || {
-                    run_reader(reader_path.clone(), tx_clone);
-                    let _ = exit_clone.send(reader_path);
-                }) {
+            match std::thread::Builder::new().name("voxctrl-evdev".into()).spawn(move || {
+                run_reader(reader_path.clone(), tx_clone);
+                let _ = exit_clone.send(reader_path);
+            }) {
                 Ok(_) => tracing::info!("Reading hotkeys from {path}"),
                 Err(e) => {
                     warn!("Failed to spawn evdev reader for {path}: {e}");
@@ -211,11 +198,7 @@ fn run_supervisor(
         }
 
         health.set_keyboards_open(running.len());
-        health.set_backend(if running.is_empty() {
-            Backend::None
-        } else {
-            Backend::Evdev
-        });
+        health.set_backend(if running.is_empty() { Backend::None } else { Backend::Evdev });
 
         if running.is_empty() {
             if !warned_blocked {
@@ -236,11 +219,7 @@ fn run_supervisor(
             tracing::info!("Keyboard access recovered; global hotkeys are active again");
         }
 
-        std::thread::sleep(if running.is_empty() {
-            RESCAN_BLOCKED_INTERVAL
-        } else {
-            RESCAN_HEALTHY_INTERVAL
-        });
+        std::thread::sleep(if running.is_empty() { RESCAN_BLOCKED_INTERVAL } else { RESCAN_HEALTHY_INTERVAL });
     }
 }
 
@@ -274,13 +253,7 @@ fn run_reader(device_path: String, event_tx: crossbeam_channel::Sender<ReaderEve
                         0 => false,
                         _ => continue,
                     };
-                    if event_tx
-                        .send(ReaderEvent::Key {
-                            name: key_name,
-                            down,
-                        })
-                        .is_err()
-                    {
+                    if event_tx.send(ReaderEvent::Key { name: key_name, down }).is_err() {
                         // Coordinator thread has shut down, exit
                         return;
                     }
@@ -394,10 +367,7 @@ pub(crate) fn is_eligible_keyboard(name: &str, has_key_a: bool) -> bool {
 /// retrigger the hotkey inside it.
 pub(crate) fn is_synthetic_device_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    name.contains("virtual")
-        || name.contains("uinput")
-        || name.contains("xtest")
-        || name.contains("passthrough")
+    name.contains("virtual") || name.contains("uinput") || name.contains("xtest") || name.contains("passthrough")
 }
 
 /// Sweep `/dev/input` for keyboards, counting the devices that exist but are
@@ -408,11 +378,7 @@ pub(crate) fn is_synthetic_device_name(name: &str) -> bool {
 /// every device it fails to open. Opening the nodes directly keeps that
 /// distinction, which is what lets the app explain itself.
 pub(crate) fn scan_input_devices(preferred: Option<&str>) -> InputScan {
-    let mut scan = InputScan {
-        keyboards: Vec::new(),
-        denied: 0,
-        total: 0,
-    };
+    let mut scan = InputScan { keyboards: Vec::new(), denied: 0, total: 0 };
 
     // An explicitly configured device is the only one we consider.
     if let Some(path) = preferred {
@@ -440,12 +406,7 @@ pub(crate) fn scan_input_devices(preferred: Option<&str>) -> InputScan {
     };
 
     for entry in entries.flatten() {
-        if !entry
-            .file_name()
-            .to_str()
-            .map(|n| n.starts_with("event"))
-            .unwrap_or(false)
-        {
+        if !entry.file_name().to_str().map(|n| n.starts_with("event")).unwrap_or(false) {
             continue;
         }
         scan.total += 1;
@@ -462,10 +423,7 @@ pub(crate) fn scan_input_devices(preferred: Option<&str>) -> InputScan {
             continue;
         };
         let name = dev.name().unwrap_or("").to_string();
-        let has_key_a = dev
-            .supported_keys()
-            .map(|keys| keys.contains(evdev::Key::KEY_A))
-            .unwrap_or(false);
+        let has_key_a = dev.supported_keys().map(|keys| keys.contains(evdev::Key::KEY_A)).unwrap_or(false);
         if is_eligible_keyboard(&name, has_key_a) {
             tracing::debug!("Eligible keyboard: {name} at {path:?}");
             scan.keyboards.push(path.to_string_lossy().to_string());
@@ -485,12 +443,7 @@ mod tests {
     fn synthetic_devices_are_never_used_as_hotkey_sources() {
         // Reading back our own injected keystrokes would retrigger the very
         // hotkey that produced them.
-        for name in [
-            "VoxCtrl Virtual Keyboard",
-            "py-evdev-uinput",
-            "XTEST pointer",
-            "Some passthrough device",
-        ] {
+        for name in ["VoxCtrl Virtual Keyboard", "py-evdev-uinput", "XTEST pointer", "Some passthrough device"] {
             assert!(!is_eligible_keyboard(name, true), "{name} must be skipped");
         }
     }
@@ -514,12 +467,7 @@ mod tests {
     #[test]
     fn scanning_reports_totals_consistently() {
         let scan = scan_input_devices(None);
-        assert!(
-            scan.denied <= scan.total,
-            "denied ({}) cannot exceed total ({})",
-            scan.denied,
-            scan.total
-        );
+        assert!(scan.denied <= scan.total, "denied ({}) cannot exceed total ({})", scan.denied, scan.total);
         assert!(scan.keyboards.len() <= scan.total);
     }
 
@@ -544,13 +492,7 @@ mod tests {
     }
 
     /// Drive a raw key event through the same path the reader thread uses.
-    fn key(
-        matcher: &mut KeyMatcher,
-        engine: &mut GestureEngine,
-        tx: &GestureSender,
-        name: &str,
-        down: bool,
-    ) {
+    fn key(matcher: &mut KeyMatcher, engine: &mut GestureEngine, tx: &GestureSender, name: &str, down: bool) {
         for (id, transition) in matcher.on_key(name, down) {
             engine.apply(&id, transition, tx);
         }
@@ -626,10 +568,7 @@ mod tests {
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Start);
 
         key(&mut matcher, &mut engine, &tx, "KEY_SPACE", false);
-        assert!(
-            rx.try_recv().is_err(),
-            "must not stop while Super is still down"
-        );
+        assert!(rx.try_recv().is_err(), "must not stop while Super is still down");
         key(&mut matcher, &mut engine, &tx, "KEY_LEFTMETA", false);
         assert_eq!(rx.try_recv().unwrap().kind, GestureKind::Stop);
     }

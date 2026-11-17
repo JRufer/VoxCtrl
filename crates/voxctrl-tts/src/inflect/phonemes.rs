@@ -59,10 +59,7 @@ pub fn split_clauses(text: &str) -> Vec<Clause> {
         if let Some(term) = matched {
             let trimmed = current.trim();
             if !trimmed.is_empty() {
-                clauses.push(Clause {
-                    text: trimmed.to_string(),
-                    terminator: (*term).to_string(),
-                });
+                clauses.push(Clause { text: trimmed.to_string(), terminator: (*term).to_string() });
             }
             current.clear();
             i += term.chars().count();
@@ -74,10 +71,7 @@ pub fn split_clauses(text: &str) -> Vec<Clause> {
 
     let trimmed = current.trim();
     if !trimmed.is_empty() {
-        clauses.push(Clause {
-            text: trimmed.to_string(),
-            terminator: String::new(),
-        });
+        clauses.push(Clause { text: trimmed.to_string(), terminator: String::new() });
     }
 
     clauses
@@ -107,12 +101,7 @@ fn phonemize_clause(text: &str) -> Result<String> {
     }
 
     let ipa = String::from_utf8_lossy(&output.stdout);
-    Ok(ipa
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join(" "))
+    Ok(ipa.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" "))
 }
 
 /// Convert `text` to the IPA phoneme string the model expects.
@@ -192,11 +181,7 @@ fn is_plausible_vocab(map: &HashMap<String, i64>) -> bool {
 /// Well-known names first, then any other text file in the directory, so a table
 /// under an unexpected name is still found.
 fn candidate_vocab_paths(dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut paths: Vec<std::path::PathBuf> = VOCAB_FILES
-        .iter()
-        .map(|n| dir.join(n))
-        .filter(|p| p.exists())
-        .collect();
+    let mut paths: Vec<std::path::PathBuf> = VOCAB_FILES.iter().map(|n| dir.join(n)).filter(|p| p.exists()).collect();
 
     let Ok(entries) = std::fs::read_dir(dir) else { return paths };
     let mut extra: Vec<std::path::PathBuf> = entries
@@ -237,11 +222,7 @@ impl PhonemeVocab {
     pub fn load(dir: &Path) -> Result<Option<Self>> {
         for path in candidate_vocab_paths(dir) {
             let Ok(raw) = std::fs::read_to_string(&path) else { continue };
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or_default()
-                .to_ascii_lowercase();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_ascii_lowercase();
             let parsed = match ext.as_str() {
                 "json" => parse_json_vocab(&raw),
                 "py" => parse_python_symbols(&raw).map(map_from_ordered),
@@ -251,11 +232,7 @@ impl PhonemeVocab {
             if !is_plausible_vocab(&map) {
                 continue;
             }
-            return Ok(Some(Self {
-                map,
-                from_file: true,
-                source: Some(path),
-            }));
+            return Ok(Some(Self { map, from_file: true, source: Some(path) }));
         }
         Ok(None)
     }
@@ -268,11 +245,7 @@ impl PhonemeVocab {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let map = symbols
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| (s.into(), i as i64))
-            .collect();
+        let map = symbols.into_iter().enumerate().map(|(i, s)| (s.into(), i as i64)).collect();
         Self { map, from_file: false, source: None }
     }
 
@@ -370,8 +343,7 @@ fn parse_python_symbols(raw: &str) -> Result<Vec<String>> {
 
     let mut out = Vec::new();
     for term in split_top_level(expr, '+') {
-        expand_symbol_term(&term, &constants, &mut out)
-            .with_context(|| format!("in term {term:?}"))?;
+        expand_symbol_term(&term, &constants, &mut out).with_context(|| format!("in term {term:?}"))?;
     }
     if out.is_empty() {
         bail!("`symbols` resolved to an empty list");
@@ -400,11 +372,7 @@ fn python_string_constants(raw: &str) -> HashMap<String, String> {
 }
 
 /// Expand one `+`-separated term of the `symbols` expression.
-fn expand_symbol_term(
-    term: &str,
-    constants: &HashMap<String, String>,
-    out: &mut Vec<String>,
-) -> Result<()> {
+fn expand_symbol_term(term: &str, constants: &HashMap<String, String>, out: &mut Vec<String>) -> Result<()> {
     let term = term.trim();
 
     // `list(X)` — one symbol per character of X.
@@ -430,10 +398,7 @@ fn resolve_string(token: &str, constants: &HashMap<String, String>) -> Result<St
     if token.starts_with('\'') || token.starts_with('"') {
         return unquote_python_string(token);
     }
-    constants
-        .get(token)
-        .cloned()
-        .with_context(|| format!("unknown name {token:?}"))
+    constants.get(token).cloned().with_context(|| format!("unknown name {token:?}"))
 }
 
 /// Split on `separator` at bracket depth zero and outside quotes.
@@ -518,8 +483,7 @@ fn unquote_python_string(token: &str) -> Result<String> {
             Some('u') => {
                 // \uXXXX — IPA symbols are commonly written this way.
                 let hex: String = chars.by_ref().take(4).collect();
-                let code = u32::from_str_radix(&hex, 16)
-                    .with_context(|| format!("bad \\u escape in {token:?}"))?;
+                let code = u32::from_str_radix(&hex, 16).with_context(|| format!("bad \\u escape in {token:?}"))?;
                 out.push(char::from_u32(code).context("invalid code point")?);
             }
             Some(other) => out.push(other),
@@ -531,11 +495,7 @@ fn unquote_python_string(token: &str) -> Result<String> {
 
 /// Turn an ordered symbol list into a symbol→id map, where id is the position.
 fn map_from_ordered(symbols: Vec<String>) -> HashMap<String, i64> {
-    symbols
-        .into_iter()
-        .enumerate()
-        .map(|(i, s)| (s, i as i64))
-        .collect()
+    symbols.into_iter().enumerate().map(|(i, s)| (s, i as i64)).collect()
 }
 
 fn parse_json_vocab(raw: &str) -> Result<HashMap<String, i64>> {
@@ -543,35 +503,24 @@ fn parse_json_vocab(raw: &str) -> Result<HashMap<String, i64>> {
 
     // An ordered array is the same shape as `text/symbols.py`: id is position.
     if let Some(array) = value.as_array() {
-        let symbols: Vec<String> = array
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
+        let symbols: Vec<String> = array.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
         if symbols.len() == array.len() && !symbols.is_empty() {
             return Ok(map_from_ordered(symbols));
         }
     }
 
     // Piper-style config: the table lives under `phoneme_id_map`.
-    let table = value
-        .get("phoneme_id_map")
-        .or_else(|| value.get("vocab"))
-        .or_else(|| value.get("symbols"))
-        .unwrap_or(&value);
+    let table =
+        value.get("phoneme_id_map").or_else(|| value.get("vocab")).or_else(|| value.get("symbols")).unwrap_or(&value);
 
     if let Some(array) = table.as_array() {
-        let symbols: Vec<String> = array
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
+        let symbols: Vec<String> = array.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
         if symbols.len() == array.len() && !symbols.is_empty() {
             return Ok(map_from_ordered(symbols));
         }
     }
 
-    let obj = table
-        .as_object()
-        .context("expected a JSON object mapping phonemes to ids")?;
+    let obj = table.as_object().context("expected a JSON object mapping phonemes to ids")?;
 
     let mut map = HashMap::with_capacity(obj.len());
     for (symbol, id) in obj {
@@ -599,10 +548,7 @@ fn parse_text_vocab(raw: &str) -> Result<HashMap<String, i64>> {
         let Some((symbol, id)) = line.rsplit_once(char::is_whitespace) else {
             bail!("line {} is not `<symbol> <id>`: {line:?}", line_no + 1);
         };
-        let id: i64 = id
-            .trim()
-            .parse()
-            .with_context(|| format!("line {} has a non-numeric id", line_no + 1))?;
+        let id: i64 = id.trim().parse().with_context(|| format!("line {} has a non-numeric id", line_no + 1))?;
         map.insert(symbol.to_string(), id);
     }
     Ok(map)
@@ -713,12 +659,8 @@ SPACE_ID = symbols.index(" ")
         // The real inventory lists `'` twice; Python's dict comprehension keeps
         // the later index, and so must this.
         let symbols = parse_python_symbols(TACOTRON_SYMBOLS_PY).unwrap();
-        let positions: Vec<usize> = symbols
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.as_str() == "'")
-            .map(|(i, _)| i)
-            .collect();
+        let positions: Vec<usize> =
+            symbols.iter().enumerate().filter(|(_, s)| s.as_str() == "'").map(|(i, _)| i).collect();
         assert_eq!(positions.len(), 2, "the fixture has the duplicate");
         let map = map_from_ordered(symbols);
         assert_eq!(map.get("'"), Some(&(*positions.last().unwrap() as i64)));
@@ -815,11 +757,7 @@ SPACE_ID = symbols.index(" ")
 
     /// A table with enough short symbols to pass the plausibility check.
     fn vocab_text() -> String {
-        "_^$abdefhijklmnopqrstuvwxyzəɪˈː"
-            .chars()
-            .enumerate()
-            .map(|(i, c)| format!("{c} {i}\n"))
-            .collect()
+        "_^$abdefhijklmnopqrstuvwxyzəɪˈː".chars().enumerate().map(|(i, c)| format!("{c} {i}\n")).collect()
     }
 
     #[test]
@@ -832,11 +770,7 @@ SPACE_ID = symbols.index(" ")
                 format!("{}: {i}", serde_json::to_string(s).unwrap())
             })
             .collect();
-        std::fs::write(
-            dir.path().join("phonemes.json"),
-            format!("{{{}}}", entries.join(",")),
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("phonemes.json"), format!("{{{}}}", entries.join(","))).unwrap();
         let vocab = PhonemeVocab::load(dir.path()).unwrap().unwrap();
         assert!(vocab.from_file);
         assert_eq!(vocab.id("a"), Some(3));
@@ -908,26 +842,20 @@ SPACE_ID = symbols.index(" ")
 
     #[test]
     fn test_is_plausible_vocab_rejects_small_tables() {
-        let map: HashMap<String, i64> =
-            (0..4).map(|i| (i.to_string(), i as i64)).collect();
+        let map: HashMap<String, i64> = (0..4).map(|i| (i.to_string(), i as i64)).collect();
         assert!(!is_plausible_vocab(&map));
     }
 
     #[test]
     fn test_is_plausible_vocab_rejects_long_keys() {
-        let map: HashMap<String, i64> = (0..40)
-            .map(|i| (format!("some_long_config_key_{i}"), i as i64))
-            .collect();
+        let map: HashMap<String, i64> = (0..40).map(|i| (format!("some_long_config_key_{i}"), i as i64)).collect();
         assert!(!is_plausible_vocab(&map));
     }
 
     #[test]
     fn test_is_plausible_vocab_accepts_short_symbol_table() {
-        let map: HashMap<String, i64> = "_^$abdefhijklmnopqrstuvwxyz"
-            .chars()
-            .enumerate()
-            .map(|(i, c)| (c.to_string(), i as i64))
-            .collect();
+        let map: HashMap<String, i64> =
+            "_^$abdefhijklmnopqrstuvwxyz".chars().enumerate().map(|(i, c)| (c.to_string(), i as i64)).collect();
         assert!(is_plausible_vocab(&map));
     }
 
@@ -1024,5 +952,3 @@ SPACE_ID = symbols.index(" ")
         assert!(phonemize("").unwrap().is_empty());
     }
 }
-
-

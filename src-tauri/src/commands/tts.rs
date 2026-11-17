@@ -8,19 +8,11 @@ use tracing::info;
 use crate::state::AppState;
 
 #[tauri::command]
-pub async fn speak_text(
-    state: State<'_, Arc<AppState>>,
-    text: String,
-    voice: Option<String>,
-) -> Result<(), String> {
+pub async fn speak_text(state: State<'_, Arc<AppState>>, text: String, voice: Option<String>) -> Result<(), String> {
     info!("TTS speak_text via command: {} chars", text.chars().count());
     let handle = state.tts_handle.lock().await;
     if let Some(ref tts) = *handle {
-        tts.speak_utterance(voxctrl_tts::Utterance {
-            text,
-            voice,
-            source_label: None,
-        });
+        tts.speak_utterance(voxctrl_tts::Utterance { text, voice, source_label: None });
     }
     Ok(())
 }
@@ -32,9 +24,7 @@ pub async fn check_voice_downloaded(voice_name: String, voice_dir: String) -> Re
 
 #[tauri::command]
 pub async fn download_voice(voice_name: String, voice_dir: String) -> Result<(), String> {
-    voxctrl_tts::download_voice(&voice_name, &voice_dir)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_voice(&voice_name, &voice_dir).await.map_err(|e| e.to_string())
 }
 
 /// The HuggingFace token exported into the environment, if any.
@@ -54,9 +44,7 @@ pub async fn check_breeze_tts_2_ready(model_dir: String) -> Result<bool, String>
 
 #[tauri::command]
 pub async fn download_breeze_tts_2(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
-    voxctrl_tts::download_breeze_tts_2_assets(&model_dir, hf_token)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_breeze_tts_2_assets(&model_dir, hf_token).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -71,9 +59,7 @@ pub async fn check_vox_cpm_2_downloaded(model_dir: String) -> Result<bool, Strin
 
 #[tauri::command]
 pub async fn download_vox_cpm_2(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
-    voxctrl_tts::download_vox_cpm_2_assets(&model_dir, hf_token)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_vox_cpm_2_assets(&model_dir, hf_token).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -83,9 +69,7 @@ pub async fn check_kitten_tts_2_ready(model_dir: String) -> Result<bool, String>
 
 #[tauri::command]
 pub async fn download_kitten_tts_2(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
-    voxctrl_tts::download_kitten_tts_2_assets(&model_dir, hf_token)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_kitten_tts_2_assets(&model_dir, hf_token).await.map_err(|e| e.to_string())
 }
 
 /// Kitten TTS 2's built-in preset voice names, for the Settings voice picker.
@@ -101,9 +85,7 @@ pub async fn check_pocket_tts_ready(voice: String, voice_dir: String) -> Result<
 
 #[tauri::command]
 pub async fn download_pocket_tts(voice: String, voice_dir: String, hf_token: Option<String>) -> Result<(), String> {
-    voxctrl_tts::download_pocket_tts_assets(&voice, &voice_dir, hf_token)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_pocket_tts_assets(&voice, &voice_dir, hf_token).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -126,9 +108,7 @@ pub async fn check_inflect_micro_downloaded(model_dir: String) -> Result<bool, S
 
 #[tauri::command]
 pub async fn download_inflect_micro(model_dir: String) -> Result<(), String> {
-    voxctrl_tts::download_inflect_micro_assets(&model_dir)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_tts::download_inflect_micro_assets(&model_dir).await.map_err(|e| e.to_string())
 }
 
 /// Report the tensor names a downloaded Inflect-Micro-v2 export actually
@@ -164,9 +144,7 @@ pub fn get_cloned_tts_voices_dir() -> String {
 /// The Piper voices the picker should offer: the built-in catalogue plus any
 /// model the user dropped into the voices folder (#190).
 #[tauri::command]
-pub async fn list_piper_voices(
-    voice_dir: String,
-) -> Result<Vec<voxctrl_tts::PiperVoiceOption>, String> {
+pub async fn list_piper_voices(voice_dir: String) -> Result<Vec<voxctrl_tts::PiperVoiceOption>, String> {
     Ok(voxctrl_tts::piper_voice_catalogue(&voice_dir))
 }
 
@@ -181,9 +159,7 @@ pub async fn check_server_tts(
 ) -> Result<voxctrl_tts::remote::ServerTtsStatus, String> {
     let link = voxctrl_tts::remote::ServerLink { endpoint, api_key, tls_fingerprint, ..Default::default() };
     // The client is blocking, for the TTS worker thread's sake.
-    tokio::task::spawn_blocking(move || voxctrl_tts::remote::check_server_tts(&link))
-        .await
-        .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || voxctrl_tts::remote::check_server_tts(&link)).await.map_err(|e| e.to_string())
 }
 
 /// What the TTS tab needs to offer this computer's own voices on a server.

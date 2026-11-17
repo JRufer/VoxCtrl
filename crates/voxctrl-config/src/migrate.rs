@@ -9,12 +9,7 @@ use super::*;
 /// Pocket-TTS and Breeze-TTS-2 each used to hold their own copy, synchronized
 /// on load; they now share one key, and the same token downloads both.
 pub(crate) fn migrate_hf_token(data: &mut AppConfig) -> bool {
-    let legacy = data
-        .tts
-        .pocket_tts
-        .legacy_hf_token
-        .take()
-        .or_else(|| data.tts.breeze_tts_2.legacy_hf_token.take());
+    let legacy = data.tts.pocket_tts.legacy_hf_token.take().or_else(|| data.tts.breeze_tts_2.legacy_hf_token.take());
     data.tts.breeze_tts_2.legacy_hf_token = None;
 
     let Some(token) = legacy else { return false };
@@ -34,11 +29,7 @@ pub(crate) fn migrate_cloned_voices_dir_at(base: &std::path::Path) -> bool {
     if old_dir.exists() && !new_dir.exists() {
         match std::fs::rename(&old_dir, &new_dir) {
             Ok(()) => return true,
-            Err(e) => tracing::error!(
-                "Failed to migrate {} to {}: {e}",
-                old_dir.display(),
-                new_dir.display()
-            ),
+            Err(e) => tracing::error!("Failed to migrate {} to {}: {e}", old_dir.display(), new_dir.display()),
         }
     }
     false
@@ -97,9 +88,9 @@ pub fn canonical_key_name(name: &str) -> Option<&'static str> {
 /// `KEYA` … `KEYZ`, as the old TTS stop key recorder wrote letters.
 fn legacy_letter(name: &str) -> Option<&'static str> {
     const LETTERS: [&str; 26] = [
-        "KEY_A", "KEY_B", "KEY_C", "KEY_D", "KEY_E", "KEY_F", "KEY_G", "KEY_H", "KEY_I", "KEY_J",
-        "KEY_K", "KEY_L", "KEY_M", "KEY_N", "KEY_O", "KEY_P", "KEY_Q", "KEY_R", "KEY_S", "KEY_T",
-        "KEY_U", "KEY_V", "KEY_W", "KEY_X", "KEY_Y", "KEY_Z",
+        "KEY_A", "KEY_B", "KEY_C", "KEY_D", "KEY_E", "KEY_F", "KEY_G", "KEY_H", "KEY_I", "KEY_J", "KEY_K", "KEY_L",
+        "KEY_M", "KEY_N", "KEY_O", "KEY_P", "KEY_Q", "KEY_R", "KEY_S", "KEY_T", "KEY_U", "KEY_V", "KEY_W", "KEY_X",
+        "KEY_Y", "KEY_Z",
     ];
     match name.strip_prefix("KEY")?.as_bytes() {
         [c @ b'A'..=b'Z'] => Some(LETTERS[usize::from(c - b'A')]),

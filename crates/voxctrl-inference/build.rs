@@ -13,8 +13,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     if moonshine && linux {
-        cc::Build::new()
-            .file("src/isoc23_compat.c")
-            .compile("voxctrl_isoc23_compat");
+        cc::Build::new().file("src/isoc23_compat.c").compile("voxctrl_isoc23_compat");
     }
 }

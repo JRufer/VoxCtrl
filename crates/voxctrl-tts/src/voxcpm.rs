@@ -16,11 +16,10 @@ use tracing::info;
 use voxctrl_config::TtsConfig;
 
 use crate::audiocpp::{
-    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession,
-    SpeakRequest, SpeakerRef,
+    self, resolve_hf_reference_blocking, resolve_model_dir, AudioCppSession, SpeakRequest, SpeakerRef,
 };
-use crate::utterance::{PlaybackCallback, Utterance};
 use crate::pocket::resolve_wav_reference_clip;
+use crate::utterance::{PlaybackCallback, Utterance};
 
 pub const VOX_CPM_2_SAMPLE_RATE: u32 = 24_000;
 const VOX_CPM_2_GGUF_REPO: &str = "audio-cpp/audio.cpp-gguf";
@@ -28,11 +27,7 @@ const VOX_CPM_2_GGUF_FILE: &str = "VoxCPM2-GGUF/voxcpm2-q8_0.gguf";
 const VOX_CPM_2_MODEL_FILENAME: &str = "voxcpm2-q8_0.gguf";
 
 pub fn vox_cpm_2_model_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("models")
-        .join("voxcpm2")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("models").join("voxcpm2")
 }
 
 pub fn resolve_vox_cpm_2_dir(model_dir: &str) -> PathBuf {
@@ -49,9 +44,7 @@ pub async fn download_vox_cpm_2_assets(model_dir: &str, hf_token: Option<String>
     audiocpp::ensure_audiocpp_runtime().await?;
 
     let dir = resolve_vox_cpm_2_dir(model_dir);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .with_context(|| format!("create voxcpm2 model dir {}", dir.display()))?;
+    tokio::fs::create_dir_all(&dir).await.with_context(|| format!("create voxcpm2 model dir {}", dir.display()))?;
 
     let dest = dir.join(VOX_CPM_2_MODEL_FILENAME);
     if !dest.exists() {
@@ -98,8 +91,7 @@ fn resolve_clone_reference(
     let voice_id = if cfg.cloned_voice.trim().is_empty() { "alba" } else { cfg.cloned_voice.trim() };
     let reference = resolve_wav_reference_clip(voice_id, &cfg.voice_dir)
         .unwrap_or_else(|| "hf://kyutai/tts-voices/alba-mackenna/casual.wav".to_string());
-    let path =
-        resolve_hf_reference_blocking(&reference, hf_token).context("resolve VoxCPM2 reference voice clip")?;
+    let path = resolve_hf_reference_blocking(&reference, hf_token).context("resolve VoxCPM2 reference voice clip")?;
     let transcript = read_voice_transcript_file(&path.to_string_lossy());
     if cfg.ultimate_cloning {
         match &transcript {
@@ -135,10 +127,7 @@ fn speaker_ref<'a>(
 /// Ensures a resident audio.cpp session is loaded and warm for VoxCPM2.
 /// Called from `TtsCommand::Preload` — see [`crate::pocket::ensure_pocket_tts_loaded`]
 /// for why this needs its own dummy request rather than reusing `speak_vox_cpm_2`.
-pub(crate) fn ensure_vox_cpm_2_loaded(
-    config: &TtsConfig,
-    session: &mut Option<AudioCppSession>,
-) -> Result<()> {
+pub(crate) fn ensure_vox_cpm_2_loaded(config: &TtsConfig, session: &mut Option<AudioCppSession>) -> Result<()> {
     let cfg = &config.vox_cpm_2;
     let model_dir = resolve_vox_cpm_2_dir(&cfg.model_dir);
     if !model_dir.join(VOX_CPM_2_MODEL_FILENAME).exists() {

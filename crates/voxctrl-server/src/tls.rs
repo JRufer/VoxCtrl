@@ -32,7 +32,10 @@ impl Identity {
                 .with_context(|| format!("Could not read {}", cert_path.display()))?;
             let key_pem =
                 std::fs::read_to_string(&key_path).with_context(|| format!("Could not read {}", key_path.display()))?;
-            return Ok((Self::from_pem(cert_pem, key_pem).with_context(|| format!("In {}", cert_path.display()))?, false));
+            return Ok((
+                Self::from_pem(cert_pem, key_pem).with_context(|| format!("In {}", cert_path.display()))?,
+                false,
+            ));
         }
 
         let made = rcgen::generate_simple_self_signed(vec!["voxctrl-server".to_string(), "localhost".to_string()])

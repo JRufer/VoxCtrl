@@ -30,10 +30,7 @@ impl Scrubber {
             .or_else(|_| std::env::var("USERNAME"))
             .ok()
             .filter(|u| !u.is_empty())
-            .or_else(|| {
-                dirs::home_dir()
-                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            });
+            .or_else(|| dirs::home_dir().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())));
         Self::new(home, user)
     }
 
@@ -124,10 +121,7 @@ mod tests {
         // The account name turns up in places that are not paths at all —
         // an ALSA device called "jane's headset", a log line naming a D-Bus
         // connection. The home-directory rule alone would miss every one.
-        assert_eq!(
-            scrubber().scrub("device: jane's headset"),
-            "device: <user>'s headset"
-        );
+        assert_eq!(scrubber().scrub("device: jane's headset"), "device: <user>'s headset");
     }
 
     #[test]

@@ -12,9 +12,7 @@ use anyhow::{anyhow, bail, Result};
 use tracing::{debug, warn};
 use voxctrl_winput::Shortcut;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, Window, KEY_PRESS_EVENT, KEY_RELEASE_EVENT,
-};
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, Window, KEY_PRESS_EVENT, KEY_RELEASE_EVENT};
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 
@@ -34,11 +32,38 @@ const FALLBACK_INSERT: u8 = 118;
 /// Window classes of terminal emulators, whose paste shortcut is
 /// Ctrl+Shift+V (plain Ctrl+V is a control character there).
 const TERMINAL_CLASSES: &[&str] = &[
-    "gnome-terminal", "konsole", "xterm", "alacritty", "kitty", "tilix", "terminator",
-    "xfce4-terminal", "urxvt", "rxvt", "wezterm", "foot", "ptyxis", "mate-terminal",
-    "lxterminal", "termite", "guake", "yakuake", "ghostty", "terminology", "qterminal",
-    "sakura", "cool-retro-term", "hyper", "tabby", "contour", "rio", "blackbox",
-    "kgx", "console", "deepin-terminal", "st-256color",
+    "gnome-terminal",
+    "konsole",
+    "xterm",
+    "alacritty",
+    "kitty",
+    "tilix",
+    "terminator",
+    "xfce4-terminal",
+    "urxvt",
+    "rxvt",
+    "wezterm",
+    "foot",
+    "ptyxis",
+    "mate-terminal",
+    "lxterminal",
+    "termite",
+    "guake",
+    "yakuake",
+    "ghostty",
+    "terminology",
+    "qterminal",
+    "sakura",
+    "cool-retro-term",
+    "hyper",
+    "tabby",
+    "contour",
+    "rio",
+    "blackbox",
+    "kgx",
+    "console",
+    "deepin-terminal",
+    "st-256color",
 ];
 
 pub fn is_terminal_class(class: &str) -> bool {
@@ -75,11 +100,7 @@ async fn run_capture(bin: &str, args: &[&str]) -> Option<String> {
     // A compositor query that hangs must not hold up the paste.
     let out = tokio::time::timeout(
         Duration::from_millis(800),
-        tokio::process::Command::new(bin)
-            .args(args)
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output(),
+        tokio::process::Command::new(bin).args(args).stderr(std::process::Stdio::null()).kill_on_drop(true).output(),
     )
     .await
     .ok()?
@@ -286,12 +307,8 @@ fn wm_class(conn: &RustConnection, win: Window) -> Option<String> {
         return None;
     }
     // "instance\0class\0" — match against both: either may name the program.
-    let parts: Vec<String> = r
-        .value
-        .split(|b| *b == 0)
-        .filter(|p| !p.is_empty())
-        .map(|p| String::from_utf8_lossy(p).into_owned())
-        .collect();
+    let parts: Vec<String> =
+        r.value.split(|b| *b == 0).filter(|p| !p.is_empty()).map(|p| String::from_utf8_lossy(p).into_owned()).collect();
     (!parts.is_empty()).then(|| parts.join(" "))
 }
 
@@ -318,10 +335,7 @@ fn keycode_for(map: &[u32], per: usize, min: u8, wanted: &[u32], fallback: u8) -
 fn read_keys(conn: &RustConnection) -> Keys {
     let setup = conn.setup();
     let (min, max) = (setup.min_keycode, setup.max_keycode);
-    let mapping = conn
-        .get_keyboard_mapping(min, max - min + 1)
-        .ok()
-        .and_then(|c| c.reply().ok());
+    let mapping = conn.get_keyboard_mapping(min, max - min + 1).ok().and_then(|c| c.reply().ok());
     let (map, per) = match &mapping {
         Some(m) => (m.keysyms.as_slice(), m.keysyms_per_keycode as usize),
         None => (&[][..], 0),
@@ -369,16 +383,24 @@ pub fn x11_send(shortcut: Shortcut) -> Result<()> {
 
     let sequence: Vec<(u8, u8)> = match shortcut {
         Shortcut::CtrlV => vec![
-            (KEY_PRESS_EVENT, keys.ctrl), (KEY_PRESS_EVENT, keys.v),
-            (KEY_RELEASE_EVENT, keys.v), (KEY_RELEASE_EVENT, keys.ctrl),
+            (KEY_PRESS_EVENT, keys.ctrl),
+            (KEY_PRESS_EVENT, keys.v),
+            (KEY_RELEASE_EVENT, keys.v),
+            (KEY_RELEASE_EVENT, keys.ctrl),
         ],
         Shortcut::CtrlShiftV => vec![
-            (KEY_PRESS_EVENT, keys.ctrl), (KEY_PRESS_EVENT, keys.shift), (KEY_PRESS_EVENT, keys.v),
-            (KEY_RELEASE_EVENT, keys.v), (KEY_RELEASE_EVENT, keys.shift), (KEY_RELEASE_EVENT, keys.ctrl),
+            (KEY_PRESS_EVENT, keys.ctrl),
+            (KEY_PRESS_EVENT, keys.shift),
+            (KEY_PRESS_EVENT, keys.v),
+            (KEY_RELEASE_EVENT, keys.v),
+            (KEY_RELEASE_EVENT, keys.shift),
+            (KEY_RELEASE_EVENT, keys.ctrl),
         ],
         Shortcut::ShiftInsert => vec![
-            (KEY_PRESS_EVENT, keys.shift), (KEY_PRESS_EVENT, keys.insert),
-            (KEY_RELEASE_EVENT, keys.insert), (KEY_RELEASE_EVENT, keys.shift),
+            (KEY_PRESS_EVENT, keys.shift),
+            (KEY_PRESS_EVENT, keys.insert),
+            (KEY_RELEASE_EVENT, keys.insert),
+            (KEY_RELEASE_EVENT, keys.shift),
         ],
     };
     for (kind, code) in sequence {
@@ -396,8 +418,19 @@ mod tests {
 
     #[test]
     fn terminals_are_recognised_by_class() {
-        for c in ["gnome-terminal-server", "Gnome-terminal", "Alacritty", "kitty", "org.wezfurlong.wezterm",
-                  "XTerm", "xterm xterm", "st", "foot", "com.mitchellh.ghostty", "org.kde.konsole"] {
+        for c in [
+            "gnome-terminal-server",
+            "Gnome-terminal",
+            "Alacritty",
+            "kitty",
+            "org.wezfurlong.wezterm",
+            "XTerm",
+            "xterm xterm",
+            "st",
+            "foot",
+            "com.mitchellh.ghostty",
+            "org.kde.konsole",
+        ] {
             assert!(is_terminal_class(c), "{c} should be a terminal");
         }
         for c in ["firefox", "Navigator firefox", "Code", "slack", "libreoffice-writer", "Gedit"] {
