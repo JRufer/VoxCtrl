@@ -40,6 +40,15 @@ pub fn normalize_models_url(endpoint: &str) -> String {
     }
 }
 
+/// Normalizes an endpoint into the server's `/health` URL, which sits beside
+/// `/v1` rather than under it.
+pub fn normalize_health_url(endpoint: &str) -> String {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    let base = trimmed.strip_suffix("/audio/transcriptions").unwrap_or(trimmed);
+    let base = base.strip_suffix("/v1").unwrap_or(base);
+    format!("{base}/health")
+}
+
 /// Convert 16 kHz mono f32 samples to 16-bit PCM little-endian bytes.
 pub fn samples_to_pcm16(samples: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(samples.len() * 2);
@@ -331,21 +340,31 @@ impl RemoteStreamingSession {
                     let result = parse_transcription_response(&body_bytes, duration_ms, inference_ms);
                     let _ = result_tx.send(result);
                 }
-                err => {
-                    // The server could not be reached at all. Uploading the
-                    // same audio a second time would only wait out a second
-                    // connection timeout before the caller hears about it.
-                    let err = match err {
-                        Err(e) if e.is_connect() => {
-                            let _ = result_tx.send(Err(anyhow::Error::new(e)
-                                .context(format!("Could not connect to the speech server at {url}"))));
-                            return;
-                        }
-                        other => other,
+                // The server read the request and refused it for a reason a
+                // second, buffered upload would not change: a wrong key, a
+                // full queue, a failed transcription, an encrypted server
+                // asked over plain HTTP. Sending the whole recording again
+                // would only double the wait and the server's work.
+                Ok(resp) if !streaming_rejected(resp.status().as_u16()) => {
+                    let status = resp.status();
+                    let body_bytes = resp.bytes().await.unwrap_or_default();
+                    let _ = result_tx.send(Err(error_from_response(status, &body_bytes)));
+                }
+                // Not reached at all, or reached and silent until the timeout:
+                // a second attempt would wait out the same thing again.
+                Err(e) if e.is_connect() || e.is_timeout() => {
+                    let context = if e.is_connect() {
+                        format!("Could not connect to the speech server at {url}")
+                    } else {
+                        format!("The speech server at {url} did not answer in time")
                     };
-                    // Fallback path: If the streaming upload failed (e.g. server doesn't support
-                    // chunked multipart or HTTP 411 Length Required), retry with standard
-                    // buffered multipart upload.
+                    let _ = result_tx.send(Err(anyhow::Error::new(e).context(context)));
+                }
+                err => {
+                    // The server would not take a streamed upload (HTTP 411
+                    // Length Required and the like, from an OpenAI-compatible
+                    // server that is not VoxCtrl's), or the stream broke part
+                    // way: send the recording again as an ordinary upload.
                     warn!(
                         "Streaming upload failed or rejected ({:?}), retrying with standard multipart",
                         err.as_ref().map(|r| r.status())
@@ -405,6 +424,31 @@ impl RemoteStreamingSession {
     }
 }
 
+/// Whether a server that answered a streamed upload with `status` might take
+/// the same audio as an ordinary upload with a `Content-Length`.
+///
+/// VoxCtrl's server takes streamed uploads; this is for other
+/// OpenAI-compatible servers, which may refuse a chunked body as a bad or
+/// unsupported request. Every other refusal (a wrong key, too large, too many
+/// requests, an encrypted server spoken to over plain HTTP, an error on the
+/// server's side) would be given again, so it is reported instead.
+fn streaming_rejected(status: u16) -> bool {
+    matches!(status, 400 | 411 | 415 | 501 | 505)
+}
+
+/// The error for a refused transcription request: the status, and the
+/// server's own message when it sent one in the usual `{"error": {"message"}}`
+/// envelope (written to be shown to a person), else the body as it came.
+/// "HTTP <code>" stays in the text: [`failure_reason`] looks for it.
+fn error_from_response(status: reqwest::StatusCode, body: &[u8]) -> anyhow::Error {
+    let text = String::from_utf8_lossy(body);
+    let detail = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("error")?.get("message")?.as_str().map(str::to_string))
+        .unwrap_or_else(|| text.trim().to_string());
+    anyhow!("Remote speech engine returned HTTP {status}: {detail}")
+}
+
 /// Fallback / Standard multipart POST to `/v1/audio/transcriptions`.
 async fn execute_multipart_transcribe(
     client: &reqwest::Client,
@@ -450,10 +494,7 @@ async fn execute_multipart_transcribe(
     let body_bytes = resp.bytes().await.unwrap_or_default();
 
     if !status.is_success() {
-        let err_text = String::from_utf8_lossy(&body_bytes);
-        return Err(anyhow!(
-            "Remote speech engine returned HTTP {status}: {err_text}"
-        ));
+        return Err(error_from_response(status, &body_bytes));
     }
 
     parse_transcription_response(&body_bytes, duration_ms, inference_ms)
@@ -625,11 +666,85 @@ pub async fn test_remote_speech_engine(
     }
 }
 
+// ── Compatibility ─────────────────────────────────────────────────────────────
+
+/// The client contract revision this app speaks (docs/clients.md). A VoxCtrl
+/// server that reports a higher one has changed something this app relies on.
+pub const CLIENT_CONTRACT: u64 = 1;
+
+/// The oldest VoxCtrl server that has everything this app uses: speech,
+/// cleanup (0.9.4), text-to-speech and uploaded voices (0.9.11), encryption
+/// and pairing (0.9.15), AI processing (0.9.16). An older one still
+/// transcribes; the user is told what is missing.
+pub const MIN_SERVER_VERSION: &str = "0.9.16";
+
+/// This app's version, compared against the server's `min_client`.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// What a server's `/health` answer says about working with this app.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Compatibility {
+    /// Compatible, or not a VoxCtrl server (no `version`): nothing to say.
+    Compatible,
+    /// Works, but is older than [`MIN_SERVER_VERSION`]. A notice for the user.
+    ServerOutdated(String),
+    /// This app cannot work with it until the app is updated. A reason for
+    /// the user, and the server counts as offline.
+    AppOutdated(String),
+}
+
+/// Judge a server by its `/health` answer, for an app at `app_version`.
+///
+/// A server from before 0.9.19 sends no `contract` and no `min_client`: it
+/// speaks revision 1 and takes any 0.9 app, so their absence means exactly
+/// that. Versions that cannot be read are not judged.
+pub fn compatibility(health: &serde_json::Value, app_version: &str) -> Compatibility {
+    let Some(version) = health.get("version").and_then(|v| v.as_str()) else {
+        return Compatibility::Compatible;
+    };
+    let contract = health.get("contract").and_then(|c| c.as_u64()).unwrap_or(1);
+    if contract > CLIENT_CONTRACT {
+        return Compatibility::AppOutdated(format!(
+            "The server runs VoxCtrl {version}, which talks to apps in a newer way than this one \
+             (VoxCtrl {app_version}) understands. Update VoxCtrl on this machine."
+        ));
+    }
+    if let Some(min_client) = health.get("min_client").and_then(|m| m.as_str()) {
+        if voxctrl_update::version::is_newer(min_client, app_version) {
+            return Compatibility::AppOutdated(format!(
+                "The server runs VoxCtrl {version} and needs VoxCtrl {min_client} or newer on this \
+                 machine (this is {app_version}). Update VoxCtrl here."
+            ));
+        }
+    }
+    if voxctrl_update::version::is_newer(MIN_SERVER_VERSION, version) {
+        return Compatibility::ServerOutdated(format!(
+            "The server runs VoxCtrl {version}. Speech recognition works; for everything this app \
+             can use the server for, update the server to {MIN_SERVER_VERSION} or newer."
+        ));
+    }
+    Compatibility::Compatible
+}
+
+/// The server's `/health` answer, or `None` when it has none (not a VoxCtrl
+/// server) or it could not be read. Needs no key.
+async fn read_health(client: &reqwest::Client, endpoint: &str) -> Option<serde_json::Value> {
+    let response = client.get(normalize_health_url(endpoint)).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    response.json().await.ok()
+}
+
 /// Ask the server whether it is there, without sending any audio.
 ///
 /// A `GET` of `/v1/models` with the configured key: cheap enough to repeat
 /// every few seconds, and it exercises the same address and key a dictation
-/// would. `Err` carries the reason, worded for the user.
+/// would. Then, for a VoxCtrl server, its `/health`, to compare versions (see
+/// [`compatibility`]).
+///
+/// `Ok` carries a notice for the user, if there is one; `Err` the reason the
+/// server cannot be used, worded for the user.
 ///
 /// A server that answers but has no such route (404, 405) counts as reachable:
 /// not every OpenAI-compatible server lists its models, and what this is for
@@ -638,20 +753,60 @@ pub async fn probe_remote_speech_engine(
     endpoint: &str,
     api_key: Option<&str>,
     tls_fingerprint: Option<&str>,
-) -> std::result::Result<(), String> {
-    let client = http_client(endpoint, tls_fingerprint, Duration::from_secs(6)).map_err(|e| format!("{e:#}"))?;
+) -> std::result::Result<Option<String>, ProbeFailure> {
+    let client = http_client(endpoint, tls_fingerprint, Duration::from_secs(6))
+        .map_err(|e| ProbeFailure::Unreachable(format!("{e:#}")))?;
     let request = attach_auth(client.get(normalize_models_url(endpoint)), api_key);
     match request.send().await {
-        Ok(response) => probe_status_reason(response.status().as_u16()).map_or(Ok(()), Err),
-        Err(e) => Err(request_failure_reason(&e)),
+        Ok(response) => {
+            if let Some(reason) = probe_status_reason(response.status().as_u16()) {
+                return Err(ProbeFailure::Unreachable(reason));
+            }
+        }
+        Err(e) => return Err(ProbeFailure::Unreachable(request_failure_reason(&e))),
+    }
+    match read_health(&client, endpoint).await.map(|h| compatibility(&h, APP_VERSION)) {
+        None | Some(Compatibility::Compatible) => Ok(None),
+        Some(Compatibility::ServerOutdated(notice)) => Ok(Some(notice)),
+        Some(Compatibility::AppOutdated(reason)) => Err(ProbeFailure::Incompatible(reason)),
     }
 }
+
+/// Why a probed server cannot be used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProbeFailure {
+    /// It could not be reached, refused the key, or reported an error.
+    Unreachable(String),
+    /// It answers, but needs a newer version of this app.
+    Incompatible(String),
+}
+
+impl ProbeFailure {
+    /// The reason, worded for the user.
+    pub fn reason(&self) -> &str {
+        match self {
+            Self::Unreachable(reason) | Self::Incompatible(reason) => reason,
+        }
+    }
+}
+
+impl std::fmt::Display for ProbeFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.reason())
+    }
+}
+
+/// What an encrypted VoxCtrl server answers plain HTTP with (426 Upgrade
+/// Required), as the offline reason.
+const ENCRYPTION_REQUIRED: &str =
+    "The server only accepts encrypted connections: paste its pairing code instead of its address";
 
 /// Why a server that answered a probe with `status` is not usable, or `None`
 /// if it is.
 fn probe_status_reason(status: u16) -> Option<String> {
     match status {
         401 | 403 => Some(format!("The server rejected the API key (HTTP {status})")),
+        426 => Some(ENCRYPTION_REQUIRED.into()),
         500..=599 => Some(format!("The server reported an error (HTTP {status})")),
         _ => None,
     }
@@ -690,6 +845,9 @@ pub fn failure_reason(err: &anyhow::Error) -> String {
             return format!("The server rejected the API key (HTTP {status})");
         }
     }
+    if message.contains("HTTP 426") {
+        return ENCRYPTION_REQUIRED.into();
+    }
     if message.contains("HTTP 5") {
         return "The server reported an error".into();
     }
@@ -724,11 +882,12 @@ mod tests {
         assert!(probe_status_reason(401).unwrap().contains("API key"));
         assert!(probe_status_reason(403).unwrap().contains("API key"));
         assert!(probe_status_reason(503).unwrap().contains("HTTP 503"));
+        assert!(probe_status_reason(426).unwrap().contains("pairing code"));
     }
 
     #[tokio::test]
     async fn probing_a_server_that_is_not_there_says_so() {
-        let reason = probe_remote_speech_engine(&closed_endpoint(), None, None).await.unwrap_err();
+        let reason = probe_remote_speech_engine(&closed_endpoint(), None, None).await.unwrap_err().to_string();
         assert_eq!(reason, "Could not connect to the server");
     }
 
@@ -781,6 +940,73 @@ mod tests {
             normalize_transcription_url("http://localhost:8000/v1/audio/transcriptions/"),
             "http://localhost:8000/v1/audio/transcriptions"
         );
+    }
+
+    #[test]
+    fn the_health_url_sits_beside_v1() {
+        assert_eq!(normalize_health_url("http://box:8787/v1"), "http://box:8787/health");
+        assert_eq!(normalize_health_url("http://box:8787/v1/"), "http://box:8787/health");
+        assert_eq!(normalize_health_url("https://box:8787/v1/audio/transcriptions"), "https://box:8787/health");
+        assert_eq!(normalize_health_url("http://box:8787"), "http://box:8787/health");
+    }
+
+    #[test]
+    fn compatibility_follows_the_servers_health_answer() {
+        use serde_json::json;
+        // Not a VoxCtrl server: nothing to judge.
+        assert_eq!(compatibility(&json!({}), "0.9.19"), Compatibility::Compatible);
+        assert_eq!(compatibility(&json!({ "status": "ok" }), "0.9.19"), Compatibility::Compatible);
+
+        // A current server.
+        let current = json!({ "version": "0.9.19", "contract": 1, "min_client": "0.9.0" });
+        assert_eq!(compatibility(&current, "0.9.19"), Compatibility::Compatible);
+
+        // A server from before 0.9.19 sends neither field, and is revision 1.
+        assert_eq!(compatibility(&json!({ "version": "0.9.18" }), "0.9.19"), Compatibility::Compatible);
+
+        // Older than what this app uses: works, with a notice.
+        let Compatibility::ServerOutdated(notice) = compatibility(&json!({ "version": "0.9.10" }), "0.9.19") else {
+            panic!("expected a notice");
+        };
+        assert!(notice.contains("0.9.10") && notice.contains(MIN_SERVER_VERSION), "{notice}");
+
+        // A newer contract, or a newer minimum app: update this app.
+        let newer = json!({ "version": "2.0.0", "contract": 2 });
+        assert!(matches!(compatibility(&newer, "0.9.19"), Compatibility::AppOutdated(r) if r.contains("Update VoxCtrl")));
+        let picky = json!({ "version": "1.2.0", "contract": 1, "min_client": "1.1.0" });
+        assert!(matches!(compatibility(&picky, "1.0.0"), Compatibility::AppOutdated(r) if r.contains("1.1.0")));
+        assert_eq!(compatibility(&picky, "1.1.0"), Compatibility::Compatible);
+
+        // A release candidate sorts below its release, as the updater has it.
+        let rc = json!({ "version": "1.0.0", "contract": 1, "min_client": "1.0.0" });
+        assert!(matches!(compatibility(&rc, "1.0.0-rc1"), Compatibility::AppOutdated(_)));
+
+        // A version that cannot be read is not held against anyone.
+        assert_eq!(compatibility(&json!({ "version": "dev" }), "0.9.19"), Compatibility::Compatible);
+    }
+
+    #[test]
+    fn only_a_refusal_of_the_streamed_form_is_worth_a_second_upload() {
+        for status in [400, 411, 415, 501, 505] {
+            assert!(streaming_rejected(status), "{status}");
+        }
+        for status in [401, 403, 404, 413, 426, 429, 500, 502, 503] {
+            assert!(!streaming_rejected(status), "{status}");
+        }
+    }
+
+    #[test]
+    fn a_refusal_carries_the_servers_own_message() {
+        let body = br#"{"error":{"message":"The API key was not accepted.","type":"authentication_error"}}"#;
+        let err = error_from_response(reqwest::StatusCode::UNAUTHORIZED, body).to_string();
+        assert_eq!(err, "Remote speech engine returned HTTP 401 Unauthorized: The API key was not accepted.");
+        assert_eq!(failure_reason(&anyhow!(err)), "The server rejected the API key (HTTP 401)");
+
+        let plain = error_from_response(reqwest::StatusCode::BAD_GATEWAY, b" upstream down \n").to_string();
+        assert!(plain.ends_with("HTTP 502 Bad Gateway: upstream down"), "{plain}");
+
+        let encrypted = anyhow!("Remote speech engine returned HTTP 426 Upgrade Required: pair it");
+        assert!(failure_reason(&encrypted).contains("pairing code"));
     }
 
     #[test]

@@ -276,22 +276,24 @@ impl DeliveryTarget for ExecTarget {
         let has_placeholder = template.contains("{TEXT}") || template.contains("{text}");
         let cmd_binary = raw_parts[0].replace("{TEXT}", text).replace("{text}", text);
         let mut cmd = tokio::process::Command::new(&cmd_binary);
-        let mut substituted_args = Vec::new();
+        let mut arg_count = 0usize;
         for part in &raw_parts[1..] {
             let substituted = part.replace("{TEXT}", text).replace("{text}", text);
-            substituted_args.push(substituted.clone());
             cmd.arg(substituted);
+            arg_count += 1;
         }
         if !has_placeholder {
-            substituted_args.push(text.to_string());
             cmd.arg(text);
+            arg_count += 1;
         }
+        // The template is the user's own configuration; the arguments built
+        // from it carry the dictation, so only their number is logged. Never
+        // the words: logs reach the journal and bug reports (docs/privacy.md).
         tracing::info!(
             target_id = %self.0.id,
             command_template = %template,
-            binary = %cmd_binary,
-            args = ?substituted_args,
-            text_payload = %text,
+            args = arg_count,
+            words = text.split_whitespace().count(),
             "Activating Exec command target"
         );
         match cmd.spawn() {

@@ -14,8 +14,8 @@ mod util;
 pub mod whisper_cpp;
 
 pub use remote_openai::{
-    probe_remote_speech_engine, test_remote_speech_engine, RemoteOpenAiBackend, RemoteSttTestResult,
-    RemoteStreamingSession,
+    probe_remote_speech_engine, test_remote_speech_engine, ProbeFailure, RemoteOpenAiBackend,
+    RemoteSttTestResult, RemoteStreamingSession,
 };
 
 /// Whether the Moonshine ONNX backend was compiled into this build. When false,

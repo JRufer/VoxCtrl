@@ -42,7 +42,7 @@ trigger for the checklist below.
 
 | # | What | Defined in | Relied on by |
 |---|---|---|---|
-| 1 | `GET /health` needs no key and answers a JSON object. `version` and `model` are strings; `cleanup` and `tts` are booleans | `crates/voxctrl-server/src/http.rs` (`health`) | VoxCtrl Keys (status, version check) |
+| 1 | `GET /health` needs no key and answers a JSON object. `version` and `model` are strings; `cleanup` and `tts` are booleans. From 0.9.19 also `contract` (this page's revision, a number) and `min_client` (the oldest VoxCtrl app the server works with, a string); a server without them speaks revision 1 | `crates/voxctrl-server/src/http.rs` (`health`, `CONTRACT_REVISION`, `MIN_CLIENT_VERSION`) | VoxCtrl Keys (status, version check); the VoxCtrl app (`remote_openai::compatibility`) |
 | 2 | `GET /v1/models` with `Authorization: Bearer <key>` answers 200 when the key is accepted and 401 when it is not; `data[0].id` names the model | `http.rs` (`models`, `require_key`) | VoxCtrl Keys (proving the key) |
 | 3 | `POST /v1/audio/transcriptions` accepts `multipart/form-data` with a `Content-Length`, a `file` part holding a WAV file, and optional `response_format=json`, `prompt` and `language`; answers 200 with a JSON object whose `text` is a string | `http.rs` (`transcriptions`) | VoxCtrl Keys (every dictation, and live text) |
 | 4 | WAV input as 16 kHz, mono, 16-bit PCM is accepted | `crates/voxctrl-server/src/audio.rs` | VoxCtrl Keys |
@@ -120,11 +120,27 @@ A revision names one version of rows 1 to 7 above. A client records the
 revision it was written against (VoxCtrl Keys shows it on its settings screen)
 so that a bug report says which contract a build speaks.
 
+The server reports its revision as `contract` in `/health`
+(`CONTRACT_REVISION` in `http.rs`). A client that finds a higher revision than
+it was written for should tell its user to update it, rather than fail in some
+stranger way; the VoxCtrl app does (`CLIENT_CONTRACT` in
+`crates/voxctrl-inference/src/remote_openai.rs`). Raising the revision means
+raising `CONTRACT_REVISION`, and `MIN_CLIENT_VERSION` beside it if older
+VoxCtrl apps are cut off too.
+
 | Revision | Server release | What changed |
 |---|---|---|
 | 1 | 0.9.0 (endpoints), 0.9.15 (pairing codes and encryption) | The contract as described on this page |
 
-Raise the revision only for a breaking change. Additions do not count.
+Raise the revision only for a breaking change. Additions do not count: the
+`contract` and `min_client` fields added in 0.9.19 left it at 1.
+
+**Encryption became the default for new servers in 0.9.19.** That is not a
+contract change (pairing codes and fingerprints work as row 6 and 7 say), but
+a client that was set up with a bare address now meets a server that answers
+plain HTTP with `426 Upgrade Required` and the usual error envelope, whose
+`message` tells the user to pair. A client that shows `message` unchanged
+(row 5) needs nothing more.
 
 ## When a client changes
 

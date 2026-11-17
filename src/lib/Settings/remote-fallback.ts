@@ -12,6 +12,11 @@ export interface RemoteStatus {
   state: "not_in_use" | "unknown" | "online" | "offline";
   /** Why the server counts as offline. */
   reason: string | null;
+  /**
+   * About a server that works: that it runs an older VoxCtrl than this app
+   * expects, say. Absent from builds before 0.9.19.
+   */
+  notice?: string | null;
   /** The saved fallback engine and model, e.g. "Parakeet tdt-0.6b-v3". */
   fallback: string | null;
 }
@@ -58,8 +63,12 @@ export function fallbackOptions(
 export function statusSummary(status: RemoteStatus | null): { tone: "ok" | "warn" | "muted"; text: string } | null {
   if (!status) return null;
   switch (status.state) {
-    case "online":
-      return { tone: "ok", text: "Connected to the server." };
+    case "online": {
+      const notice = status.notice?.trim();
+      return notice
+        ? { tone: "warn", text: `Connected to the server. ${notice}` }
+        : { tone: "ok", text: "Connected to the server." };
+    }
     case "unknown":
       return { tone: "muted", text: "Checking the server…" };
     case "offline": {

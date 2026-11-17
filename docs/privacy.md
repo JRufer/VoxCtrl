@@ -235,7 +235,9 @@ written down, so the history is built to leave as little behind as possible:
   that fills in a password manager or posts to a private chat), and what you
   dictate to it is never added.
 - **Not in the logs.** VoxCtrl logs how many words a transcription had, never
-  the words. (Releases before 0.8.5 logged the text.)
+  the words. (Releases before 0.8.5 logged the text, and until 0.9.19 voice
+  commands and Exec targets still did. `scripts/check_log_privacy.sh` now
+  fails the build if a log field carries it.)
 - **Not over MCP, unless you allow it.** MCP clients can only read history
   if you turn on *Let MCP clients read recent dictations*. Until then the
   `get_recent_transcripts` tool isn't even offered.
