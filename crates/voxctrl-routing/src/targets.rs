@@ -55,6 +55,10 @@ fn http_client() -> &'static reqwest::Client {
 
 // ── Trait ─────────────────────────────────────────────────────────────────────
 
+// `async_trait` marks the boxed future it generates `#[must_use]`, and that
+// type is must-use already; clippy 1.99's double_must_use flags the
+// expansion, not anything written here.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait DeliveryTarget: Send + Sync {
     async fn deliver(&self, text: &str) -> DeliveryResult;

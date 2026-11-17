@@ -133,7 +133,7 @@ jobs:
   # warnings as errors on the whole workspace, default features and all
   # targets, so a new warning is fixed in the pull request that adds it
   # rather than piling up. Run both locally with:
-  #   cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
+  #   cargo fmt --all && cargo clippy --workspace --all-targets
   lint:
     name: rustfmt and clippy
     runs-on: ubuntu-22.04
@@ -167,8 +167,18 @@ jobs:
         with:
           key: lint
 
+      # Not `-- -D warnings`: that makes the first crate with a finding fail
+      # to compile, and every crate depending on it is then never linted, so
+      # each run shows only the next crate's problems. Warnings let the whole
+      # workspace be checked in one run; the step then fails if there were any.
+      # (A compile error still fails it at once: the shell runs with pipefail.)
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets --message-format=short 2>&1 | tee clippy.log
+          if grep -E ': (warning|error)(\[[^]]*\])?: ' clippy.log; then
+            echo "::error::clippy found the issues above. Fix them, or allow one with a comment saying why."
+            exit 1
+          fi
 
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:
