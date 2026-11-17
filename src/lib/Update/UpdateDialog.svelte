@@ -299,9 +299,6 @@
   .btn-primary:disabled {
     @apply opacity-60 cursor-default shadow-none;
   }
-  .link {
-    @apply text-[12px] font-semibold text-[var(--color-accent-blue)] underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-left;
-  }
   .centered {
     @apply flex flex-col items-center justify-center gap-3 py-8;
   }
