@@ -200,9 +200,6 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, serde_json::json!({ "state": "offline", "reason": "down", "notice": null }));
-        assert_eq!(
-            serde_json::to_value(RemoteState::NotInUse).unwrap(),
-            serde_json::json!("not_in_use")
-        );
+        assert_eq!(serde_json::to_value(RemoteState::NotInUse).unwrap(), serde_json::json!("not_in_use"));
     }
 }

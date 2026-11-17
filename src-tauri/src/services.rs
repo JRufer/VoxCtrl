@@ -82,11 +82,7 @@ impl McpCallbacks for AppState {
         }
     }
 
-    async fn recent_transcripts(
-        &self,
-        limit: usize,
-        query: String,
-    ) -> Option<Vec<voxctrl_mcp::Transcript>> {
+    async fn recent_transcripts(&self, limit: usize, query: String) -> Option<Vec<voxctrl_mcp::Transcript>> {
         if !self.history.mcp_access() {
             return None;
         }
@@ -95,9 +91,7 @@ impl McpCallbacks for AppState {
                 .search(&query, limit)
                 .into_iter()
                 .map(|e| voxctrl_mcp::Transcript {
-                    at: chrono::DateTime::from_timestamp(e.at, 0)
-                        .map(|t| t.to_rfc3339())
-                        .unwrap_or_default(),
+                    at: chrono::DateTime::from_timestamp(e.at, 0).map(|t| t.to_rfc3339()).unwrap_or_default(),
                     target: e.target_label,
                     text: e.text,
                 })
@@ -232,8 +226,7 @@ async fn apply_dbus_binding(state: &Arc<AppState>, binding_id: &str) {
     if binding_id.is_empty() {
         return;
     }
-    let bindings =
-        voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default();
+    let bindings = voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default();
     let Some(binding) = bindings.into_iter().find(|b| b.id == binding_id) else {
         tracing::warn!("D-Bus asked for unknown binding '{binding_id}'; using the current target");
         return;
@@ -397,55 +390,43 @@ pub fn register_command_trigger_target(app_handle: &tauri::AppHandle) {
         let _ = withdraw_handle.emit("command-withdrawn", ());
     }));
 
-    voxctrl_routing::targets::set_command_trigger_callback(std::sync::Arc::new(
-        move |command_name, text_summary| {
-            let (show_overlay, duration_secs) = if let Ok(cfg) = state.config.try_lock() {
-                (
-                    cfg.data.ui.show_command_overlay,
-                    cfg.data.ui.command_overlay_duration_secs,
-                )
-            } else {
-                (true, 3)
-            };
+    voxctrl_routing::targets::set_command_trigger_callback(std::sync::Arc::new(move |command_name, text_summary| {
+        let (show_overlay, duration_secs) = if let Ok(cfg) = state.config.try_lock() {
+            (cfg.data.ui.show_command_overlay, cfg.data.ui.command_overlay_duration_secs)
+        } else {
+            (true, 3)
+        };
 
-            if show_overlay {
-                let cmd_name = command_name.to_string();
-                let summary = text_summary.to_string();
-                // Recorded before the emit below, so that if the overlay
-                // window is not up yet to receive the event the status
-                // ticker can replay it once the window is (#187).
-                state.activate_command_overlay(
-                    &cmd_name,
-                    &summary,
-                    std::time::Duration::from_secs(duration_secs as u64),
-                );
-                let _ = app_handle_clone.emit(
-                    "command-executed",
-                    serde_json::json!({
-                        "command": cmd_name,
-                        "summary": summary,
-                        "duration_secs": duration_secs,
-                    }),
-                );
-
-                let overlay_msg = serde_json::json!({
-                    "type": "command",
+        if show_overlay {
+            let cmd_name = command_name.to_string();
+            let summary = text_summary.to_string();
+            // Recorded before the emit below, so that if the overlay
+            // window is not up yet to receive the event the status
+            // ticker can replay it once the window is (#187).
+            state.activate_command_overlay(&cmd_name, &summary, std::time::Duration::from_secs(duration_secs as u64));
+            let _ = app_handle_clone.emit(
+                "command-executed",
+                serde_json::json!({
                     "command": cmd_name,
                     "summary": summary,
                     "duration_secs": duration_secs,
-                });
-                if let Ok(json_str) = serde_json::to_string(&overlay_msg) {
-                    let _ = state.overlay_tx.send(json_str);
-                }
+                }),
+            );
+
+            let overlay_msg = serde_json::json!({
+                "type": "command",
+                "command": cmd_name,
+                "summary": summary,
+                "duration_secs": duration_secs,
+            });
+            if let Ok(json_str) = serde_json::to_string(&overlay_msg) {
+                let _ = state.overlay_tx.send(json_str);
             }
-        },
-    ));
+        }
+    }));
 }
 
-pub fn auto_download_speech_model_if_needed(
-    app: &tauri::App,
-    cfg_data: &Arc<AppConfig>,
-) {
+pub fn auto_download_speech_model_if_needed(app: &tauri::App, cfg_data: &Arc<AppConfig>) {
     // A machine that has never run the wizard gets the wizard and nothing else.
     // Every decision this function would make for the user — which model to
     // fetch, whether to open Settings — is a step the wizard asks about, so
@@ -485,9 +466,7 @@ pub fn auto_download_speech_model_if_needed(
                         "VoxCtrl",
                         &format!("Downloading the default speech model ({model_size})..."),
                     );
-                    match voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir)
-                        .await
-                    {
+                    match voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir).await {
                         Ok(()) => {
                             voxctrl_inject::show_notification(
                                 "VoxCtrl",
@@ -508,9 +487,7 @@ pub fn auto_download_speech_model_if_needed(
             } else if !show_settings {
                 voxctrl_inject::show_notification(
                     "VoxCtrl",
-                    &format!(
-                        "Speech model '{model_size}' is not downloaded. Open Settings → Engine to download it."
-                    ),
+                    &format!("Speech model '{model_size}' is not downloaded. Open Settings → Engine to download it."),
                 );
             }
         }

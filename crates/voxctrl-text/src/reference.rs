@@ -2,8 +2,8 @@
 //! differential test below. Verbatim from 6195ee0.
 // Verbatim, so they are exempt from lints as well as from use.
 #![allow(dead_code, clippy::all)]
-use std::collections::HashMap;
 use regex::Regex;
+use std::collections::HashMap;
 
 /// Classic Levenshtein (edit) distance between two strings, computed over
 /// `char`s rather than bytes so it works correctly with non-ASCII input.
@@ -32,7 +32,7 @@ pub fn ref_levenshtein_distance(s1: &str, s2: &str) -> usize {
                     std::cmp::min(
                         dp[i - 1][j], // deletion
                         dp[i][j - 1], // insertion
-                    )
+                    ),
                 );
             }
         }
@@ -158,66 +158,69 @@ pub fn ref_correct_custom_vocabulary(text: &str, custom_vocab: &[String]) -> Str
             Err(_) => return result,
         };
 
-        result = re_word.replace_all(&result, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
+        result = re_word
+            .replace_all(&result, |caps: &regex::Captures| {
+                let matched = caps.get(0).unwrap().as_str();
 
-            let mut best_match: Option<&str> = None;
-            let mut best_dist = usize::MAX;
+                let mut best_match: Option<&str> = None;
+                let mut best_dist = usize::MAX;
 
-            let matched_lower = matched.to_lowercase();
+                let matched_lower = matched.to_lowercase();
 
-            for vocab_word in &single_word {
-                let vocab_lower = vocab_word.to_lowercase();
-                let len = vocab_lower.chars().count();
+                for vocab_word in &single_word {
+                    let vocab_lower = vocab_word.to_lowercase();
+                    let len = vocab_lower.chars().count();
 
-                if matched_lower == vocab_lower {
-                    best_match = Some(vocab_word.as_str());
-                    break;
+                    if matched_lower == vocab_lower {
+                        best_match = Some(vocab_word.as_str());
+                        break;
+                    }
+
+                    let dist = ref_levenshtein_distance(&matched_lower, &vocab_lower);
+
+                    let max_allowed = if len <= 3 {
+                        0
+                    } else if len == 4 {
+                        1
+                    } else {
+                        2
+                    };
+
+                    if dist <= max_allowed && dist < best_dist {
+                        best_dist = dist;
+                        best_match = Some(vocab_word.as_str());
+                    }
                 }
 
-                let dist = ref_levenshtein_distance(&matched_lower, &vocab_lower);
-
-                let max_allowed = if len <= 3 {
-                    0
-                } else if len == 4 {
-                    1
+                if let Some(replacement) = best_match {
+                    replacement.to_string()
                 } else {
-                    2
-                };
-
-                if dist <= max_allowed && dist < best_dist {
-                    best_dist = dist;
-                    best_match = Some(vocab_word.as_str());
+                    matched.to_string()
                 }
-            }
-
-            if let Some(replacement) = best_match {
-                replacement.to_string()
-            } else {
-                matched.to_string()
-            }
-        }).to_string();
+            })
+            .to_string();
     }
 
     // 3. Dynamic VoxCtrl brand homophone fallback
     // Matches any remaining "<word> control/ctrl" phrase within edit distance <= 3 of "vox control"
     if let Ok(re_ctrl) = Regex::new(r"(?i)\b[a-z0-9'-]{2,}\s+(control|ctrl|ctl|kontrol)\b") {
-        result = re_ctrl.replace_all(&result, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
-            let matched_lower = matched.to_lowercase();
-            let is_already_brand = matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
-            let dist = ref_levenshtein_distance(&matched_lower, "vox control");
-            if !is_already_brand && dist <= 1 {
-                "VoxCtrl".to_string()
-            } else {
-                matched.to_string()
-            }
-        }).to_string();
+        result = re_ctrl
+            .replace_all(&result, |caps: &regex::Captures| {
+                let matched = caps.get(0).unwrap().as_str();
+                let matched_lower = matched.to_lowercase();
+                let is_already_brand = matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
+                let dist = ref_levenshtein_distance(&matched_lower, "vox control");
+                if !is_already_brand && dist <= 1 {
+                    "VoxCtrl".to_string()
+                } else {
+                    matched.to_string()
+                }
+            })
+            .to_string();
     }
 
     result
 }
-
 
 #[cfg(test)]
 mod differential {
@@ -242,9 +245,9 @@ mod differential {
     }
 
     const WORDS: &[&str] = &[
-        "VoxCtrl", "Voxctrl", "voxctrl", "vox", "control", "ctrl", "say", "Say", "hello",
-        "Waylin", "waylan", "Rufer", "notes", "note", "the", "a", "kenz", "Kenz", "Enola",
-        "hi", "send", "to", "my", "Vox", "Control", "kontrol", "naive", "naïve",
+        "VoxCtrl", "Voxctrl", "voxctrl", "vox", "control", "ctrl", "say", "Say", "hello", "Waylin", "waylan", "Rufer",
+        "notes", "note", "the", "a", "kenz", "Kenz", "Enola", "hi", "send", "to", "my", "Vox", "Control", "kontrol",
+        "naive", "naïve",
     ];
     const PUNCT: &[&str] = &["", ".", ",", "!", "?", ". "];
 
@@ -266,13 +269,11 @@ mod differential {
     #[test]
     fn vocabulary_correction_matches_the_original() {
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
-        let vocab_pool: Vec<String> = [
-            "VoxCtrl", "Waylin", "Rufer", "Enola", "Kenz", "Vox Ctrl", "Vox Control",
-            "say", "Say", "notes", "hello",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+        let vocab_pool: Vec<String> =
+            ["VoxCtrl", "Waylin", "Rufer", "Enola", "Kenz", "Vox Ctrl", "Vox Control", "say", "Say", "notes", "hello"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
 
         for _ in 0..4000 {
             let n = 1 + (rng.next() % 8) as usize;
@@ -283,13 +284,9 @@ mod differential {
             // The brand normalisation used to be the tail of this function and
             // is now its own; applied in the same order, the pair has to come
             // out exactly where the original did.
-            let mine =
-                normalize_brand_name(&correct_custom_vocabulary(&text, &vocab)).into_owned();
+            let mine = normalize_brand_name(&correct_custom_vocabulary(&text, &vocab)).into_owned();
             let theirs = ref_correct_custom_vocabulary(&text, &vocab);
-            assert_eq!(
-                mine, theirs,
-                "vocabulary correction diverged\n  text:  {text:?}\n  vocab: {vocab:?}"
-            );
+            assert_eq!(mine, theirs, "vocabulary correction diverged\n  text:  {text:?}\n  vocab: {vocab:?}");
         }
     }
 

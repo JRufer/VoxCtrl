@@ -35,25 +35,24 @@ pub async fn test_openai(
     let client = voxctrl_llm::OpenAiClient::new(cfg);
     if client.is_available().await {
         match client.list_models().await {
-            Ok(models) => {
-                Ok(OpenAiTestResult {
-                    success: true,
-                    message: "Successfully connected to the OpenAI API server!".to_string(),
-                    models,
-                })
-            }
-            Err(e) => {
-                Ok(OpenAiTestResult {
-                    success: true,
-                    message: format!("Successfully connected, but failed to fetch model list: {}", e),
-                    models: Vec::new(),
-                })
-            }
+            Ok(models) => Ok(OpenAiTestResult {
+                success: true,
+                message: "Successfully connected to the OpenAI API server!".to_string(),
+                models,
+            }),
+            Err(e) => Ok(OpenAiTestResult {
+                success: true,
+                message: format!("Successfully connected, but failed to fetch model list: {}", e),
+                models: Vec::new(),
+            }),
         }
     } else {
         Ok(OpenAiTestResult {
             success: false,
-            message: format!("Failed to connect to the OpenAI API server at '{}'. Check the URL and API key.", endpoint),
+            message: format!(
+                "Failed to connect to the OpenAI API server at '{}'. Check the URL and API key.",
+                endpoint
+            ),
             models: Vec::new(),
         })
     }

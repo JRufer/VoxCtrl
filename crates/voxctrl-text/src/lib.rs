@@ -75,13 +75,7 @@ fn distance_within(s1: &str, s2: &str, max: usize) -> Option<usize> {
     })
 }
 
-fn distance_rows(
-    a: &[char],
-    b: &[char],
-    max: usize,
-    prev: &mut Vec<usize>,
-    cur: &mut Vec<usize>,
-) -> Option<usize> {
+fn distance_rows(a: &[char], b: &[char], max: usize, prev: &mut Vec<usize>, cur: &mut Vec<usize>) -> Option<usize> {
     if a.len().abs_diff(b.len()) > max {
         return None;
     }
@@ -134,9 +128,7 @@ pub fn expand_snippets(text: &str, snippets: &HashMap<String, String>) -> String
         with_trigger_regex(trigger, |re| {
             if let Some(re) = re {
                 if re.is_match(&result) {
-                    result = std::borrow::Cow::Owned(
-                        re.replace_all(&result, expansion.as_str()).into_owned(),
-                    );
+                    result = std::borrow::Cow::Owned(re.replace_all(&result, expansion.as_str()).into_owned());
                 }
             }
         });
@@ -178,8 +170,7 @@ pub(crate) fn trigger_pattern(trigger: &str) -> String {
 /// recompiling every one of them on every transcription — regex compilation
 /// costs orders of magnitude more than the match itself — was pure waste.
 fn with_trigger_regex<R>(trigger: &str, f: impl FnOnce(Option<&Regex>) -> R) -> R {
-    static CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Option<Regex>>>> =
-        std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Option<Regex>>>> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
 
     if let Ok(map) = cache.read() {
@@ -205,9 +196,7 @@ fn word_re() -> &'static Regex {
 
 fn brand_re() -> &'static Regex {
     static BRAND_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    BRAND_RE.get_or_init(|| {
-        Regex::new(r"(?i)\b[a-z0-9'-]{2,}\s+(control|ctrl|ctl|kontrol)\b").unwrap()
-    })
+    BRAND_RE.get_or_init(|| Regex::new(r"(?i)\b[a-z0-9'-]{2,}\s+(control|ctrl|ctl|kontrol)\b").unwrap())
 }
 
 /// Fuzzy-corrects occurrences of `custom_vocab` entries in `text` using
@@ -359,8 +348,7 @@ pub fn normalize_brand_name(text: &str) -> Cow<'_, str> {
     brand_re().replace_all(text, |caps: &regex::Captures| {
         let matched = caps.get(0).unwrap().as_str();
         let matched_lower = matched.to_lowercase();
-        let is_already_brand =
-            matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
+        let is_already_brand = matched == "VoxCtrl" || matched == "Vox Ctrl" || matched_lower == "vox ctrl";
         if !is_already_brand && within(&matched_lower, "vox control", 1) {
             "VoxCtrl".to_string()
         } else {
@@ -410,18 +398,14 @@ mod tests {
         snips.insert("my address".to_string(), "123 Main Street".to_string());
 
         for text in [
-            "send my address now",      // unpunctuated, lowercase
-            "Send my address now.",     // capitalised and punctuated
-            "Send My Address now.",     // title-cased
-            "Send my, address now.",    // comma heard inside the phrase
-            "Send my  address now.",    // doubled space
-            "Send my. Address now.",    // sentence split inside the phrase
+            "send my address now",   // unpunctuated, lowercase
+            "Send my address now.",  // capitalised and punctuated
+            "Send My Address now.",  // title-cased
+            "Send my, address now.", // comma heard inside the phrase
+            "Send my  address now.", // doubled space
+            "Send my. Address now.", // sentence split inside the phrase
         ] {
-            assert_eq!(
-                expand_snippets(text, &snips).contains("123 Main Street"),
-                true,
-                "should have expanded: {text:?}"
-            );
+            assert!(expand_snippets(text, &snips).contains("123 Main Street"), "should have expanded: {text:?}");
         }
     }
 
@@ -434,10 +418,10 @@ mod tests {
         snips.insert("my address".to_string(), "123 Main Street".to_string());
 
         for text in [
-            "send myaddress now",     // run together: not the phrase
-            "send my adress now",     // misspelt
-            "send address my now",    // out of order
-            "send my home address",   // other words in between
+            "send myaddress now",   // run together: not the phrase
+            "send my adress now",   // misspelt
+            "send address my now",  // out of order
+            "send my home address", // other words in between
         ] {
             assert_eq!(expand_snippets(text, &snips), text, "should be left alone: {text:?}");
         }
@@ -496,8 +480,14 @@ mod tests {
         // Short words and distant words should not trigger false positives
         assert_eq!(correct_custom_vocabulary("in", &vocab), "in");
         // Normal speech phrases containing "control" must not be modified
-        assert_eq!(correct_custom_vocabulary("The foxes control the hen house", &vocab), "The foxes control the hen house");
-        assert_eq!(correct_custom_vocabulary("The foxes control the hen house", &[]), "The foxes control the hen house");
+        assert_eq!(
+            correct_custom_vocabulary("The foxes control the hen house", &vocab),
+            "The foxes control the hen house"
+        );
+        assert_eq!(
+            correct_custom_vocabulary("The foxes control the hen house", &[]),
+            "The foxes control the hen house"
+        );
     }
 
     /// The textbook full-table implementation, kept here as the reference the
@@ -527,19 +517,27 @@ mod tests {
     }
 
     const SAMPLES: &[&str] = &[
-        "", "a", "ab", "kitten", "sitting", "Waylin", "waylan", "vox control",
-        "voxctrl", "naïve", "naive", "ÅngstrÖm", "angstrom", "a-very-long-token",
+        "",
+        "a",
+        "ab",
+        "kitten",
+        "sitting",
+        "Waylin",
+        "waylan",
+        "vox control",
+        "voxctrl",
+        "naïve",
+        "naive",
+        "ÅngstrÖm",
+        "angstrom",
+        "a-very-long-token",
     ];
 
     #[test]
     fn distance_matches_the_full_table() {
         for x in SAMPLES {
             for y in SAMPLES {
-                assert_eq!(
-                    levenshtein_distance(x, y),
-                    naive_distance(x, y),
-                    "distance disagreed for {x:?} vs {y:?}"
-                );
+                assert_eq!(levenshtein_distance(x, y), naive_distance(x, y), "distance disagreed for {x:?} vs {y:?}");
             }
         }
     }
@@ -552,11 +550,7 @@ mod tests {
             for y in SAMPLES {
                 let real = naive_distance(x, y);
                 for max in 0..=6 {
-                    assert_eq!(
-                        within(x, y, max),
-                        real <= max,
-                        "{x:?} vs {y:?} at max={max} (real distance {real})"
-                    );
+                    assert_eq!(within(x, y, max), real <= max, "{x:?} vs {y:?} at max={max} (real distance {real})");
                     assert_eq!(
                         distance_within(x, y, max),
                         (real <= max).then_some(real),
@@ -594,11 +588,7 @@ mod tests {
 
     #[test]
     fn ordinary_speech_about_control_is_left_alone() {
-        for innocent in [
-            "The foxes control the hen house",
-            "remote control is missing",
-            "version control please",
-        ] {
+        for innocent in ["The foxes control the hen house", "remote control is missing", "version control please"] {
             assert_eq!(normalize_brand_name(innocent), innocent);
         }
     }
@@ -607,10 +597,7 @@ mod tests {
     fn brand_repair_borrows_when_there_is_nothing_to_do() {
         // Every transcript runs through this, so the no-match path must not
         // allocate a copy of the text.
-        assert!(matches!(
-            normalize_brand_name("nothing to see here"),
-            Cow::Borrowed(_)
-        ));
+        assert!(matches!(normalize_brand_name("nothing to see here"), Cow::Borrowed(_)));
     }
 
     #[test]

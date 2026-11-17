@@ -17,8 +17,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     if inflect && linux {
-        cc::Build::new()
-            .file("src/isoc23_compat.c")
-            .compile("voxctrl_tts_isoc23_compat");
+        cc::Build::new().file("src/isoc23_compat.c").compile("voxctrl_tts_isoc23_compat");
     }
 }

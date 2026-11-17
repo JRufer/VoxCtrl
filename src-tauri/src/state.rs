@@ -1,5 +1,8 @@
 use std::collections::HashSet;
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, Ordering},
+    Arc,
+};
 
 use tokio::sync::Mutex;
 use voxctrl_config::Config;
@@ -347,12 +350,7 @@ impl AppState {
 
     /// Mark the command-executed overlay pill active for `duration` from now,
     /// showing `command` and `summary`.
-    pub fn activate_command_overlay(
-        &self,
-        command: &str,
-        summary: &str,
-        duration: std::time::Duration,
-    ) {
+    pub fn activate_command_overlay(&self, command: &str, summary: &str, duration: std::time::Duration) {
         *self.command_overlay.lock().unwrap() = Some(ActiveCommandOverlay {
             command: command.to_string(),
             summary: summary.to_string(),
@@ -367,11 +365,7 @@ impl AppState {
 
     /// Whether the command-executed overlay pill should still be showing.
     pub fn is_command_overlay_active(&self) -> bool {
-        self.command_overlay
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|c| std::time::Instant::now() < c.until)
+        self.command_overlay.lock().unwrap().as_ref().is_some_and(|c| std::time::Instant::now() < c.until)
     }
 
     /// The command pill that is still due to be on screen, with however much
@@ -379,20 +373,14 @@ impl AppState {
     /// not there to receive the original event (see [`ActiveCommandOverlay`]).
     /// `None` once it has expired.
     pub fn active_command_overlay(&self) -> Option<(String, String, u32)> {
-        self.command_overlay
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|c| c.replay(std::time::Instant::now()))
+        self.command_overlay.lock().unwrap().as_ref().and_then(|c| c.replay(std::time::Instant::now()))
     }
 
     /// Claim the right to run an update, returning false if one is already
     /// running. Compare-and-swap rather than a check followed by a store: two
     /// clicks a millisecond apart must not both get through.
     pub fn begin_update(&self) -> bool {
-        self.updating
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+        self.updating.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok()
     }
 
     pub fn end_update(&self) {
@@ -491,10 +479,7 @@ impl AppState {
         for target in targets_guard.iter() {
             if let Some(ref pipe_path) = target.response_pipe {
                 if !pipe_path.trim().is_empty() && active_fifos_guard.insert(pipe_path.clone()) {
-                    tokio::spawn(voxctrl_tts::run_fifo_responder(
-                        pipe_path.clone(),
-                        self.tts_handle.clone(),
-                    ));
+                    tokio::spawn(voxctrl_tts::run_fifo_responder(pipe_path.clone(), self.tts_handle.clone()));
                 }
             }
         }
@@ -507,11 +492,7 @@ mod command_overlay_tests {
     use std::time::{Duration, Instant};
 
     fn pill(until: Instant) -> ActiveCommandOverlay {
-        ActiveCommandOverlay {
-            command: "Notes".into(),
-            summary: "buy milk".into(),
-            until,
-        }
+        ActiveCommandOverlay { command: "Notes".into(), summary: "buy milk".into(), until }
     }
 
     /// The replay carries the pill's own text, so the window that missed the
@@ -519,9 +500,7 @@ mod command_overlay_tests {
     #[test]
     fn a_live_pill_replays_with_its_text() {
         let now = Instant::now();
-        let (command, summary, secs) = pill(now + Duration::from_secs(3))
-            .replay(now)
-            .expect("still live");
+        let (command, summary, secs) = pill(now + Duration::from_secs(3)).replay(now).expect("still live");
         assert_eq!(command, "Notes");
         assert_eq!(summary, "buy milk");
         assert_eq!(secs, 3);

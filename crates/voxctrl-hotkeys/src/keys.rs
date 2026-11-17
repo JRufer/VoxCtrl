@@ -20,11 +20,7 @@ pub struct KeyMatcher {
 
 impl KeyMatcher {
     pub fn new(bindings: Vec<HotkeyBinding>) -> Self {
-        Self {
-            bindings,
-            pressed: HashSet::new(),
-            active: HashSet::new(),
-        }
+        Self { bindings, pressed: HashSet::new(), active: HashSet::new() }
     }
 
     /// Swap in new bindings. The caller is expected to have reset the gesture
@@ -105,10 +101,7 @@ impl KeyMatcher {
 
             // `pressed` still holds the key being released — the caller removes
             // it once this returns — so it has to be excluded explicitly.
-            let others_held = b
-                .keys
-                .iter()
-                .any(|k| k.as_str() != key && self.pressed.contains(k));
+            let others_held = b.keys.iter().any(|k| k.as_str() != key && self.pressed.contains(k));
             if !others_held {
                 out.push((b.id.clone(), Transition::Released));
                 ended.push(b.id.clone());
@@ -152,10 +145,7 @@ mod tests {
         let mut m = KeyMatcher::new(vec![binding("b", &["KEY_LEFTMETA", "KEY_SPACE"])]);
 
         assert!(m.on_key("KEY_LEFTMETA", true).is_empty());
-        assert_eq!(
-            m.on_key("KEY_SPACE", true),
-            vec![("b".to_string(), Transition::Activated)]
-        );
+        assert_eq!(m.on_key("KEY_SPACE", true), vec![("b".to_string(), Transition::Activated)]);
     }
 
     #[test]
@@ -164,16 +154,10 @@ mod tests {
         m.on_key("KEY_LEFTMETA", true);
         m.on_key("KEY_SPACE", true);
 
-        assert_eq!(
-            m.on_key("KEY_SPACE", false),
-            vec![("b".to_string(), Transition::Deactivated)]
-        );
+        assert_eq!(m.on_key("KEY_SPACE", false), vec![("b".to_string(), Transition::Deactivated)]);
         assert_eq!(
             m.on_key("KEY_LEFTMETA", false),
-            vec![
-                ("b".to_string(), Transition::Deactivated),
-                ("b".to_string(), Transition::Released),
-            ]
+            vec![("b".to_string(), Transition::Deactivated), ("b".to_string(), Transition::Released),]
         );
     }
 
@@ -222,10 +206,7 @@ mod tests {
 
         assert_eq!(
             m.clear(),
-            vec![
-                ("b".to_string(), Transition::Deactivated),
-                ("b".to_string(), Transition::Released),
-            ]
+            vec![("b".to_string(), Transition::Deactivated), ("b".to_string(), Transition::Released),]
         );
         assert!(m.clear().is_empty());
     }

@@ -327,19 +327,11 @@ pub struct DeliveryResult {
 
 impl DeliveryResult {
     pub fn ok(text: String) -> Self {
-        Self {
-            success: true,
-            error: None,
-            delivered_text: Some(text),
-        }
+        Self { success: true, error: None, delivered_text: Some(text) }
     }
 
     pub fn err(msg: impl Into<String>) -> Self {
-        Self {
-            success: false,
-            error: Some(msg.into()),
-            delivered_text: None,
-        }
+        Self { success: false, error: Some(msg.into()), delivered_text: None }
     }
 }
 

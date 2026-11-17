@@ -121,22 +121,13 @@ impl Refusal {
 
 impl History {
     /// Whether this description may be submitted now.
-    pub fn check(
-        &self,
-        description: &str,
-        limits: &Limits,
-        now: DateTime<Utc>,
-    ) -> Result<(), Refusal> {
+    pub fn check(&self, description: &str, limits: &Limits, now: DateTime<Utc>) -> Result<(), Refusal> {
         let length = description.trim().chars().count();
         if length < limits.min_description_chars {
-            return Err(Refusal::TooShort {
-                minimum: limits.min_description_chars,
-            });
+            return Err(Refusal::TooShort { minimum: limits.min_description_chars });
         }
         if length > limits.max_description_chars {
-            return Err(Refusal::TooLong {
-                maximum: limits.max_description_chars,
-            });
+            return Err(Refusal::TooLong { maximum: limits.max_description_chars });
         }
 
         // A timestamp after `now` means the clock moved backwards since it was
@@ -155,52 +146,28 @@ impl History {
         if let Some(latest) = self.submissions.iter().map(|s| s.at).max() {
             let since = elapsed(latest);
             if since < limits.cooldown {
-                return Err(Refusal::Cooldown {
-                    seconds_remaining: (limits.cooldown - since).num_seconds().max(1),
-                });
+                return Err(Refusal::Cooldown { seconds_remaining: (limits.cooldown - since).num_seconds().max(1) });
             }
         }
 
         let day = Duration::days(1);
-        let in_last_day: Vec<&PastSubmission> = self
-            .submissions
-            .iter()
-            .filter(|s| elapsed(s.at) < day)
-            .collect();
+        let in_last_day: Vec<&PastSubmission> = self.submissions.iter().filter(|s| elapsed(s.at) < day).collect();
         if in_last_day.len() >= limits.per_day {
             // The oldest submission inside the window is the one whose expiry
             // frees the next slot.
             let oldest = in_last_day.iter().map(|s| s.at).min().unwrap_or(now);
             let wait = day - elapsed(oldest);
-            return Err(Refusal::DailyLimit {
-                limit: limits.per_day,
-                hours_until_next: wait.num_hours().max(1),
-            });
+            return Err(Refusal::DailyLimit { limit: limits.per_day, hours_until_next: wait.num_hours().max(1) });
         }
 
         let month = Duration::days(30);
-        if self
-            .submissions
-            .iter()
-            .filter(|s| elapsed(s.at) < month)
-            .count()
-            >= limits.per_month
-        {
-            return Err(Refusal::MonthlyLimit {
-                limit: limits.per_month,
-            });
+        if self.submissions.iter().filter(|s| elapsed(s.at) < month).count() >= limits.per_month {
+            return Err(Refusal::MonthlyLimit { limit: limits.per_month });
         }
 
         let fingerprint = fingerprint(description);
-        if let Some(previous) = self
-            .submissions
-            .iter()
-            .filter(|s| s.fingerprint == fingerprint)
-            .max_by_key(|s| s.at)
-        {
-            return Err(Refusal::Duplicate {
-                first_sent: previous.at,
-            });
+        if let Some(previous) = self.submissions.iter().filter(|s| s.fingerprint == fingerprint).max_by_key(|s| s.at) {
+            return Err(Refusal::Duplicate { first_sent: previous.at });
         }
 
         Ok(())
@@ -209,10 +176,7 @@ impl History {
     /// Record a submission that went out, and forget the ones that no longer
     /// bear on any limit.
     pub fn record(&mut self, description: &str, now: DateTime<Utc>) {
-        self.submissions.push(PastSubmission {
-            at: now,
-            fingerprint: fingerprint(description),
-        });
+        self.submissions.push(PastSubmission { at: now, fingerprint: fingerprint(description) });
         self.prune(now);
     }
 
@@ -237,11 +201,7 @@ impl History {
 /// "IT CRASHED!!!" and "it crashed" are the same report sent twice, and the
 /// second one helps nobody.
 pub fn fingerprint(description: &str) -> String {
-    let normalized: String = description
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
+    let normalized: String = description.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
     hex::encode(Sha256::digest(normalized.as_bytes()))
 }
 
@@ -283,9 +243,7 @@ mod tests {
 
     #[test]
     fn a_one_word_report_is_refused_with_a_reason() {
-        let refusal = History::default()
-            .check("broken", &Limits::default(), at(0))
-            .unwrap_err();
+        let refusal = History::default().check("broken", &Limits::default(), at(0)).unwrap_err();
         assert!(matches!(refusal, Refusal::TooShort { .. }));
         assert!(refusal.message().contains("what you expected"));
     }
@@ -293,10 +251,7 @@ mod tests {
     #[test]
     fn a_pasted_novel_is_refused() {
         let long = "x".repeat(5000);
-        assert!(matches!(
-            History::default().check(&long, &Limits::default(), at(0)),
-            Err(Refusal::TooLong { .. })
-        ));
+        assert!(matches!(History::default().check(&long, &Limits::default(), at(0)), Err(Refusal::TooLong { .. })));
     }
 
     #[test]
@@ -317,10 +272,7 @@ mod tests {
         let mut history = History::default();
         history.record(GOOD, at(0));
         let shouted = format!("  {}  ", GOOD.to_uppercase());
-        assert!(matches!(
-            history.check(&shouted, &Limits::default(), at(60)),
-            Err(Refusal::Duplicate { .. })
-        ));
+        assert!(matches!(history.check(&shouted, &Limits::default(), at(60)), Err(Refusal::Duplicate { .. })));
     }
 
     #[test]
@@ -344,9 +296,8 @@ mod tests {
         for n in 0..limits.per_day {
             history.record(&format!("{GOOD} variation {n}"), at(n as i64 * 10));
         }
-        let refusal = history
-            .check("Yet another distinct problem, described at length.", &limits, at(300))
-            .unwrap_err();
+        let refusal =
+            history.check("Yet another distinct problem, described at length.", &limits, at(300)).unwrap_err();
         match refusal {
             Refusal::DailyLimit { limit, hours_until_next } => {
                 assert_eq!(limit, limits.per_day);
@@ -364,10 +315,7 @@ mod tests {
             history.record(&format!("{GOOD} variation {n}"), at(n as i64));
         }
         // A day and a bit later the window has rolled past all of them.
-        assert_eq!(
-            history.check("A new problem, freshly described in detail.", &limits, at(60 * 25)),
-            Ok(())
-        );
+        assert_eq!(history.check("A new problem, freshly described in detail.", &limits, at(60 * 25)), Ok(()));
     }
 
     #[test]

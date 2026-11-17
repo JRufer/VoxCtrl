@@ -126,6 +126,60 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo check -p voxctrl-app -p voxctrl-llm-sidecar --features vulkan
 
+  # ── Formatting and lints ──────────────────────────────────────────────────────
+  #
+  # rustfmt.toml sets the style (120 columns); the tree was formatted once in
+  # 0.9.20 (that commit is in .git-blame-ignore-revs). Clippy runs with
+  # warnings as errors on the whole workspace, default features and all
+  # targets, so a new warning is fixed in the pull request that adds it
+  # rather than piling up. Run both locally with:
+  #   cargo fmt --all && cargo clippy --workspace --all-targets
+  lint:
+    name: rustfmt and clippy
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libasound2-dev \
+            libspeechd-dev \
+            libxdo-dev \
+            pkg-config \
+            build-essential
+
+      # Pinned: see the note on the first toolchain step in this file.
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+
+      # Not `-- -D warnings`: that makes the first crate with a finding fail
+      # to compile, and every crate depending on it is then never linted, so
+      # each run shows only the next crate's problems. Warnings let the whole
+      # workspace be checked in one run; the step then fails if there were any.
+      # (A compile error still fails it at once: the shell runs with pipefail.)
+      - name: cargo clippy
+        run: |
+          cargo clippy --workspace --all-targets --message-format=short 2>&1 | tee clippy.log
+          if grep -E ': (warning|error)(\[[^]]*\])?: ' clippy.log; then
+            echo "::error::clippy found the issues above. Fix them, or allow one with a comment saying why."
+            exit 1
+          fi
+
   # ── Unit tests ────────────────────────────────────────────────────────────────
   cargo-test:
     name: cargo test

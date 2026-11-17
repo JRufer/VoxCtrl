@@ -36,11 +36,11 @@ use anyhow::Result;
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(target_os = "linux")]
+mod imp;
+#[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
-#[cfg(target_os = "linux")]
-mod imp;
 
 #[cfg(target_os = "windows")]
 #[path = "windows.rs"]
@@ -51,17 +51,39 @@ mod imp {
     use super::*;
     pub struct Snapshot;
     pub struct Held;
-    pub fn snapshot() -> Result<Snapshot> { anyhow::bail!("clipboard not supported on this platform") }
-    pub fn set_text(_: &str) -> Result<Held> { anyhow::bail!("clipboard not supported on this platform") }
-    pub fn restore(_: Snapshot) -> Result<()> { Ok(()) }
-    pub fn current_text() -> Option<String> { None }
-    impl Snapshot { pub fn format_count(&self) -> usize { 0 } }
+    pub fn snapshot() -> Result<Snapshot> {
+        anyhow::bail!("clipboard not supported on this platform")
+    }
+    pub fn set_text(_: &str) -> Result<Held> {
+        anyhow::bail!("clipboard not supported on this platform")
+    }
+    pub fn restore(_: Snapshot) -> Result<()> {
+        Ok(())
+    }
+    pub fn current_text() -> Option<String> {
+        None
+    }
+    impl Snapshot {
+        pub fn format_count(&self) -> usize {
+            0
+        }
+    }
     impl Held {
-        pub fn restore(&self, _: Snapshot) -> Result<()> { Ok(()) }
-        pub fn still_current(&self) -> bool { false }
-        pub fn mark(&self) -> usize { 0 }
-        pub fn tracks_reads(&self) -> bool { false }
-        pub fn read_since(&self, _: usize) -> bool { false }
+        pub fn restore(&self, _: Snapshot) -> Result<()> {
+            Ok(())
+        }
+        pub fn still_current(&self) -> bool {
+            false
+        }
+        pub fn mark(&self) -> usize {
+            0
+        }
+        pub fn tracks_reads(&self) -> bool {
+            false
+        }
+        pub fn read_since(&self, _: usize) -> bool {
+            false
+        }
     }
 }
 

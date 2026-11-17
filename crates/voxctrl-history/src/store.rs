@@ -32,13 +32,7 @@ pub fn seal(key: &Key, entries: &[Entry]) -> Result<Vec<u8>> {
     let cipher = XChaCha20Poly1305::new(key.into());
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
     let ciphertext = cipher
-        .encrypt(
-            &nonce,
-            Payload {
-                msg: &plaintext,
-                aad: MAGIC,
-            },
-        )
+        .encrypt(&nonce, Payload { msg: &plaintext, aad: MAGIC })
         .map_err(|_| anyhow!("could not encrypt the history"))?;
     let mut out = Vec::with_capacity(MAGIC.len() + NONCE_LEN + ciphertext.len());
     out.extend_from_slice(MAGIC);
@@ -56,13 +50,7 @@ pub fn open(key: &Key, data: &[u8]) -> Result<Vec<Entry>> {
     let ciphertext = &data[MAGIC.len() + NONCE_LEN..];
     let cipher = XChaCha20Poly1305::new(key.into());
     let plaintext = cipher
-        .decrypt(
-            nonce,
-            Payload {
-                msg: ciphertext,
-                aad: MAGIC,
-            },
-        )
+        .decrypt(nonce, Payload { msg: ciphertext, aad: MAGIC })
         .map_err(|_| anyhow!("the history file can't be decrypted with the key in the keyring"))?;
     Ok(serde_json::from_slice(&plaintext)?)
 }
@@ -81,9 +69,7 @@ pub fn load(path: &Path, key: &Key) -> Result<Vec<Entry>> {
 /// 0600 on Unix) before a single byte is written to it.
 pub fn save(path: &Path, key: &Key, entries: &[Entry]) -> Result<()> {
     let data = seal(key, entries)?;
-    let dir = path
-        .parent()
-        .ok_or_else(|| anyhow!("history path has no folder"))?;
+    let dir = path.parent().ok_or_else(|| anyhow!("history path has no folder"))?;
     create_private_dir(dir)?;
     let tmp = path.with_extension("tmp");
     {
@@ -110,10 +96,7 @@ pub fn delete(path: &Path) -> Result<()> {
 #[cfg(unix)]
 fn create_private_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     // An older or hand-made folder may be more open; close it up.
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     Ok(())
@@ -131,20 +114,12 @@ fn create_private_dir(dir: &Path) -> Result<()> {
 fn private_file(path: &Path) -> Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     let _ = std::fs::remove_file(path);
-    Ok(std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)?)
+    Ok(std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?)
 }
 
 #[cfg(not(unix))]
 fn private_file(path: &Path) -> Result<std::fs::File> {
-    Ok(std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)?)
+    Ok(std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)?)
 }
 
 #[cfg(test)]

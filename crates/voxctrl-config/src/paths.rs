@@ -21,11 +21,8 @@ use std::path::PathBuf;
 /// one wrong answer for its mirror image.
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
     // "If the file name does not contain an extension, .exe is appended."
-    let search_name: std::borrow::Cow<str> = if cfg!(target_os = "windows") && !name.contains('.') {
-        format!("{name}.exe").into()
-    } else {
-        name.into()
-    };
+    let search_name: std::borrow::Cow<str> =
+        if cfg!(target_os = "windows") && !name.contains('.') { format!("{name}.exe").into() } else { name.into() };
 
     let mut dirs: Vec<PathBuf> = Vec::new();
 
@@ -49,7 +46,5 @@ pub fn find_in_path(name: &str) -> Option<PathBuf> {
         dirs.extend(std::env::split_paths(&paths));
     }
 
-    dirs.into_iter()
-        .map(|dir| dir.join(search_name.as_ref()))
-        .find(|p| p.is_file())
+    dirs.into_iter().map(|dir| dir.join(search_name.as_ref())).find(|p| p.is_file())
 }

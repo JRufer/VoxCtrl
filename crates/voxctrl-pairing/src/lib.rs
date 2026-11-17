@@ -95,7 +95,11 @@ pub fn host_of(address: &str) -> Option<String> {
         v6.split(']').next().unwrap_or("")
     } else {
         authority.rsplit_once(':').map_or(authority, |(h, port)| {
-            if port.chars().all(|c| c.is_ascii_digit()) { h } else { authority }
+            if port.chars().all(|c| c.is_ascii_digit()) {
+                h
+            } else {
+                authority
+            }
         })
     };
     (!host.is_empty()).then(|| host.to_string())
@@ -184,7 +188,8 @@ pub fn client_tls(fingerprint: &str) -> Result<rustls::ClientConfig> {
         bail!("The saved certificate fingerprint is not valid. Paste the server's pairing code again.");
     }
     let provider = provider();
-    let verifier = Arc::new(PinnedCertificate { fingerprint: fingerprint.to_ascii_lowercase(), provider: provider.clone() });
+    let verifier =
+        Arc::new(PinnedCertificate { fingerprint: fingerprint.to_ascii_lowercase(), provider: provider.clone() });
     Ok(rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .context("Could not set up encryption")?
@@ -210,7 +215,11 @@ fn pin_for<'a>(endpoint: &str, fingerprint: Option<&'a str>) -> Result<Option<&'
 }
 
 /// Make `builder` trust only the paired certificate when one is saved.
-pub fn pin(builder: reqwest::ClientBuilder, endpoint: &str, fingerprint: Option<&str>) -> Result<reqwest::ClientBuilder> {
+pub fn pin(
+    builder: reqwest::ClientBuilder,
+    endpoint: &str,
+    fingerprint: Option<&str>,
+) -> Result<reqwest::ClientBuilder> {
     Ok(match pin_for(endpoint, fingerprint)? {
         Some(fingerprint) => builder.use_preconfigured_tls(client_tls(fingerprint)?),
         None => builder,
@@ -247,7 +256,12 @@ mod tests {
     use super::*;
 
     fn code() -> PairingCode {
-        PairingCode { host: Some("192.168.1.50".into()), port: 8787, api_key: Some("vx_key".into()), fingerprint: Some("ab".repeat(32)) }
+        PairingCode {
+            host: Some("192.168.1.50".into()),
+            port: 8787,
+            api_key: Some("vx_key".into()),
+            fingerprint: Some("ab".repeat(32)),
+        }
     }
 
     #[test]

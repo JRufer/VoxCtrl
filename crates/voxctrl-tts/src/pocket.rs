@@ -12,8 +12,8 @@ use anyhow::{Context, Result};
 use tracing::info;
 
 use crate::audiocpp::{self, resolve_hf_reference, AudioCppSession, SpeakRequest, SpeakerRef};
-use crate::utterance::PlaybackCallback;
 use crate::piper::expand_tilde;
+use crate::utterance::PlaybackCallback;
 
 // ── Pocket-TTS voice catalogue ────────────────────────────────────────────────
 //
@@ -31,9 +31,9 @@ pub struct PocketTtsVoiceInfo {
 }
 
 pub static POCKET_TTS_VOICES: &[PocketTtsVoiceInfo] = &[
-    PocketTtsVoiceInfo { id: "alba",    label: "Alba (Female)" },
-    PocketTtsVoiceInfo { id: "anna",    label: "Anna (Female)" },
-    PocketTtsVoiceInfo { id: "vera",    label: "Vera (Female)" },
+    PocketTtsVoiceInfo { id: "alba", label: "Alba (Female)" },
+    PocketTtsVoiceInfo { id: "anna", label: "Anna (Female)" },
+    PocketTtsVoiceInfo { id: "vera", label: "Vera (Female)" },
     PocketTtsVoiceInfo { id: "charles", label: "Charles (Male)" },
     PocketTtsVoiceInfo { id: "michael", label: "Michael (Male)" },
 ];
@@ -46,10 +46,7 @@ pub fn pocket_tts_voice(id: &str) -> Option<&'static PocketTtsVoiceInfo> {
 /// voice-cloning engine (Pocket-TTS, Breeze-TTS-2, VoxCPM2) — not specific to
 /// Pocket-TTS despite living in this module.
 pub fn cloned_tts_voices_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("cloned-tts-voices")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("cloned-tts-voices")
 }
 
 fn resolve_cloned_tts_voices_dir(voice_dir: &str) -> PathBuf {
@@ -110,10 +107,8 @@ pub fn pocket_tts_voice_catalogue(voice_dir: &str) -> Vec<PocketTtsVoiceOption> 
         if let Some(existing) = options.iter_mut().find(|o| &o.id == id) {
             existing.label = format!("{} (Custom)", prettify_voice_label(id));
         } else {
-            options.push(PocketTtsVoiceOption {
-                id: id.clone(),
-                label: format!("{} (Custom)", prettify_voice_label(id)),
-            });
+            options
+                .push(PocketTtsVoiceOption { id: id.clone(), label: format!("{} (Custom)", prettify_voice_label(id)) });
         }
     }
     options
@@ -156,9 +151,7 @@ fn builtin_wav_reference_clip(id: &str) -> Option<&'static str> {
 /// resolve/download (see [`crate::audiocpp::resolve_hf_reference`]) — a plain
 /// local path is returned as-is.
 pub(crate) fn resolve_wav_reference_clip(id: &str, voice_dir: &str) -> Option<String> {
-    if let Some((_, path)) =
-        scan_custom_pocket_tts_voices(voice_dir).into_iter().find(|(cid, _)| cid == id)
-    {
+    if let Some((_, path)) = scan_custom_pocket_tts_voices(voice_dir).into_iter().find(|(cid, _)| cid == id) {
         return Some(path.to_string_lossy().into_owned());
     }
     builtin_wav_reference_clip(id).map(str::to_string)
@@ -171,11 +164,7 @@ const POCKET_TTS_GGUF_FILE: &str = "PocketTTS-GGUF/english/pocket-tts-english-q8
 const POCKET_TTS_MODEL_FILENAME: &str = "pocket-tts-english-q8_0.gguf";
 
 pub fn pocket_tts_model_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("models")
-        .join("pocket-tts")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("models").join("pocket-tts")
 }
 
 fn embedding_hf_reference(voice_id: &str) -> String {

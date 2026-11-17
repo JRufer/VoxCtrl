@@ -152,16 +152,12 @@ fn is_build_dir(exe: &Path) -> bool {
 
 /// Whether a file name belongs to the Vulkan (GPU) AppImage build.
 pub fn is_vulkan_build(path: &Path) -> bool {
-    path.file_name()
-        .map(|n| n.to_string_lossy().to_lowercase().contains("vulkan"))
-        .unwrap_or(false)
+    path.file_name().map(|n| n.to_string_lossy().to_lowercase().contains("vulkan")).unwrap_or(false)
 }
 
 /// Whether a file name belongs to the Vulkan + WebGPU AppImage build.
 pub fn is_webgpu_build(path: &Path) -> bool {
-    path.file_name()
-        .map(|n| n.to_string_lossy().to_lowercase().contains("webgpu"))
-        .unwrap_or(false)
+    path.file_name().map(|n| n.to_string_lossy().to_lowercase().contains("webgpu")).unwrap_or(false)
 }
 
 /// Pick the release asset that replaces this installation.
@@ -197,37 +193,33 @@ pub fn select_asset<'a>(kind: &InstallKind, assets: &'a [ReleaseAsset]) -> Optio
         // its existing name, so those installations keep classifying themselves
         // as non-Vulkan forever — this is the permanent path for them, not a
         // one-release migration.
-        InstallKind::AppImage { vulkan: false, .. } => {
-            appimage_named(assets, "-linux-x86_64.appimage")
-                .or_else(|| appimage_named(assets, "-linux-x86_64-vulkan.appimage"))
-        }
+        InstallKind::AppImage { vulkan: false, .. } => appimage_named(assets, "-linux-x86_64.appimage")
+            .or_else(|| appimage_named(assets, "-linux-x86_64-vulkan.appimage")),
         // Same rule as the AppImage above: keep the GPU build when the release
         // has one, and take the CPU build rather than skip an update when it
         // does not — it runs on the same machine.
-        InstallKind::WindowsInstaller { webgpu: true } => windows_named(assets, "-windows-x86_64-webgpu.exe")
-            .or_else(|| windows_named(assets, "-windows-x86_64.exe")),
+        InstallKind::WindowsInstaller { webgpu: true } => {
+            windows_named(assets, "-windows-x86_64-webgpu.exe").or_else(|| windows_named(assets, "-windows-x86_64.exe"))
+        }
         // Releases from the version that merged the two Windows installers on
         // carry no plain CPU build. The CPU installations already out there
         // must land on the WebGPU build rather than find nothing and quietly
         // stop updating — it runs on the CPU when the host has no usable GPU,
         // so it is the same app on that machine. Same rule as the CPU
         // AppImage above.
-        InstallKind::WindowsInstaller { webgpu: false } => windows_named(assets, "-windows-x86_64.exe")
-            .or_else(|| windows_named(assets, "-windows-x86_64-webgpu.exe")),
+        InstallKind::WindowsInstaller { webgpu: false } => {
+            windows_named(assets, "-windows-x86_64.exe").or_else(|| windows_named(assets, "-windows-x86_64-webgpu.exe"))
+        }
         InstallKind::ManagedPackage | InstallKind::Unmanaged => None,
     }
 }
 
 fn windows_named<'a>(assets: &'a [ReleaseAsset], suffix: &str) -> Option<&'a ReleaseAsset> {
-    assets
-        .iter()
-        .find(|a| a.name.to_lowercase().ends_with(suffix))
+    assets.iter().find(|a| a.name.to_lowercase().ends_with(suffix))
 }
 
 fn appimage_named<'a>(assets: &'a [ReleaseAsset], suffix: &str) -> Option<&'a ReleaseAsset> {
-    assets
-        .iter()
-        .find(|a| a.name.to_lowercase().ends_with(suffix))
+    assets.iter().find(|a| a.name.to_lowercase().ends_with(suffix))
 }
 
 #[cfg(test)]
@@ -274,18 +266,11 @@ mod tests {
 
     #[test]
     fn a_webgpu_appimage_stays_on_the_webgpu_build() {
-        let assets = vec![
-            asset("VoxCtrl-linux-x86_64-vulkan.AppImage"),
-            asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"),
-        ];
-        let kind = InstallKind::AppImage {
-            path: "/home/u/VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage".into(),
-            vulkan: true,
-        };
-        assert_eq!(
-            select_asset(&kind, &assets).unwrap().name,
-            "VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"
-        );
+        let assets =
+            vec![asset("VoxCtrl-linux-x86_64-vulkan.AppImage"), asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage")];
+        let kind =
+            InstallKind::AppImage { path: "/home/u/VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage".into(), vulkan: true };
+        assert_eq!(select_asset(&kind, &assets).unwrap().name, "VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage");
     }
 
     /// The WebGPU asset must never be picked for a plain Vulkan install: it
@@ -293,28 +278,17 @@ mod tests {
     /// onto a build that does not start.
     #[test]
     fn a_plain_vulkan_appimage_is_never_moved_onto_the_webgpu_build() {
-        let assets = vec![
-            asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"),
-            asset("VoxCtrl-linux-x86_64-vulkan.AppImage"),
-        ];
-        let kind = InstallKind::AppImage {
-            path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(),
-            vulkan: true,
-        };
-        assert_eq!(
-            select_asset(&kind, &assets).unwrap().name,
-            "VoxCtrl-linux-x86_64-vulkan.AppImage"
-        );
+        let assets =
+            vec![asset("VoxCtrl-linux-x86_64-vulkan-webgpu.AppImage"), asset("VoxCtrl-linux-x86_64-vulkan.AppImage")];
+        let kind = InstallKind::AppImage { path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(), vulkan: true };
+        assert_eq!(select_asset(&kind, &assets).unwrap().name, "VoxCtrl-linux-x86_64-vulkan.AppImage");
     }
 
     #[test]
     fn a_vulkan_install_falls_back_when_the_release_has_no_gpu_build() {
         let assets = vec![asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")];
         let kind = InstallKind::AppImage { path: "/home/u/vk.AppImage".into(), vulkan: true };
-        assert_eq!(
-            select_asset(&kind, &assets).unwrap().name,
-            "VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage"
-        );
+        assert_eq!(select_asset(&kind, &assets).unwrap().name, "VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage");
     }
 
     /// Releases from 0.5.2 on carry no CPU AppImage. The CPU installations
@@ -328,10 +302,7 @@ mod tests {
             asset("VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.deb"),
         ];
         let kind = InstallKind::AppImage { path: "/home/u/VoxCtrl.AppImage".into(), vulkan: false };
-        assert_eq!(
-            select_asset(&kind, &assets).unwrap().name,
-            "VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.AppImage"
-        );
+        assert_eq!(select_asset(&kind, &assets).unwrap().name, "VoxCtrl_0.5.2_amd64-linux-x86_64-vulkan.AppImage");
     }
 
     #[test]
@@ -350,42 +321,24 @@ mod tests {
             asset("VoxCtrl-windows-x86_64-webgpu.exe"),
         ];
 
-        let vk_appimage = InstallKind::AppImage {
-            path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(),
-            vulkan: true,
-        };
-        assert_eq!(
-            select_asset(&vk_appimage, &assets).unwrap().name,
-            "VoxCtrl-linux-x86_64-vulkan.AppImage"
-        );
+        let vk_appimage =
+            InstallKind::AppImage { path: "/home/u/VoxCtrl-linux-x86_64-vulkan.AppImage".into(), vulkan: true };
+        assert_eq!(select_asset(&vk_appimage, &assets).unwrap().name, "VoxCtrl-linux-x86_64-vulkan.AppImage");
 
-        let cpu_appimage = InstallKind::AppImage {
-            path: "/home/u/VoxCtrl.AppImage".into(),
-            vulkan: false,
-        };
-        assert_eq!(
-            select_asset(&cpu_appimage, &assets).unwrap().name,
-            "VoxCtrl-linux-x86_64-vulkan.AppImage"
-        );
+        let cpu_appimage = InstallKind::AppImage { path: "/home/u/VoxCtrl.AppImage".into(), vulkan: false };
+        assert_eq!(select_asset(&cpu_appimage, &assets).unwrap().name, "VoxCtrl-linux-x86_64-vulkan.AppImage");
 
         let win_gpu = InstallKind::WindowsInstaller { webgpu: true };
-        assert_eq!(
-            select_asset(&win_gpu, &assets).unwrap().name,
-            "VoxCtrl-windows-x86_64-webgpu.exe"
-        );
+        assert_eq!(select_asset(&win_gpu, &assets).unwrap().name, "VoxCtrl-windows-x86_64-webgpu.exe");
 
         let win_cpu = InstallKind::WindowsInstaller { webgpu: false };
-        assert_eq!(
-            select_asset(&win_cpu, &assets).unwrap().name,
-            "VoxCtrl-windows-x86_64.exe"
-        );
+        assert_eq!(select_asset(&win_cpu, &assets).unwrap().name, "VoxCtrl-windows-x86_64.exe");
     }
 
     #[test]
     fn windows_takes_the_installer() {
         let assets = release_assets();
-        let picked =
-            select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
+        let picked = select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.4.0_x64-setup-windows-x86_64.exe");
     }
 
@@ -394,8 +347,7 @@ mod tests {
         let mut assets = release_assets();
         assets.push(asset("VoxCtrl_0.5.0_x64-setup-windows-x86_64-webgpu.exe"));
 
-        let picked =
-            select_asset(&InstallKind::WindowsInstaller { webgpu: true }, &assets).unwrap();
+        let picked = select_asset(&InstallKind::WindowsInstaller { webgpu: true }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.5.0_x64-setup-windows-x86_64-webgpu.exe");
     }
 
@@ -404,8 +356,7 @@ mod tests {
         // Same rule the Vulkan AppImage follows: a release that shipped only
         // the CPU installer is still an upgrade worth taking.
         let assets = release_assets();
-        let picked =
-            select_asset(&InstallKind::WindowsInstaller { webgpu: true }, &assets).unwrap();
+        let picked = select_asset(&InstallKind::WindowsInstaller { webgpu: true }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.4.0_x64-setup-windows-x86_64.exe");
     }
 
@@ -414,8 +365,7 @@ mod tests {
         let mut assets = release_assets();
         assets.push(asset("VoxCtrl_0.5.0_x64-setup-windows-x86_64-webgpu.exe"));
 
-        let picked =
-            select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
+        let picked = select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.4.0_x64-setup-windows-x86_64.exe");
     }
 
@@ -428,8 +378,7 @@ mod tests {
     fn a_cpu_windows_install_takes_the_webgpu_build_when_that_is_all_the_release_has() {
         let assets = vec![asset("VoxCtrl_0.7.0_x64-setup-windows-x86_64-webgpu.exe")];
 
-        let picked =
-            select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
+        let picked = select_asset(&InstallKind::WindowsInstaller { webgpu: false }, &assets).unwrap();
         assert_eq!(picked.name, "VoxCtrl_0.7.0_x64-setup-windows-x86_64-webgpu.exe");
     }
 
@@ -443,10 +392,7 @@ mod tests {
     fn package_installs_have_no_asset_and_say_why() {
         assert!(select_asset(&InstallKind::ManagedPackage, &release_assets()).is_none());
         assert!(!InstallKind::ManagedPackage.can_self_update());
-        assert!(InstallKind::ManagedPackage
-            .unsupported_reason()
-            .unwrap()
-            .contains("package manager"));
+        assert!(InstallKind::ManagedPackage.unsupported_reason().unwrap().contains("package manager"));
     }
 
     #[test]
@@ -472,14 +418,8 @@ mod tests {
 
     #[test]
     fn a_cargo_build_is_not_something_to_overwrite() {
-        assert_eq!(
-            classify_exe_path(Path::new("/home/u/VoxCtrl/target/debug/voxctrl")),
-            InstallKind::Unmanaged
-        );
-        assert_eq!(
-            classify_exe_path(Path::new("/home/u/VoxCtrl/target/release/voxctrl")),
-            InstallKind::Unmanaged
-        );
+        assert_eq!(classify_exe_path(Path::new("/home/u/VoxCtrl/target/debug/voxctrl")), InstallKind::Unmanaged);
+        assert_eq!(classify_exe_path(Path::new("/home/u/VoxCtrl/target/release/voxctrl")), InstallKind::Unmanaged);
     }
 
     #[cfg(not(target_os = "windows"))]

@@ -71,8 +71,7 @@ fn group_bindings(bindings: &[HotkeyBinding]) -> Vec<ShortcutGroup> {
         // who binds dictation to bare Escape shares this group with it, and
         // their binding is a standing one — so the group is too, and the stop
         // key rides along on a registration that is never given back.
-        let transient =
-            crate::trigger::is_reserved_for_the_desktop(&b.keys) && b.id == TTS_STOP_BINDING_ID;
+        let transient = crate::trigger::is_reserved_for_the_desktop(&b.keys) && b.id == TTS_STOP_BINDING_ID;
         let signature = b.trigger_signature();
         let entry = groups.entry(signature.clone()).or_insert_with(|| {
             order.push(signature.clone());
@@ -88,29 +87,19 @@ fn group_bindings(bindings: &[HotkeyBinding]) -> Vec<ShortcutGroup> {
         if !entry.description.is_empty() {
             entry.description.push_str(" / ");
         }
-        entry.description.push_str(if b.label.is_empty() {
-            "Dictate"
-        } else {
-            &b.label
-        });
+        entry.description.push_str(if b.label.is_empty() { "Dictate" } else { &b.label });
         entry.binding_ids.push(b.id.clone());
     }
 
-    order
-        .into_iter()
-        .filter_map(|s| groups.remove(&s))
-        .collect()
+    order.into_iter().filter_map(|s| groups.remove(&s)).collect()
 }
 
 /// Portal shortcut ids must be stable across restarts — the compositor keys the
 /// user's chosen binding off them — and may not contain the separators the
 /// portal uses in object paths.
 fn shortcut_id(signature: &str) -> String {
-    let slug: String = signature
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
+    let slug: String =
+        signature.to_ascii_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
     format!("voxctrl_{slug}")
 }
 
@@ -125,10 +114,7 @@ fn shortcut_id(signature: &str) -> String {
 /// shortcut, disabled by default (bugs.kde.org #483639), and the stop key would
 /// never fire again.
 fn transient_shortcut_ids() -> std::collections::HashSet<String> {
-    crate::trigger::RESERVED_KEYS
-        .iter()
-        .map(|k| shortcut_id(&k.to_ascii_uppercase()))
-        .collect()
+    crate::trigger::RESERVED_KEYS.iter().map(|k| shortcut_id(&k.to_ascii_uppercase())).collect()
 }
 
 /// The application id VoxCtrl declares to the desktop.
@@ -196,14 +182,9 @@ pub async fn start(
     // Before the first portal call of any kind — see `register_host_app_id`.
     let registration = register_host_app_id().await;
 
-    let portal = GlobalShortcuts::new()
-        .await
-        .map_err(|e| PortalError::Unavailable(format!("{e}")))?;
+    let portal = GlobalShortcuts::new().await.map_err(|e| PortalError::Unavailable(format!("{e}")))?;
 
-    let session = portal
-        .create_session(Default::default())
-        .await
-        .map_err(|e| session_error(e, &registration))?;
+    let session = portal.create_session(Default::default()).await.map_err(|e| session_error(e, &registration))?;
 
     // The standing shortcuts — everything but a transiently-held stop key — are
     // what this session carries, and it is never rebuilt for the stop key's
@@ -225,17 +206,7 @@ pub async fn start(
     );
 
     tokio::spawn(async move {
-        run(
-            portal,
-            session,
-            bindings,
-            groups,
-            transient_groups,
-            tx,
-            rx_reload,
-            health,
-        )
-        .await;
+        run(portal, session, bindings, groups, transient_groups, tx, rx_reload, health).await;
     });
 
     Ok(())
@@ -252,9 +223,7 @@ fn session_error(e: ashpd::Error, registration: &Result<(), String>) -> PortalEr
         return PortalError::Unavailable(message);
     }
     PortalError::Rejected(match registration {
-        Err(why) => format!(
-            "{message}. VoxCtrl could not declare an application id to this desktop: {why}"
-        ),
+        Err(why) => format!("{message}. VoxCtrl could not declare an application id to this desktop: {why}"),
         Ok(()) => format!(
             "{message}. VoxCtrl declared itself as `{APP_ID}` and the desktop accepted the \
              declaration, then still refused the session — which points at a bug or a \
@@ -284,10 +253,7 @@ async fn bind_groups(
 
     let shortcuts: Vec<NewShortcut> = groups
         .iter()
-        .map(|g| {
-            NewShortcut::new(g.id.clone(), g.description.clone())
-                .preferred_trigger(g.trigger.as_deref())
-        })
+        .map(|g| NewShortcut::new(g.id.clone(), g.description.clone()).preferred_trigger(g.trigger.as_deref()))
         .collect();
 
     if shortcuts.is_empty() {
@@ -299,9 +265,7 @@ async fn bind_groups(
         .await
         .map_err(|e| PortalError::Rejected(format!("{e}")))?;
 
-    let response = request
-        .response()
-        .map_err(|e| PortalError::Rejected(format!("{e}")))?;
+    let response = request.response().map_err(|e| PortalError::Rejected(format!("{e}")))?;
 
     Ok(describe(groups, response.shortcuts()))
 }
@@ -316,36 +280,22 @@ async fn bind_groups(
 /// settings stay in sync with VoxCtrl's configured bindings, labels, and names.
 async fn sync_kde_shortcuts(groups: &[ShortcutGroup]) {
     let transient = transient_shortcut_ids();
-    let group_details: std::collections::HashMap<&str, (&str, Option<&str>)> = groups
-        .iter()
-        .map(|g| (g.id.as_str(), (g.description.as_str(), g.trigger.as_deref())))
-        .collect();
+    let group_details: std::collections::HashMap<&str, (&str, Option<&str>)> =
+        groups.iter().map(|g| (g.id.as_str(), (g.description.as_str(), g.trigger.as_deref()))).collect();
 
     // 1. Unregister deleted shortcuts over D-Bus from KGlobalAccel
     if let Ok(connection) = zbus::Connection::session().await {
-        if let Ok(proxy) = zbus::Proxy::new(
-            &connection,
-            "org.kde.kglobalaccel",
-            "/kglobalaccel",
-            "org.kde.KGlobalAccel",
-        )
-        .await
+        if let Ok(proxy) =
+            zbus::Proxy::new(&connection, "org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel").await
         {
-            let components = [
-                "ai.voxctrl.app",
-                "ai.voxctrl.app.desktop",
-                "voxctrl",
-                "voxctrl.desktop",
-            ];
+            let components = ["ai.voxctrl.app", "ai.voxctrl.app.desktop", "voxctrl", "voxctrl.desktop"];
 
             for component in components {
-                let actions: Vec<Vec<String>> = match proxy
-                    .call("allActionsForComponent", &([component].as_slice(),))
-                    .await
-                {
-                    Ok(a) => a,
-                    Err(_) => continue,
-                };
+                let actions: Vec<Vec<String>> =
+                    match proxy.call("allActionsForComponent", &([component].as_slice(),)).await {
+                        Ok(a) => a,
+                        Err(_) => continue,
+                    };
 
                 for action in actions {
                     if action.len() >= 2 {
@@ -354,9 +304,8 @@ async fn sync_kde_shortcuts(groups: &[ShortcutGroup]) {
                             && !transient.contains(shortcut_id.as_str());
 
                         if is_stale {
-                            let unregister_res: Result<bool, zbus::Error> = proxy
-                                .call("unregister", &(component, shortcut_id.as_str()))
-                                .await;
+                            let unregister_res: Result<bool, zbus::Error> =
+                                proxy.call("unregister", &(component, shortcut_id.as_str())).await;
                             match unregister_res {
                                 Ok(unregistered) => {
                                     tracing::info!(
@@ -367,10 +316,7 @@ async fn sync_kde_shortcuts(groups: &[ShortcutGroup]) {
                                     );
                                 }
                                 Err(e) => {
-                                    tracing::debug!(
-                                        "Failed to unregister KDE shortcut `{}`: {e}",
-                                        shortcut_id
-                                    );
+                                    tracing::debug!("Failed to unregister KDE shortcut `{}`: {e}", shortcut_id);
                                 }
                             }
                         }
@@ -412,10 +358,8 @@ async fn update_kglobalshortcutsrc(
         let trimmed = line.trim();
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             let section = &trimmed[1..trimmed.len() - 1];
-            in_voxctrl_section = matches!(
-                section,
-                "ai.voxctrl.app" | "ai.voxctrl.app.desktop" | "voxctrl" | "voxctrl.desktop"
-            );
+            in_voxctrl_section =
+                matches!(section, "ai.voxctrl.app" | "ai.voxctrl.app.desktop" | "voxctrl" | "voxctrl.desktop");
             new_lines.push(line.to_string());
             continue;
         }
@@ -434,16 +378,8 @@ async fn update_kglobalshortcutsrc(
                     // "current,default[,description]": keep both keys (filling
                     // an unset one with ours) and rewrite the description.
                     if parts.len() >= 2 {
-                        let cur_key = if parts[0] == "none" || parts[0].is_empty() {
-                            default_key
-                        } else {
-                            parts[0]
-                        };
-                        let def_key = if parts[1] == "none" || parts[1].is_empty() {
-                            default_key
-                        } else {
-                            parts[1]
-                        };
+                        let cur_key = if parts[0] == "none" || parts[0].is_empty() { default_key } else { parts[0] };
+                        let def_key = if parts[1] == "none" || parts[1].is_empty() { default_key } else { parts[1] };
                         new_lines.push(format!("{key}={cur_key},{def_key},{expected_desc}"));
                     } else {
                         new_lines.push(format!("{key}={val},{expected_desc}"));
@@ -483,21 +419,12 @@ fn split_groups(groups: Vec<ShortcutGroup>) -> (Vec<ShortcutGroup>, Vec<Shortcut
 /// is the gesture engine's business, not the portal's.
 fn same_groups(a: &[ShortcutGroup], b: &[ShortcutGroup]) -> bool {
     a.len() == b.len()
-        && a.iter().zip(b.iter()).all(|(a, b)| {
-            a.id == b.id && a.description == b.description && a.trigger == b.trigger
-        })
+        && a.iter().zip(b.iter()).all(|(a, b)| a.id == b.id && a.description == b.description && a.trigger == b.trigger)
 }
 
 /// Which bindings each shortcut id fires, across every session.
-fn shortcut_map(
-    standing: &[ShortcutGroup],
-    transient: &[ShortcutGroup],
-) -> HashMap<String, Vec<String>> {
-    standing
-        .iter()
-        .chain(transient.iter())
-        .map(|g| (g.id.clone(), g.binding_ids.clone()))
-        .collect()
+fn shortcut_map(standing: &[ShortcutGroup], transient: &[ShortcutGroup]) -> HashMap<String, Vec<String>> {
+    standing.iter().chain(transient.iter()).map(|g| (g.id.clone(), g.binding_ids.clone())).collect()
 }
 
 /// A fresh session carrying `groups`, or the reason there is not one.
@@ -511,10 +438,7 @@ async fn rebind(
     groups: &[ShortcutGroup],
     known: Option<&[ShortcutGroup]>,
 ) -> Result<(Session<GlobalShortcuts>, Vec<BoundShortcut>), PortalError> {
-    let session = portal
-        .create_session(Default::default())
-        .await
-        .map_err(|e| PortalError::Rejected(format!("{e}")))?;
+    let session = portal.create_session(Default::default()).await.map_err(|e| PortalError::Rejected(format!("{e}")))?;
     match bind_groups(portal, &session, groups, known).await {
         Ok(bound) => Ok((session, bound)),
         Err(e) => {
@@ -534,9 +458,7 @@ fn describe(groups: &[ShortcutGroup], shortcuts: &[Shortcut]) -> Vec<BoundShortc
             BoundShortcut {
                 binding_ids: g.binding_ids.clone(),
                 requested: g.trigger.clone(),
-                trigger_description: bound
-                    .map(|s| s.trigger_description().to_string())
-                    .unwrap_or_default(),
+                trigger_description: bound.map(|s| s.trigger_description().to_string()).unwrap_or_default(),
                 bound: bound.is_some(),
             }
         })
@@ -554,10 +476,7 @@ fn describe(groups: &[ShortcutGroup], shortcuts: &[Shortcut]) -> Vec<BoundShortc
 /// a Super+Space binding has nothing to do with a Ctrl+V paste, and its
 /// releases must keep working normally throughout one.
 fn injection_overlaps(engine: &GestureEngine, binding_id: &str) -> bool {
-    engine
-        .bindings()
-        .find(|b| b.id == binding_id)
-        .is_some_and(|b| voxctrl_winput::injection_overlaps(&b.keys))
+    engine.bindings().find(|b| b.id == binding_id).is_some_and(|b| voxctrl_winput::injection_overlaps(&b.keys))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -910,24 +829,13 @@ mod tests {
         // fresh, disabled shortcut (bugs.kde.org #483639) that never fires.
         let ids = transient_shortcut_ids();
         for spelling in ["KEY_ESC", "KEY_ESCAPE"] {
-            let id = group_bindings(&[binding("s", &[spelling], GestureType::Hold)])[0]
-                .id
-                .clone();
-            assert!(
-                ids.contains(&id),
-                "{spelling} registers as `{id}`, which must be protected"
-            );
+            let id = group_bindings(&[binding("s", &[spelling], GestureType::Hold)])[0].id.clone();
+            assert!(ids.contains(&id), "{spelling} registers as `{id}`, which must be protected");
         }
 
         // And the protection is exactly that wide: an ordinary shortcut the
         // user really did delete still gets cleaned up.
-        let ordinary = group_bindings(&[binding(
-            "d",
-            &["KEY_LEFTMETA", "KEY_SPACE"],
-            GestureType::Hold,
-        )])[0]
-            .id
-            .clone();
+        let ordinary = group_bindings(&[binding("d", &["KEY_LEFTMETA", "KEY_SPACE"], GestureType::Hold)])[0].id.clone();
         assert!(!ids.contains(&ordinary));
     }
 
@@ -986,10 +894,7 @@ mod tests {
         let (standing, transient) = split_groups(group_bindings(&[mine, theirs]));
         assert_eq!(standing.len(), 1, "one shortcut, one registration");
         assert!(transient.is_empty());
-        assert_eq!(
-            standing[0].binding_ids,
-            vec!["__tts_stop__", "dictate-on-escape"]
-        );
+        assert_eq!(standing[0].binding_ids, vec!["__tts_stop__", "dictate-on-escape"]);
     }
 
     /// The self-injection window is a process global, so these cannot run
@@ -1004,9 +909,7 @@ mod tests {
             binding("super-space", &["KEY_LEFTMETA", "KEY_SPACE"], GestureType::Hold),
         ]);
 
-        let guard = voxctrl_winput::begin_self_injection(
-            voxctrl_winput::Shortcut::CtrlV.key_names(),
-        );
+        let guard = voxctrl_winput::begin_self_injection(voxctrl_winput::Shortcut::CtrlV.key_names());
         assert!(
             injection_overlaps(&engine, "ctrl-space"),
             "Ctrl+V and Ctrl+Space share Ctrl, so a release during the paste is suspect"
@@ -1021,18 +924,10 @@ mod tests {
     #[test]
     fn nothing_is_self_inflicted_once_the_paste_is_over() {
         let _lock = INJECTION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let engine = GestureEngine::new(vec![binding(
-            "ctrl-space",
-            &["KEY_LEFTCTRL", "KEY_SPACE"],
-            GestureType::Hold,
-        )]);
+        let engine = GestureEngine::new(vec![binding("ctrl-space", &["KEY_LEFTCTRL", "KEY_SPACE"], GestureType::Hold)]);
 
-        drop(voxctrl_winput::begin_self_injection(
-            voxctrl_winput::Shortcut::CtrlV.key_names(),
-        ));
-        std::thread::sleep(
-            voxctrl_winput::self_injection_grace() + std::time::Duration::from_millis(50),
-        );
+        drop(voxctrl_winput::begin_self_injection(voxctrl_winput::Shortcut::CtrlV.key_names()));
+        std::thread::sleep(voxctrl_winput::self_injection_grace() + std::time::Duration::from_millis(50));
 
         assert!(!injection_overlaps(&engine, "ctrl-space"));
     }
@@ -1041,9 +936,7 @@ mod tests {
     fn an_unknown_binding_is_never_self_inflicted() {
         let _lock = INJECTION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let engine = GestureEngine::new(Vec::new());
-        let guard = voxctrl_winput::begin_self_injection(
-            voxctrl_winput::Shortcut::CtrlV.key_names(),
-        );
+        let guard = voxctrl_winput::begin_self_injection(voxctrl_winput::Shortcut::CtrlV.key_names());
         assert!(!injection_overlaps(&engine, "gone"));
         drop(guard);
     }

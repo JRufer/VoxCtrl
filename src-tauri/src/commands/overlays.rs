@@ -18,10 +18,8 @@ pub struct CustomOverlayInfo {
 /// unless it collides with a built-in style's internal name, in which case
 /// `_custom` is appended so it stays selectable without clashing.
 fn custom_overlay_display_name(folder_name: &str) -> String {
-    const RESERVED: &[&str] = &[
-        "waveform", "pulse", "blue_wave", "voice_card", "none",
-        "mono_bars", "spectrum", "terminal", "vinyl",
-    ];
+    const RESERVED: &[&str] =
+        &["waveform", "pulse", "blue_wave", "voice_card", "none", "mono_bars", "spectrum", "terminal", "vinyl"];
     if RESERVED.contains(&folder_name.to_lowercase().as_str()) {
         format!("{folder_name}_custom")
     } else {
@@ -90,11 +88,7 @@ pub const LIVE_TEXT_MARKER: &str = "data-voxctrl-live-text";
 /// The attributes a custom overlay can use to receive live text: the whole
 /// transcript (`data-voxctrl-live-text`) or its committed and tentative words
 /// (`data-voxctrl-live-committed`, `data-voxctrl-live-tentative`).
-const LIVE_TEXT_MARKERS: [&str; 3] = [
-    LIVE_TEXT_MARKER,
-    "data-voxctrl-live-committed",
-    "data-voxctrl-live-tentative",
-];
+const LIVE_TEXT_MARKERS: [&str; 3] = [LIVE_TEXT_MARKER, "data-voxctrl-live-committed", "data-voxctrl-live-tentative"];
 
 /// The built-in styles, all of which show live text when it is switched on.
 const BUILTIN_STYLES: [&str; 8] =

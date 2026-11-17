@@ -55,10 +55,7 @@ pub fn snapshot() -> Result<Snapshot> {
     // as the slowest one — and a format that stalls costs its own timeout,
     // not the others' as well.
     let results: Vec<(String, Result<Vec<u8>>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = types
-            .iter()
-            .map(|mime| (mime.clone(), s.spawn(move || read_one(mime))))
-            .collect();
+        let handles: Vec<_> = types.iter().map(|mime| (mime.clone(), s.spawn(move || read_one(mime)))).collect();
         handles
             .into_iter()
             .map(|(mime, h)| {
@@ -122,8 +119,7 @@ fn read_one(mime: &str) -> Result<Vec<u8>> {
 
 /// The clipboard's text, if it holds any.
 pub fn current_text() -> Option<String> {
-    let (mut reader, _) =
-        paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Text).ok()?;
+    let (mut reader, _) = paste::get_contents(ClipboardType::Regular, Seat::Unspecified, paste::MimeType::Text).ok()?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut data = Vec::new();
@@ -152,35 +148,32 @@ fn serve(sources: Vec<MimeSource>, sensitive: bool, exact: bool) -> Result<Held>
     let owned_t = owned.clone();
     let (tx, rx) = std::sync::mpsc::channel::<Result<()>>();
 
-    std::thread::Builder::new()
-        .name("voxctrl-clipboard-owner".into())
-        .spawn(move || {
-            let mut opts = Options::new();
-            // Required by `prepare_copy_multi` (it asserts it): serve from
-            // this thread rather than forking a background process.
-            opts.foreground(true);
-            opts.sensitive(sensitive);
-            // wl-clipboard-rs offers extra plain-text types whenever a text
-            // type is present. For a restore that would invent formats the
-            // user never had — an HTML-only clipboard would gain a
-            // `text/plain` holding the markup — so a restore offers exactly
-            // what was saved.
-            opts.omit_additional_text_mime_types(exact);
-            let prepared = match opts.prepare_copy_multi(sources) {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = tx.send(Err(anyhow!("{e}")));
-                    return;
-                }
-            };
-            owned_t.store(true, Ordering::SeqCst);
-            let _ = tx.send(Ok(()));
-            let _ = prepared.serve();
-            owned_t.store(false, Ordering::SeqCst);
-        })?;
+    std::thread::Builder::new().name("voxctrl-clipboard-owner".into()).spawn(move || {
+        let mut opts = Options::new();
+        // Required by `prepare_copy_multi` (it asserts it): serve from
+        // this thread rather than forking a background process.
+        opts.foreground(true);
+        opts.sensitive(sensitive);
+        // wl-clipboard-rs offers extra plain-text types whenever a text
+        // type is present. For a restore that would invent formats the
+        // user never had — an HTML-only clipboard would gain a
+        // `text/plain` holding the markup — so a restore offers exactly
+        // what was saved.
+        opts.omit_additional_text_mime_types(exact);
+        let prepared = match opts.prepare_copy_multi(sources) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = tx.send(Err(anyhow!("{e}")));
+                return;
+            }
+        };
+        owned_t.store(true, Ordering::SeqCst);
+        let _ = tx.send(Ok(()));
+        let _ = prepared.serve();
+        owned_t.store(false, Ordering::SeqCst);
+    })?;
 
-    rx.recv_timeout(Duration::from_secs(3))
-        .map_err(|_| anyhow!("timed out taking the clipboard"))??;
+    rx.recv_timeout(Duration::from_secs(3)).map_err(|_| anyhow!("timed out taking the clipboard"))??;
     Ok(Held { owned })
 }
 

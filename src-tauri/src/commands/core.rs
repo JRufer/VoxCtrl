@@ -11,8 +11,7 @@ use crate::state::AppState;
 #[tauri::command]
 pub async fn get_status(state: State<'_, Arc<AppState>>) -> Result<StatusPayload, String> {
     let active_target_id = state.active_target.lock().await.clone();
-    let target_label =
-        voxctrl_routing::targets_display_label(&active_target_id, &state.targets.lock().await);
+    let target_label = voxctrl_routing::targets_display_label(&active_target_id, &state.targets.lock().await);
 
     Ok(StatusPayload {
         recording: state.is_recording(),
@@ -35,10 +34,7 @@ pub async fn get_remote_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::remote_monitor::RemoteStatusPayload, String> {
     let cfg = state.config.lock().await;
-    Ok(crate::remote_monitor::RemoteStatusPayload::new(
-        voxctrl_inference::remote_status::current(),
-        &cfg.data,
-    ))
+    Ok(crate::remote_monitor::RemoteStatusPayload::new(voxctrl_inference::remote_status::current(), &cfg.data))
 }
 
 #[derive(serde::Serialize)]
@@ -129,9 +125,8 @@ pub async fn save_config(
     {
         let history = state.history.clone();
         let wanted = new_config.history.clone();
-        new_config.history = tokio::task::spawn_blocking(move || history.apply_config(&wanted))
-            .await
-            .map_err(|e| e.to_string())?;
+        new_config.history =
+            tokio::task::spawn_blocking(move || history.apply_config(&wanted)).await.map_err(|e| e.to_string())?;
     }
     let _ = app.emit("history-changed", ());
 
@@ -146,10 +141,8 @@ pub async fn save_config(
     // A remote server's address or key may just have changed: ask it now.
     crate::remote_monitor::recheck();
 
-    let (overlay_position, overlay_monitor) = (
-        guard.data.ui.overlay_position.clone(),
-        guard.data.ui.overlay_monitor.clone(),
-    );
+    let (overlay_position, overlay_monitor) =
+        (guard.data.ui.overlay_position.clone(), guard.data.ui.overlay_monitor.clone());
 
     // Hot-reload the stop key binding in the listener if tts.stop_key changed.
     // The config lock has to go first: assembling the set reads the stop key
@@ -185,9 +178,7 @@ pub async fn save_config(
 }
 
 #[tauri::command]
-pub async fn stop_tts(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn stop_tts(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     info!("TTS stop requested via command");
     let handle = state.tts_handle.lock().await;
     if let Some(ref tts) = *handle {

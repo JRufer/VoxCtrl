@@ -29,11 +29,9 @@ fn the_endpoint_matches_what_this_build_was_compiled_with() {
         // An unset secret in a CI workflow arrives as an empty string, not as
         // an absent variable — so an empty value has to mean "no relay", or
         // every build would advertise a Send button pointing at nothing.
-        None | Some("") => assert_eq!(
-            relay_endpoint(),
-            None,
-            "a build with no endpoint must not offer to send reports"
-        ),
+        None | Some("") => {
+            assert_eq!(relay_endpoint(), None, "a build with no endpoint must not offer to send reports")
+        }
         Some(url) => assert_eq!(relay_endpoint(), Some(url)),
     }
 }
@@ -54,8 +52,5 @@ async fn a_build_with_no_relay_refuses_before_touching_the_network() {
     .expect("the fixture matches BugReport");
 
     let err = submit(&report).await.unwrap_err();
-    assert!(
-        matches!(err, voxctrl_bugreport::SubmitError::NotConfigured),
-        "got {err:?}"
-    );
+    assert!(matches!(err, voxctrl_bugreport::SubmitError::NotConfigured), "got {err:?}");
 }

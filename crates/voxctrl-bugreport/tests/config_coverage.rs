@@ -26,12 +26,8 @@ fn fully_populated() -> AppConfig {
     cfg.tts.breeze_tts_2.legacy_hf_token = Some("hf_legacy_not_a_real_token".into());
     cfg.updates.skipped_version = Some("0.9.0".into());
     cfg.features.show_notification = Some(true);
-    cfg.features
-        .custom_vocabulary
-        .push("a word the user added".into());
-    cfg.features
-        .snippets
-        .insert("trigger".into(), "expansion the user wrote".into());
+    cfg.features.custom_vocabulary.push("a word the user added".into());
+    cfg.features.snippets.insert("trigger".into(), "expansion the user wrote".into());
     cfg
 }
 
@@ -40,11 +36,7 @@ fn string_bearing_paths(prefix: &str, value: &Value, out: &mut Vec<String>) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                let path = if prefix.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{prefix}.{key}")
-                };
+                let path = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
                 // A map keyed by user input (snippets) is itself the leaf: its
                 // keys are as much free text as its values.
                 if CONFIG_HANDLING.iter().any(|(p, _)| *p == path) {
@@ -65,10 +57,8 @@ fn every_config_string_is_classified() {
     let mut paths = Vec::new();
     string_bearing_paths("", &json, &mut paths);
 
-    let unclassified: Vec<&String> = paths
-        .iter()
-        .filter(|path| !CONFIG_HANDLING.iter().any(|(p, _)| *p == path.as_str()))
-        .collect();
+    let unclassified: Vec<&String> =
+        paths.iter().filter(|path| !CONFIG_HANDLING.iter().any(|(p, _)| *p == path.as_str())).collect();
 
     assert!(
         unclassified.is_empty(),
@@ -87,11 +77,8 @@ fn no_classified_path_has_gone_stale() {
     let mut paths = Vec::new();
     string_bearing_paths("", &json, &mut paths);
 
-    let stale: Vec<&str> = CONFIG_HANDLING
-        .iter()
-        .map(|(p, _)| *p)
-        .filter(|p| !paths.iter().any(|found| found == p))
-        .collect();
+    let stale: Vec<&str> =
+        CONFIG_HANDLING.iter().map(|(p, _)| *p).filter(|p| !paths.iter().any(|found| found == p)).collect();
 
     assert!(
         stale.is_empty(),
@@ -111,16 +98,11 @@ fn a_real_config_full_of_secrets_leaks_none_of_them() {
     cfg.tts.hf_token = Some("hf_SECRETTOKEN".into());
     cfg.tts.voice_dir = "/home/SECRETUSER/voices".into();
     cfg.features.custom_vocabulary = vec!["SECRETWORD".into()];
-    cfg.features
-        .snippets
-        .insert("addr".into(), "SECRETADDRESS".into());
+    cfg.features.snippets.insert("addr".into(), "SECRETADDRESS".into());
     cfg.tts.breeze_tts_2.speaker_prompt = "sounds like SECRETPERSON".into();
 
     let scrubber = Scrubber::new(Some("/home/SECRETUSER".into()), Some("SECRETUSER".into()));
-    let redacted = redact_config(
-        &serde_json::to_value(&cfg).expect("AppConfig serialises"),
-        &scrubber,
-    );
+    let redacted = redact_config(&serde_json::to_value(&cfg).expect("AppConfig serialises"), &scrubber);
     let text = serde_json::to_string_pretty(&redacted).expect("redacted config serialises");
 
     for secret in [
@@ -133,10 +115,7 @@ fn a_real_config_full_of_secrets_leaks_none_of_them() {
         "SECRETADDRESS",
         "SECRETPERSON",
     ] {
-        assert!(
-            !text.contains(secret),
-            "{secret} survived redaction:\n{text}"
-        );
+        assert!(!text.contains(secret), "{secret} survived redaction:\n{text}");
     }
 
     // And the settings that explain bugs did survive.

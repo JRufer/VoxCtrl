@@ -97,11 +97,7 @@ pub fn default_model_dir() -> PathBuf {
 
 /// Directory holding one model's files: `<model_dir>/<size>/`.
 fn model_size_dir(model_dir: &str, size: &str) -> PathBuf {
-    let base = if model_dir.is_empty() {
-        default_model_dir()
-    } else {
-        crate::util::expand_tilde(model_dir)
-    };
+    let base = if model_dir.is_empty() { default_model_dir() } else { crate::util::expand_tilde(model_dir) };
     base.join(size)
 }
 
@@ -149,12 +145,8 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
         // Write to a temp path then rename so an interrupted download never
         // leaves a half-written file that later looks "present".
         let tmp = path.with_extension("part");
-        tokio::fs::write(&tmp, &bytes)
-            .await
-            .with_context(|| format!("write {}", tmp.display()))?;
-        tokio::fs::rename(&tmp, &path)
-            .await
-            .with_context(|| format!("finalize {}", path.display()))?;
+        tokio::fs::write(&tmp, &bytes).await.with_context(|| format!("write {}", tmp.display()))?;
+        tokio::fs::rename(&tmp, &path).await.with_context(|| format!("finalize {}", path.display()))?;
     }
 
     info!("Moonshine '{size}' model ready in {}", dir.display());
@@ -205,11 +197,7 @@ pub struct MoonshineBackend {
 
 impl MoonshineBackend {
     pub fn new(cfg: MoonshineConfig) -> Self {
-        Self {
-            cfg,
-            state: Mutex::new(None),
-            loaded: false,
-        }
+        Self { cfg, state: Mutex::new(None), loaded: false }
     }
 
     fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
@@ -227,9 +215,7 @@ impl MoonshineBackend {
 
         let mut builder = Self::with_gpu(builder, use_gpu);
 
-        builder
-            .commit_from_file(path)
-            .with_context(|| format!("load ONNX graph {}", path.display()))
+        builder.commit_from_file(path).with_context(|| format!("load ONNX graph {}", path.display()))
     }
 
     /// Register this build's GPU execution provider, if it has one.
@@ -245,11 +231,7 @@ impl MoonshineBackend {
         if !use_gpu {
             return builder;
         }
-        #[cfg(any(
-            feature = "moonshine-cuda",
-            feature = "moonshine-coreml",
-            feature = "moonshine-webgpu"
-        ))]
+        #[cfg(any(feature = "moonshine-cuda", feature = "moonshine-coreml", feature = "moonshine-webgpu"))]
         {
             // One provider, picked in the order they are worth having: CUDA
             // beats a generic device where it exists, CoreML beats WebGPU on
@@ -292,11 +274,7 @@ impl MoonshineBackend {
             }
         }
 
-        #[cfg(not(any(
-            feature = "moonshine-cuda",
-            feature = "moonshine-coreml",
-            feature = "moonshine-webgpu"
-        )))]
+        #[cfg(not(any(feature = "moonshine-cuda", feature = "moonshine-coreml", feature = "moonshine-webgpu")))]
         builder
     }
 }
@@ -338,8 +316,8 @@ impl TranscriptionBackend for MoonshineBackend {
         let encoder = Self::build_session(&dir.join(ENCODER_FILE), use_gpu)?;
         let decoder = Self::build_session(&dir.join(DECODER_FILE), use_gpu)?;
 
-        let tokenizer = Tokenizer::from_bytes(TOKENIZER_JSON)
-            .map_err(|e| anyhow!("load bundled Moonshine tokenizer: {e}"))?;
+        let tokenizer =
+            Tokenizer::from_bytes(TOKENIZER_JSON).map_err(|e| anyhow!("load bundled Moonshine tokenizer: {e}"))?;
 
         // Cache tensor names, in the layer/decoder-encoder/key-value order the
         // decoder emits its `present.*` outputs. Used only to map named decoder
@@ -356,8 +334,7 @@ impl TranscriptionBackend for MoonshineBackend {
         }
         let num_caches = cache_names.len();
 
-        let encoder_has_attention_mask =
-            encoder.inputs().iter().any(|i| i.name() == "attention_mask");
+        let encoder_has_attention_mask = encoder.inputs().iter().any(|i| i.name() == "attention_mask");
 
         // Resolve every decoder input to its source once. Binding positionally at
         // run time then needs no name lookups.
@@ -383,10 +360,7 @@ impl TranscriptionBackend for MoonshineBackend {
 
         // Fail at load (not mid-decode) if the model doesn't expose the caches
         // this size expects.
-        let declared_caches = decoder_plan
-            .iter()
-            .filter(|s| matches!(s, DecoderInput::Cache(_)))
-            .count();
+        let declared_caches = decoder_plan.iter().filter(|s| matches!(s, DecoderInput::Cache(_))).count();
         if declared_caches != num_caches {
             bail!(
                 "Moonshine '{size}' decoder declares {declared_caches} cache inputs, expected \
@@ -454,15 +428,14 @@ type CacheVal = (Vec<i64>, Vec<f32>);
 
 fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let n_samples = audio.len();
-    let needs_mask = state.encoder_has_attention_mask
-        || state.decoder_plan.iter().any(|s| matches!(s, DecoderInput::EncoderMask));
+    let needs_mask =
+        state.encoder_has_attention_mask || state.decoder_plan.iter().any(|s| matches!(s, DecoderInput::EncoderMask));
     // `attention_mask` (when a graph takes it) is all-ones over the samples.
     let attention_mask: Vec<i64> = if needs_mask { vec![1; n_samples] } else { Vec::new() };
 
     // ── Encoder: raw waveform → hidden states ─────────────────────────────────
     let hidden: CacheVal = {
-        let audio_tensor = Tensor::from_array(([1_usize, n_samples], audio.to_vec()))
-            .context("build audio tensor")?;
+        let audio_tensor = Tensor::from_array(([1_usize, n_samples], audio.to_vec())).context("build audio tensor")?;
         let mut feed: Vec<(&str, SessionInputValue)> = vec![("input_values", audio_tensor.into())];
         if state.encoder_has_attention_mask {
             let mask = Tensor::from_array(([1_usize, n_samples], attention_mask.clone()))
@@ -470,16 +443,13 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
             feed.push(("attention_mask", mask.into()));
         }
         let outputs = state.encoder.run(feed).context("encoder run")?;
-        let (shape, data) = outputs[0]
-            .try_extract_tensor::<f32>()
-            .context("extract encoder hidden states")?;
+        let (shape, data) = outputs[0].try_extract_tensor::<f32>().context("extract encoder hidden states")?;
         (shape.to_vec(), data.to_vec())
     };
 
     // Hidden states and the encoder attention mask are constant across decoder
     // steps; build them once and feed by reference each iteration.
-    let hidden_tensor =
-        Tensor::from_array((dims(&hidden.0), hidden.1)).context("build hidden-states tensor")?;
+    let hidden_tensor = Tensor::from_array((dims(&hidden.0), hidden.1)).context("build hidden-states tensor")?;
     let enc_mask_tensor = if state.decoder_plan.iter().any(|s| matches!(s, DecoderInput::EncoderMask)) {
         Some(
             Tensor::from_array(([1_usize, n_samples], attention_mask))
@@ -493,8 +463,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let allocator = Allocator::default();
 
     // Caches in emit order; each starts empty (0-element, rank-4).
-    let mut caches: Vec<CacheVal> =
-        vec![(state.empty_cache_shape.to_vec(), Vec::new()); state.num_caches];
+    let mut caches: Vec<CacheVal> = vec![(state.empty_cache_shape.to_vec(), Vec::new()); state.num_caches];
 
     let mut tokens: Vec<i64> = vec![SOT_TOKEN];
     let mut next_input: i64 = SOT_TOKEN;
@@ -520,10 +489,9 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
                 DecoderInput::InputIds => input_ids.take().unwrap().into(),
                 DecoderInput::Hidden => (&hidden_tensor).into(),
                 DecoderInput::UseCache => use_cache_t.take().unwrap().into(),
-                DecoderInput::EncoderMask => enc_mask_tensor
-                    .as_ref()
-                    .expect("EncoderMask slot implies the mask was built")
-                    .into(),
+                DecoderInput::EncoderMask => {
+                    enc_mask_tensor.as_ref().expect("EncoderMask slot implies the mask was built").into()
+                }
                 DecoderInput::Cache(i) => cache_tensors[*i].take().unwrap().into(),
             };
             values.push(val);
@@ -540,9 +508,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
         }
 
         // logits: [1, 1, vocab] → arg-max of the final row.
-        let (lshape, ldata) = outputs[0]
-            .try_extract_tensor::<f32>()
-            .context("extract decoder logits")?;
+        let (lshape, ldata) = outputs[0].try_extract_tensor::<f32>().context("extract decoder logits")?;
         let next_token = argmax_last_row(lshape, ldata);
 
         tokens.push(next_token);
@@ -556,9 +522,8 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
         // cross-attention caches depend solely on the audio and stay fixed.
         for i in 0..state.num_caches {
             if !use_cache || state.cache_is_decoder[i] {
-                let (shape, data) = outputs[i + 1]
-                    .try_extract_tensor::<f32>()
-                    .with_context(|| format!("extract present cache {i}"))?;
+                let (shape, data) =
+                    outputs[i + 1].try_extract_tensor::<f32>().with_context(|| format!("extract present cache {i}"))?;
                 caches[i] = (shape.to_vec(), data.to_vec());
             }
         }
@@ -567,10 +532,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
 
     // ── Detokenize (special tokens stripped) ─────────────────────────────────
     let ids_u32: Vec<u32> = tokens.iter().map(|&t| t as u32).collect();
-    state
-        .tokenizer
-        .decode(&ids_u32, true)
-        .map_err(|e| anyhow!("tokenizer decode: {e}"))
+    state.tokenizer.decode(&ids_u32, true).map_err(|e| anyhow!("tokenizer decode: {e}"))
 }
 
 /// Build a cache tensor. Empty (`data.is_empty()`) caches use the allocator path
@@ -622,7 +584,6 @@ fn empty_result(language: &str) -> TranscriptionResult {
 
 #[cfg(test)]
 mod tests {
-
 
     use super::*;
 

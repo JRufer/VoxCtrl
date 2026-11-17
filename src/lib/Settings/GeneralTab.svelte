@@ -223,7 +223,4 @@
     @apply text-red-400;
   }
 
-  .link {
-    @apply text-[var(--color-accent-blue)] underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer text-inherit;
-  }
 </style>

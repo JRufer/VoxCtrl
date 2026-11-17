@@ -16,16 +16,15 @@ mod win_keys;
 mod linux;
 #[cfg(target_os = "linux")]
 pub mod portal;
-#[cfg(target_os = "linux")]
-mod x11;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "linux")]
+mod x11;
 
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use voxctrl_routing::HotkeyBinding;
-
 
 pub use gestures::{GestureEvent, GestureKind};
 pub use health::{Backend, BoundShortcut, ListenerHealth};

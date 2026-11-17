@@ -190,12 +190,7 @@ async fn wait_for_key_up() {
 
 /// Wait until `held` has been false for `settle`, or `max` has passed.
 /// Returns how long it waited — zero when nothing was held to begin with.
-async fn wait_until_clear(
-    held: impl Fn() -> bool,
-    max: Duration,
-    poll: Duration,
-    settle: Duration,
-) -> Duration {
+async fn wait_until_clear(held: impl Fn() -> bool, max: Duration, poll: Duration, settle: Duration) -> Duration {
     if !held() {
         return Duration::ZERO;
     }
@@ -338,8 +333,8 @@ async fn paste_text(text: &str) -> Result<()> {
     // 2. Put the text on the clipboard. If that fails there is nothing to
     //    paste, and the caller types instead.
     let t = text.to_string();
-    let held = blocking_with_timeout("setting the clipboard", SET_TIMEOUT, move || voxctrl_clipboard::set_text(&t))
-        .await??;
+    let held =
+        blocking_with_timeout("setting the clipboard", SET_TIMEOUT, move || voxctrl_clipboard::set_text(&t)).await??;
     debug!(elapsed = ?started.elapsed(), "text on the clipboard");
 
     // 3. Paste.
@@ -371,9 +366,8 @@ async fn paste_text(text: &str) -> Result<()> {
         // Slow applications get as long as they need, up to a limit; one that
         // has already read the text gets a moment to finish with it.
         let h = held.clone();
-        let read = tokio::task::spawn_blocking(move || h.wait_read_since(mark, PASTE_READ_PATIENCE))
-            .await
-            .unwrap_or(false);
+        let read =
+            tokio::task::spawn_blocking(move || h.wait_read_since(mark, PASTE_READ_PATIENCE)).await.unwrap_or(false);
         if read {
             tokio::time::sleep(PASTE_AFTER_READ).await;
         }
@@ -403,7 +397,9 @@ async fn paste_text(text: &str) -> Result<()> {
         .await;
         match restored {
             Ok(Ok(Some(n))) => tracing::info!(formats = n, elapsed = ?started.elapsed(), "clipboard restored"),
-            Ok(Ok(None)) => tracing::info!("the clipboard changed during the paste and no longer holds the dictation; left alone"),
+            Ok(Ok(None)) => {
+                tracing::info!("the clipboard changed during the paste and no longer holds the dictation; left alone")
+            }
             Ok(Err(e)) => warn!("could not restore the clipboard: {e:#}"),
             Err(e) => warn!("{e:#}"),
         }
@@ -421,9 +417,7 @@ async fn auto_shortcut() -> Shortcut {
 
 #[cfg(target_os = "windows")]
 async fn auto_shortcut() -> Shortcut {
-    tokio::task::spawn_blocking(voxctrl_winput::auto_shortcut)
-        .await
-        .unwrap_or(Shortcut::CtrlV)
+    tokio::task::spawn_blocking(voxctrl_winput::auto_shortcut).await.unwrap_or(Shortcut::CtrlV)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -481,12 +475,7 @@ async fn type_text(text: &str) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 async fn run_cmd(bin: &str, args: &[&str]) -> bool {
-    tokio::process::Command::new(bin)
-        .args(args)
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
+    tokio::process::Command::new(bin).args(args).status().await.map(|s| s.success()).unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -521,10 +510,7 @@ pub fn show_notification(summary: &str, body: &str) {
         }
         #[cfg(target_os = "windows")]
         {
-            let _ = notify_rust::Notification::new()
-                .summary(&summary)
-                .body(&body)
-                .show();
+            let _ = notify_rust::Notification::new().summary(&summary).body(&body).show();
         }
     });
 }

@@ -45,6 +45,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pemfile = "2"
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
+# Timeouts for clients that stall (see `limits.rs`): hyper's header read
+# timeout needs a timer, and a request body that stops sending is cut off.
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+tower-http = { version = "0.6", default-features = false, features = ["timeout"] }
 
 [dev-dependencies]
 # The app's own AI-processing client and hotkey settings, for the contract tests.

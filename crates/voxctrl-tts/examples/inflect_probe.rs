@@ -33,9 +33,7 @@ fn main() {
         }};
     }
 
-    let text = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "Hi this is Inflect Micro speaking from VoxCtrl".to_string());
+    let text = std::env::args().nth(1).unwrap_or_else(|| "Hi this is Inflect Micro speaking from VoxCtrl".to_string());
 
     let dir = inflect::resolve_model_dir("");
     println!("model dir : {}", dir.display());

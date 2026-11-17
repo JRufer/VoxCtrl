@@ -8,9 +8,7 @@ pub async fn check_model_downloaded(model_size: String, model_dir: Option<String
 
 #[tauri::command]
 pub async fn download_model(model_size: String, model_dir: String) -> Result<(), String> {
-    voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir)
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_inference::whisper_cpp::download_model(&model_size, &model_dir).await.map_err(|e| e.to_string())
 }
 
 /// Whether the Moonshine ONNX backend was compiled into this build. The UI uses
@@ -38,14 +36,13 @@ pub async fn check_moonshine_downloaded(model_size: String) -> Result<bool, Stri
 pub async fn download_moonshine_model(model_size: String) -> Result<(), String> {
     #[cfg(feature = "moonshine")]
     {
-        voxctrl_inference::moonshine::download_model(&model_size, "")
-            .await
-            .map_err(|e| e.to_string())
+        voxctrl_inference::moonshine::download_model(&model_size, "").await.map_err(|e| e.to_string())
     }
     #[cfg(not(feature = "moonshine"))]
     {
         let _ = model_size;
-        Err("This build was compiled without the Moonshine backend. Rebuild with `--features moonshine` to use it.".into())
+        Err("This build was compiled without the Moonshine backend. Rebuild with `--features moonshine` to use it."
+            .into())
     }
 }
 
@@ -74,14 +71,13 @@ pub async fn check_parakeet_downloaded(model_size: String) -> Result<bool, Strin
 pub async fn download_parakeet_model(model_size: String) -> Result<(), String> {
     #[cfg(feature = "parakeet")]
     {
-        voxctrl_inference::parakeet::download_model(&model_size, "")
-            .await
-            .map_err(|e| e.to_string())
+        voxctrl_inference::parakeet::download_model(&model_size, "").await.map_err(|e| e.to_string())
     }
     #[cfg(not(feature = "parakeet"))]
     {
         let _ = model_size;
-        Err("This build was compiled without the Parakeet backend. Rebuild with `--features parakeet` to use it.".into())
+        Err("This build was compiled without the Parakeet backend. Rebuild with `--features parakeet` to use it."
+            .into())
     }
 }
 
@@ -92,9 +88,7 @@ pub async fn check_s1_mini_downloaded(model_dir: Option<String>) -> Result<bool,
 
 #[tauri::command]
 pub async fn download_s1_mini_model(model_dir: Option<String>) -> Result<(), String> {
-    voxctrl_inference::s1_mini::download_s1_mini_assets(model_dir.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    voxctrl_inference::s1_mini::download_s1_mini_assets(model_dir.as_deref()).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -148,10 +142,7 @@ pub async fn plan_model_cleanup(
 /// so a model is kept if the saved fallback needs it even when the dialog
 /// asked for it to go.
 #[tauri::command]
-pub async fn run_model_cleanup(
-    state: State<'_, Arc<AppState>>,
-    ids: Vec<String>,
-) -> Result<CleanupResult, String> {
+pub async fn run_model_cleanup(state: State<'_, Arc<AppState>>, ids: Vec<String>) -> Result<CleanupResult, String> {
     let cfg = state.config.lock().await.data.clone();
     let bindings = state.bindings.lock().await.clone();
     let result = tokio::task::spawn_blocking(move || {

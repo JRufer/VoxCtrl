@@ -165,15 +165,11 @@ pub fn evaluate_with(
         return up_to_date;
     }
 
-    let version = version::Version::parse(&latest.tag_name)
-        .map(|v| v.to_string())
-        .unwrap_or_else(|| latest.tag_name.clone());
+    let version =
+        version::Version::parse(&latest.tag_name).map(|v| v.to_string()).unwrap_or_else(|| latest.tag_name.clone());
 
     let asset = install::select_asset(&kind, &latest.assets).cloned();
-    let signature = asset
-        .as_ref()
-        .and_then(|a| signature::find(a, &latest.assets))
-        .cloned();
+    let signature = asset.as_ref().and_then(|a| signature::find(a, &latest.assets)).cloned();
 
     // Self-updating needs both a supported installation *and* a file to
     // install. A release that shipped without this platform's artifact — a
@@ -202,11 +198,8 @@ pub fn evaluate_with(
         (false, _) => (false, kind.unsupported_reason().map(str::to_string)),
     };
 
-    let release_url = if latest.html_url.is_empty() {
-        release::RELEASES_PAGE_URL.to_string()
-    } else {
-        latest.html_url.clone()
-    };
+    let release_url =
+        if latest.html_url.is_empty() { release::RELEASES_PAGE_URL.to_string() } else { latest.html_url.clone() };
 
     CheckOutcome::Available(Box::new(PendingUpdate {
         info: UpdateInfo {
@@ -239,15 +232,12 @@ async fn verify_signature(
         tracing::warn!("this build has no update-signing key; checking the digest only");
         return Ok(());
     };
-    let sig_asset = pending.signature.as_ref().ok_or_else(|| {
-        UpdateError::Other(format!(
-            "{} is not signed, so it was not installed.",
-            asset.name
-        ))
-    })?;
+    let sig_asset = pending
+        .signature
+        .as_ref()
+        .ok_or_else(|| UpdateError::Other(format!("{} is not signed, so it was not installed.", asset.name)))?;
     let text = signature::fetch(client, sig_asset).await?;
-    signature::verify_file_blocking(path, text, public_key, asset.name.clone(), pending.info.tag.clone())
-        .await
+    signature::verify_file_blocking(path, text, public_key, asset.name.clone(), pending.info.tag.clone()).await
 }
 
 /// Whether an automatic check should raise a found update with the user,
@@ -270,14 +260,10 @@ pub fn should_prompt(info: &UpdateInfo, skipped_version: Option<&str>) -> bool {
 ///
 /// On Linux that is the replaced AppImage; on Windows it is the downloaded
 /// installer, which does the replacing itself.
-pub async fn install(
-    pending: &PendingUpdate,
-    mut on_progress: impl FnMut(Progress),
-) -> Result<PathBuf> {
+pub async fn install(pending: &PendingUpdate, mut on_progress: impl FnMut(Progress)) -> Result<PathBuf> {
     let asset = pending.asset.as_ref().ok_or_else(|| {
         UpdateError::Other(
-            "This release has no download for your platform, so there is nothing to install."
-                .to_string(),
+            "This release has no download for your platform, so there is nothing to install.".to_string(),
         )
     })?;
 
@@ -330,11 +316,7 @@ pub async fn install(
             Ok(dest)
         }
         InstallKind::ManagedPackage | InstallKind::Unmanaged => Err(UpdateError::Other(
-            pending
-                .kind
-                .unsupported_reason()
-                .unwrap_or("This installation cannot update itself.")
-                .to_string(),
+            pending.kind.unsupported_reason().unwrap_or("This installation cannot update itself.").to_string(),
         )),
     }
 }
@@ -376,10 +358,7 @@ mod tests {
 
     #[test]
     fn a_newer_release_is_offered_with_the_matching_asset() {
-        let rel = release_with(
-            "v0.4.0",
-            vec![appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")],
-        );
+        let rel = release_with("v0.4.0", vec![appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")]);
         let pending = match evaluate(&rel, "0.3.10", appimage_kind()) {
             CheckOutcome::Available(p) => p,
             other => panic!("expected an update, got {other:?}"),
@@ -388,10 +367,7 @@ mod tests {
         assert_eq!(pending.info.tag, "v0.4.0");
         assert_eq!(pending.info.current_version, "0.3.10");
         assert!(pending.info.can_self_update);
-        assert_eq!(
-            pending.info.asset_name.as_deref(),
-            Some("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")
-        );
+        assert_eq!(pending.info.asset_name.as_deref(), Some("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage"));
         assert_eq!(pending.info.download_size, 98_000_000);
     }
 
@@ -410,10 +386,7 @@ mod tests {
     #[test]
     fn the_same_version_reports_up_to_date() {
         let rel = release_with("v0.3.10", vec![]);
-        assert!(matches!(
-            evaluate(&rel, "0.3.10", appimage_kind()),
-            CheckOutcome::UpToDate { .. }
-        ));
+        assert!(matches!(evaluate(&rel, "0.3.10", appimage_kind()), CheckOutcome::UpToDate { .. }));
     }
 
     #[test]
@@ -422,10 +395,7 @@ mod tests {
         // users onto a build nobody has finished checking.
         let mut rel = release_with("v0.9.0", vec![appimage_asset("VoxCtrl_0.9.0_amd64-linux-x86_64.AppImage")]);
         rel.draft = true;
-        assert!(matches!(
-            evaluate(&rel, "0.3.10", appimage_kind()),
-            CheckOutcome::UpToDate { .. }
-        ));
+        assert!(matches!(evaluate(&rel, "0.3.10", appimage_kind()), CheckOutcome::UpToDate { .. }));
     }
 
     #[test]
@@ -440,10 +410,7 @@ mod tests {
 
     #[test]
     fn a_package_install_is_told_to_use_its_package_manager() {
-        let rel = release_with(
-            "v0.4.0",
-            vec![appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")],
-        );
+        let rel = release_with("v0.4.0", vec![appimage_asset("VoxCtrl_0.4.0_amd64-linux-x86_64.AppImage")]);
         let pending = evaluate(&rel, "0.3.10", InstallKind::ManagedPackage);
         let pending = pending.available().unwrap();
         assert!(!pending.info.can_self_update);

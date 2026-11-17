@@ -7,9 +7,7 @@ use regex::Regex;
 static FILLER_PATTERN: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 fn filler_re() -> &'static Regex {
-    FILLER_PATTERN.get_or_init(|| {
-        Regex::new(r"(?i)\b(uh+|um+|hmm+|er+|ah+|ugh+|mhm+)\b,?\s*").unwrap()
-    })
+    FILLER_PATTERN.get_or_init(|| Regex::new(r"(?i)\b(uh+|um+|hmm+|er+|ah+|ugh+|mhm+)\b,?\s*").unwrap())
 }
 
 pub fn remove_fillers(text: &str) -> String {
@@ -19,35 +17,35 @@ pub fn remove_fillers(text: &str) -> String {
 // ── Spoken punctuation ────────────────────────────────────────────────────────
 
 static PUNCT_WORDS: &[(&str, &str)] = &[
-    ("period",           ". "),
-    ("full stop",        ". "),
-    ("comma",            ", "),
-    ("question mark",    "? "),
+    ("period", ". "),
+    ("full stop", ". "),
+    ("comma", ", "),
+    ("question mark", "? "),
     ("exclamation mark", "! "),
-    ("exclamation point","! "),
-    ("colon",            ": "),
-    ("semicolon",        "; "),
-    ("open bracket",     "("),
-    ("close bracket",    ")"),
-    ("open paren",       "("),
-    ("close paren",      ")"),
-    ("new line",         "\n"),
-    ("new paragraph",    "\n\n"),
-    ("tab",              "\t"),
-    ("dash",             " — "),
-    ("hyphen",           "-"),
-    ("ellipsis",         "..."),
-    ("slash",            "/"),
-    ("backslash",        "\\"),
-    ("at sign",          "@"),
-    ("hash",             "#"),
-    ("percent",          "%"),
-    ("ampersand",        "&"),
-    ("asterisk",         "*"),
-    ("plus sign",        "+"),
-    ("equals sign",      "="),
-    ("less than",        "<"),
-    ("greater than",     ">"),
+    ("exclamation point", "! "),
+    ("colon", ": "),
+    ("semicolon", "; "),
+    ("open bracket", "("),
+    ("close bracket", ")"),
+    ("open paren", "("),
+    ("close paren", ")"),
+    ("new line", "\n"),
+    ("new paragraph", "\n\n"),
+    ("tab", "\t"),
+    ("dash", " — "),
+    ("hyphen", "-"),
+    ("ellipsis", "..."),
+    ("slash", "/"),
+    ("backslash", "\\"),
+    ("at sign", "@"),
+    ("hash", "#"),
+    ("percent", "%"),
+    ("ampersand", "&"),
+    ("asterisk", "*"),
+    ("plus sign", "+"),
+    ("equals sign", "="),
+    ("less than", "<"),
+    ("greater than", ">"),
 ];
 
 // Compiled once at first call; reused for every subsequent transcription.
@@ -66,11 +64,7 @@ fn punct_re() -> &'static Regex {
     PUNCT_RE.get_or_init(|| {
         let mut words: Vec<&str> = PUNCT_WORDS.iter().map(|(word, _)| *word).collect();
         words.sort_by_key(|w| std::cmp::Reverse(w.len()));
-        let alternation = words
-            .iter()
-            .map(|w| regex::escape(w))
-            .collect::<Vec<_>>()
-            .join("|");
+        let alternation = words.iter().map(|w| regex::escape(w)).collect::<Vec<_>>().join("|");
         Regex::new(&format!(r"(?i)\b({alternation})\b")).unwrap()
     })
 }
@@ -81,20 +75,15 @@ fn double_space_re() -> &'static Regex {
 
 fn list_re() -> &'static Regex {
     LIST_RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)\b(first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|finally)\b,?\s*",
-        )
-        .unwrap()
+        Regex::new(r"(?i)\b(first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|finally)\b,?\s*")
+            .unwrap()
     })
 }
 
 pub fn apply_spoken_punctuation(text: &str) -> String {
     let replaced = punct_re().replace_all(text, |caps: &regex::Captures| {
         let spoken = &caps[1];
-        match PUNCT_WORDS
-            .iter()
-            .find(|(word, _)| word.eq_ignore_ascii_case(spoken))
-        {
+        match PUNCT_WORDS.iter().find(|(word, _)| word.eq_ignore_ascii_case(spoken)) {
             Some((_, repl)) => std::borrow::Cow::Borrowed(*repl),
             // Unreachable: the alternation is built from this same table.
             None => std::borrow::Cow::Owned(spoken.to_string()),
@@ -113,12 +102,12 @@ pub fn auto_format_lists(text: &str) -> String {
 
     let mut counter = 1u32;
     re.replace_all(text, |_caps: &regex::Captures| {
-            let prefix = format!("\n{}. ", counter);
-            counter += 1;
-            prefix
-        })
-        .trim()
-        .to_string()
+        let prefix = format!("\n{}. ", counter);
+        counter += 1;
+        prefix
+    })
+    .trim()
+    .to_string()
 }
 
 // ── Snippet expansion ─────────────────────────────────────────────────────────
@@ -133,8 +122,8 @@ pub fn apply_code_mode(text: &str) -> String {
     // Replace spaces between words with underscores (snake_case by default)
     // Words that look like operators are preserved
     static OPERATOR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let operator_re = OPERATOR_RE
-        .get_or_init(|| Regex::new(r"\b(equals|plus|minus|times|divided by|modulo)\b").unwrap());
+    let operator_re =
+        OPERATOR_RE.get_or_init(|| Regex::new(r"\b(equals|plus|minus|times|divided by|modulo)\b").unwrap());
     let s = operator_re
         .replace_all(text, |caps: &regex::Captures| -> String {
             match caps[0].to_lowercase().as_str() {
@@ -182,11 +171,7 @@ pub use voxctrl_text::{correct_custom_vocabulary, levenshtein_distance, normaliz
 // ── Full post-processing pipeline ─────────────────────────────────────────────
 
 pub fn is_silence_hallucination(text: &str) -> bool {
-    let cleaned = text
-        .trim()
-        .trim_end_matches(|c: char| c.is_ascii_punctuation())
-        .trim()
-        .to_lowercase();
+    let cleaned = text.trim().trim_end_matches(|c: char| c.is_ascii_punctuation()).trim().to_lowercase();
     cleaned == "thank you" || cleaned == "thanks for watching" || cleaned == "thank you for watching"
 }
 
@@ -256,14 +241,8 @@ mod tests {
         // every entry in the table has to still come out as its punctuation.
         for (word, repl) in PUNCT_WORDS {
             let out = apply_spoken_punctuation(&format!("a {word} b"));
-            assert!(
-                !out.to_lowercase().contains(word),
-                "'{word}' survived as a spoken word: {out:?}"
-            );
-            assert!(
-                out.contains(repl.trim()),
-                "'{word}' did not produce {repl:?}: {out:?}"
-            );
+            assert!(!out.to_lowercase().contains(word), "'{word}' survived as a spoken word: {out:?}");
+            assert!(out.contains(repl.trim()), "'{word}' did not produce {repl:?}: {out:?}");
         }
     }
 
@@ -284,18 +263,9 @@ mod tests {
     #[test]
     fn test_spoken_punct_correctness() {
         // The regex matches only the spoken word; the preceding space is preserved.
-        assert_eq!(
-            apply_spoken_punctuation("Hello period world"),
-            "Hello . world"
-        );
-        assert_eq!(
-            apply_spoken_punctuation("yes comma no"),
-            "yes , no"
-        );
-        assert_eq!(
-            apply_spoken_punctuation("what question mark"),
-            "what ?"
-        );
+        assert_eq!(apply_spoken_punctuation("Hello period world"), "Hello . world");
+        assert_eq!(apply_spoken_punctuation("yes comma no"), "yes , no");
+        assert_eq!(apply_spoken_punctuation("what question mark"), "what ?");
     }
 
     /// The regression this fixes: with no custom vocabulary — the default
@@ -315,15 +285,9 @@ mod tests {
             code_mode: false,
             custom_vocabulary: &[],
         };
-        assert_eq!(
-            run_pipeline("vox control say hello", &cfg),
-            "VoxCtrl say hello"
-        );
+        assert_eq!(run_pipeline("vox control say hello", &cfg), "VoxCtrl say hello");
         // And it still leaves ordinary speech alone.
-        assert_eq!(
-            run_pipeline("the foxes control the hen house", &cfg),
-            "the foxes control the hen house"
-        );
+        assert_eq!(run_pipeline("the foxes control the hen house", &cfg), "the foxes control the hen house");
     }
 
     #[test]
@@ -333,7 +297,7 @@ mod tests {
         assert!(is_silence_hallucination("thank you"));
         assert!(is_silence_hallucination("Thanks for watching"));
         assert!(is_silence_hallucination("Thank you for watching."));
-        
+
         // These should NOT be matched as silence hallucinations
         assert!(!is_silence_hallucination("Thank you for your help"));
         assert!(!is_silence_hallucination("Thank you very much"));

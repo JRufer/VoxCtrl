@@ -5,6 +5,7 @@ const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import AppStylesEditor from "../../src/lib/Settings/AppStylesEditor.svelte";
+import AppStylesHost from "./hosts/AppStylesHost.svelte";
 import type { AppStyleRule } from "../../src/stores/config";
 
 const OPTIONS = [
@@ -65,6 +66,31 @@ describe("AppStylesEditor", () => {
     await fireEvent.click(screen.getByRole("button", { name: /Detect app/ }));
     await vi.waitFor(() => expect(screen.getByRole("status").textContent).toContain("kdotool"));
     expect(state.rules).toEqual([]);
+  });
+
+  test("removing a row in the middle leaves the others showing their own app and style", async () => {
+    const { container } = render(AppStylesHost, {
+      props: {
+        initial: [
+          { app: "slack", styling: "casual" },
+          { app: "outlook", styling: "formal" },
+          { app: "terminal", styling: "semi-formal" },
+        ],
+        options: OPTIONS,
+      },
+    });
+    await fireEvent.click(screen.getAllByRole("button", { name: "Remove rule" })[1]);
+
+    const apps = [...container.querySelectorAll<HTMLInputElement>('input[aria-label="App name"]')].map((i) => i.value);
+    expect(apps).toEqual(["slack", "terminal"]);
+    const rows = [...container.querySelectorAll(".dynamic-list-row")].map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("Casual");
+    expect(rows[1]).toContain("Semi-formal");
+    expect(rows[1]).not.toContain("Formal (");
+    expect(JSON.parse(screen.getByTestId("rules").textContent ?? "")).toEqual([
+      { app: "slack", styling: "casual" },
+      { app: "terminal", styling: "semi-formal" },
+    ]);
   });
 
   test("rules can be added and removed by hand", async () => {

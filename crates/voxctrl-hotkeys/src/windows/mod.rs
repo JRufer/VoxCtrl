@@ -43,9 +43,9 @@ use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
-    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT,
-    LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, SetWindowsHookExW,
+    TranslateMessage, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL,
+    WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 /// Marker on every keystroke VoxCtrl synthesises. Defined by `voxctrl-winput`,
@@ -76,10 +76,8 @@ struct RawKey {
 
 static EVENTS: Mutex<Option<crossbeam_channel::Sender<RawKey>>> = Mutex::new(None);
 static PLAN: RwLock<Option<SuppressPlan>> = RwLock::new(None);
-static PRESSED: [AtomicBool; keymap::NAMES.len()] =
-    [const { AtomicBool::new(false) }; keymap::NAMES.len()];
-static SWALLOWED: [AtomicBool; keymap::NAMES.len()] =
-    [const { AtomicBool::new(false) }; keymap::NAMES.len()];
+static PRESSED: [AtomicBool; keymap::NAMES.len()] = [const { AtomicBool::new(false) }; keymap::NAMES.len()];
+static SWALLOWED: [AtomicBool; keymap::NAMES.len()] = [const { AtomicBool::new(false) }; keymap::NAMES.len()];
 /// Monotonic count of events the hook has handled, read by the watchdog.
 static SEEN: AtomicUsize = AtomicUsize::new(0);
 /// Thread id of the pump, so the watchdog can ask it to exit.
@@ -135,10 +133,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             // to suppress for one keystroke is a far smaller fault than being
             // silently unhooked.
             let decided = match PLAN.try_read() {
-                Ok(plan) => plan
-                    .as_ref()
-                    .map(|plan| plan.should_swallow(id, &PRESSED))
-                    .unwrap_or(false),
+                Ok(plan) => plan.as_ref().map(|plan| plan.should_swallow(id, &PRESSED)).unwrap_or(false),
                 Err(_) => false,
             };
             SWALLOWED[id].store(decided, Ordering::Relaxed);
@@ -187,9 +182,8 @@ pub fn start(
     health.set_backend(Backend::WindowsHook);
 
     let failed = health.clone();
-    if let Err(e) = std::thread::Builder::new()
-        .name("voxctrl-winhook".into())
-        .spawn(move || run(bindings, tx, rx_reload, health))
+    if let Err(e) =
+        std::thread::Builder::new().name("voxctrl-winhook".into()).spawn(move || run(bindings, tx, rx_reload, health))
     {
         failed.set_backend_failed(format!("cannot start the keyboard hook: {e}"));
     }
@@ -261,23 +255,13 @@ enum PumpOutcome {
 }
 
 fn pump_once() -> PumpOutcome {
-    let hook: HHOOK = unsafe {
-        SetWindowsHookExW(
-            WH_KEYBOARD_LL,
-            Some(hook_proc),
-            std::ptr::null_mut(),
-            0,
-        )
-    };
+    let hook: HHOOK = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), std::ptr::null_mut(), 0) };
     if hook.is_null() {
         return PumpOutcome::CannotHook(std::io::Error::last_os_error());
     }
     info!("Win32 low-level keyboard hook installed");
 
-    PUMP_THREAD.store(
-        unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() },
-        Ordering::SeqCst,
-    );
+    PUMP_THREAD.store(unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() }, Ordering::SeqCst);
 
     // `GetMessageW` returns 0 on WM_QUIT and -1 on error; either ends the loop
     // and the hook is reinstalled. The messages themselves are of no interest —
@@ -377,46 +361,44 @@ fn foreground_window_is_elevated() -> bool {
 /// budget the hook cannot spare on something that changes only when focus
 /// does.
 fn spawn_watchdog(health: Arc<ListenerHealth>) {
-    let _ = std::thread::Builder::new()
-        .name("voxctrl-winhook-watchdog".into())
-        .spawn(move || {
-            let mut last_seen = SEEN.load(Ordering::Relaxed);
-            let mut quiet_since = Instant::now();
-            loop {
-                std::thread::sleep(WATCHDOG_TICK);
+    let _ = std::thread::Builder::new().name("voxctrl-winhook-watchdog".into()).spawn(move || {
+        let mut last_seen = SEEN.load(Ordering::Relaxed);
+        let mut quiet_since = Instant::now();
+        loop {
+            std::thread::sleep(WATCHDOG_TICK);
 
-                health.set_elevated_window_focused(foreground_window_is_elevated());
+            health.set_elevated_window_focused(foreground_window_is_elevated());
 
-                let seen = SEEN.load(Ordering::Relaxed);
-                if seen != last_seen {
-                    last_seen = seen;
-                    quiet_since = Instant::now();
-                    continue;
-                }
-                if quiet_since.elapsed() < WATCHDOG_SILENCE {
-                    continue;
-                }
-                let thread = PUMP_THREAD.load(Ordering::SeqCst);
-                if thread == 0 {
-                    continue;
-                }
-                warn!(
-                    "no keyboard events for {}s; reinstalling the hook in case Windows \
-                     removed it for overrunning LowLevelHooksTimeout",
-                    WATCHDOG_SILENCE.as_secs()
-                );
-                health.set_backend(Backend::WindowsHook);
-                unsafe {
-                    let _ = windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
-                        thread,
-                        windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT,
-                        0,
-                        0,
-                    );
-                }
+            let seen = SEEN.load(Ordering::Relaxed);
+            if seen != last_seen {
+                last_seen = seen;
                 quiet_since = Instant::now();
+                continue;
             }
-        });
+            if quiet_since.elapsed() < WATCHDOG_SILENCE {
+                continue;
+            }
+            let thread = PUMP_THREAD.load(Ordering::SeqCst);
+            if thread == 0 {
+                continue;
+            }
+            warn!(
+                "no keyboard events for {}s; reinstalling the hook in case Windows \
+                     removed it for overrunning LowLevelHooksTimeout",
+                WATCHDOG_SILENCE.as_secs()
+            );
+            health.set_backend(Backend::WindowsHook);
+            unsafe {
+                let _ = windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
+                    thread,
+                    windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT,
+                    0,
+                    0,
+                );
+            }
+            quiet_since = Instant::now();
+        }
+    });
 }
 
 /// Match raw keys against bindings and drive the gesture engine.

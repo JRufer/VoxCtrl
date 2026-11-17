@@ -64,11 +64,7 @@ fn default_onnx_device() -> String {
 
 impl Default for MoonshineConfig {
     fn default() -> Self {
-        Self {
-            model_size: "base".into(),
-            language: "en".into(),
-            device: default_onnx_device(),
-        }
+        Self { model_size: "base".into(), language: "en".into(), device: default_onnx_device() }
     }
 }
 
@@ -84,11 +80,7 @@ pub struct ParakeetConfig {
 
 impl Default for ParakeetConfig {
     fn default() -> Self {
-        Self {
-            model_size: "tdt-0.6b-v3".into(),
-            language: "auto".into(),
-            device: default_onnx_device(),
-        }
+        Self { model_size: "tdt-0.6b-v3".into(), language: "auto".into(), device: default_onnx_device() }
     }
 }
 
@@ -171,7 +163,13 @@ pub enum BackendChoice {
     WhisperCpp,
     Moonshine,
     Parakeet,
-    #[serde(rename = "remote-openai", alias = "remote-open-ai", alias = "remote_openai", alias = "openai-compatible", alias = "remote")]
+    #[serde(
+        rename = "remote-openai",
+        alias = "remote-open-ai",
+        alias = "remote_openai",
+        alias = "openai-compatible",
+        alias = "remote"
+    )]
     RemoteOpenAi,
 }
 
@@ -230,12 +228,7 @@ fn default_true() -> bool {
 
 impl Default for S1MiniConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-            styling: default_s1_mini_styling(),
-            gpu: true,
-            app_styles: Vec::new(),
-        }
+        Self { enabled: false, styling: default_s1_mini_styling(), gpu: true, app_styles: Vec::new() }
     }
 }
 

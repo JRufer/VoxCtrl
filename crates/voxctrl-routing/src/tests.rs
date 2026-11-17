@@ -1,5 +1,5 @@
-use crate::models::{DeliveryType, OutputTarget};
 use crate::loader::{load_targets, save_targets};
+use crate::models::{DeliveryType, OutputTarget};
 use crate::targets::build_target;
 
 #[test]
@@ -55,10 +55,7 @@ fn test_mcp_config_roundtrip() {
     assert_eq!(loaded_target.delivery, DeliveryType::Mcp);
     assert_eq!(loaded_target.mcp_path.as_deref(), Some("/tmp/custom-mcp.sock"));
     assert_eq!(loaded_target.mcp_tool.as_deref(), Some("speak_text"));
-    assert_eq!(
-        loaded_target.mcp_args.as_ref().unwrap(),
-        &serde_json::json!({ "message": "{TEXT}" })
-    );
+    assert_eq!(loaded_target.mcp_args.as_ref().unwrap(), &serde_json::json!({ "message": "{TEXT}" }));
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
@@ -66,8 +63,8 @@ fn test_mcp_config_roundtrip() {
 #[cfg(unix)]
 #[tokio::test]
 async fn test_mcp_delivery_handshake() {
-    use tokio::net::UnixListener;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixListener;
 
     let socket_path = format!("/tmp/voxctrl-mcp-test-{}.sock", chrono::Utc::now().timestamp_millis());
     let socket_path_clone = socket_path.clone();
@@ -172,10 +169,11 @@ async fn test_mcp_delivery_handshake() {
 
 #[test]
 fn test_hotkey_binding_multi_target_roundtrip() {
-    use crate::models::{GestureType, HotkeyBinding};
     use crate::loader::{load_bindings, save_bindings};
+    use crate::models::{GestureType, HotkeyBinding};
 
-    let temp_dir = std::env::temp_dir().join(format!("voxctrl_bindings_test_{}", chrono::Utc::now().timestamp_millis()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("voxctrl_bindings_test_{}", chrono::Utc::now().timestamp_millis()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     let binding = HotkeyBinding {
@@ -354,11 +352,7 @@ async fn test_clipboard_target_success() {
     // stopped being found would quietly send the test down the `else` branch,
     // where it asserts almost nothing.
     #[cfg(target_os = "linux")]
-    assert!(
-        res.success,
-        "the mock clipboard tool should have satisfied delivery: {:?}",
-        res.error
-    );
+    assert!(res.success, "the mock clipboard tool should have satisfied delivery: {:?}", res.error);
     if res.success {
         // Clipboard delivery ends its text with one space, exactly like inject:
         // dictation arrives an utterance at a time, and without it the next one
@@ -394,10 +388,8 @@ struct MockClipboardTool {
 impl MockClipboardTool {
     fn install() -> Self {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!(
-            "voxctrl_clipboard_probe_{}",
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-        ));
+        let dir = std::env::temp_dir()
+            .join(format!("voxctrl_clipboard_probe_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()));
         std::fs::create_dir_all(&dir).unwrap();
         let bin = dir.join("wl-copy");
         // Reads stdin so the delivery side sees the same "consumed the text and
@@ -422,18 +414,16 @@ impl Drop for MockClipboardTool {
 async fn test_clipboard_target_linux_cli() {
     let _env = env_lock().lock().await;
 
-    let temp_dir = std::env::temp_dir().join(format!("voxctrl_clipboard_test_{}", chrono::Utc::now().timestamp_millis()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("voxctrl_clipboard_test_{}", chrono::Utc::now().timestamp_millis()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     // Mock wl-copy that writes its input to a file so we can assert it was called with the right data.
     let mock_wl_copy = temp_dir.join("wl-copy");
     let test_output_file = temp_dir.join("test_clipboard_output.txt");
-    let script = format!(
-        "#!/bin/sh\ncat > \"{}\"\nexit 0\n",
-        test_output_file.to_string_lossy()
-    );
+    let script = format!("#!/bin/sh\ncat > \"{}\"\nexit 0\n", test_output_file.to_string_lossy());
     std::fs::write(&mock_wl_copy, script).unwrap();
-    
+
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&mock_wl_copy, std::fs::Permissions::from_mode(0o755)).unwrap();
     let _wayland = EnvVarGuard::set("WAYLAND_DISPLAY", "mock-display");
@@ -593,8 +583,8 @@ async fn test_pipe_target_failure_no_path() {
 // 5. Socket Target
 #[tokio::test]
 async fn test_socket_target_success_tcp() {
-    use tokio::net::TcpListener;
     use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -635,8 +625,8 @@ async fn test_socket_target_failure_closed_port() {
 #[cfg(unix)]
 #[tokio::test]
 async fn test_socket_target_success_unix() {
-    use tokio::net::UnixListener;
     use tokio::io::AsyncReadExt;
+    use tokio::net::UnixListener;
 
     let socket_path = format!("/tmp/voxctrl_socket_unix_test_{}.sock", chrono::Utc::now().timestamp_millis());
     let socket_path_clone = socket_path.clone();
@@ -740,7 +730,7 @@ async fn test_file_target_success_timestamp_formatting() {
 
     let content = std::fs::read_to_string(&test_file).unwrap();
     println!("TIMESTAMP FILE CONTENT: {:?}", content);
-    
+
     assert!(content.contains("LOG: Timestamped Message\n"));
     assert!(content.starts_with('['));
     assert!(content.contains("Z] LOG:"));
@@ -751,10 +741,8 @@ async fn test_file_target_success_timestamp_formatting() {
 /// A custom strftime pattern is what the file actually receives.
 #[tokio::test]
 async fn file_target_uses_the_configured_timestamp_format() {
-    let test_file = std::env::temp_dir().join(format!(
-        "voxctrl_ts_format_{}.log",
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
+    let test_file = std::env::temp_dir()
+        .join(format!("voxctrl_ts_format_{}.log", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()));
 
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::File;
@@ -776,10 +764,8 @@ async fn file_target_uses_the_configured_timestamp_format() {
 /// the line is still written, with the default timestamp.
 #[tokio::test]
 async fn file_target_falls_back_when_the_timestamp_format_is_unusable() {
-    let test_file = std::env::temp_dir().join(format!(
-        "voxctrl_ts_bad_{}.log",
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
+    let test_file = std::env::temp_dir()
+        .join(format!("voxctrl_ts_bad_{}.log", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()));
 
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::File;
@@ -817,7 +803,7 @@ async fn test_dbus_target_platform_unsupported_on_non_linux() {
     config.delivery = DeliveryType::Dbus;
     let target = build_target(config);
     let res = target.deliver("Hello DBus").await;
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         assert!(!res.success);
@@ -837,7 +823,7 @@ async fn test_dbus_target_failure_invalid_signal_name() {
 
     let target = build_target(config);
     let res = target.deliver("Hello").await;
-    
+
     #[cfg(target_os = "linux")]
     {
         assert!(!res.success);
@@ -867,8 +853,8 @@ fn init_test_env() {
 #[tokio::test]
 async fn test_http_target_success_and_failure() {
     init_test_env();
-    use tokio::net::TcpListener;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     // 1. Success path: Server responds 200 OK
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -985,8 +971,8 @@ async fn test_http_target_success_and_failure() {
 #[tokio::test]
 async fn test_http_target_success_custom_json_template() {
     init_test_env();
-    use tokio::net::TcpListener;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -1062,8 +1048,8 @@ async fn test_http_target_failure_no_url() {
 #[tokio::test]
 async fn test_webhook_target_success_and_failure() {
     init_test_env();
-    use tokio::net::TcpListener;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -1135,8 +1121,8 @@ async fn test_webhook_target_success_and_failure() {
 #[tokio::test]
 async fn test_webhook_target_failure_http_error() {
     init_test_env();
-    use tokio::net::TcpListener;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -1210,18 +1196,14 @@ async fn test_mcp_delivery_failure_connect_error() {
     } else {
         "Failed to connect to MCP socket"
     };
-    assert!(
-        res.error.as_ref().unwrap().contains(expected),
-        "expected {expected:?}, got {:?}",
-        res.error
-    );
+    assert!(res.error.as_ref().unwrap().contains(expected), "expected {expected:?}, got {:?}", res.error);
 }
 
 #[cfg(unix)]
 #[tokio::test]
 async fn test_mcp_delivery_failure_server_error() {
-    use tokio::net::UnixListener;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixListener;
 
     let socket_path = format!("/tmp/voxctrl-mcp-fail-test-{}.sock", chrono::Utc::now().timestamp_millis());
     let socket_path_clone = socket_path.clone();
@@ -1235,7 +1217,7 @@ async fn test_mcp_delivery_failure_server_error() {
         // 1. Receive initialize
         let line = lines.next_line().await.unwrap().unwrap();
         assert!(line.contains("initialize"));
-        
+
         // Respond with an initialization error
         let init_err = serde_json::json!({
             "jsonrpc": "2.0",
@@ -1303,7 +1285,8 @@ async fn test_mcp_delivery_failure_server_error() {
 
 #[test]
 fn test_strip_newlines_config_roundtrip() {
-    let temp_dir = std::env::temp_dir().join(format!("voxctrl_strip_nl_test_{}", chrono::Utc::now().timestamp_millis()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("voxctrl_strip_nl_test_{}", chrono::Utc::now().timestamp_millis()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     let target = OutputTarget {
@@ -1359,7 +1342,8 @@ fn test_strip_newlines_config_roundtrip() {
 #[test]
 fn test_example_configurations_load() {
     use crate::loader::load_bindings;
-    let temp_dir = std::env::temp_dir().join(format!("voxctrl_examples_test_{}", chrono::Utc::now().timestamp_millis()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("voxctrl_examples_test_{}", chrono::Utc::now().timestamp_millis()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     let examples_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
@@ -1374,24 +1358,15 @@ fn test_example_configurations_load() {
     assert!(!loaded_bindings.is_empty(), "bindings-multi.toml was parsed empty");
 
     // Test targets examples
-    let targets_files = vec![
-        "targets-basic.toml",
-        "targets-multi.toml",
-        "targets-openai-workflows.toml",
-        "targets-tts-agent.toml",
-    ];
+    let targets_files =
+        vec!["targets-basic.toml", "targets-multi.toml", "targets-openai-workflows.toml", "targets-tts-agent.toml"];
 
     for file_name in targets_files {
         let targets_src = examples_path.join(file_name);
         let targets_dest = temp_dir.join("targets.toml");
         std::fs::copy(&targets_src, &targets_dest).unwrap();
         let loaded_targets = load_targets(&temp_dir);
-        assert!(
-            loaded_targets.is_ok(),
-            "Failed to load target config file {}: {:?}",
-            file_name,
-            loaded_targets.err()
-        );
+        assert!(loaded_targets.is_ok(), "Failed to load target config file {}: {:?}", file_name, loaded_targets.err());
         let loaded_targets = loaded_targets.unwrap();
         assert!(!loaded_targets.is_empty(), "Target config {} was parsed empty", file_name);
     }
@@ -1402,7 +1377,7 @@ fn test_example_configurations_load() {
 #[test]
 fn test_hold_threshold_default() {
     use crate::loader::default_bindings;
-    
+
     // Default bindings use a 200ms hold threshold: long enough to debounce
     // accidental taps, short enough that a normal hotkey press gives feedback
     // (the old 1000ms default made a press look completely dead).
@@ -1417,14 +1392,14 @@ async fn test_speak_target_success() {
     use std::sync::{Arc, Mutex};
     let mut config = OutputTarget::default_inject();
     config.delivery = DeliveryType::Speak;
-    
+
     // Set mock speak callback
     let spoken = Arc::new(Mutex::new(String::new()));
     let spoken_clone = spoken.clone();
     crate::targets::set_speak_callback(Arc::new(move |text| {
         *spoken_clone.lock().unwrap() = text.to_string();
     }));
-    
+
     let target = build_target(config);
     let res = target.deliver("Hello speak target").await;
     assert!(res.success);
@@ -1483,14 +1458,11 @@ fn test_shellexpand_tilde_no_tilde_prefix_unchanged() {
     assert_eq!(shellexpand_tilde_pub(path), path);
 }
 
-
 // ── Chat target ───────────────────────────────────────────────────────────────
 
 /// Minimal OpenAI-compatible mock. Serves `reply_count` chat completions, each
 /// answering with "reply N", and hands back every request body it received.
-async fn spawn_mock_chat_server(
-    reply_count: usize,
-) -> (String, tokio::task::JoinHandle<Vec<serde_json::Value>>) {
+async fn spawn_mock_chat_server(reply_count: usize) -> (String, tokio::task::JoinHandle<Vec<serde_json::Value>>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1516,8 +1488,7 @@ async fn spawn_mock_chat_server(
                     .lines()
                     .find_map(|l| {
                         let (k, v) = l.split_once(':')?;
-                        k.eq_ignore_ascii_case("content-length")
-                            .then(|| v.trim().parse().ok())?
+                        k.eq_ignore_ascii_case("content-length").then(|| v.trim().parse().ok())?
                     })
                     .unwrap_or(0);
                 if raw.len() >= header_end + 4 + len {
@@ -1671,11 +1642,8 @@ async fn test_chat_target_reports_http_errors_and_rolls_back_turn() {
         let body = "{\"error\":\"model not found\"}";
         let _ = sock
             .write_all(
-                format!(
-                    "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
+                format!("HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+                    .as_bytes(),
             )
             .await;
         let _ = sock.shutdown().await;
@@ -1693,10 +1661,7 @@ async fn test_chat_target_reports_http_errors_and_rolls_back_turn() {
 
 #[test]
 fn test_chat_target_config_roundtrip() {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "voxctrl_chat_test_{}",
-        chrono::Utc::now().timestamp_millis()
-    ));
+    let temp_dir = std::env::temp_dir().join(format!("voxctrl_chat_test_{}", chrono::Utc::now().timestamp_millis()));
     std::fs::create_dir_all(&temp_dir).unwrap();
 
     let mut target = chat_target("hermes", "http://localhost:8765");
@@ -1736,46 +1701,44 @@ fn test_chat_api_base_normalizes_endpoints() {
 fn test_parse_voice_command_no_keyword() {
     use crate::targets::parse_voice_command;
 
-    let targets = vec![
-        OutputTarget {
-            id: "notes".into(),
-            label: "Notes".into(),
-            delivery: DeliveryType::File,
-            file_path: Some("/tmp/notes.txt".into()),
-            file_prefix: "".into(),
-            file_timestamp_format: crate::timestamp::default_file_timestamp_format(),
-            file_timestamp: false,
-            file_mode: "append".into(),
-            strip_newlines: false,
-            skip_history: false,
-            http_method: "POST".into(),
-            chat_max_history: 20,
-            chat_timeout_secs: 120,
-            chat_reply_mode: "speak".into(),
-            processing: Default::default(),
-            command: None,
-            pipe_path: None,
-            socket_host: None,
-            socket_port: None,
-            socket_unix: None,
-            dbus_signal: None,
-            http_url: None,
-            http_headers: None,
-            http_json_template: None,
-            webhook_url: None,
-            webhook_secret: None,
-            webhook_json_template: None,
-            mcp_path: None,
-            mcp_tool: None,
-            mcp_args: None,
-            chat_url: None,
-            chat_model: None,
-            chat_api_key: None,
-            chat_system_prompt: None,
-            chat_reset_phrase: None,
-            response_pipe: None,
-        },
-    ];
+    let targets = vec![OutputTarget {
+        id: "notes".into(),
+        label: "Notes".into(),
+        delivery: DeliveryType::File,
+        file_path: Some("/tmp/notes.txt".into()),
+        file_prefix: "".into(),
+        file_timestamp_format: crate::timestamp::default_file_timestamp_format(),
+        file_timestamp: false,
+        file_mode: "append".into(),
+        strip_newlines: false,
+        skip_history: false,
+        http_method: "POST".into(),
+        chat_max_history: 20,
+        chat_timeout_secs: 120,
+        chat_reply_mode: "speak".into(),
+        processing: Default::default(),
+        command: None,
+        pipe_path: None,
+        socket_host: None,
+        socket_port: None,
+        socket_unix: None,
+        dbus_signal: None,
+        http_url: None,
+        http_headers: None,
+        http_json_template: None,
+        webhook_url: None,
+        webhook_secret: None,
+        webhook_json_template: None,
+        mcp_path: None,
+        mcp_tool: None,
+        mcp_args: None,
+        chat_url: None,
+        chat_model: None,
+        chat_api_key: None,
+        chat_system_prompt: None,
+        chat_reset_phrase: None,
+        response_pipe: None,
+    }];
 
     assert!(parse_voice_command("hi there", &targets).is_none());
     assert!(parse_voice_command("Hey folks, notes about meeting", &targets).is_none());
@@ -1790,46 +1753,44 @@ fn test_parse_voice_command_no_keyword() {
 fn test_parse_voice_command_matched_target() {
     use crate::targets::parse_voice_command;
 
-    let targets = vec![
-        OutputTarget {
-            id: "notes".into(),
-            label: "Notes".into(),
-            delivery: DeliveryType::File,
-            file_path: Some("/tmp/notes.txt".into()),
-            file_prefix: "".into(),
-            file_timestamp_format: crate::timestamp::default_file_timestamp_format(),
-            file_timestamp: false,
-            file_mode: "append".into(),
-            strip_newlines: false,
-            skip_history: false,
-            http_method: "POST".into(),
-            chat_max_history: 20,
-            chat_timeout_secs: 120,
-            chat_reply_mode: "speak".into(),
-            processing: Default::default(),
-            command: None,
-            pipe_path: None,
-            socket_host: None,
-            socket_port: None,
-            socket_unix: None,
-            dbus_signal: None,
-            http_url: None,
-            http_headers: None,
-            http_json_template: None,
-            webhook_url: None,
-            webhook_secret: None,
-            webhook_json_template: None,
-            mcp_path: None,
-            mcp_tool: None,
-            mcp_args: None,
-            chat_url: None,
-            chat_model: None,
-            chat_api_key: None,
-            chat_system_prompt: None,
-            chat_reset_phrase: None,
-            response_pipe: None,
-        },
-    ];
+    let targets = vec![OutputTarget {
+        id: "notes".into(),
+        label: "Notes".into(),
+        delivery: DeliveryType::File,
+        file_path: Some("/tmp/notes.txt".into()),
+        file_prefix: "".into(),
+        file_timestamp_format: crate::timestamp::default_file_timestamp_format(),
+        file_timestamp: false,
+        file_mode: "append".into(),
+        strip_newlines: false,
+        skip_history: false,
+        http_method: "POST".into(),
+        chat_max_history: 20,
+        chat_timeout_secs: 120,
+        chat_reply_mode: "speak".into(),
+        processing: Default::default(),
+        command: None,
+        pipe_path: None,
+        socket_host: None,
+        socket_port: None,
+        socket_unix: None,
+        dbus_signal: None,
+        http_url: None,
+        http_headers: None,
+        http_json_template: None,
+        webhook_url: None,
+        webhook_secret: None,
+        webhook_json_template: None,
+        mcp_path: None,
+        mcp_tool: None,
+        mcp_args: None,
+        chat_url: None,
+        chat_model: None,
+        chat_api_key: None,
+        chat_system_prompt: None,
+        chat_reset_phrase: None,
+        response_pipe: None,
+    }];
 
     let res = parse_voice_command("VoxCtrl notes Hi there", &targets).expect("should match");
     assert_eq!(res.matched_target_id, "notes");
@@ -1839,36 +1800,40 @@ fn test_parse_voice_command_matched_target() {
     assert_eq!(res2.matched_target_id, "notes");
     assert_eq!(res2.payload, "please write this down");
 
-    let res3 = parse_voice_command("VoxCtrl add this to my notes. What are you doing here?", &targets).expect("should match conversational notes");
+    let res3 = parse_voice_command("VoxCtrl add this to my notes. What are you doing here?", &targets)
+        .expect("should match conversational notes");
     assert_eq!(res3.matched_target_id, "notes");
     assert_eq!(res3.payload, "What are you doing here?");
 
-    let res4 = parse_voice_command("VoxCtrl put this into my Notes: What are you doing here?", &targets).expect("should match conversational put into notes");
+    let res4 = parse_voice_command("VoxCtrl put this into my Notes: What are you doing here?", &targets)
+        .expect("should match conversational put into notes");
     assert_eq!(res4.matched_target_id, "notes");
     assert_eq!(res4.payload, "What are you doing here?");
 
-    let res5 = parse_voice_command("VoxCtrl send us to my notes. I love you.", &targets).expect("should match conversational send us to my notes");
+    let res5 = parse_voice_command("VoxCtrl send us to my notes. I love you.", &targets)
+        .expect("should match conversational send us to my notes");
     assert_eq!(res5.matched_target_id, "notes");
     assert_eq!(res5.payload, "I love you.");
 
-    let speak_targets = vec![
-        OutputTarget {
-            id: "speak".into(),
-            label: "Speak Text Aloud (TTS)".into(),
-            delivery: DeliveryType::Speak,
-            ..OutputTarget::default_inject()
-        },
-    ];
+    let speak_targets = vec![OutputTarget {
+        id: "speak".into(),
+        label: "Speak Text Aloud (TTS)".into(),
+        delivery: DeliveryType::Speak,
+        ..OutputTarget::default_inject()
+    }];
 
-    let res6 = parse_voice_command("box control speak text", &speak_targets).expect("should match box control homophone");
+    let res6 =
+        parse_voice_command("box control speak text", &speak_targets).expect("should match box control homophone");
     assert_eq!(res6.matched_target_id, "speak");
     assert_eq!(res6.payload, "text");
 
-    let res7 = parse_voice_command("Box control, speak, eat my ass.", &speak_targets).expect("should match Box control homophone with punctuation");
+    let res7 = parse_voice_command("Box control, speak, eat my ass.", &speak_targets)
+        .expect("should match Box control homophone with punctuation");
     assert_eq!(res7.matched_target_id, "speak");
     assert_eq!(res7.payload, "eat my ass.");
 
-    let res8 = parse_voice_command("Walks control speak how are you?", &speak_targets).expect("should match Walks control dynamic trigger pattern");
+    let res8 = parse_voice_command("Walks control speak how are you?", &speak_targets)
+        .expect("should match Walks control dynamic trigger pattern");
     assert_eq!(res8.matched_target_id, "speak");
     assert_eq!(res8.payload, "how are you?");
 
@@ -1881,27 +1846,33 @@ fn test_parse_voice_command_matched_target() {
     assert_eq!(res10.matched_target_id, "notes");
     assert_eq!(res10.payload, "Hi there");
 
-    let res11 = parse_voice_command("Hey, Vox, notes Hi there", &targets).expect("should match Hey, Vox, with internal comma");
+    let res11 =
+        parse_voice_command("Hey, Vox, notes Hi there", &targets).expect("should match Hey, Vox, with internal comma");
     assert_eq!(res11.matched_target_id, "notes");
     assert_eq!(res11.payload, "Hi there");
 
-    let res12 = parse_voice_command("Hey Vox: Notes, please write this down", &targets).expect("should match Hey Vox with colon");
+    let res12 = parse_voice_command("Hey Vox: Notes, please write this down", &targets)
+        .expect("should match Hey Vox with colon");
     assert_eq!(res12.matched_target_id, "notes");
     assert_eq!(res12.payload, "please write this down");
 
-    let res13 = parse_voice_command("Hey, Vox: Notes, please write this down", &targets).expect("should match Hey, Vox: with colon");
+    let res13 = parse_voice_command("Hey, Vox: Notes, please write this down", &targets)
+        .expect("should match Hey, Vox: with colon");
     assert_eq!(res13.matched_target_id, "notes");
     assert_eq!(res13.payload, "please write this down");
 
-    let res14 = parse_voice_command("hey vox add this to my notes. What are you doing here?", &targets).expect("should match conversational hey vox notes");
+    let res14 = parse_voice_command("hey vox add this to my notes. What are you doing here?", &targets)
+        .expect("should match conversational hey vox notes");
     assert_eq!(res14.matched_target_id, "notes");
     assert_eq!(res14.payload, "What are you doing here?");
 
-    let res15 = parse_voice_command("Hey Vox put this into my Notes: What are you doing here?", &targets).expect("should match conversational put into notes");
+    let res15 = parse_voice_command("Hey Vox put this into my Notes: What are you doing here?", &targets)
+        .expect("should match conversational put into notes");
     assert_eq!(res15.matched_target_id, "notes");
     assert_eq!(res15.payload, "What are you doing here?");
 
-    let res16 = parse_voice_command("Hey, Vox, send us to my notes. I love you.", &targets).expect("should match conversational send us to my notes");
+    let res16 = parse_voice_command("Hey, Vox, send us to my notes. I love you.", &targets)
+        .expect("should match conversational send us to my notes");
     assert_eq!(res16.matched_target_id, "notes");
     assert_eq!(res16.payload, "I love you.");
 
@@ -1922,7 +1893,8 @@ fn test_parse_voice_command_matched_target() {
     assert_eq!(res20.matched_target_id, "speak");
     assert_eq!(res20.payload, "text");
 
-    let res21 = parse_voice_command("Hey, Box, speak, eat my ass.", &speak_targets).expect("should match Hey, Box, homophone with punctuation");
+    let res21 = parse_voice_command("Hey, Box, speak, eat my ass.", &speak_targets)
+        .expect("should match Hey, Box, homophone with punctuation");
     assert_eq!(res21.matched_target_id, "speak");
     assert_eq!(res21.payload, "eat my ass.");
 }
@@ -2113,9 +2085,9 @@ async fn test_voice_command_router_integration() {
 
 #[tokio::test]
 async fn test_command_trigger_callback_notification() {
+    use crate::router::OutputTargetRouter;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use crate::router::OutputTargetRouter;
     static CALLED: AtomicBool = AtomicBool::new(false);
 
     crate::targets::set_command_trigger_callback(Arc::new(|cmd, text| {
@@ -2219,10 +2191,8 @@ async fn test_command_trigger_callback_notification() {
 /// says it delivered — i.e. the payload after strip/spacing.
 #[cfg(target_os = "linux")]
 async fn delivered_via_inject(mut config: OutputTarget, text: &str) -> Option<String> {
-    let temp_dir = std::env::temp_dir().join(format!(
-        "voxctrl_payload_test_{}",
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
+    let temp_dir = std::env::temp_dir()
+        .join(format!("voxctrl_payload_test_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()));
     std::fs::create_dir_all(&temp_dir).unwrap();
     let mock_wtype = temp_dir.join("wtype");
     std::fs::write(&mock_wtype, "#!/bin/sh\nexit 0\n").unwrap();
@@ -2231,11 +2201,8 @@ async fn delivered_via_inject(mut config: OutputTarget, text: &str) -> Option<St
     let _wayland = EnvVarGuard::set("WAYLAND_DISPLAY", "mock-display");
     let path_guard = prepend_to_path(&temp_dir);
 
-    config.delivery = if config.delivery == DeliveryType::Command {
-        DeliveryType::Command
-    } else {
-        DeliveryType::Inject
-    };
+    config.delivery =
+        if config.delivery == DeliveryType::Command { DeliveryType::Command } else { DeliveryType::Inject };
     let res = build_target(config).deliver(text).await;
 
     drop(path_guard);
@@ -2331,11 +2298,13 @@ fn test_parse_voice_command_requires_wake_word() {
     assert_eq!(res1.matched_target_id, "say_target");
     assert_eq!(res1.payload, "hello");
 
-    let res2 = parse_voice_command("Vox Control, say hello world", &targets).expect("should match with vox control trigger");
+    let res2 =
+        parse_voice_command("Vox Control, say hello world", &targets).expect("should match with vox control trigger");
     assert_eq!(res2.matched_target_id, "say_target");
     assert_eq!(res2.payload, "hello world");
 
-    let res3 = parse_voice_command("Hey Vox, add this to my notes: buy groceries", &targets).expect("should match notes with filler");
+    let res3 = parse_voice_command("Hey Vox, add this to my notes: buy groceries", &targets)
+        .expect("should match notes with filler");
     assert_eq!(res3.matched_target_id, "notes");
     assert_eq!(res3.payload, "buy groceries");
 }
@@ -2367,8 +2336,7 @@ mod display_label_tests {
     use crate::{targets_display_label, OutputTarget};
 
     fn target(id: &str, label: &str) -> OutputTarget {
-        serde_json::from_value(serde_json::json!({ "id": id, "label": label, "delivery": "inject" }))
-            .unwrap()
+        serde_json::from_value(serde_json::json!({ "id": id, "label": label, "delivery": "inject" })).unwrap()
     }
 
     #[test]
@@ -2426,14 +2394,12 @@ target_id = "default"
 fn a_misheard_wake_word_is_found_behind_a_lead_in() {
     use crate::targets::parse_voice_command;
 
-    let targets = vec![
-        OutputTarget {
-            id: "notes".into(),
-            label: "Notes".into(),
-            delivery: DeliveryType::File,
-            ..OutputTarget::default_inject()
-        },
-    ];
+    let targets = vec![OutputTarget {
+        id: "notes".into(),
+        label: "Notes".into(),
+        delivery: DeliveryType::File,
+        ..OutputTarget::default_inject()
+    }];
 
     for text in [
         // No lead-in: these worked before and must keep working.
@@ -2445,8 +2411,7 @@ fn a_misheard_wake_word_is_found_behind_a_lead_in() {
         "Well, walks control notes buy milk",
         "Um, okay, hey fox notes buy milk",
     ] {
-        let parsed = parse_voice_command(text, &targets)
-            .unwrap_or_else(|| panic!("should match: {text:?}"));
+        let parsed = parse_voice_command(text, &targets).unwrap_or_else(|| panic!("should match: {text:?}"));
         assert_eq!(parsed.matched_target_id, "notes", "{text:?}");
         // The payload keeps the transcript's own punctuation; only the
         // wake word and the target name are stripped.
@@ -2461,14 +2426,12 @@ fn a_misheard_wake_word_is_found_behind_a_lead_in() {
 fn a_lead_in_does_not_make_ordinary_speech_a_command() {
     use crate::targets::parse_voice_command;
 
-    let targets = vec![
-        OutputTarget {
-            id: "notes".into(),
-            label: "Notes".into(),
-            delivery: DeliveryType::File,
-            ..OutputTarget::default_inject()
-        },
-    ];
+    let targets = vec![OutputTarget {
+        id: "notes".into(),
+        label: "Notes".into(),
+        delivery: DeliveryType::File,
+        ..OutputTarget::default_inject()
+    }];
 
     for text in [
         "I lost control notes about the meeting",
@@ -2480,9 +2443,6 @@ fn a_lead_in_does_not_make_ordinary_speech_a_command() {
         // Far enough in that it is past the opening, whatever it sounds like.
         "a quick summary of the whole thing hey fox notes buy milk",
     ] {
-        assert!(
-            parse_voice_command(text, &targets).is_none(),
-            "should not match: {text:?}"
-        );
+        assert!(parse_voice_command(text, &targets).is_none(), "should not match: {text:?}");
     }
 }

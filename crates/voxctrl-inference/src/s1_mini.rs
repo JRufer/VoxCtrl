@@ -16,10 +16,8 @@ use candle_core::{Device, Tensor};
 use tokenizers::Tokenizer;
 use tracing::{debug, info, warn};
 
-const S1_MINI_GGUF_URL: &str =
-    "https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/main/s1-mini-q4_k_m.gguf";
-const S1_MINI_TOKENIZER_URL: &str =
-    "https://huggingface.co/superwhisper/s1-mini/resolve/main/tokenizer.json";
+const S1_MINI_GGUF_URL: &str = "https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/main/s1-mini-q4_k_m.gguf";
+const S1_MINI_TOKENIZER_URL: &str = "https://huggingface.co/superwhisper/s1-mini/resolve/main/tokenizer.json";
 
 const MODEL_FILENAME: &str = "s1-mini-q4_k_m.gguf";
 const TOKENIZER_FILENAME: &str = "tokenizer.json";
@@ -65,18 +63,14 @@ pub async fn download_s1_mini_assets(custom_dir: Option<&str>) -> Result<()> {
     }
 
     let dir = s1_mini_dir(custom_dir);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .context("create s1-mini directory")?;
+    tokio::fs::create_dir_all(&dir).await.context("create s1-mini directory")?;
 
     let model_path = dir.join(MODEL_FILENAME);
     if !model_path.exists() || std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0) < 10_000_000 {
         info!("Downloading S1-mini model from {}", S1_MINI_GGUF_URL);
         let resp = reqwest::get(S1_MINI_GGUF_URL).await?.error_for_status()?;
         let bytes = resp.bytes().await?;
-        tokio::fs::write(&model_path, bytes)
-            .await
-            .context("write s1-mini model file")?;
+        tokio::fs::write(&model_path, bytes).await.context("write s1-mini model file")?;
         info!("Downloaded S1-mini GGUF to {}", model_path.display());
     }
 
@@ -85,9 +79,7 @@ pub async fn download_s1_mini_assets(custom_dir: Option<&str>) -> Result<()> {
         info!("Downloading S1-mini tokenizer from {}", S1_MINI_TOKENIZER_URL);
         let resp = reqwest::get(S1_MINI_TOKENIZER_URL).await?.error_for_status()?;
         let bytes = resp.bytes().await?;
-        tokio::fs::write(&tokenizer_path, bytes)
-            .await
-            .context("write s1-mini tokenizer file")?;
+        tokio::fs::write(&tokenizer_path, bytes).await.context("write s1-mini tokenizer file")?;
         info!("Downloaded S1-mini tokenizer to {}", tokenizer_path.display());
     }
 
@@ -123,19 +115,14 @@ impl S1MiniEngine {
         let tokenizer_path = dir.join(TOKENIZER_FILENAME);
 
         if !model_path.exists() || !tokenizer_path.exists() {
-            bail!(
-                "S1-mini files missing in {}. Please download S1-mini in Settings → Engine.",
-                dir.display()
-            );
+            bail!("S1-mini files missing in {}. Please download S1-mini in Settings → Engine.", dir.display());
         }
 
         info!("Loading S1-mini tokenizer from {}", tokenizer_path.display());
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
+        let tokenizer =
+            Tokenizer::from_file(&tokenizer_path).map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {e}"))?;
 
-        let eos_token_id = tokenizer
-            .token_to_id("<|endoftext|>")
-            .unwrap_or(151643);
+        let eos_token_id = tokenizer.token_to_id("<|endoftext|>").unwrap_or(151643);
         let im_end_token_id = tokenizer.token_to_id("<|im_end|>");
 
         info!("Loading S1-mini GGUF model from {}", model_path.display());
@@ -150,29 +137,17 @@ impl S1MiniEngine {
         let device = Device::Cpu;
 
         debug!("Loading S1-mini using quantized_qwen3 (architecture: {arch}, device: {device:?})");
-        let m = candle_transformers::models::quantized_qwen3::ModelWeights::from_gguf(
-            content, &mut file, &device,
-        )
-        .context("load quantized_qwen3 weights")?;
+        let m = candle_transformers::models::quantized_qwen3::ModelWeights::from_gguf(content, &mut file, &device)
+            .context("load quantized_qwen3 weights")?;
         let model = ModelVariant { inner: m };
 
         info!("S1-mini engine loaded successfully");
-        Ok(Self {
-            model,
-            tokenizer,
-            device,
-            eos_token_id,
-            im_end_token_id,
-        })
+        Ok(Self { model, tokenizer, device, eos_token_id, im_end_token_id })
     }
 
     /// Construct prompt according to S1-mini chat template.
     pub fn build_prompt(text: &str, styling: &str) -> String {
-        let style = if styling.is_empty() {
-            DEFAULT_STYLING
-        } else {
-            styling
-        };
+        let style = if styling.is_empty() { DEFAULT_STYLING } else { styling };
 
         format!(
             "<|im_start|>system\n{}\n<|im_end|>\n<|im_start|>user\n[Styling: {}] [Structure: prose] [Context: general]\n{}\n<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
@@ -188,10 +163,8 @@ impl S1MiniEngine {
         }
 
         let prompt_str = Self::build_prompt(trimmed, styling);
-        let encoding = self
-            .tokenizer
-            .encode(prompt_str.as_str(), true)
-            .map_err(|e| anyhow::anyhow!("Tokenize error: {e}"))?;
+        let encoding =
+            self.tokenizer.encode(prompt_str.as_str(), true).map_err(|e| anyhow::anyhow!("Tokenize error: {e}"))?;
 
         let prompt_tokens = encoding.get_ids().to_vec();
         if prompt_tokens.is_empty() {
@@ -207,10 +180,7 @@ impl S1MiniEngine {
         let input_tensor = Tensor::new(&prompt_tokens[..], &self.device)?.unsqueeze(0)?;
         let logits = self.model.forward(&input_tensor, 0)?;
 
-        let mut next_token = logits
-            .squeeze(0)?
-            .argmax(candle_core::D::Minus1)?
-            .to_scalar::<u32>()?;
+        let mut next_token = logits.squeeze(0)?.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?;
 
         let mut generated_tokens = Vec::new();
         let max_tokens = (prompt_len * 2).clamp(64, 1024);
@@ -230,19 +200,14 @@ impl S1MiniEngine {
             let offset = prompt_len + step;
             let token_tensor = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
             let step_logits = self.model.forward(&token_tensor, offset)?;
-            next_token = step_logits
-                .squeeze(0)?
-                .argmax(candle_core::D::Minus1)?
-                .to_scalar::<u32>()?;
+            next_token = step_logits.squeeze(0)?.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?;
         }
 
         self.model.clear_kv_cache();
 
         let elapsed_ms = t0.elapsed().as_millis();
-        let decoded = self
-            .tokenizer
-            .decode(&generated_tokens, true)
-            .map_err(|e| anyhow::anyhow!("Decode error: {e}"))?;
+        let decoded =
+            self.tokenizer.decode(&generated_tokens, true).map_err(|e| anyhow::anyhow!("Decode error: {e}"))?;
 
         let cleaned = decoded.trim().to_string();
         debug!(
@@ -258,11 +223,7 @@ impl S1MiniEngine {
 }
 
 pub fn find_llm_sidecar_binary() -> Option<PathBuf> {
-    let bin_name = if cfg!(target_os = "windows") {
-        "voxctrl-llm-sidecar.exe"
-    } else {
-        "voxctrl-llm-sidecar"
-    };
+    let bin_name = if cfg!(target_os = "windows") { "voxctrl-llm-sidecar.exe" } else { "voxctrl-llm-sidecar" };
 
     if let Ok(mut exe) = std::env::current_exe() {
         exe.pop();
@@ -278,12 +239,7 @@ pub fn find_llm_sidecar_binary() -> Option<PathBuf> {
     }
 
     if let Ok(cwd) = std::env::current_dir() {
-        for sub in &[
-            "target/release",
-            "target/debug",
-            "src-tauri/target/release",
-            "src-tauri/target/debug",
-        ] {
+        for sub in &["target/release", "target/debug", "src-tauri/target/release", "src-tauri/target/debug"] {
             let p = cwd.join(sub).join(bin_name);
             if p.exists() {
                 return Some(p);
@@ -338,9 +294,7 @@ struct SidecarProcess {
 impl SidecarProcess {
     fn spawn(binary_path: &Path) -> Result<Self> {
         let mut cmd = Command::new(binary_path);
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
 
         #[cfg(target_os = "windows")]
         {
@@ -353,12 +307,7 @@ impl SidecarProcess {
         let stdin = BufWriter::new(child.stdin.take().context("child stdin missing")?);
         let stdout = BufReader::new(child.stdout.take().context("child stdout missing")?);
 
-        Ok(Self {
-            _child: child,
-            stdin,
-            stdout,
-            next_id: 1,
-        })
+        Ok(Self { _child: child, stdin, stdout, next_id: 1 })
     }
 
     fn call(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
@@ -385,27 +334,17 @@ impl SidecarProcess {
 
         let resp: serde_json::Value = serde_json::from_str(&resp_line)?;
         if let Some(err) = resp.get("error") {
-            let msg = err
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown error");
+            let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error");
             bail!("sidecar error: {msg}");
         }
 
-        resp.get("result")
-            .cloned()
-            .context("missing result field in response")
+        resp.get("result").cloned().context("missing result field in response")
     }
 }
 
 static SIDECAR_PROCESS: std::sync::Mutex<Option<SidecarProcess>> = std::sync::Mutex::new(None);
 
-fn clean_via_sidecar(
-    text: &str,
-    styling: &str,
-    custom_dir: Option<&str>,
-    gpu: bool,
-) -> Result<String> {
+fn clean_via_sidecar(text: &str, styling: &str, custom_dir: Option<&str>, gpu: bool) -> Result<String> {
     let binary = find_llm_sidecar_binary().context("sidecar binary not found")?;
     let mut guard = match SIDECAR_PROCESS.lock() {
         Ok(g) => g,
@@ -437,11 +376,7 @@ fn clean_via_sidecar(
         }
     };
 
-    let cleaned = res
-        .get("cleaned_text")
-        .and_then(|v| v.as_str())
-        .unwrap_or(text)
-        .to_string();
+    let cleaned = res.get("cleaned_text").and_then(|v| v.as_str()).unwrap_or(text).to_string();
 
     Ok(cleaned)
 }
@@ -481,10 +416,7 @@ pub fn preload(custom_dir: Option<&str>, gpu: bool) {
     let model_path = s1_mini_dir(custom_dir).join(MODEL_FILENAME);
     let t0 = Instant::now();
     let proc = guard.as_mut().unwrap();
-    match proc.call(
-        "load",
-        serde_json::json!({ "model_path": model_path.to_string_lossy(), "gpu": gpu }),
-    ) {
+    match proc.call("load", serde_json::json!({ "model_path": model_path.to_string_lossy(), "gpu": gpu })) {
         Ok(_) => debug!(elapsed = ?t0.elapsed(), "cleanup model ready"),
         Err(e) => {
             debug!("preloading the cleanup model failed ({e:#}); it will load on first use");
@@ -501,8 +433,7 @@ pub fn bench_clean(text: &str, gpu: bool) -> Result<()> {
 }
 
 // Global cached engine instance
-static GLOBAL_ENGINE: std::sync::OnceLock<Arc<Mutex<Option<S1MiniEngine>>>> =
-    std::sync::OnceLock::new();
+static GLOBAL_ENGINE: std::sync::OnceLock<Arc<Mutex<Option<S1MiniEngine>>>> = std::sync::OnceLock::new();
 
 fn global_engine_cell() -> &'static Arc<Mutex<Option<S1MiniEngine>>> {
     GLOBAL_ENGINE.get_or_init(|| Arc::new(Mutex::new(None)))
@@ -525,11 +456,7 @@ pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>, gpu:
     if find_llm_sidecar_binary().is_some() {
         match clean_via_sidecar(text, styling, custom_dir, gpu) {
             Ok(cleaned) => {
-                return if cleaned.is_empty() && !trimmed.is_empty() {
-                    String::new()
-                } else {
-                    cleaned
-                };
+                return if cleaned.is_empty() && !trimmed.is_empty() { String::new() } else { cleaned };
             }
             Err(e) => {
                 warn!("Sidecar cleanup failed ({e:#}); falling back to in-process Candle CPU engine");

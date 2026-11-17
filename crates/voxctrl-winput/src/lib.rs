@@ -125,10 +125,7 @@ impl Shortcut {
 /// if the user has not turned the "Ctrl key shortcuts" option off; mintty
 /// (Git Bash, Cygwin) and PuTTY never bind plain Ctrl+V to paste.
 pub fn windows_class_wants_shift_insert(class: &str) -> bool {
-    matches!(
-        class,
-        "ConsoleWindowClass" | "mintty" | "PuTTY" | "VirtualConsoleClass" | "Console_2_Main"
-    )
+    matches!(class, "ConsoleWindowClass" | "mintty" | "PuTTY" | "VirtualConsoleClass" | "Console_2_Main")
 }
 
 /// Whether `text` is long enough to be worth pasting rather than typing.
@@ -164,11 +161,7 @@ struct SelfInjectionState {
 }
 
 static SELF_INJECTION: std::sync::Mutex<SelfInjectionState> =
-    std::sync::Mutex::new(SelfInjectionState {
-        depth: 0,
-        keys: Vec::new(),
-        expires: None,
-    });
+    std::sync::Mutex::new(SelfInjectionState { depth: 0, keys: Vec::new(), expires: None });
 
 /// Open on drop: the window stays open for [`SELF_INJECTION_GRACE`] afterwards.
 #[must_use = "the window closes as soon as the guard is dropped"]
@@ -232,10 +225,7 @@ pub fn begin_self_injection(keys: &[&'static str]) -> SelfInjectionGuard {
 /// unrelated binding is never affected by a paste.
 pub fn self_injecting_keys() -> Option<Vec<&'static str>> {
     let mut state = SELF_INJECTION.lock().ok()?;
-    let open = state.depth > 0
-        || state
-            .expires
-            .is_some_and(|e| std::time::Instant::now() < e);
+    let open = state.depth > 0 || state.expires.is_some_and(|e| std::time::Instant::now() < e);
     if !open {
         // Closed: drop the keys so a later caller is not comparing against a
         // paste that finished minutes ago.
@@ -255,9 +245,7 @@ pub fn injection_overlaps<S: AsRef<str>>(binding_keys: &[S]) -> bool {
     let Some(injected) = self_injecting_keys() else {
         return false;
     };
-    binding_keys
-        .iter()
-        .any(|k| injected.contains(&k.as_ref()))
+    binding_keys.iter().any(|k| injected.contains(&k.as_ref()))
 }
 
 #[cfg(target_os = "windows")]
@@ -266,9 +254,8 @@ mod imp {
     use tracing::debug;
 
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-        KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VK_CONTROL, VK_INSERT, VK_LWIN,
-        VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
+        GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+        KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VK_CONTROL, VK_INSERT, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow};
 
@@ -300,13 +287,7 @@ mod imp {
         INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: vk,
-                    wScan: scan,
-                    dwFlags: flags,
-                    time: 0,
-                    dwExtraInfo: INJECTED_TAG,
-                },
+                ki: KEYBDINPUT { wVk: vk, wScan: scan, dwFlags: flags, time: 0, dwExtraInfo: INJECTED_TAG },
             },
         }
     }
@@ -315,13 +296,7 @@ mod imp {
         if inputs.is_empty() {
             return Ok(());
         }
-        let sent = unsafe {
-            SendInput(
-                inputs.len() as u32,
-                inputs.as_ptr(),
-                std::mem::size_of::<INPUT>() as i32,
-            )
-        };
+        let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
         if sent as usize != inputs.len() {
             // The usual cause is UIPI: a more-privileged window has focus, and
             // an unelevated process may not synthesise input into it. Say so,
@@ -501,10 +476,7 @@ mod self_injection_tests {
         let _lock = locked();
         let guard = begin_self_injection(Shortcut::CtrlV.key_names());
 
-        assert!(
-            !injection_overlaps(&["KEY_LEFTMETA", "KEY_SPACE"]),
-            "Super+Space has nothing in common with Ctrl+V"
-        );
+        assert!(!injection_overlaps(&["KEY_LEFTMETA", "KEY_SPACE"]), "Super+Space has nothing in common with Ctrl+V");
         drop(guard);
     }
 
@@ -513,10 +485,7 @@ mod self_injection_tests {
         let _lock = locked();
         drop(begin_self_injection(Shortcut::CtrlV.key_names()));
 
-        assert!(
-            injection_overlaps(&["KEY_LEFTCTRL"]),
-            "the grace period keeps the window open past the send"
-        );
+        assert!(injection_overlaps(&["KEY_LEFTCTRL"]), "the grace period keeps the window open past the send");
         std::thread::sleep(SELF_INJECTION_GRACE + std::time::Duration::from_millis(50));
         assert_eq!(self_injecting_keys(), None);
     }
@@ -532,10 +501,7 @@ mod self_injection_tests {
         drop(first);
         let claimed = self_injecting_keys().expect("still injecting");
         assert!(claimed.contains(&"KEY_INSERT"));
-        assert!(
-            claimed.contains(&"KEY_LEFTCTRL"),
-            "the first paste's keys stay claimed until the window closes"
-        );
+        assert!(claimed.contains(&"KEY_LEFTCTRL"), "the first paste's keys stay claimed until the window closes");
 
         drop(second);
     }
@@ -548,10 +514,7 @@ mod self_injection_tests {
 
         let guard = begin_self_injection(Shortcut::ShiftInsert.key_names());
         let claimed = self_injecting_keys().expect("injecting");
-        assert!(
-            !claimed.contains(&"KEY_LEFTCTRL"),
-            "a finished paste's keys must not leak into the next window"
-        );
+        assert!(!claimed.contains(&"KEY_LEFTCTRL"), "a finished paste's keys must not leak into the next window");
         drop(guard);
     }
 }
@@ -563,7 +526,10 @@ mod program_stem_tests {
     #[test]
     fn takes_the_lowercased_file_stem() {
         assert_eq!(program_stem(r"C:\Users\me\AppData\Local\slack\app-4.41\Slack.exe").as_deref(), Some("slack"));
-        assert_eq!(program_stem(r"C:\Program Files\Mozilla Thunderbird\thunderbird.exe").as_deref(), Some("thunderbird"));
+        assert_eq!(
+            program_stem(r"C:\Program Files\Mozilla Thunderbird\thunderbird.exe").as_deref(),
+            Some("thunderbird")
+        );
         assert_eq!(program_stem("Code").as_deref(), Some("code"));
         assert_eq!(program_stem(r"C:\dir\").as_deref(), None);
     }
@@ -582,10 +548,7 @@ mod tests {
         for max in 1..=units.len() + 2 {
             for range in chunk_boundaries(&units, max) {
                 if let Some(last) = units[range.clone()].last() {
-                    assert!(
-                        !(0xD800..0xDC00).contains(last),
-                        "max={max}: chunk {range:?} ends on a high surrogate"
-                    );
+                    assert!(!(0xD800..0xDC00).contains(last), "max={max}: chunk {range:?} ends on a high surrogate");
                 }
             }
         }
@@ -595,10 +558,8 @@ mod tests {
     fn chunking_covers_the_whole_string_exactly_once() {
         let units: Vec<u16> = "the quick brown 🦊 jumps".encode_utf16().collect();
         for max in 1..=units.len() + 2 {
-            let rejoined: Vec<u16> = chunk_boundaries(&units, max)
-                .iter()
-                .flat_map(|r| units[r.clone()].to_vec())
-                .collect();
+            let rejoined: Vec<u16> =
+                chunk_boundaries(&units, max).iter().flat_map(|r| units[r.clone()].to_vec()).collect();
             assert_eq!(rejoined, units, "max={max} lost or duplicated text");
         }
     }
@@ -612,10 +573,7 @@ mod tests {
         let units: Vec<u16> = "😀😀😀".encode_utf16().collect();
         for max in 1..=4 {
             let ranges = chunk_boundaries(&units, max);
-            assert!(
-                ranges.iter().all(|r| !r.is_empty()),
-                "max={max} produced an empty chunk"
-            );
+            assert!(ranges.iter().all(|r| !r.is_empty()), "max={max} produced an empty chunk");
             assert!(ranges.len() <= units.len(), "max={max} did not terminate cleanly");
         }
     }
@@ -634,15 +592,9 @@ mod tests {
         // every one survives chunking.
         for sample in ["50% of users", "f(x) = a + b", "array[0]", "{braces}", "a~b^c"] {
             let units: Vec<u16> = sample.encode_utf16().collect();
-            let rejoined: Vec<u16> = chunk_boundaries(&units, 4)
-                .iter()
-                .flat_map(|r| units[r.clone()].to_vec())
-                .collect();
-            assert_eq!(
-                String::from_utf16(&rejoined).unwrap(),
-                sample,
-                "{sample:?} did not survive"
-            );
+            let rejoined: Vec<u16> =
+                chunk_boundaries(&units, 4).iter().flat_map(|r| units[r.clone()].to_vec()).collect();
+            assert_eq!(String::from_utf16(&rejoined).unwrap(), sample, "{sample:?} did not survive");
         }
     }
 

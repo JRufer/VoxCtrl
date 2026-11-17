@@ -24,10 +24,7 @@ pub async fn stop_monitoring_audio(state: State<'_, Arc<AppState>>) -> Result<()
 #[tauri::command]
 pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
     let devices = voxctrl_audio::list_input_devices();
-    Ok(devices
-        .into_iter()
-        .map(|d| AudioDeviceInfo { index: d.index, name: d.name })
-        .collect())
+    Ok(devices.into_iter().map(|d| AudioDeviceInfo { index: d.index, name: d.name }).collect())
 }
 
 #[derive(serde::Serialize)]

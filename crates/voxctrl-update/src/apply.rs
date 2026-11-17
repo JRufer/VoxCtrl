@@ -40,10 +40,7 @@ impl Progress {
 /// once is not a thing that should happen, but if it does they must not write
 /// to the same scratch file.
 pub fn staging_name(target: &Path) -> String {
-    let stem = target
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "VoxCtrl".to_string());
+    let stem = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "VoxCtrl".to_string());
     format!(".{stem}.update-{}", std::process::id())
 }
 
@@ -54,9 +51,8 @@ pub fn staging_name(target: &Path) -> String {
 /// unprivileged process. Finding that out after a 100 MB download — and after
 /// the user has watched a progress bar to 100% — is a bad way to learn it.
 pub fn check_writable(target: &Path) -> Result<()> {
-    let dir = target.parent().ok_or_else(|| {
-        UpdateError::Other(format!("{} has no parent directory", target.display()))
-    })?;
+    let dir =
+        target.parent().ok_or_else(|| UpdateError::Other(format!("{} has no parent directory", target.display())))?;
 
     let probe = dir.join(format!(".voxctrl-write-test-{}", std::process::id()));
     match std::fs::File::create(&probe) {
@@ -97,18 +93,11 @@ pub async fn download(
     dest: &Path,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<()> {
-    let response = client
-        .get(&asset.browser_download_url)
-        .send()
-        .await
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let response =
+        client.get(&asset.browser_download_url).send().await.map_err(|e| UpdateError::Network(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(UpdateError::Response(format!(
-            "HTTP {} downloading {}",
-            response.status(),
-            asset.name
-        )));
+        return Err(UpdateError::Response(format!("HTTP {} downloading {}", response.status(), asset.name)));
     }
 
     let total = response.content_length().unwrap_or(asset.size);
@@ -122,8 +111,7 @@ pub async fn download(
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| UpdateError::Network(e.to_string()))?;
-        file.write_all(&chunk)
-            .map_err(|e| UpdateError::Other(format!("could not write {}: {e}", dest.display())))?;
+        file.write_all(&chunk).map_err(|e| UpdateError::Other(format!("could not write {}: {e}", dest.display())))?;
         downloaded += chunk.len() as u64;
 
         // One event per megabyte. At a chunk apiece this would be tens of
@@ -135,13 +123,11 @@ pub async fn download(
         }
     }
 
-    file.flush()
-        .map_err(|e| UpdateError::Other(format!("could not flush {}: {e}", dest.display())))?;
+    file.flush().map_err(|e| UpdateError::Other(format!("could not flush {}: {e}", dest.display())))?;
     // The rename below publishes this file as the application itself. Without a
     // sync, a machine that loses power just after the rename can come back to a
     // correctly-named file with no contents.
-    file.sync_all()
-        .map_err(|e| UpdateError::Other(format!("could not sync {}: {e}", dest.display())))?;
+    file.sync_all().map_err(|e| UpdateError::Other(format!("could not sync {}: {e}", dest.display())))?;
     drop(file);
 
     on_progress(Progress { downloaded, total: if total == 0 { downloaded } else { total } });
@@ -150,8 +136,8 @@ pub async fn download(
 
 /// SHA-256 of a file, lowercase hex.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher)
         .map_err(|e| UpdateError::Other(format!("could not read {}: {e}", path.display())))?;
@@ -204,9 +190,8 @@ pub fn install_appimage(staged: &Path, target: &Path) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         // An AppImage that is not executable is a file the desktop cannot
         // launch, so this has to happen before the rename, not after.
-        std::fs::set_permissions(staged, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
-            UpdateError::Other(format!("could not make {} executable: {e}", staged.display()))
-        })?;
+        std::fs::set_permissions(staged, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| UpdateError::Other(format!("could not make {} executable: {e}", staged.display())))?;
     }
 
     // Same directory by construction, so this is an atomic replace: the file at
@@ -267,9 +252,7 @@ exec "$@"
     // process when the session tears down.
     cmd.process_group(0);
 
-    cmd.spawn()
-        .map(|_| ())
-        .map_err(|e| UpdateError::Other(format!("could not relaunch VoxCtrl: {e}")))
+    cmd.spawn().map(|_| ()).map_err(|e| UpdateError::Other(format!("could not relaunch VoxCtrl: {e}")))
 }
 
 /// Windows: hand off to the downloaded installer, which replaces the install
@@ -324,10 +307,7 @@ mod tests {
         let f = dir.path().join("payload");
         std::fs::write(&f, b"hello").unwrap();
         let sum = sha256_file(&f).unwrap();
-        assert_eq!(
-            sum,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        );
+        assert_eq!(sum, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
         assert!(verify_digest(&f, Some(&format!("sha256:{sum}"))).is_ok());
         assert!(verify_digest(&f, Some(&format!("sha256:{}", sum.to_uppercase()))).is_ok());
     }

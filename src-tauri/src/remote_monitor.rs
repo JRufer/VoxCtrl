@@ -89,8 +89,7 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
         loop {
             let remote = {
                 let cfg = probe_state.config.lock().await;
-                (cfg.data.engine.backend == BackendChoice::RemoteOpenAi)
-                    .then(|| cfg.data.engine.remote_openai.clone())
+                (cfg.data.engine.backend == BackendChoice::RemoteOpenAi).then(|| cfg.data.engine.remote_openai.clone())
             };
             match remote {
                 None => {
@@ -111,9 +110,7 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
                     .await
                     {
                         Ok(notice) => remote_status::set_checked(notice),
-                        Err(voxctrl_inference::ProbeFailure::Unreachable(reason)) => {
-                            remote_status::set_offline(reason)
-                        }
+                        Err(voxctrl_inference::ProbeFailure::Unreachable(reason)) => remote_status::set_offline(reason),
                         Err(voxctrl_inference::ProbeFailure::Incompatible(reason)) => {
                             remote_status::set_incompatible(reason)
                         }

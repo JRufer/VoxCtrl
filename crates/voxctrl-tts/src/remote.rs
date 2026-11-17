@@ -188,9 +188,9 @@ fn finish_speech_reply(status: reqwest::StatusCode, body: &[u8]) -> Result<Vec<u
     if !status.is_success() {
         return Err(match (status.as_u16(), error_message(body)) {
             (401 | 403, _) => anyhow!("The server rejected the API key (HTTP {}).", status.as_u16()),
-            (404 | 405, _) => anyhow!(
-                "This server does not offer text-to-speech. It needs voxctrl-server 0.9.7 or newer."
-            ),
+            (404 | 405, _) => {
+                anyhow!("This server does not offer text-to-speech. It needs voxctrl-server 0.9.7 or newer.")
+            }
             (code, Some(message)) => anyhow!("The server could not speak (HTTP {code}): {message}"),
             (code, None) => anyhow!("The server could not speak (HTTP {code})."),
         });
@@ -374,7 +374,10 @@ fn server_voices(http: &reqwest::blocking::Client, link: &ServerLink) -> Result<
             voices
                 .iter()
                 .filter_map(|v| {
-                    Some((v.get("name")?.as_str()?.to_string(), v.get("fingerprint")?.as_str().unwrap_or("").to_string()))
+                    Some((
+                        v.get("name")?.as_str()?.to_string(),
+                        v.get("fingerprint")?.as_str().unwrap_or("").to_string(),
+                    ))
                 })
                 .collect()
         })
@@ -447,7 +450,9 @@ fn interpret_status(status: u16, body: &[u8]) -> ServerTtsStatus {
                         available: true,
                         message: match (engines.len(), &engine, &voice) {
                             (n, _, _) if n > 1 => format!("This server offers {n} speech engines."),
-                            (_, Some(engine), Some(voice)) => format!("This server speaks with {engine}, voice {voice}."),
+                            (_, Some(engine), Some(voice)) => {
+                                format!("This server speaks with {engine}, voice {voice}.")
+                            }
                             (_, Some(engine), None) => format!("This server speaks with {engine}."),
                             _ => "This server offers text-to-speech.".into(),
                         },
@@ -479,9 +484,12 @@ mod tests {
 
     #[test]
     fn speech_url_follows_the_endpoint_however_it_was_entered() {
-        for endpoint in
-            ["http://box:8787/v1", "http://box:8787/v1/", "http://box:8787", " http://box:8787/v1/audio/transcriptions "]
-        {
+        for endpoint in [
+            "http://box:8787/v1",
+            "http://box:8787/v1/",
+            "http://box:8787",
+            " http://box:8787/v1/audio/transcriptions ",
+        ] {
             assert_eq!(speech_url(endpoint), "http://box:8787/v1/audio/speech", "{endpoint}");
         }
     }

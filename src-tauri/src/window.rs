@@ -1,8 +1,8 @@
+use crate::commands;
+use crate::state::AppState;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
-use crate::commands;
-use crate::state::AppState;
 
 /// Set once the Tauri app is built, so background tasks started before it (the
 /// hotkey gesture loop) can raise windows.
@@ -184,19 +184,15 @@ pub fn open_wizard_window(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        WIZARD_WINDOW,
-        tauri::WebviewUrl::App("/wizard".into()),
-    )
-    .title("VoxCtrl — First-Run Setup")
-    .inner_size(WIZARD_WIDTH, WIZARD_HEIGHT)
-    .min_inner_size(WIZARD_MIN_WIDTH, WIZARD_MIN_HEIGHT)
-    .center()
-    .resizable(true)
-    .decorations(true)
-    .build()
-    .map_err(|e| format!("Could not open the setup wizard: {e}"))?;
+    let window = tauri::WebviewWindowBuilder::new(app, WIZARD_WINDOW, tauri::WebviewUrl::App("/wizard".into()))
+        .title("VoxCtrl — First-Run Setup")
+        .inner_size(WIZARD_WIDTH, WIZARD_HEIGHT)
+        .min_inner_size(WIZARD_MIN_WIDTH, WIZARD_MIN_HEIGHT)
+        .center()
+        .resizable(true)
+        .decorations(true)
+        .build()
+        .map_err(|e| format!("Could not open the setup wizard: {e}"))?;
 
     let _ = window.set_size(tauri::LogicalSize::new(WIZARD_WIDTH, WIZARD_HEIGHT));
     let _ = window.center();
@@ -303,26 +299,22 @@ pub fn open_overlay_window(
 
     let window = match app.get_webview_window(OVERLAY_WINDOW) {
         Some(existing) => existing,
-        None => tauri::WebviewWindowBuilder::new(
-            app,
-            OVERLAY_WINDOW,
-            tauri::WebviewUrl::App("/overlay".into()),
-        )
-        .title("VoxCtrl Overlay")
-        .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
-        .resizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .closable(false)
-        .minimizable(false)
-        .maximizable(false)
-        .visible(false)
-        .build()
-        .map_err(|e| format!("Could not create the overlay window: {e}"))?,
+        None => tauri::WebviewWindowBuilder::new(app, OVERLAY_WINDOW, tauri::WebviewUrl::App("/overlay".into()))
+            .title("VoxCtrl Overlay")
+            .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .closable(false)
+            .minimizable(false)
+            .maximizable(false)
+            .visible(false)
+            .build()
+            .map_err(|e| format!("Could not create the overlay window: {e}"))?,
     };
 
     // Everything the window manager reads when deciding how to present a
@@ -693,19 +685,15 @@ pub fn open_update_window(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        UPDATE_WINDOW,
-        tauri::WebviewUrl::App("/update".into()),
-    )
-    .title("VoxCtrl — Update Available")
-    .inner_size(560.0, 620.0)
-    .min_inner_size(460.0, 420.0)
-    .center()
-    .resizable(true)
-    .decorations(true)
-    .build()
-    .map_err(|e| format!("Could not open the update window: {e}"))?;
+    let window = tauri::WebviewWindowBuilder::new(app, UPDATE_WINDOW, tauri::WebviewUrl::App("/update".into()))
+        .title("VoxCtrl — Update Available")
+        .inner_size(560.0, 620.0)
+        .min_inner_size(460.0, 420.0)
+        .center()
+        .resizable(true)
+        .decorations(true)
+        .build()
+        .map_err(|e| format!("Could not open the update window: {e}"))?;
 
     show_and_focus_window(&window);
     Ok(())
@@ -721,19 +709,15 @@ pub fn open_history_window(app: &tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let window = tauri::WebviewWindowBuilder::new(
-        app,
-        HISTORY_WINDOW,
-        tauri::WebviewUrl::App("/history".into()),
-    )
-    .title("VoxCtrl History")
-    .inner_size(720.0, 780.0)
-    .min_inner_size(480.0, 420.0)
-    .center()
-    .resizable(true)
-    .decorations(true)
-    .build()
-    .map_err(|e| format!("Could not open History: {e}"))?;
+    let window = tauri::WebviewWindowBuilder::new(app, HISTORY_WINDOW, tauri::WebviewUrl::App("/history".into()))
+        .title("VoxCtrl History")
+        .inner_size(720.0, 780.0)
+        .min_inner_size(480.0, 420.0)
+        .center()
+        .resizable(true)
+        .decorations(true)
+        .build()
+        .map_err(|e| format!("Could not open History: {e}"))?;
 
     show_and_focus_window(&window);
     Ok(())
@@ -749,18 +733,14 @@ pub fn show_setup_window() {
         return;
     }
 
-    let built = tauri::WebviewWindowBuilder::new(
-        handle,
-        SETUP_WINDOW,
-        tauri::WebviewUrl::App("/udev-warning".into()),
-    )
-    .title("VoxCtrl Setup")
-    .inner_size(580.0, 600.0)
-    .min_inner_size(480.0, 420.0)
-    .center()
-    .always_on_top(true)
-    .resizable(true)
-    .build();
+    let built = tauri::WebviewWindowBuilder::new(handle, SETUP_WINDOW, tauri::WebviewUrl::App("/udev-warning".into()))
+        .title("VoxCtrl Setup")
+        .inner_size(580.0, 600.0)
+        .min_inner_size(480.0, 420.0)
+        .center()
+        .always_on_top(true)
+        .resizable(true)
+        .build();
     if let Err(e) = built {
         tracing::error!("Could not open the setup window: {e}");
     }
@@ -786,10 +766,8 @@ pub async fn setup_blocker(state: &Arc<AppState>) -> Option<String> {
     // compiled in; otherwise the app silently falls back to whisper-cpp and
     // still needs the model.
     let uses_whisper_model = eng.backend != voxctrl_config::BackendChoice::RemoteOpenAi
-        && (eng.backend != voxctrl_config::BackendChoice::Moonshine
-            || !voxctrl_inference::MOONSHINE_COMPILED)
-        && (eng.backend != voxctrl_config::BackendChoice::Parakeet
-            || !voxctrl_inference::PARAKEET_COMPILED);
+        && (eng.backend != voxctrl_config::BackendChoice::Moonshine || !voxctrl_inference::MOONSHINE_COMPILED)
+        && (eng.backend != voxctrl_config::BackendChoice::Parakeet || !voxctrl_inference::PARAKEET_COMPILED);
     if !uses_whisper_model {
         return None;
     }
@@ -799,10 +777,7 @@ pub async fn setup_blocker(state: &Arc<AppState>) -> Option<String> {
     if voxctrl_inference::whisper_cpp::is_small_auto_downloadable(&eng.whisper_cpp.model_size) {
         return None;
     }
-    if voxctrl_inference::whisper_cpp::is_model_downloaded(
-        &eng.whisper_cpp.model_size,
-        &eng.whisper_cpp.model_dir,
-    ) {
+    if voxctrl_inference::whisper_cpp::is_model_downloaded(&eng.whisper_cpp.model_size, &eng.whisper_cpp.model_dir) {
         return None;
     }
 
@@ -851,7 +826,6 @@ pub fn raise_window(window: &tauri::WebviewWindow, keep_on_top: bool) {
         });
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -903,10 +877,7 @@ mod tests {
         // height floor does not kick in.
         let (w, h) = wizard_size_for(2000.0, 3000.0);
         let aspect = WIZARD_WIDTH / WIZARD_HEIGHT;
-        assert!(
-            ((w / h) - aspect).abs() < 0.01,
-            "expected {aspect}:1, got {w}x{h}"
-        );
+        assert!(((w / h) - aspect).abs() < 0.01, "expected {aspect}:1, got {w}x{h}");
     }
 
     /// A display too small for the layout gets the minimum rather than a
@@ -923,13 +894,8 @@ mod tests {
     /// tall enough not to push the footer past the bottom edge.
     #[test]
     fn every_display_clears_the_widest_css_breakpoint() {
-        for (avail_w, avail_h) in [
-            (1920.0, 1080.0),
-            (1536.0, 864.0),
-            (1280.0, 720.0),
-            (3840.0, 2160.0),
-            (900.0, 500.0),
-        ] {
+        for (avail_w, avail_h) in [(1920.0, 1080.0), (1536.0, 864.0), (1280.0, 720.0), (3840.0, 2160.0), (900.0, 500.0)]
+        {
             let (w, h) = wizard_size_for(avail_w * WIZARD_FIT_W, avail_h * WIZARD_FIT_H);
             assert!(w >= WIZARD_MIN_WIDTH, "{avail_w}x{avail_h} gave a {w}px-wide window");
             assert!(h >= WIZARD_MIN_HEIGHT, "{avail_w}x{avail_h} gave a {h}px-tall window");

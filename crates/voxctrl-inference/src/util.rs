@@ -21,9 +21,7 @@ pub(crate) fn inference_threads() -> usize {
             physical
         } else {
             // Detection failed; fall back to the old logical-core heuristic.
-            std::thread::available_parallelism()
-                .map(|n| (n.get() / 2).max(1))
-                .unwrap_or(2)
+            std::thread::available_parallelism().map(|n| (n.get() / 2).max(1)).unwrap_or(2)
         }
     })
 }
@@ -32,19 +30,13 @@ pub(crate) fn inference_threads() -> usize {
 /// Each backend places its files in a subfolder of this (whisper-cpp directly,
 /// Moonshine under `moonshine/`).
 pub(crate) fn models_base_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("models")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("models")
 }
 
 /// Expand a leading `~` / `~/` to the user's home directory. Any other path is
 /// returned unchanged.
 pub(crate) fn expand_tilde(path: &str) -> PathBuf {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .ok()
-        .or_else(dirs::home_dir);
+    let home = std::env::var("HOME").map(PathBuf::from).ok().or_else(dirs::home_dir);
     if path == "~" {
         return home.unwrap_or_else(|| PathBuf::from("~"));
     }

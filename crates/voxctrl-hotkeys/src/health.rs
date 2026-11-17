@@ -49,12 +49,8 @@ pub enum Backend {
 const PRESS_ONLY_GESTURES: &[GestureType] = &[GestureType::Toggle];
 
 /// Every gesture style, for the backends that see raw presses and releases.
-const ALL_GESTURES: &[GestureType] = &[
-    GestureType::Hold,
-    GestureType::Toggle,
-    GestureType::DoubleTap,
-    GestureType::DoubleTapHold,
-];
+const ALL_GESTURES: &[GestureType] =
+    &[GestureType::Hold, GestureType::Toggle, GestureType::DoubleTap, GestureType::DoubleTapHold];
 
 impl Backend {
     /// Gesture styles this backend can actually deliver.
@@ -68,8 +64,7 @@ impl Backend {
             // do — one has not finished deciding and the other is broken in a
             // way the setup window explains properly. Narrowing the choices on
             // either would hide gestures that do work here.
-            Self::Portal | Self::X11 | Self::Evdev | Self::WindowsHook | Self::Starting
-            | Self::None => ALL_GESTURES,
+            Self::Portal | Self::X11 | Self::Evdev | Self::WindowsHook | Self::Starting | Self::None => ALL_GESTURES,
         }
     }
 
@@ -148,11 +143,7 @@ impl ListenerHealth {
     }
 
     pub fn backend(&self) -> Backend {
-        self.backend
-            .lock()
-            .ok()
-            .and_then(|b| *b)
-            .unwrap_or(Backend::Starting)
+        self.backend.lock().ok().and_then(|b| *b).unwrap_or(Backend::Starting)
     }
 
     /// Why the portal backend was not used. `None` means it was.
@@ -314,10 +305,7 @@ mod tests {
 
         assert!(h.is_active());
         assert!(h.is_private());
-        assert!(
-            !h.permission_blocked(),
-            "the portal needs no device permissions, so nothing is blocked"
-        );
+        assert!(!h.permission_blocked(), "the portal needs no device permissions, so nothing is blocked");
     }
 
     #[test]
@@ -415,10 +403,7 @@ mod tests {
 
         assert!(h.is_active());
         assert!(!h.is_private(), "raw X11 key events are every keystroke");
-        assert!(
-            !h.permission_blocked(),
-            "X11 raw events need no device permission, so nothing is blocked"
-        );
+        assert!(!h.permission_blocked(), "X11 raw events need no device permission, so nothing is blocked");
         assert_eq!(h.gestures().len(), 4);
         assert!(h.backend().sees_raw_keys());
     }
@@ -436,10 +421,7 @@ mod tests {
         assert_eq!(h.gestures(), &[GestureType::Toggle]);
         assert!(h.is_active());
         assert!(h.is_private(), "the desktop holds the grab, VoxCtrl reads nothing");
-        assert!(
-            !h.backend().sees_raw_keys(),
-            "a bare modifier cannot be registered as a desktop accelerator"
-        );
+        assert!(!h.backend().sees_raw_keys(), "a bare modifier cannot be registered as a desktop accelerator");
     }
 
     #[test]
@@ -458,13 +440,7 @@ mod tests {
         // Hotkeys tab showed a padlock and "VoxCtrl does not read your
         // keyboard" over a hook that is called for every key on the machine.
         // Deciding a new backend's privacy is now a choice this test forces.
-        for backend in [
-            Backend::Portal,
-            Backend::X11,
-            Backend::MintDbus,
-            Backend::Evdev,
-            Backend::WindowsHook,
-        ] {
+        for backend in [Backend::Portal, Backend::X11, Backend::MintDbus, Backend::Evdev, Backend::WindowsHook] {
             let h = ListenerHealth::default();
             h.set_supported(true);
             h.set_backend(backend);
@@ -486,10 +462,7 @@ mod tests {
         h.set_backend(Backend::WindowsHook);
 
         assert!(h.is_active());
-        assert!(
-            !h.is_private(),
-            "a WH_KEYBOARD_LL hook is called for every keystroke on the machine"
-        );
+        assert!(!h.is_private(), "a WH_KEYBOARD_LL hook is called for every keystroke on the machine");
         assert!(h.backend().sees_raw_keys());
     }
 

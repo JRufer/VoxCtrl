@@ -14,8 +14,8 @@ mod util;
 pub mod whisper_cpp;
 
 pub use remote_openai::{
-    probe_remote_speech_engine, test_remote_speech_engine, ProbeFailure, RemoteOpenAiBackend,
-    RemoteSttTestResult, RemoteStreamingSession,
+    probe_remote_speech_engine, test_remote_speech_engine, ProbeFailure, RemoteOpenAiBackend, RemoteStreamingSession,
+    RemoteSttTestResult,
 };
 
 /// Whether the Moonshine ONNX backend was compiled into this build. When false,
@@ -82,11 +82,7 @@ pub fn moonshine_gpu_backend() -> Option<&'static str> {
 // feature alone is not enough to reach it, which is what the first version of
 // this attribute got wrong. The tests below still exercise it either way.
 #[cfg_attr(
-    not(any(
-        feature = "moonshine-cuda",
-        feature = "moonshine-coreml",
-        feature = "moonshine-webgpu"
-    )),
+    not(any(feature = "moonshine-cuda", feature = "moonshine-coreml", feature = "moonshine-webgpu")),
     allow(dead_code)
 )]
 pub(crate) fn moonshine_gpu_provider() -> Option<&'static str> {
@@ -118,11 +114,7 @@ pub fn s1_mini_gpu_backend() -> Option<&'static str> {
 }
 
 #[cfg_attr(
-    not(any(
-        feature = "parakeet-cuda",
-        feature = "parakeet-coreml",
-        feature = "parakeet-webgpu"
-    )),
+    not(any(feature = "parakeet-cuda", feature = "parakeet-coreml", feature = "parakeet-webgpu")),
     allow(dead_code)
 )]
 pub(crate) fn parakeet_gpu_provider() -> Option<&'static str> {
@@ -149,39 +141,23 @@ mod gpu_backend_tests {
                 moonshine_gpu_provider().is_some(),
                 "{backend} is reported to the UI but has no ONNX Runtime spelling"
             ),
-            None => assert_eq!(
-                moonshine_gpu_provider(),
-                None,
-                "a CPU-only build named a GPU provider"
-            ),
+            None => assert_eq!(moonshine_gpu_provider(), None, "a CPU-only build named a GPU provider"),
         }
         match parakeet_gpu_backend() {
             Some(backend) => assert!(
                 parakeet_gpu_provider().is_some(),
                 "{backend} is reported to the UI but has no ONNX Runtime spelling"
             ),
-            None => assert_eq!(
-                parakeet_gpu_provider(),
-                None,
-                "a CPU-only build named a GPU provider"
-            ),
+            None => assert_eq!(parakeet_gpu_provider(), None, "a CPU-only build named a GPU provider"),
         }
     }
 
     #[test]
     fn a_build_with_no_gpu_feature_reports_none() {
-        if cfg!(not(any(
-            feature = "moonshine-cuda",
-            feature = "moonshine-coreml",
-            feature = "moonshine-webgpu"
-        ))) {
+        if cfg!(not(any(feature = "moonshine-cuda", feature = "moonshine-coreml", feature = "moonshine-webgpu"))) {
             assert_eq!(moonshine_gpu_backend(), None);
         }
-        if cfg!(not(any(
-            feature = "parakeet-cuda",
-            feature = "parakeet-coreml",
-            feature = "parakeet-webgpu"
-        ))) {
+        if cfg!(not(any(feature = "parakeet-cuda", feature = "parakeet-coreml", feature = "parakeet-webgpu"))) {
             assert_eq!(parakeet_gpu_backend(), None);
         }
     }
@@ -191,10 +167,7 @@ mod gpu_backend_tests {
         // Guards the release artifact: a `moonshine-webgpu` build that reported
         // None would show "CPU only" in the Engine tab on the very build that
         // exists to use the GPU.
-        if cfg!(all(
-            feature = "moonshine-webgpu",
-            not(any(feature = "moonshine-cuda", feature = "moonshine-coreml"))
-        )) {
+        if cfg!(all(feature = "moonshine-webgpu", not(any(feature = "moonshine-cuda", feature = "moonshine-coreml")))) {
             assert_eq!(moonshine_gpu_backend(), Some("webgpu"));
             assert_eq!(moonshine_gpu_provider(), Some("WebGPU"));
         }
@@ -287,12 +260,7 @@ pub struct InferenceOutput {
 
 impl InferenceOutput {
     /// An utterance that produced no text (silence, or nothing to transcribe).
-    pub fn empty(
-        target_id: String,
-        binding_id: Option<String>,
-        is_interim: bool,
-        session_id: u64,
-    ) -> Self {
+    pub fn empty(target_id: String, binding_id: Option<String>, is_interim: bool, session_id: u64) -> Self {
         Self {
             text: String::new(),
             target_id,
@@ -314,10 +282,7 @@ impl InferenceOutput {
         is_interim: bool,
         session_id: u64,
     ) -> Self {
-        Self {
-            error: Some(format!("{error:#}")),
-            ..Self::empty(target_id, binding_id, is_interim, session_id)
-        }
+        Self { error: Some(format!("{error:#}")), ..Self::empty(target_id, binding_id, is_interim, session_id) }
     }
 }
 
@@ -434,10 +399,7 @@ impl InferenceEngine {
         self.config = new_config.clone();
 
         if backend_changed {
-            info!(
-                "Inference backend configuration changed, switching backend to {:?}",
-                new_config.engine.backend
-            );
+            info!("Inference backend configuration changed, switching backend to {:?}", new_config.engine.backend);
             self.backend.unload();
             self.backend = build_backend(&new_config);
             true
@@ -612,22 +574,16 @@ pub fn local_engine_choice(config: &AppConfig) -> Option<BackendChoice> {
 /// server. Such an engine is not loaded at startup: it costs memory only
 /// while the server is unreachable.
 pub fn is_standby_config(config: &AppConfig) -> bool {
-    config.engine.backend == BackendChoice::RemoteOpenAi
-        && config.engine.remote_openai.fallback.backend().is_some()
+    config.engine.backend == BackendChoice::RemoteOpenAi && config.engine.remote_openai.fallback.backend().is_some()
 }
 
 fn build_backend_for(choice: &BackendChoice, config: &AppConfig) -> Box<dyn TranscriptionBackend> {
     match choice {
-        BackendChoice::WhisperCpp => {
-            Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone()))
-        }
+        BackendChoice::WhisperCpp => Box::new(WhisperCppBackend::new(config.engine.whisper_cpp.clone())),
         BackendChoice::Moonshine => {
             #[cfg(feature = "moonshine")]
             {
-                info!(
-                    "Using Moonshine backend ({} model)",
-                    config.engine.moonshine.model_size
-                );
+                info!("Using Moonshine backend ({} model)", config.engine.moonshine.model_size);
                 Box::new(moonshine::MoonshineBackend::new(config.engine.moonshine.clone()))
             }
             #[cfg(not(feature = "moonshine"))]
@@ -640,10 +596,7 @@ fn build_backend_for(choice: &BackendChoice, config: &AppConfig) -> Box<dyn Tran
         BackendChoice::Parakeet => {
             #[cfg(feature = "parakeet")]
             {
-                info!(
-                    "Using Parakeet backend ({} model)",
-                    config.engine.parakeet.model_size
-                );
+                info!("Using Parakeet backend ({} model)", config.engine.parakeet.model_size);
                 Box::new(parakeet::ParakeetBackend::new(config.engine.parakeet.clone()))
             }
             #[cfg(not(feature = "parakeet"))]
@@ -654,13 +607,8 @@ fn build_backend_for(choice: &BackendChoice, config: &AppConfig) -> Box<dyn Tran
             }
         }
         BackendChoice::RemoteOpenAi => {
-            info!(
-                "Using Remote OpenAI speech engine ({})",
-                config.engine.remote_openai.endpoint
-            );
-            Box::new(remote_openai::RemoteOpenAiBackend::new(
-                config.engine.remote_openai.clone(),
-            ))
+            info!("Using Remote OpenAI speech engine ({})", config.engine.remote_openai.endpoint);
+            Box::new(remote_openai::RemoteOpenAiBackend::new(config.engine.remote_openai.clone()))
         }
     }
 }
@@ -683,11 +631,7 @@ fn standby_should_unload(server_online: bool, idle: std::time::Duration) -> bool
 
 /// Run the inference engine on a dedicated OS thread.
 /// Receives `InferenceRequest` from `rx`, sends `InferenceOutput` to `tx`.
-pub fn run_worker(
-    config: Arc<AppConfig>,
-    rx: Receiver<InferenceRequest>,
-    tx: Sender<InferenceOutput>,
-) {
+pub fn run_worker(config: Arc<AppConfig>, rx: Receiver<InferenceRequest>, tx: Sender<InferenceOutput>) {
     let (_dummy_tx, dummy_rx) = crossbeam_channel::unbounded();
     run_worker_with_config(config, rx, tx, dummy_rx);
 }
@@ -1009,11 +953,8 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn remote_engine(
         fallback: voxctrl_config::FallbackChoice,
-    ) -> (
-        InferenceEngine,
-        Arc<std::sync::Mutex<Vec<TranscribeRequest>>>,
-        Arc<std::sync::Mutex<Vec<TranscribeRequest>>>,
-    ) {
+    ) -> (InferenceEngine, Arc<std::sync::Mutex<Vec<TranscribeRequest>>>, Arc<std::sync::Mutex<Vec<TranscribeRequest>>>)
+    {
         let local = Arc::new(std::sync::Mutex::new(Vec::new()));
         let server = Arc::new(std::sync::Mutex::new(Vec::new()));
         let engine = InferenceEngine {

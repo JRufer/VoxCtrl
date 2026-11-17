@@ -82,9 +82,7 @@ pub async fn check(state: &Arc<AppState>) -> Result<UpdateCheckPayload, String> 
 
 /// Ask GitHub and remember what it said, without telling anyone.
 async fn fetch(state: &Arc<AppState>) -> Result<UpdateCheckPayload, String> {
-    let outcome = voxctrl_update::check(CURRENT_VERSION, is_gpu_build())
-        .await
-        .map_err(|e| e.to_string())?;
+    let outcome = voxctrl_update::check(CURRENT_VERSION, is_gpu_build()).await.map_err(|e| e.to_string())?;
 
     match outcome {
         CheckOutcome::UpToDate { current } => {
@@ -208,9 +206,7 @@ pub async fn check_for_update(state: State<'_, Arc<AppState>>) -> Result<UpdateC
 /// What the last check found, without asking GitHub again. This is what the
 /// update window renders from, so opening it costs nothing.
 #[tauri::command]
-pub async fn get_pending_update(
-    state: State<'_, Arc<AppState>>,
-) -> Result<UpdateCheckPayload, String> {
+pub async fn get_pending_update(state: State<'_, Arc<AppState>>) -> Result<UpdateCheckPayload, String> {
     let pending = state.pending_update.lock().await;
     Ok(UpdateCheckPayload {
         current_version: CURRENT_VERSION.to_string(),
@@ -225,17 +221,12 @@ pub async fn get_pending_update(
 /// — nothing is replaced until a complete, checksum-verified file is sitting on
 /// the same filesystem as the one it replaces.
 #[tauri::command]
-pub async fn install_update(
-    app: tauri::AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn install_update(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let state = state.inner().clone();
 
     let pending: PendingUpdate = {
         let guard = state.pending_update.lock().await;
-        guard
-            .clone()
-            .ok_or_else(|| "There is no update to install. Check for updates first.".to_string())?
+        guard.clone().ok_or_else(|| "There is no update to install. Check for updates first.".to_string())?
     };
 
     if !pending.info.can_self_update {

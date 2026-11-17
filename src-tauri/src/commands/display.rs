@@ -25,12 +25,7 @@ pub async fn get_available_monitors(app: tauri::AppHandle) -> Result<Vec<Monitor
                     let name = m.name().map(|s| s.to_string());
                     let is_primary = primary_name.is_some() && name.as_deref() == primary_name.map(|s| s.as_ref());
                     let size = m.size();
-                    list.push(MonitorInfo {
-                        name,
-                        width: size.width,
-                        height: size.height,
-                        is_primary,
-                    });
+                    list.push(MonitorInfo { name, width: size.width, height: size.height, is_primary });
                 }
             }
         }
@@ -81,13 +76,11 @@ pub async fn detect_focused_app(delay_ms: Option<u64>) -> Result<Option<String>,
 pub fn active_command_overlay(
     state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Option<serde_json::Value> {
-    state
-        .active_command_overlay()
-        .map(|(command, summary, duration_secs)| {
-            serde_json::json!({
-                "command": command,
-                "summary": summary,
-                "duration_secs": duration_secs,
-            })
+    state.active_command_overlay().map(|(command, summary, duration_secs)| {
+        serde_json::json!({
+            "command": command,
+            "summary": summary,
+            "duration_secs": duration_secs,
         })
+    })
 }

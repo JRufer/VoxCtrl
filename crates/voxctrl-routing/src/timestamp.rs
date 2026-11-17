@@ -26,9 +26,7 @@ pub fn validate_timestamp_format(fmt: &str) -> Result<(), String> {
         return Err("Timestamp format cannot be empty.".into());
     }
     if StrftimeItems::new(fmt).any(|item| item == Item::Error) {
-        return Err(
-            "Not a valid timestamp format — check the % specifiers (e.g. %Y, %m, %d, %H).".into(),
-        );
+        return Err("Not a valid timestamp format — check the % specifiers (e.g. %Y, %m, %d, %H).".into());
     }
     Ok(())
 }
@@ -52,8 +50,7 @@ pub fn format_now(fmt: &str) -> String {
         Ok(rendered) => rendered,
         Err(e) => {
             tracing::warn!("Unusable file timestamp format {fmt:?} ({e}); using the default");
-            render_timestamp(DEFAULT_TIMESTAMP_FORMAT, now)
-                .unwrap_or_else(|_| now.to_rfc3339())
+            render_timestamp(DEFAULT_TIMESTAMP_FORMAT, now).unwrap_or_else(|_| now.to_rfc3339())
         }
     }
 }
@@ -69,27 +66,15 @@ mod tests {
 
     #[test]
     fn renders_the_default_format() {
-        assert_eq!(
-            render_timestamp(DEFAULT_TIMESTAMP_FORMAT, fixed()).unwrap(),
-            "2026-09-04T17:05:09Z"
-        );
+        assert_eq!(render_timestamp(DEFAULT_TIMESTAMP_FORMAT, fixed()).unwrap(), "2026-09-04T17:05:09Z");
     }
 
     #[test]
     fn renders_custom_patterns() {
-        assert_eq!(
-            render_timestamp("%d/%m/%Y %H:%M", fixed()).unwrap(),
-            "04/09/2026 17:05"
-        );
-        assert_eq!(
-            render_timestamp("%A, %B %-d %Y", fixed()).unwrap(),
-            "Friday, September 4 2026"
-        );
+        assert_eq!(render_timestamp("%d/%m/%Y %H:%M", fixed()).unwrap(), "04/09/2026 17:05");
+        assert_eq!(render_timestamp("%A, %B %-d %Y", fixed()).unwrap(), "Friday, September 4 2026");
         // Literal text around the specifiers is kept as written.
-        assert_eq!(
-            render_timestamp("note %Y-%m-%d", fixed()).unwrap(),
-            "note 2026-09-04"
-        );
+        assert_eq!(render_timestamp("note %Y-%m-%d", fixed()).unwrap(), "note 2026-09-04");
     }
 
     #[test]

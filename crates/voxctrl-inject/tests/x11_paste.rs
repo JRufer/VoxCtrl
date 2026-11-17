@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
 use x11rb::protocol::Event;
-use x11rb::wrapper::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME};
 
 static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -87,12 +87,22 @@ fn spawn_app(class: &str) -> App {
         let root = conn.setup().roots[screen].root;
         let win = conn.generate_id().unwrap();
         conn.create_window(
-            COPY_DEPTH_FROM_PARENT, win, root, 0, 0, 32, 32, 0, WindowClass::INPUT_OUTPUT, 0,
+            COPY_DEPTH_FROM_PARENT,
+            win,
+            root,
+            0,
+            0,
+            32,
+            32,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
             &CreateWindowAux::new().event_mask(EventMask::KEY_PRESS | EventMask::PROPERTY_CHANGE),
         )
         .unwrap();
         let wm_class = format!("{class}\0{class}\0");
-        conn.change_property8(PropMode::REPLACE, win, AtomEnum::WM_CLASS, AtomEnum::STRING, wm_class.as_bytes()).unwrap();
+        conn.change_property8(PropMode::REPLACE, win, AtomEnum::WM_CLASS, AtomEnum::STRING, wm_class.as_bytes())
+            .unwrap();
         conn.map_window(win).unwrap();
         conn.set_input_focus(InputFocus::POINTER_ROOT, win, CURRENT_TIME).unwrap();
         // The window manager's view of "active window".
@@ -131,7 +141,20 @@ fn clipboard_text_now() -> Option<String> {
     let (conn, screen) = RustConnection::connect(None).unwrap();
     let root = conn.setup().roots[screen].root;
     let win = conn.generate_id().unwrap();
-    conn.create_window(COPY_DEPTH_FROM_PARENT, win, root, 0, 0, 1, 1, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new()).unwrap();
+    conn.create_window(
+        COPY_DEPTH_FROM_PARENT,
+        win,
+        root,
+        0,
+        0,
+        1,
+        1,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )
+    .unwrap();
     read_clipboard(&conn, win)
 }
 
@@ -205,7 +228,20 @@ fn spawn_unresponsive_owner() -> std::sync::mpsc::Sender<()> {
         let (conn, screen) = RustConnection::connect(None).unwrap();
         let root = conn.setup().roots[screen].root;
         let win = conn.generate_id().unwrap();
-        conn.create_window(COPY_DEPTH_FROM_PARENT, win, root, 0, 0, 1, 1, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new()).unwrap();
+        conn.create_window(
+            COPY_DEPTH_FROM_PARENT,
+            win,
+            root,
+            0,
+            0,
+            1,
+            1,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &CreateWindowAux::new(),
+        )
+        .unwrap();
         let clip = intern(&conn, "CLIPBOARD");
         conn.set_selection_owner(win, clip, CURRENT_TIME).unwrap();
         conn.get_input_focus().unwrap().reply().unwrap();
@@ -245,10 +281,8 @@ async fn two_dictations_at_once_do_not_corrupt_each_other() {
     voxctrl_inject::set_paste_shortcut("auto");
     let _user = voxctrl_clipboard::set_text("what the user had copied").unwrap();
     let app = spawn_app("firefox");
-    let (a, b) = tokio::join!(
-        voxctrl_inject::inject_text_with("first", true),
-        voxctrl_inject::inject_text_with("second", true)
-    );
+    let (a, b) =
+        tokio::join!(voxctrl_inject::inject_text_with("first", true), voxctrl_inject::inject_text_with("second", true));
     a.unwrap();
     b.unwrap();
     std::thread::sleep(Duration::from_millis(300));

@@ -78,15 +78,7 @@ impl AudioRecorder {
         gain: Arc<AtomicU32>,
         noise_suppression: Arc<AtomicBool>,
     ) -> Self {
-        Self {
-            recording,
-            monitoring,
-            dynamic_stream,
-            input_device_index,
-            gain,
-            noise_suppression,
-            wake: None,
-        }
+        Self { recording, monitoring, dynamic_stream, input_device_index, gain, noise_suppression, wake: None }
     }
 
     /// Wake the capture supervisor the moment a flag changes, rather than
@@ -147,14 +139,18 @@ pub struct RecorderHandle {
 
 pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Device> {
     let host = cpal::default_host();
-    
+
     // 1. Try the configured input device if it exists
     if let Some(idx) = idx_opt {
         if let Ok(mut devices) = host.input_devices() {
             if let Some(device) = devices.nth(idx as usize) {
                 if let Ok(config) = negotiate_config(&device) {
                     if build_and_start_test_stream(&device, &config) {
-                        info!("Startup test: Configured device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
+                        info!(
+                            "Startup test: Configured device index {} ({}) is active and functional.",
+                            idx,
+                            device.name().unwrap_or_default()
+                        );
                         return Ok(device);
                     } else {
                         warn!("Startup test: Configured device index {} failed test stream build.", idx);
@@ -168,7 +164,10 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
     if let Some(device) = host.default_input_device() {
         if let Ok(config) = negotiate_config(&device) {
             if build_and_start_test_stream(&device, &config) {
-                info!("Startup test: Default input device ({}) is active and functional.", device.name().unwrap_or_default());
+                info!(
+                    "Startup test: Default input device ({}) is active and functional.",
+                    device.name().unwrap_or_default()
+                );
                 return Ok(device);
             } else {
                 warn!("Startup test: Default input device failed test stream build.");
@@ -181,7 +180,11 @@ pub fn test_and_detect_active_device(idx_opt: Option<u32>) -> Result<cpal::Devic
         for (idx, device) in devices.enumerate() {
             if let Ok(config) = negotiate_config(&device) {
                 if build_and_start_test_stream(&device, &config) {
-                    info!("Startup test: Fallback device index {} ({}) is active and functional.", idx, device.name().unwrap_or_default());
+                    info!(
+                        "Startup test: Fallback device index {} ({}) is active and functional.",
+                        idx,
+                        device.name().unwrap_or_default()
+                    );
                     return Ok(device);
                 }
             }
@@ -342,8 +345,7 @@ impl CaptureProcessor {
         //
         // Gain is a scalar, so scaling the RMS is the same number as the RMS
         // of the scaled samples — without touching the heap.
-        let level = (is_recording || self.monitoring.load(Ordering::Relaxed))
-            .then(|| rms(data) * current_gain);
+        let level = (is_recording || self.monitoring.load(Ordering::Relaxed)).then(|| rms(data) * current_gain);
 
         if !is_recording {
             self.was_recording = false;
@@ -379,15 +381,11 @@ impl CaptureProcessor {
         let processed = if self.denoiser.is_some() || self.needs_resample || carries_preroll {
             self.gained.clear();
             self.gained.reserve(self.preroll.len() + data.len());
-            self.gained
-                .extend(self.preroll.drain(..).map(|s| s * current_gain));
-            self.gained
-                .extend(data.iter().map(|&s| s * current_gain));
+            self.gained.extend(self.preroll.drain(..).map(|s| s * current_gain));
+            self.gained.extend(data.iter().map(|&s| s * current_gain));
             match self.denoiser {
                 Some(ref mut d) => d.process(&self.gained),
-                None if self.needs_resample => {
-                    resample_chunk(&self.gained, self.hw_rate, TARGET_SAMPLE_RATE)
-                }
+                None if self.needs_resample => resample_chunk(&self.gained, self.hw_rate, TARGET_SAMPLE_RATE),
                 // Once per recording at most: every later buffer takes a
                 // branch above or the straight-through one below.
                 None => self.gained.clone(),
@@ -396,10 +394,7 @@ impl CaptureProcessor {
             data.iter().map(|&s| s * current_gain).collect()
         };
 
-        Captured {
-            level,
-            chunk: (!processed.is_empty()).then_some(processed),
-        }
+        Captured { level, chunk: (!processed.is_empty()).then_some(processed) }
     }
 }
 
@@ -488,10 +483,7 @@ fn open_stream(
         )
         .map_err(|e| warn!("Failed to build audio stream: {e}"))
         .ok()?;
-    stream
-        .play()
-        .map_err(|e| warn!("Failed to play audio stream: {e}"))
-        .ok()?;
+    stream.play().map_err(|e| warn!("Failed to play audio stream: {e}")).ok()?;
     Some(stream)
 }
 
@@ -501,15 +493,8 @@ fn capture_loop(
     tx: Sender<AudioChunk>,
     level_tx: Option<Sender<f32>>,
 ) -> Result<()> {
-    let AudioRecorder {
-        recording,
-        monitoring,
-        dynamic_stream,
-        input_device_index,
-        gain,
-        noise_suppression,
-        wake,
-    } = recorder;
+    let AudioRecorder { recording, monitoring, dynamic_stream, input_device_index, gain, noise_suppression, wake } =
+        recorder;
     let host = cpal::default_host();
 
     let mut current_idx = input_device_index.load(Ordering::SeqCst);
@@ -547,8 +532,17 @@ fn capture_loop(
     } else {
         info!("Startup: Opening always-on stream (Option B)...");
         if let Some(stream) = open_stream(
-            &device, &hw_config, hw_rate, needs_resample,
-            &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
+            &device,
+            &hw_config,
+            hw_rate,
+            needs_resample,
+            &gain,
+            &recording,
+            &monitoring,
+            &noise_suppression,
+            &tx,
+            &level_tx,
+            &audio_ready,
         ) {
             current_stream = Some(stream);
             // Not marked ready here: the stream opening only proves it was
@@ -578,12 +572,16 @@ fn capture_loop(
                         hw_config = new_config;
                         hw_rate = hw_config.sample_rate.0;
                         needs_resample = hw_rate != TARGET_SAMPLE_RATE;
-                        info!("Hot-reload: successfully negotiated new device '{}' ({} Hz)", device.name().unwrap_or_default(), hw_rate);
+                        info!(
+                            "Hot-reload: successfully negotiated new device '{}' ({} Hz)",
+                            device.name().unwrap_or_default(),
+                            hw_rate
+                        );
                         current_stream = None; // Drop old stream
                         was_recording = false; // Force rebuild
-                        // A new device has proven nothing yet — carrying the
-                        // old device's readiness forward would hide a switch
-                        // to a dead or silently-denied one.
+                                               // A new device has proven nothing yet — carrying the
+                                               // old device's readiness forward would hide a switch
+                                               // to a dead or silently-denied one.
                         if let Some(ref ready) = audio_ready {
                             ready.store(false, Ordering::SeqCst);
                         }
@@ -609,8 +607,17 @@ fn capture_loop(
                 // Changed to always-on: start always-on stream if it isn't already active
                 if current_stream.is_none() {
                     if let Some(stream) = open_stream(
-                        &device, &hw_config, hw_rate, needs_resample,
-                        &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
+                        &device,
+                        &hw_config,
+                        hw_rate,
+                        needs_resample,
+                        &gain,
+                        &recording,
+                        &monitoring,
+                        &noise_suppression,
+                        &tx,
+                        &level_tx,
+                        &audio_ready,
                     ) {
                         current_stream = Some(stream);
                         // See the startup open above: readiness is earned by
@@ -627,8 +634,17 @@ fn capture_loop(
             if active && !was_recording {
                 info!("Dynamic microphone stream starting (Option A)...");
                 match open_stream(
-                    &device, &hw_config, hw_rate, needs_resample,
-                    &gain, &recording, &monitoring, &noise_suppression, &tx, &level_tx, &audio_ready,
+                    &device,
+                    &hw_config,
+                    hw_rate,
+                    needs_resample,
+                    &gain,
+                    &recording,
+                    &monitoring,
+                    &noise_suppression,
+                    &tx,
+                    &level_tx,
+                    &audio_ready,
                 ) {
                     Some(stream) => {
                         current_stream = Some(stream);
@@ -662,11 +678,8 @@ fn capture_loop(
         // stream still has to notice a recording by looking, and every
         // millisecond it spends looking is missing from the front of the
         // utterance. That case keeps the old 30 ms.
-        let backstop = if wake.is_some() || !is_dynamic {
-            Duration::from_millis(200)
-        } else {
-            Duration::from_millis(30)
-        };
+        let backstop =
+            if wake.is_some() || !is_dynamic { Duration::from_millis(200) } else { Duration::from_millis(30) };
         match wake {
             Some(ref rx) => match rx.recv_timeout(backstop) {
                 Ok(()) => {
@@ -679,9 +692,7 @@ fn capture_loop(
                 // thread. A disconnected channel returns immediately and
                 // forever, so waiting on it here would spin a core through
                 // teardown; go back to sleeping out the interval.
-                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                    std::thread::sleep(backstop)
-                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => std::thread::sleep(backstop),
             },
             None => std::thread::sleep(backstop),
         }
@@ -702,9 +713,7 @@ fn negotiate_config(device: &cpal::Device) -> Result<StreamConfig> {
     let mono_supported = device
         .supported_input_configs()
         .map(|mut configs| {
-            configs.any(|c| {
-                c.channels() == 1 && c.min_sample_rate() <= rate && rate <= c.max_sample_rate()
-            })
+            configs.any(|c| c.channels() == 1 && c.min_sample_rate() <= rate && rate <= c.max_sample_rate())
         })
         .unwrap_or(false);
     Ok(StreamConfig {
@@ -719,10 +728,7 @@ fn negotiate_config(device: &cpal::Device) -> Result<StreamConfig> {
 fn downmix_into(data: &[f32], channels: usize, out: &mut Vec<f32>) {
     out.clear();
     let scale = 1.0 / channels as f32;
-    out.extend(
-        data.chunks_exact(channels)
-            .map(|frame| frame.iter().sum::<f32>() * scale),
-    );
+    out.extend(data.chunks_exact(channels).map(|frame| frame.iter().sum::<f32>() * scale));
 }
 
 fn rms(samples: &[f32]) -> f32 {
@@ -788,10 +794,7 @@ pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
         .into_iter()
         .flatten()
         .enumerate()
-        .map(|(i, d)| AudioDeviceInfo {
-            index: i as u32,
-            name: d.name().unwrap_or_else(|_| format!("Device {i}")),
-        })
+        .map(|(i, d)| AudioDeviceInfo { index: i as u32, name: d.name().unwrap_or_else(|_| format!("Device {i}")) })
         .collect()
 }
 
@@ -849,11 +852,7 @@ mod capture_tests {
 
         recording.store(true, Ordering::SeqCst);
         assert_eq!(p.feed(&ramp(50, 0.0)).chunk.unwrap().len(), 150);
-        assert_eq!(
-            p.feed(&ramp(50, 0.0)).chunk.unwrap().len(),
-            50,
-            "the pre-roll was replayed into a later buffer"
-        );
+        assert_eq!(p.feed(&ramp(50, 0.0)).chunk.unwrap().len(), 50, "the pre-roll was replayed into a later buffer");
     }
 
     /// The ring is the only thing here that grows, so it has to be bounded by
@@ -937,14 +936,8 @@ mod capture_tests {
     #[test]
     fn silence_classifies_exact_zero_and_near_zero_buffers() {
         assert!(is_silent(&[0.0; 32]), "an all-zero buffer must read as silent");
-        assert!(
-            is_silent(&[0.0, 1e-6, -1e-6, 0.0]),
-            "dither far below the noise floor must still read as silent"
-        );
-        assert!(
-            !is_silent(&[0.0, 0.0, 0.01, 0.0]),
-            "a single real sample must be enough to call a buffer non-silent"
-        );
+        assert!(is_silent(&[0.0, 1e-6, -1e-6, 0.0]), "dither far below the noise floor must still read as silent");
+        assert!(!is_silent(&[0.0, 0.0, 0.01, 0.0]), "a single real sample must be enough to call a buffer non-silent");
     }
 
     /// The Windows bug this exists for: a stream can open and `play()`
@@ -974,10 +967,7 @@ mod capture_tests {
         assert!(ready.load(Ordering::SeqCst), "real signal must mark the stream ready");
 
         p.feed(&[0.0; 64]);
-        assert!(
-            ready.load(Ordering::SeqCst),
-            "a later quiet buffer must not un-latch a confirmed stream"
-        );
+        assert!(ready.load(Ordering::SeqCst), "a later quiet buffer must not un-latch a confirmed stream");
     }
 
     #[test]

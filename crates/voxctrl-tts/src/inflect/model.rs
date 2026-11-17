@@ -42,8 +42,7 @@ const DURATION_INPUTS: [&str; 3] = ["tokens", "lengths", "length_scale"];
 const DURATION_OUTPUTS: [&str; 3] = ["m_p_exp", "logs_p_exp", "y_mask"];
 
 /// `decode.onnx` inputs. `zp_noise` is sampled host-side (see [`StandardNormal`]).
-const DECODE_INPUTS: [&str; 5] =
-    ["m_p_exp", "logs_p_exp", "y_mask", "zp_noise", "noise_scale"];
+const DECODE_INPUTS: [&str; 5] = ["m_p_exp", "logs_p_exp", "y_mask", "zp_noise", "noise_scale"];
 /// `decode.onnx` output.
 const DECODE_OUTPUT: &str = "waveform";
 
@@ -94,13 +93,9 @@ pub fn inspect(dir: &Path) -> Result<ModelSignature> {
     let decode = build_session(&dir.join(DECODE_FILE))?;
 
     let (vocab_file, vocab_size) = match PhonemeVocab::load(dir)? {
-        Some(v) => (
-            phonemes::VOCAB_FILES
-                .iter()
-                .find(|f| dir.join(f).exists())
-                .map(|f| (*f).to_string()),
-            Some(v.len()),
-        ),
+        Some(v) => {
+            (phonemes::VOCAB_FILES.iter().find(|f| dir.join(f).exists()).map(|f| (*f).to_string()), Some(v.len()))
+        }
         None => (None, None),
     };
 
@@ -125,9 +120,7 @@ fn describe(sig: &GraphSignature) -> String {
 // ── Session construction ──────────────────────────────────────────────────────
 
 fn threads() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get().min(4))
-        .unwrap_or(1)
+    std::thread::available_parallelism().map(|n| n.get().min(4)).unwrap_or(1)
 }
 
 fn build_session(path: &Path) -> Result<Session> {
@@ -177,19 +170,13 @@ impl StandardNormal {
 
     fn new(seed: u64) -> Self {
         let mut rng = Self { state: 0, spare: None };
-        rng.state = rng
-            .state
-            .wrapping_add(Self::INCREMENT)
-            .wrapping_add(seed as u128);
+        rng.state = rng.state.wrapping_add(Self::INCREMENT).wrapping_add(seed as u128);
         rng.step();
         rng
     }
 
     fn step(&mut self) -> u64 {
-        self.state = self
-            .state
-            .wrapping_mul(Self::MULTIPLIER)
-            .wrapping_add(Self::INCREMENT);
+        self.state = self.state.wrapping_mul(Self::MULTIPLIER).wrapping_add(Self::INCREMENT);
         // XSL-RR output: xor the halves, then rotate by the top 6 bits.
         let xored = ((self.state >> 64) ^ self.state) as u64;
         let rot = (self.state >> 122) as u32;
@@ -232,11 +219,7 @@ pub struct InflectModel {
 /// Fail with the discovered signature when a graph doesn't declare what the
 /// reference contract says it should.
 fn require_inputs(sig: &GraphSignature, required: &[&str], other: &GraphSignature) -> Result<()> {
-    let missing: Vec<&str> = required
-        .iter()
-        .copied()
-        .filter(|r| !sig.inputs.iter().any(|i| i == r))
-        .collect();
+    let missing: Vec<&str> = required.iter().copied().filter(|r| !sig.inputs.iter().any(|i| i == r)).collect();
     if missing.is_empty() {
         return Ok(());
     }
@@ -286,19 +269,11 @@ impl InflectModel {
         require_inputs(&decode_sig, &DECODE_INPUTS, &duration_sig)?;
 
         let vocab_len = vocab.len();
-        let vocab_file = vocab
-            .source
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().into_owned());
+        let vocab_file = vocab.source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
         info!(
             "Inflect-Micro-v2 phoneme table: {} entries from {}",
             vocab_len,
-            vocab
-                .source
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "built-in fallback".into())
+            vocab.source.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "built-in fallback".into())
         );
 
         Ok(Self {
@@ -360,13 +335,11 @@ impl InflectModel {
 
         // ── Stage 1: tokens → expanded latent statistics ──────────────────────
         let (m_p_exp, logs_p_exp, y_mask) = {
-            let tokens = Tensor::from_array(([1_usize, n], encoded.ids.clone()))
-                .context("build tokens tensor")?;
-            let lengths = Tensor::from_array(([1_usize], vec![n as i64]))
-                .context("build lengths tensor")?;
+            let tokens = Tensor::from_array(([1_usize, n], encoded.ids.clone())).context("build tokens tensor")?;
+            let lengths = Tensor::from_array(([1_usize], vec![n as i64])).context("build lengths tensor")?;
             // Scalar (rank-0), matching `np.asarray(value, dtype=np.float32)`.
-            let length_scale_t = Tensor::from_array(([0_usize; 0], vec![length_scale]))
-                .context("build length_scale tensor")?;
+            let length_scale_t =
+                Tensor::from_array(([0_usize; 0], vec![length_scale])).context("build length_scale tensor")?;
 
             let outputs = duration
                 .run(vec![
@@ -385,15 +358,13 @@ impl InflectModel {
 
             let mut extracted = Vec::with_capacity(DURATION_OUTPUTS.len());
             for name in DURATION_OUTPUTS {
-                let (shape, data) = outputs[name]
-                    .try_extract_tensor::<f32>()
-                    .map_err(|e| {
-                        anyhow!(
-                            "duration output '{name}' is not float32: {e}\n\
+                let (shape, data) = outputs[name].try_extract_tensor::<f32>().map_err(|e| {
+                    anyhow!(
+                        "duration output '{name}' is not float32: {e}\n\
                              Graph declares:\n{}",
-                            describe(&signature.duration)
-                        )
-                    })?;
+                        describe(&signature.duration)
+                    )
+                })?;
                 extracted.push((shape.to_vec(), data.to_vec()));
             }
             let mut it = extracted.into_iter();
@@ -404,17 +375,13 @@ impl InflectModel {
         let noise_values = StandardNormal::new(seed).fill(m_p_exp.1.len());
 
         let m_shape = m_p_exp.0.clone();
-        let m_p_exp_t = Tensor::from_array((m_p_exp.0.clone(), m_p_exp.1))
-            .context("build m_p_exp tensor")?;
-        let logs_p_exp_t = Tensor::from_array((logs_p_exp.0, logs_p_exp.1))
-            .context("build logs_p_exp tensor")?;
-        let y_mask_t =
-            Tensor::from_array((y_mask.0, y_mask.1)).context("build y_mask tensor")?;
+        let m_p_exp_t = Tensor::from_array((m_p_exp.0.clone(), m_p_exp.1)).context("build m_p_exp tensor")?;
+        let logs_p_exp_t = Tensor::from_array((logs_p_exp.0, logs_p_exp.1)).context("build logs_p_exp tensor")?;
+        let y_mask_t = Tensor::from_array((y_mask.0, y_mask.1)).context("build y_mask tensor")?;
         // zp_noise matches m_p_exp's shape exactly.
-        let zp_noise_t = Tensor::from_array((m_p_exp.0, noise_values))
-            .context("build zp_noise tensor")?;
-        let noise_scale_t = Tensor::from_array(([0_usize; 0], vec![cfg.noise_scale]))
-            .context("build noise_scale tensor")?;
+        let zp_noise_t = Tensor::from_array((m_p_exp.0, noise_values)).context("build zp_noise tensor")?;
+        let noise_scale_t =
+            Tensor::from_array(([0_usize; 0], vec![cfg.noise_scale])).context("build noise_scale tensor")?;
 
         let outputs = decode
             .run(vec![
@@ -434,9 +401,7 @@ impl InflectModel {
                 )
             })?;
 
-        let (_, audio) = outputs[DECODE_OUTPUT]
-            .try_extract_tensor::<f32>()
-            .context("extract decoded waveform")?;
+        let (_, audio) = outputs[DECODE_OUTPUT].try_extract_tensor::<f32>().context("extract decoded waveform")?;
 
         Ok(audio.iter().map(|s| s.clamp(-1.0, 1.0)).collect())
     }
@@ -508,10 +473,7 @@ mod tests {
     #[test]
     fn test_duration_outputs_feed_decode_inputs() {
         for name in DURATION_OUTPUTS {
-            assert!(
-                DECODE_INPUTS.contains(&name),
-                "{name} should carry from the duration graph into decode"
-            );
+            assert!(DECODE_INPUTS.contains(&name), "{name} should carry from the duration graph into decode");
         }
     }
 
@@ -553,11 +515,7 @@ mod tests {
     fn test_standard_normal_is_roughly_unit_gaussian() {
         let samples = StandardNormal::new(7).fill(20_000);
         let mean: f64 = samples.iter().map(|s| *s as f64).sum::<f64>() / samples.len() as f64;
-        let variance: f64 = samples
-            .iter()
-            .map(|s| (*s as f64 - mean).powi(2))
-            .sum::<f64>()
-            / samples.len() as f64;
+        let variance: f64 = samples.iter().map(|s| (*s as f64 - mean).powi(2)).sum::<f64>() / samples.len() as f64;
         assert!(mean.abs() < 0.05, "mean {mean} should be near 0");
         assert!((variance - 1.0).abs() < 0.1, "variance {variance} should be near 1");
     }

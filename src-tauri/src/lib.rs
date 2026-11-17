@@ -15,10 +15,10 @@ use crate::state::AppState;
 mod bug_report;
 mod commands;
 mod custom_overlays;
-mod installer;
-mod live_text;
 mod history;
 mod host_env;
+mod installer;
+mod live_text;
 mod mint_shortcuts;
 mod model_cleanup;
 mod pipeline;
@@ -36,8 +36,7 @@ mod window;
 mod tests;
 
 pub use window::{
-    get_app_handle, set_app_handle, setup_blocker, show_and_focus_window, show_setup_window,
-    SETUP_WINDOW,
+    get_app_handle, set_app_handle, setup_blocker, show_and_focus_window, show_setup_window, SETUP_WINDOW,
 };
 
 pub fn run_cli_installer() -> Result<(), String> {
@@ -114,10 +113,7 @@ mod version_tests {
     /// case where "which code is this?" matters most.
     #[test]
     fn a_dirty_build_keeps_its_marker() {
-        assert_eq!(
-            format_version("0.6.1", "57375d4-dirty"),
-            "VoxCtrl 0.6.1 (build 57375d4-dirty)"
-        );
+        assert_eq!(format_version("0.6.1", "57375d4-dirty"), "VoxCtrl 0.6.1 (build 57375d4-dirty)");
         assert_eq!(
             format_version("0.6.1", "57375d4d5882d8222b7a978190a058795acb9cee-dirty"),
             "VoxCtrl 0.6.1 (build 57375d4-dirty)"
@@ -158,12 +154,7 @@ pub mod test_utils {
 /// when the app is already configured and they want to see setup again; making
 /// them guess the exact word would defeat the point.
 pub fn wants_setup_wizard(args: &[String]) -> bool {
-    args.iter().any(|a| {
-        matches!(
-            a.as_str(),
-            "--setup" | "--wizard" | "--setup-wizard" | "--first-run"
-        )
-    })
+    args.iter().any(|a| matches!(a.as_str(), "--setup" | "--wizard" | "--setup-wizard" | "--first-run"))
 }
 
 /// Whether these command-line arguments ask the wizard to simulate a failed
@@ -175,8 +166,7 @@ pub fn wants_setup_wizard(args: &[String]) -> bool {
 /// where those are the two things most often reported broken and neither is
 /// easy to fake by hand.
 pub fn wants_wizard_error_test(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| matches!(a.as_str(), "--simulate-wizard-error" | "--test-wizard-error"))
+    args.iter().any(|a| matches!(a.as_str(), "--simulate-wizard-error" | "--test-wizard-error"))
 }
 
 /// Set once at startup from the process's own argv, then read by the
@@ -249,9 +239,7 @@ pub fn run() {
 
     // Initialise logging (console + special warning-free/privacy-safe startup and error file log)
     use tracing_subscriber::prelude::*;
-    let local_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("voxctrl");
+    let local_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join("voxctrl");
     let _ = std::fs::create_dir_all(&local_dir);
     let log_path = local_dir.join("startup_errors.log");
 
@@ -266,9 +254,7 @@ pub fn run() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "voxctrl=info,voxctrl_inject=info,voxctrl_clipboard=info".parse().unwrap());
 
-    let registry = tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer());
+    let registry = tracing_subscriber::registry().with(filter).with(tracing_subscriber::fmt::layer());
 
     if let Some(fl) = file_layer {
         let _ = registry.with(fl).try_init();
@@ -347,10 +333,8 @@ pub fn run() {
     // ── Audio & Inference pipelines ──────────────────────────────────────────
     let (audio_tx, audio_rx) = crossbeam_channel::bounded::<voxctrl_audio::AudioChunk>(64);
     let (text_tx, text_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceOutput>(32);
-    let (inference_tx, inference_rx) =
-        crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
-    let (inference_cfg_tx, inference_cfg_rx) =
-        crossbeam_channel::unbounded::<Arc<voxctrl_config::AppConfig>>();
+    let (inference_tx, inference_rx) = crossbeam_channel::bounded::<voxctrl_inference::InferenceRequest>(4);
+    let (inference_cfg_tx, inference_cfg_rx) = crossbeam_channel::unbounded::<Arc<voxctrl_config::AppConfig>>();
     let (overlay_tx, overlay_rx) = crossbeam_channel::unbounded::<String>();
     // One pending nudge is all the capture supervisor needs: it re-reads every
     // flag when it wakes, so a second nudge would tell it nothing new.
@@ -365,8 +349,7 @@ pub fn run() {
     {
         let health = hotkey_health.clone();
         voxctrl_inject::set_hold_gate(move || {
-            health.backend() == voxctrl_hotkeys::Backend::Portal
-                && voxctrl_hotkeys::hold_key_down()
+            health.backend() == voxctrl_hotkeys::Backend::Portal && voxctrl_hotkeys::hold_key_down()
         });
     }
 
@@ -395,9 +378,7 @@ pub fn run() {
         audio_ready: Arc::new(AtomicBool::new(false)),
         dynamic_stream: Arc::new(AtomicBool::new(cfg_data.audio.dynamic_stream)),
         monitoring: Arc::new(AtomicBool::new(false)),
-        input_device_index: Arc::new(AtomicU32::new(
-            cfg_data.audio.input_device_index.unwrap_or(u32::MAX),
-        )),
+        input_device_index: Arc::new(AtomicU32::new(cfg_data.audio.input_device_index.unwrap_or(u32::MAX))),
         gain: Arc::new(AtomicU32::new(cfg_data.audio.gain.to_bits())),
         noise_suppression: Arc::new(AtomicBool::new(cfg_data.audio.noise_suppression)),
         word_count: Arc::new(AtomicU32::new(0)),
@@ -453,30 +434,15 @@ pub fn run() {
             app_state.noise_suppression.clone(),
         )
         .with_wake(audio_wake_rx);
-        let _ = recorder.run(
-            audio_tx,
-            Some(audio_level_tx),
-            Some(app_state.audio_ready.clone()),
-        );
+        let _ = recorder.run(audio_tx, Some(audio_level_tx), Some(app_state.audio_ready.clone()));
     }
 
     // Audio chunk coordinator thread
     let rt_handle = tokio::runtime::Handle::current();
-    pipeline::spawn_audio_coordinator(
-        app_state.clone(),
-        audio_rx,
-        inference_tx,
-        text_tx.clone(),
-        rt_handle.clone(),
-    );
+    pipeline::spawn_audio_coordinator(app_state.clone(), audio_rx, inference_tx, text_tx.clone(), rt_handle.clone());
 
     // Inference worker with live config reloading
-    voxctrl_inference::run_worker_with_config(
-        cfg_data.clone(),
-        inference_rx,
-        text_tx.clone(),
-        inference_cfg_rx,
-    );
+    voxctrl_inference::run_worker_with_config(cfg_data.clone(), inference_rx, text_tx.clone(), inference_cfg_rx);
 
     // Make sure a launcher named after the `ai.voxctrl.app` AppID exists before initializing
     // hotkey listeners, so xdg-desktop-portal can resolve it to a name and icon. A package
@@ -496,12 +462,9 @@ pub fn run() {
     // app, so `stop_key`'s arbiter adds it — here, immediately, on the backends
     // that grab nothing, and only while VoxCtrl speaks on the ones that do.
     let mut all_bindings = bindings;
-    let initial_grab =
-        crate::stop_key::stop_key_grab(hotkey_health.backend(), &cfg_data.tts.stop_key);
+    let initial_grab = crate::stop_key::stop_key_grab(hotkey_health.backend(), &cfg_data.tts.stop_key);
     if crate::stop_key::stop_key_wanted(initial_grab, app_state.is_speaking()) {
-        app_state
-            .stop_key_held
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        app_state.stop_key_held.store(true, std::sync::atomic::Ordering::SeqCst);
         all_bindings.push(crate::stop_key::stop_binding(cfg_data.tts.stop_key.clone()));
     }
 
@@ -595,11 +558,7 @@ pub fn run() {
             pipeline::spawn_setup_watcher(app.handle().clone(), app_state.hotkey_health.clone());
 
             // Forward audio levels to the settings window and the overlay
-            pipeline::spawn_audio_level_forwarder(
-                app.handle().clone(),
-                app_state.clone(),
-                audio_level_rx,
-            );
+            pipeline::spawn_audio_level_forwarder(app.handle().clone(), app_state.clone(), audio_level_rx);
 
             // Build the overlay window now rather than on the first
             // dictation. Constructing it costs one brief flash of an empty
@@ -634,12 +593,10 @@ pub fn run() {
             tray::sync_tts_memory_item(app.handle().clone(), app_state.clone());
             updater::init(app.handle());
 
-            let record_on_icon =
-                tauri::image::Image::from_bytes(include_bytes!("../../assets/record_on.png"))
-                    .expect("Failed to load record_on icon");
-            let record_off_icon =
-                tauri::image::Image::from_bytes(include_bytes!("../../assets/record_off.png"))
-                    .expect("Failed to load record_off icon");
+            let record_on_icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/record_on.png"))
+                .expect("Failed to load record_on icon");
+            let record_off_icon = tauri::image::Image::from_bytes(include_bytes!("../../assets/record_off.png"))
+                .expect("Failed to load record_off icon");
             let record_offline_icon =
                 tauri::image::Image::from_bytes(include_bytes!("../../assets/record_offline.png"))
                     .expect("Failed to load record_offline icon");
@@ -695,8 +652,7 @@ pub fn run() {
             if wants_wizard_error_test(&launch_args) {
                 WIZARD_ERROR_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            let forced_wizard =
-                wants_setup_wizard(&launch_args) || wants_wizard_error_test(&launch_args);
+            let forced_wizard = wants_setup_wizard(&launch_args) || wants_wizard_error_test(&launch_args);
             if forced_wizard {
                 if let Err(e) = crate::window::open_wizard_window(&app.handle().clone()) {
                     tracing::error!("Could not open the setup wizard: {e}");

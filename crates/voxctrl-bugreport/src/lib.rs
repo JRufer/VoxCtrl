@@ -79,10 +79,7 @@ pub fn build(statement: UserStatement, install_id: String, sources: Sources<'_>)
 /// directory, because it is state rather than a setting and nothing good comes
 /// of it appearing in a config editor.
 pub fn history_path() -> std::path::PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("voxctrl")
-        .join("bug-reports.json")
+    dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join("voxctrl").join("bug-reports.json")
 }
 
 /// Read the history, treating an unreadable or corrupt file as an empty one.
@@ -109,8 +106,8 @@ pub fn save_history(history: &History) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let text = serde_json::to_string_pretty(history)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let text =
+        serde_json::to_string_pretty(history).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(path, text)
 }
 
@@ -166,11 +163,7 @@ mod tests {
         bindings: &Value,
     ) -> BugReport {
         let system = sysinfo::collect(build, &scrub::Scrubber::from_env());
-        super::build(
-            statement,
-            "test-install".into(),
-            Sources { system, config, targets, bindings },
-        )
+        super::build(statement, "test-install".into(), Sources { system, config, targets, bindings })
     }
 
     #[test]

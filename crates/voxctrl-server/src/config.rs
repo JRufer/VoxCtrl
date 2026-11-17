@@ -183,10 +183,7 @@ impl Default for ServerConfig {
 impl ServerConfig {
     /// `<config dir>/voxctrl/server.toml`, beside the desktop app's own config.
     pub fn default_path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("voxctrl")
-            .join("server.toml")
+        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("server.toml")
     }
 
     pub fn from_toml_str(text: &str) -> Result<Self> {
@@ -198,16 +195,14 @@ impl ServerConfig {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("Could not read {}", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("Could not read {}", path.display()))?;
         Self::from_toml_str(&text).with_context(|| format!("In {}", path.display()))
     }
 
     /// Write the config to `path`, readable by its owner only: it holds the key.
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
-                .with_context(|| format!("Could not create {}", dir.display()))?;
+            std::fs::create_dir_all(dir).with_context(|| format!("Could not create {}", dir.display()))?;
         }
         let text = toml::to_string_pretty(self).context("Could not serialize the config")?;
         write_private(path, &text).with_context(|| format!("Could not write {}", path.display()))
@@ -230,9 +225,8 @@ impl ServerConfig {
             self.require_api_key = parse_bool("VOXCTRL_SERVER_REQUIRE_API_KEY", &v)?;
         }
         if let Some(v) = var("VOXCTRL_SERVER_MAX_UPLOAD_MB") {
-            self.max_upload_mb = v
-                .parse()
-                .with_context(|| format!("VOXCTRL_SERVER_MAX_UPLOAD_MB must be a number, got '{v}'"))?;
+            self.max_upload_mb =
+                v.parse().with_context(|| format!("VOXCTRL_SERVER_MAX_UPLOAD_MB must be a number, got '{v}'"))?;
         }
         // Backend first: the three below apply to whichever backend is selected.
         if let Some(v) = var("VOXCTRL_SERVER_BACKEND") {
@@ -359,9 +353,7 @@ fn parse_bool(name: &str, value: &str) -> Result<bool> {
 fn parse_backend(value: &str) -> Result<BackendChoice> {
     // Through serde, so the names and aliases are exactly the config file's.
     serde_json::from_value(serde_json::Value::String(value.to_ascii_lowercase())).map_err(|_| {
-        anyhow::anyhow!(
-            "VOXCTRL_SERVER_BACKEND must be 'whisper-cpp', 'moonshine' or 'parakeet', got '{value}'"
-        )
+        anyhow::anyhow!("VOXCTRL_SERVER_BACKEND must be 'whisper-cpp', 'moonshine' or 'parakeet', got '{value}'")
     })
 }
 
@@ -378,12 +370,7 @@ pub fn generate_api_key() -> Result<String> {
 pub(crate) fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
+    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
     // `mode` only applies when the file is created; tighten one that existed.
     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     file.write_all(text.as_bytes())
@@ -459,7 +446,8 @@ mod tests {
 
     #[test]
     fn encryption_can_be_set_in_the_file_or_the_environment() {
-        let from_file = ServerConfig::from_toml_str("public_host = \"speechbox.lan\"\n[tls]\nenabled = true\n").unwrap();
+        let from_file =
+            ServerConfig::from_toml_str("public_host = \"speechbox.lan\"\n[tls]\nenabled = true\n").unwrap();
         assert!(from_file.tls.enabled);
         assert_eq!(from_file.public_host, "speechbox.lan");
         let from_env_off = {
@@ -563,9 +551,7 @@ mod tests {
         assert!(from_file.cleanup.gpu, "an unnamed key keeps its default");
 
         let mut from_env = ServerConfig::default();
-        from_env
-            .apply_env(env(&[("VOXCTRL_SERVER_CLEANUP", "true"), ("VOXCTRL_SERVER_CLEANUP_GPU", "off")]))
-            .unwrap();
+        from_env.apply_env(env(&[("VOXCTRL_SERVER_CLEANUP", "true"), ("VOXCTRL_SERVER_CLEANUP_GPU", "off")])).unwrap();
         assert!(from_env.cleanup.enabled);
         assert!(!from_env.cleanup.gpu);
 
@@ -623,8 +609,11 @@ mod tests {
 
         // ...unless the default is named too.
         let mut both = ServerConfig::default();
-        both.apply_env(env(&[("VOXCTRL_SERVER_TTS_ENGINES", "kitten_tts_2,piper"), ("VOXCTRL_SERVER_TTS_ENGINE", "piper")]))
-            .unwrap();
+        both.apply_env(env(&[
+            ("VOXCTRL_SERVER_TTS_ENGINES", "kitten_tts_2,piper"),
+            ("VOXCTRL_SERVER_TTS_ENGINE", "piper"),
+        ]))
+        .unwrap();
         assert_eq!(both.tts.engine, TtsEngine::Piper);
 
         let err = ServerConfig::default().apply_env(env(&[("VOXCTRL_SERVER_TTS_ENGINES", "piper,robot")])).unwrap_err();

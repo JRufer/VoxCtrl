@@ -30,9 +30,9 @@ mod audiocpp;
 pub mod breeze;
 #[cfg(feature = "playback")]
 mod engine;
-pub mod hf;
 #[cfg(feature = "playback")]
 mod fifo;
+pub mod hf;
 pub mod inflect;
 pub mod kitten;
 mod piper;
@@ -42,39 +42,34 @@ pub mod synth;
 mod utterance;
 pub mod voxcpm;
 
-pub use breeze::{
-    breeze_tts_2_model_dir, download_breeze_tts_2_assets, is_breeze_tts_2_ready,
-};
-pub use voxcpm::{
-    download_vox_cpm_2_assets, is_vox_cpm_2_ready, vox_cpm_2_model_dir,
-};
-pub use voxcpm::is_vox_cpm_2_ready as is_vox_cpm_2_downloaded;
-pub use kitten::{
-    download_kitten_tts_2_assets, is_kitten_tts_2_ready, kitten_tts_2_model_dir,
-    KITTEN_TTS_2_LICENSE_NOTE, KITTEN_TTS_2_VOICES,
-};
+pub use audiocpp::set_helper_niceness;
+pub use breeze::{breeze_tts_2_model_dir, download_breeze_tts_2_assets, is_breeze_tts_2_ready};
 #[cfg(feature = "playback")]
 pub use engine::{stop_current_playback, TtsCommand, TtsEngineHandle, TtsEngineWorker};
 #[cfg(feature = "playback")]
 pub use fifo::run_fifo_responder;
-pub use audiocpp::set_helper_niceness;
-pub use utterance::{ErrorCallback, PlaybackCallback, Utterance};
 pub use hf::{
-    apply_hf_token, classify_download_error, effective_hf_token, hf_token_from_env,
-    looks_like_auth_failure, token_rejected, HF_TOKEN_ENV, HF_TOKEN_REJECTED_TAG,
+    apply_hf_token, classify_download_error, effective_hf_token, hf_token_from_env, looks_like_auth_failure,
+    token_rejected, HF_TOKEN_ENV, HF_TOKEN_REJECTED_TAG,
 };
 pub use inflect::{
-    download_inflect_micro_assets, inflect_micro_model_dir, is_inflect_micro_downloaded,
-    INFLECT_MICRO_COMPILED,
+    download_inflect_micro_assets, inflect_micro_model_dir, is_inflect_micro_downloaded, INFLECT_MICRO_COMPILED,
+};
+pub use kitten::{
+    download_kitten_tts_2_assets, is_kitten_tts_2_ready, kitten_tts_2_model_dir, KITTEN_TTS_2_LICENSE_NOTE,
+    KITTEN_TTS_2_VOICES,
 };
 pub use piper::{
-    download_piper_binary, download_voice, get_voice_path, is_voice_downloaded, piper_binary,
-    piper_voice_catalogue, piper_voices_dir, PiperVoiceOption, VoiceInfo, PIPER_VOICES,
+    download_piper_binary, download_voice, get_voice_path, is_voice_downloaded, piper_binary, piper_voice_catalogue,
+    piper_voices_dir, PiperVoiceOption, VoiceInfo, PIPER_VOICES,
 };
 pub use pocket::{
     cloned_tts_voices_dir, download_pocket_tts_assets, is_pocket_tts_ready, pocket_tts_voice,
     pocket_tts_voice_catalogue, PocketTtsVoiceInfo, PocketTtsVoiceOption, POCKET_TTS_VOICES,
 };
+pub use utterance::{ErrorCallback, PlaybackCallback, Utterance};
+pub use voxcpm::is_vox_cpm_2_ready as is_vox_cpm_2_downloaded;
+pub use voxcpm::{download_vox_cpm_2_assets, is_vox_cpm_2_ready, vox_cpm_2_model_dir};
 
 // Shared with voxctrl-inference, which applies the same logic to STT output.
 // See voxctrl-text for the implementation.

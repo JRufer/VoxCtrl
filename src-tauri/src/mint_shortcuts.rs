@@ -54,11 +54,7 @@ pub fn is_mint_desktop() -> bool {
         }
     }
 
-    let check_var = |var: &str| {
-        std::env::var(var)
-            .unwrap_or_default()
-            .to_lowercase()
-    };
+    let check_var = |var: &str| std::env::var(var).unwrap_or_default().to_lowercase();
 
     let desktop = check_var("XDG_CURRENT_DESKTOP");
     let session = check_var("DESKTOP_SESSION");
@@ -219,10 +215,7 @@ fn toggle_command(binding_id: &str) -> String {
 /// Read the `command` of one custom keybinding slot.
 fn slot_command(schema: &str, slot: &str) -> Option<String> {
     let (child_schema, path) = child_schema_and_path(schema, slot);
-    let out = gsettings()
-        .args(["get", &format!("{child_schema}:{path}"), "command"])
-        .output()
-        .ok()?;
+    let out = gsettings().args(["get", &format!("{child_schema}:{path}"), "command"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -232,10 +225,7 @@ fn slot_command(schema: &str, slot: &str) -> Option<String> {
 /// Read the `binding` of one custom keybinding slot, as the raw gsettings value.
 fn slot_binding(schema: &str, slot: &str) -> Option<String> {
     let (child_schema, path) = child_schema_and_path(schema, slot);
-    let out = gsettings()
-        .args(["get", &format!("{child_schema}:{path}"), "binding"])
-        .output()
-        .ok()?;
+    let out = gsettings().args(["get", &format!("{child_schema}:{path}"), "binding"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -252,9 +242,7 @@ pub fn binding_value_is_set(raw: &str) -> bool {
     if trimmed.is_empty() || trimmed == "@as []" || trimmed == "[]" || trimmed == "''" {
         return false;
     }
-    parse_custom_keybindings_list(trimmed)
-        .iter()
-        .any(|v| !v.trim().is_empty())
+    parse_custom_keybindings_list(trimmed).iter().any(|v| !v.trim().is_empty())
 }
 
 fn child_schema_and_path(schema: &str, slot: &str) -> (&'static str, String) {
@@ -275,11 +263,7 @@ fn child_schema_and_path(schema: &str, slot: &str) -> (&'static str, String) {
 fn owned_slots(schema: &str, existing: &[String]) -> Vec<String> {
     existing
         .iter()
-        .filter(|slot| {
-            slot_command(schema, slot)
-                .map(|c| c.contains(OWNED_COMMAND_MARKER))
-                .unwrap_or(false)
-        })
+        .filter(|slot| slot_command(schema, slot).map(|c| c.contains(OWNED_COMMAND_MARKER)).unwrap_or(false))
         .cloned()
         .collect()
 }
@@ -304,11 +288,9 @@ pub fn is_mint_shortcut_registered() -> bool {
     // written fires on no key at all. Reporting that as registered is what made
     // the setup window say "VoxCtrl is ready" on a machine where no shortcut
     // could work.
-    owned_slots(schema, &existing).iter().any(|slot| {
-        slot_binding(schema, slot)
-            .map(|b| binding_value_is_set(&b))
-            .unwrap_or(false)
-    })
+    owned_slots(schema, &existing)
+        .iter()
+        .any(|slot| slot_binding(schema, slot).map(|b| binding_value_is_set(&b)).unwrap_or(false))
 }
 
 /// Mirror the user's toggle bindings into Cinnamon/MATE system shortcuts.
@@ -342,9 +324,8 @@ fn mirrorable_shortcuts(bindings: &[HotkeyBinding]) -> Vec<(String, String)> {
 }
 
 fn write_shortcuts(wanted: Vec<(String, String)>) -> Result<Vec<NativeShortcut>, String> {
-    let schema = detect_mint_schema().ok_or_else(|| {
-        "Neither Cinnamon nor MATE keybinding schema was found via gsettings.".to_string()
-    })?;
+    let schema = detect_mint_schema()
+        .ok_or_else(|| "Neither Cinnamon nor MATE keybinding schema was found via gsettings.".to_string())?;
     let key_name = detect_mint_key_name(schema);
 
     let get_out = gsettings()
@@ -352,10 +333,7 @@ fn write_shortcuts(wanted: Vec<(String, String)>) -> Result<Vec<NativeShortcut>,
         .output()
         .map_err(|e| format!("Failed to execute gsettings get: {}", e))?;
     if !get_out.status.success() {
-        return Err(format!(
-            "gsettings get failed: {}",
-            String::from_utf8_lossy(&get_out.stderr)
-        ));
+        return Err(format!("gsettings get failed: {}", String::from_utf8_lossy(&get_out.stderr)));
     }
     let raw = String::from_utf8_lossy(&get_out.stdout);
     let existing = parse_custom_keybindings_list(&raw);
@@ -369,11 +347,7 @@ fn write_shortcuts(wanted: Vec<(String, String)>) -> Result<Vec<NativeShortcut>,
     let mut registered = Vec::new();
     for (slot, (binding_id, accel)) in slots.iter().zip(wanted.iter()) {
         write_slot(schema, slot, binding_id, accel)?;
-        registered.push(NativeShortcut {
-            binding_id: binding_id.clone(),
-            accel: accel.clone(),
-            slot: slot.clone(),
-        });
+        registered.push(NativeShortcut { binding_id: binding_id.clone(), accel: accel.clone(), slot: slot.clone() });
     }
 
     // A slot we used to own but no longer need is cleared as well as delisted.
@@ -389,11 +363,8 @@ fn write_shortcuts(wanted: Vec<(String, String)>) -> Result<Vec<NativeShortcut>,
 
     // Our stale slots are dropped from the list; everyone else's are kept in
     // their original order.
-    let mut new_list: Vec<String> = existing
-        .iter()
-        .filter(|s| !owned.contains(s) || slots.contains(s))
-        .cloned()
-        .collect();
+    let mut new_list: Vec<String> =
+        existing.iter().filter(|s| !owned.contains(s) || slots.contains(s)).cloned().collect();
     for slot in slots {
         if !new_list.contains(&slot) {
             new_list.push(slot);
@@ -406,18 +377,11 @@ fn write_shortcuts(wanted: Vec<(String, String)>) -> Result<Vec<NativeShortcut>,
             .output()
             .map_err(|e| format!("Failed to set {} list: {}", key_name, e))?;
         if !set_out.status.success() {
-            return Err(format!(
-                "Failed to update {} list: {}",
-                key_name,
-                String::from_utf8_lossy(&set_out.stderr)
-            ));
+            return Err(format!("Failed to update {} list: {}", key_name, String::from_utf8_lossy(&set_out.stderr)));
         }
     }
 
-    info!(
-        "Registered {} Linux Mint native shortcut(s) via gsettings",
-        registered.len()
-    );
+    info!("Registered {} Linux Mint native shortcut(s) via gsettings", registered.len());
     Ok(registered)
 }
 
@@ -427,32 +391,20 @@ fn write_slot(schema: &str, slot: &str, binding_id: &str, accel: &str) -> Result
     let target = format!("{child_schema}:{path}");
     let is_cinnamon = schema.contains("cinnamon");
 
-    let name = if binding_id.is_empty() {
-        "VoxCtrl Dictation Toggle".to_string()
-    } else {
-        format!("VoxCtrl: {binding_id}")
-    };
+    let name =
+        if binding_id.is_empty() { "VoxCtrl Dictation Toggle".to_string() } else { format!("VoxCtrl: {binding_id}") };
 
     let _ = gsettings().args(["set", &target, "name", &name]).output();
-    let _ = gsettings()
-        .args(["set", &target, "command", &toggle_command(binding_id)])
-        .output();
+    let _ = gsettings().args(["set", &target, "command", &toggle_command(binding_id)]).output();
 
     // Cinnamon's `binding` is an array of accelerators; MATE's is a single one.
-    let binding_val = if is_cinnamon {
-        format!("['{accel}']")
-    } else {
-        format!("'{accel}'")
-    };
+    let binding_val = if is_cinnamon { format!("['{accel}']") } else { format!("'{accel}'") };
     let bind_out = gsettings()
         .args(["set", &target, "binding", &binding_val])
         .output()
         .map_err(|e| format!("Failed to set shortcut binding: {}", e))?;
     if !bind_out.status.success() {
-        return Err(format!(
-            "Failed to set keybinding value: {}",
-            String::from_utf8_lossy(&bind_out.stderr)
-        ));
+        return Err(format!("Failed to set keybinding value: {}", String::from_utf8_lossy(&bind_out.stderr)));
     }
     Ok(())
 }
@@ -466,17 +418,14 @@ fn write_slot(schema: &str, slot: &str, binding_id: &str, accel: &str) -> Result
 pub fn register_mint_shortcut(preferred_binding: Option<&str>) -> Result<String, String> {
     let wanted = match preferred_binding {
         Some(accel) => vec![(String::new(), accel.to_string())],
-        None => mirrorable_shortcuts(
-            &voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default(),
-        ),
+        None => {
+            mirrorable_shortcuts(&voxctrl_routing::load_bindings(&voxctrl_routing::config_dir()).unwrap_or_default())
+        }
     };
 
     let registered = write_shortcuts(wanted)?;
     let accels: Vec<String> = registered.iter().map(|s| s.accel.clone()).collect();
-    Ok(format!(
-        "Registered {} in Linux Mint System Settings",
-        accels.join(", ")
-    ))
+    Ok(format!("Registered {} in Linux Mint System Settings", accels.join(", ")))
 }
 
 /// Convert an XDG portal accelerator string (e.g. "CTRL+ALT+space") into GTK accelerator format (e.g. "<Primary><Alt>space").
@@ -536,14 +485,8 @@ mod tests {
     fn test_parse_custom_keybindings_list() {
         assert!(parse_custom_keybindings_list("@as []").is_empty());
         assert!(parse_custom_keybindings_list("[]").is_empty());
-        assert_eq!(
-            parse_custom_keybindings_list("['custom0', 'voxctrl-toggle']"),
-            vec!["custom0", "voxctrl-toggle"]
-        );
-        assert_eq!(
-            parse_custom_keybindings_list("[\"custom1\"]"),
-            vec!["custom1"]
-        );
+        assert_eq!(parse_custom_keybindings_list("['custom0', 'voxctrl-toggle']"), vec!["custom0", "voxctrl-toggle"]);
+        assert_eq!(parse_custom_keybindings_list("[\"custom1\"]"), vec!["custom1"]);
     }
 
     #[test]
@@ -624,11 +567,7 @@ mod tests {
         // A custom keybinding reports no key release, so a hold registered here
         // would start a recording that nothing ever ends.
         assert!(is_mirrorable(&binding("t", GestureType::Toggle, &["KEY_LEFTCTRL", "KEY_D"])));
-        for gesture in [
-            GestureType::Hold,
-            GestureType::DoubleTap,
-            GestureType::DoubleTapHold,
-        ] {
+        for gesture in [GestureType::Hold, GestureType::DoubleTap, GestureType::DoubleTapHold] {
             assert!(
                 !is_mirrorable(&binding("x", gesture, &["KEY_LEFTCTRL", "KEY_D"])),
                 "{gesture:?} cannot survive a press-only shortcut"

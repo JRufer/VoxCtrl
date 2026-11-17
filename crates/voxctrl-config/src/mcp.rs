@@ -16,10 +16,6 @@ pub struct McpConfig {
 
 impl Default for McpConfig {
     fn default() -> Self {
-        Self {
-            server_enabled: false,
-            record_timeout: 15.0,
-            visual_feedback: true,
-        }
+        Self { server_enabled: false, record_timeout: 15.0, visual_feedback: true }
     }
 }

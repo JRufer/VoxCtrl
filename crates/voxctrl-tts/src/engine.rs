@@ -79,21 +79,14 @@ impl TtsEngineHandle {
     pub fn speak(&self, text: impl Into<String>) {
         let gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
         let _ = self.tx.send(TtsCommand::Play {
-            utterance: Utterance {
-                text: text.into(),
-                voice: None,
-                source_label: None,
-            },
+            utterance: Utterance { text: text.into(), voice: None, source_label: None },
             generation: gen,
         });
     }
 
     pub fn speak_utterance(&self, u: Utterance) {
         let gen = self.generation.load(std::sync::atomic::Ordering::SeqCst);
-        let _ = self.tx.send(TtsCommand::Play {
-            utterance: u,
-            generation: gen,
-        });
+        let _ = self.tx.send(TtsCommand::Play { utterance: u, generation: gen });
     }
 
     /// Ask the worker to load the model now. Cheap and idempotent when the model
@@ -149,9 +142,7 @@ fn load_selected_engine(
     audiocpp_session: &mut Option<AudioCppSession>,
 ) -> Option<Result<()>> {
     match config.engine {
-        TtsEngine::InflectMicro if inflect_model.is_none() => {
-            Some(ensure_inflect_micro_loaded(config, inflect_model))
-        }
+        TtsEngine::InflectMicro if inflect_model.is_none() => Some(ensure_inflect_micro_loaded(config, inflect_model)),
         TtsEngine::PocketTts if audiocpp_session.is_none() => Some(ensure_pocket_tts_loaded(config, audiocpp_session)),
         TtsEngine::BreezeTts2 if audiocpp_session.is_none() => {
             Some(ensure_breeze_tts_2_loaded(config, audiocpp_session))
@@ -191,11 +182,7 @@ impl TtsEngineWorker {
         let (tx, rx) = bounded(32);
         let generation = Arc::new(AtomicU32::new(0));
         let model_loaded = Arc::new(AtomicBool::new(false));
-        let handle = TtsEngineHandle {
-            tx,
-            generation: generation.clone(),
-            model_loaded: model_loaded.clone(),
-        };
+        let handle = TtsEngineHandle { tx, generation: generation.clone(), model_loaded: model_loaded.clone() };
 
         let prewarm = prewarm_enabled(&config);
         // Pre-warming loads the model at startup and keeps it there, which is
@@ -204,11 +191,7 @@ impl TtsEngineWorker {
         // first real use (or a `preload()`).
         if prewarm && !config.unloads_when_idle() {
             let _ = handle.tx.send(TtsCommand::Play {
-                utterance: Utterance {
-                    text: " ".into(),
-                    voice: None,
-                    source_label: Some("prewarm".into()),
-                },
+                utterance: Utterance { text: " ".into(), voice: None, source_label: Some("prewarm".into()) },
                 generation: 0,
             });
         }
@@ -224,19 +207,13 @@ impl TtsEngineWorker {
             on_playback_end,
             on_error,
         };
-        std::thread::Builder::new()
-            .name("voxctrl-tts".into())
-            .spawn(move || worker.run())
-            .expect("spawn tts thread");
+        std::thread::Builder::new().name("voxctrl-tts".into()).spawn(move || worker.run()).expect("spawn tts thread");
 
         handle
     }
 
     fn run(self) {
-        info!(
-            "TTS engine started (engine={:?}, memory_mode={:?})",
-            self.config.engine, self.config.memory_mode
-        );
+        info!("TTS engine started (engine={:?}, memory_mode={:?})", self.config.engine, self.config.memory_mode);
         let mut current_config = self.config.clone();
         let mut current_server = self.server.clone();
 
@@ -286,10 +263,7 @@ impl TtsEngineWorker {
                 match idle.checked_sub(last_used.elapsed()) {
                     Some(remaining) if !remaining.is_zero() => remaining,
                     _ => {
-                        info!(
-                            "Unloading TTS model after {}s idle (memory mode: on-demand)",
-                            idle.as_secs()
-                        );
+                        info!("Unloading TTS model after {}s idle (memory mode: on-demand)", idle.as_secs());
                         // Dropping these is the whole of the resident
                         // footprint (dropping `audiocpp_session` kills its
                         // child `audiocpp_server` process); the worker
@@ -332,10 +306,8 @@ impl TtsEngineWorker {
                         {
                             warn!("TTS pre-warm after switching to always-loaded failed: {e:#}");
                         }
-                        self.model_loaded.store(
-                            inflect_model.is_some() || audiocpp_session.is_some(),
-                            Ordering::SeqCst,
-                        );
+                        self.model_loaded
+                            .store(inflect_model.is_some() || audiocpp_session.is_some(), Ordering::SeqCst);
                     }
                 }
                 TtsCommand::Play { mut utterance, generation } => {
@@ -392,77 +364,76 @@ impl TtsEngineWorker {
                     // presents as the app hanging rather than as a failure. ONNX
                     // Runtime can panic during session creation when its shared
                     // library cannot be resolved, so this path is reachable.
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        match current_config.engine {
-                        TtsEngine::Piper => self.speak_piper(&utterance, &sink),
-                        TtsEngine::Espeak => self.speak_espeak(&utterance),
-                        TtsEngine::PocketTts => speak_pocket_tts(
-                            &current_config,
-                            &utterance,
-                            &mut audiocpp_session,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        TtsEngine::InflectMicro => speak_inflect_micro(
-                            &current_config,
-                            &utterance,
-                            &mut inflect_model,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        TtsEngine::BreezeTts2 => speak_breeze_tts_2(
-                            &current_config,
-                            &utterance,
-                            &mut audiocpp_session,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        TtsEngine::VoxCpm2 => speak_vox_cpm_2(
-                            &current_config,
-                            &utterance,
-                            &mut audiocpp_session,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        TtsEngine::Server => speak_on_server(
-                            current_server.as_ref(),
-                            &utterance,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        TtsEngine::KittenTts2 => speak_kitten_tts_2(
-                            &current_config,
-                            &utterance,
-                            &mut audiocpp_session,
-                            &self.on_playback_start,
-                            &sink,
-                            &self.generation,
-                            generation,
-                        ),
-                        }
-                    }))
-                    .unwrap_or_else(|payload| {
-                        let detail = payload
-                            .downcast_ref::<&str>()
-                            .map(|s| (*s).to_string())
-                            .or_else(|| payload.downcast_ref::<String>().cloned())
-                            .unwrap_or_else(|| "unknown panic".into());
-                        Err(anyhow::anyhow!(
-                            "TTS engine panicked: {detail}. For the Inflect-Micro-v2 \
+                    let result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match current_config.engine {
+                            TtsEngine::Piper => self.speak_piper(&utterance, &sink),
+                            TtsEngine::Espeak => self.speak_espeak(&utterance),
+                            TtsEngine::PocketTts => speak_pocket_tts(
+                                &current_config,
+                                &utterance,
+                                &mut audiocpp_session,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::InflectMicro => speak_inflect_micro(
+                                &current_config,
+                                &utterance,
+                                &mut inflect_model,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::BreezeTts2 => speak_breeze_tts_2(
+                                &current_config,
+                                &utterance,
+                                &mut audiocpp_session,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::VoxCpm2 => speak_vox_cpm_2(
+                                &current_config,
+                                &utterance,
+                                &mut audiocpp_session,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::Server => speak_on_server(
+                                current_server.as_ref(),
+                                &utterance,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::KittenTts2 => speak_kitten_tts_2(
+                                &current_config,
+                                &utterance,
+                                &mut audiocpp_session,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                        }))
+                        .unwrap_or_else(|payload| {
+                            let detail = payload
+                                .downcast_ref::<&str>()
+                                .map(|s| (*s).to_string())
+                                .or_else(|| payload.downcast_ref::<String>().cloned())
+                                .unwrap_or_else(|| "unknown panic".into());
+                            Err(anyhow::anyhow!(
+                                "TTS engine panicked: {detail}. For the Inflect-Micro-v2 \
                              engine this usually means ONNX Runtime could not be \
                              loaded — this build resolves libonnxruntime at runtime."
-                        ))
-                    });
+                            ))
+                        });
 
                     {
                         let mut guard = ACTIVE_SINK.lock().unwrap();
@@ -483,10 +454,7 @@ impl TtsEngineWorker {
                         }
                     }
 
-                    self.model_loaded.store(
-                        inflect_model.is_some() || audiocpp_session.is_some(),
-                        Ordering::SeqCst,
-                    );
+                    self.model_loaded.store(inflect_model.is_some() || audiocpp_session.is_some(), Ordering::SeqCst);
                     // A long utterance must not count against the idle window.
                     last_used = Instant::now();
                 }
@@ -497,17 +465,13 @@ impl TtsEngineWorker {
                     // Speculative: failures are logged, not surfaced. The same
                     // error is reported properly (with a toast) if an utterance
                     // actually arrives.
-                    let outcome =
-                        load_selected_engine(&current_config, &mut inflect_model, &mut audiocpp_session);
+                    let outcome = load_selected_engine(&current_config, &mut inflect_model, &mut audiocpp_session);
                     match outcome {
                         Some(Err(e)) => debug!("TTS preload skipped: {e:#}"),
                         Some(Ok(())) => debug!("TTS model pre-loaded and primed"),
                         None => {}
                     }
-                    self.model_loaded.store(
-                        inflect_model.is_some() || audiocpp_session.is_some(),
-                        Ordering::SeqCst,
-                    );
+                    self.model_loaded.store(inflect_model.is_some() || audiocpp_session.is_some(), Ordering::SeqCst);
                     last_used = Instant::now();
                 }
                 TtsCommand::Shutdown => {
@@ -644,10 +608,7 @@ fn speak_on_server(
 // ── Audio playback ────────────────────────────────────────────────────────────
 
 fn play_raw_audio(sink: &rodio::Sink, raw: &[u8], sample_rate: u32) -> Result<()> {
-    let samples: Vec<i16> = raw
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]))
-        .collect();
+    let samples: Vec<i16> = raw.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b)).collect();
 
     sink.append(rodio::buffer::SamplesBuffer::new(1, sample_rate, samples));
     sink.sleep_until_end();
@@ -671,11 +632,8 @@ mod tests {
     fn test_handle_stop_increments_generation_counter() {
         let (tx, _rx) = bounded(32);
         let generation = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let handle = TtsEngineHandle {
-            tx,
-            generation: generation.clone(),
-            model_loaded: Arc::new(AtomicBool::new(false)),
-        };
+        let handle =
+            TtsEngineHandle { tx, generation: generation.clone(), model_loaded: Arc::new(AtomicBool::new(false)) };
 
         assert_eq!(generation.load(std::sync::atomic::Ordering::SeqCst), 0);
         handle.stop();
@@ -820,10 +778,7 @@ mod tests {
 
     #[test]
     fn test_on_demand_mode_reported_by_config() {
-        let cfg = TtsConfig {
-            memory_mode: voxctrl_config::TtsMemoryMode::OnDemand,
-            ..TtsConfig::default()
-        };
+        let cfg = TtsConfig { memory_mode: voxctrl_config::TtsMemoryMode::OnDemand, ..TtsConfig::default() };
         assert!(cfg.unloads_when_idle());
     }
 }

@@ -8,10 +8,7 @@ const EXAMPLE_README: &str = include_str!("../assets/custom-overlay-template/ove
 /// `index.html` + `style.css` becomes a selectable "Overlay style" in
 /// Settings → Visual & Feedback (see `commands::get_custom_overlays`).
 pub fn overlays_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("voxctrl")
-        .join("overlays")
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("overlays")
 }
 
 /// Make sure the documented `Custom/` example exists, without ever touching
@@ -103,14 +100,8 @@ mod tests {
         refresh_bundled_example();
         refresh_bundled_example();
 
-        assert_eq!(
-            std::fs::read_to_string(example_dir.join("index.html")).unwrap(),
-            "<div>my own edit</div>"
-        );
-        assert_eq!(
-            std::fs::read_to_string(example_dir.join("style.css")).unwrap(),
-            "/* my own edit */"
-        );
+        assert_eq!(std::fs::read_to_string(example_dir.join("index.html")).unwrap(), "<div>my own edit</div>");
+        assert_eq!(std::fs::read_to_string(example_dir.join("style.css")).unwrap(), "/* my own edit */");
 
         std::env::remove_var("XDG_DATA_HOME");
     }

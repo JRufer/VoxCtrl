@@ -95,8 +95,7 @@ pub fn collect(build: &BuildFacts, scrubber: &Scrubber) -> SystemInfo {
     #[cfg(target_os = "windows")]
     collect_windows(&mut info);
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    info.collection_notes
-        .push("no collector for this platform; only the portable facts are included".into());
+    info.collection_notes.push("no collector for this platform; only the portable facts are included".into());
 
     // Adapter names and distribution strings are vendor text, but a machine
     // named after its owner shows up in more of them than you would think.
@@ -150,28 +149,17 @@ pub(crate) fn package_kind(exe: &std::path::Path, root: &std::path::Path) -> Opt
 
 /// Just the language subtag: "en_US.UTF-8" and "en_GB" both become "en".
 fn language() -> Option<String> {
-    let raw = std::env::var("LANG")
-        .or_else(|_| std::env::var("LC_ALL"))
-        .ok()
-        .filter(|s| !s.is_empty())?;
-    Some(
-        raw.split(['_', '.', '-'])
-            .next()
-            .unwrap_or(&raw)
-            .to_string(),
-    )
+    let raw = std::env::var("LANG").or_else(|_| std::env::var("LC_ALL")).ok().filter(|s| !s.is_empty())?;
+    Some(raw.split(['_', '.', '-']).next().unwrap_or(&raw).to_string())
 }
 
 // ── Linux ────────────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "linux")]
 fn collect_linux(info: &mut SystemInfo) {
-    info.os_name = std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .and_then(|text| os_release_pretty_name(&text));
+    info.os_name = std::fs::read_to_string("/etc/os-release").ok().and_then(|text| os_release_pretty_name(&text));
     if info.os_name.is_none() {
-        info.collection_notes
-            .push("/etc/os-release could not be read".into());
+        info.collection_notes.push("/etc/os-release could not be read".into());
     }
 
     info.os_version = std::fs::read_to_string("/proc/sys/kernel/osrelease")
@@ -186,20 +174,14 @@ fn collect_linux(info: &mut SystemInfo) {
         info.memory_total_mb = meminfo_total_mb(&meminfo);
     }
 
-    info.desktop = std::env::var("XDG_CURRENT_DESKTOP")
-        .ok()
-        .filter(|s| !s.is_empty());
-    info.session_type = std::env::var("XDG_SESSION_TYPE")
-        .ok()
-        .filter(|s| !s.is_empty());
+    info.desktop = std::env::var("XDG_CURRENT_DESKTOP").ok().filter(|s| !s.is_empty());
+    info.session_type = std::env::var("XDG_SESSION_TYPE").ok().filter(|s| !s.is_empty());
 
     // `lspci` is in pciutils, which is not universally installed and is absent
     // from a good few container and minimal images. Missing is not an error.
     match run("lspci", &["-mm"]) {
         Some(out) => info.gpus = lspci_display_adapters(&out),
-        None => info
-            .collection_notes
-            .push("lspci is not installed, so no display adapter is listed".into()),
+        None => info.collection_notes.push("lspci is not installed, so no display adapter is listed".into()),
     }
 }
 
@@ -249,10 +231,7 @@ pub(crate) fn lspci_display_adapters(text: &str) -> Vec<String> {
         .filter_map(|line| {
             let fields: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
             let class = fields.first()?;
-            if !class.contains("VGA")
-                && !class.contains("3D controller")
-                && !class.contains("Display controller")
-            {
+            if !class.contains("VGA") && !class.contains("3D controller") && !class.contains("Display controller") {
                 return None;
             }
             let vendor = fields.get(1)?;
@@ -286,17 +265,9 @@ fn collect_windows(info: &mut SystemInfo) {
     // keeps the report useful when PowerShell is locked down by policy.
     info.cpu_model = std::env::var("PROCESSOR_IDENTIFIER").ok().filter(|s| !s.is_empty());
 
-    let Some(output) = run(
-        "powershell",
-        &[
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            WINDOWS_PROBE,
-        ],
-    ) else {
+    let Some(output) =
+        run("powershell", &["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_PROBE])
+    else {
         info.collection_notes.push(
             "PowerShell did not answer, so the Windows edition, memory and display \
              adapter are missing"
@@ -416,19 +387,13 @@ mod tests {
     #[test]
     fn a_distribution_name_is_read_unquoted() {
         let text = "NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nVERSION_ID=\"24.04\"\n";
-        assert_eq!(
-            os_release_pretty_name(text).as_deref(),
-            Some("Ubuntu 24.04.1 LTS")
-        );
+        assert_eq!(os_release_pretty_name(text).as_deref(), Some("Ubuntu 24.04.1 LTS"));
     }
 
     #[test]
     fn a_cpu_model_is_read_from_the_x86_spelling() {
         let text = "processor\t: 0\nmodel name\t: AMD Ryzen 7 5800X 8-Core Processor\n";
-        assert_eq!(
-            cpuinfo_model(text).as_deref(),
-            Some("AMD Ryzen 7 5800X 8-Core Processor")
-        );
+        assert_eq!(cpuinfo_model(text).as_deref(), Some("AMD Ryzen 7 5800X 8-Core Processor"));
     }
 
     #[test]
@@ -453,10 +418,7 @@ mod tests {
         );
         assert_eq!(
             lspci_display_adapters(text),
-            vec![
-                "Intel Corporation UHD Graphics 630",
-                "NVIDIA Corporation GP107M GeForce GTX 1050 Ti"
-            ]
+            vec!["Intel Corporation UHD Graphics 630", "NVIDIA Corporation GP107M GeForce GTX 1050 Ti"]
         );
     }
 

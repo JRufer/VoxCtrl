@@ -119,10 +119,7 @@ fn run_command_status(runner: &str, args: &[&str]) -> Result<std::process::ExitS
         }
     }
 
-    Command::new(runner)
-        .args(args)
-        .status()
-        .map_err(|e| format!("Failed to spawn {}: {}", runner, e))
+    Command::new(runner).args(args).status().map_err(|e| format!("Failed to spawn {}: {}", runner, e))
 }
 
 /// Desktop entry filename. Must stay in step with the portal application id, so
@@ -146,12 +143,10 @@ pub fn setup_desktop_integration() -> Result<(), String> {
     std::fs::write(&icon_path, icon_bytes).map_err(|e| e.to_string())?;
 
     // Create desktop launcher
-    let appimage_path = std::env::var("APPIMAGE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_exe().unwrap_or_default());
-    
-    let abs_path = std::fs::canonicalize(&appimage_path)
-        .unwrap_or(appimage_path);
+    let appimage_path =
+        std::env::var("APPIMAGE").map(PathBuf::from).unwrap_or_else(|_| std::env::current_exe().unwrap_or_default());
+
+    let abs_path = std::fs::canonicalize(&appimage_path).unwrap_or(appimage_path);
 
     let desktop_content = format!(
         r#"[Desktop Entry]
@@ -182,7 +177,7 @@ Keywords=whisper;voice;dictation;wayland;
     if legacy.exists() {
         let _ = std::fs::remove_file(&legacy);
     }
-    
+
     // Make desktop entry executable
     #[cfg(unix)]
     {
@@ -206,9 +201,7 @@ fn register_mint_shortcut_if_needed() {
         // Mint session VoxCtrl reads the keys itself and every gesture works,
         // and a native shortcut registered alongside that would fire a second
         // time on the same keypress.
-        if crate::mint_shortcuts::is_mint_desktop()
-            && !crate::mint_shortcuts::is_mint_shortcut_registered()
-        {
+        if crate::mint_shortcuts::is_mint_desktop() && !crate::mint_shortcuts::is_mint_shortcut_registered() {
             let _ = crate::mint_shortcuts::register_mint_shortcut(None);
         }
     }
@@ -251,11 +244,9 @@ pub fn remove_superseded_user_launcher(home: &std::path::Path, current_exe: &std
     let points_at_us = std::fs::canonicalize(&exec).ok().as_deref()
         == std::fs::canonicalize(current_exe).ok().as_deref()
         && exec.exists();
-    let dead_appimage = exec
-        .file_name()
-        .map(|n| n.to_string_lossy().to_lowercase().ends_with(".appimage"))
-        .unwrap_or(false)
-        && !exec.exists();
+    let dead_appimage =
+        exec.file_name().map(|n| n.to_string_lossy().to_lowercase().ends_with(".appimage")).unwrap_or(false)
+            && !exec.exists();
 
     if !(points_at_us || dead_appimage) {
         return false;
@@ -271,10 +262,7 @@ pub fn remove_superseded_user_launcher(home: &std::path::Path, current_exe: &std
 
 /// The program path in a desktop entry's `Exec=` line, without arguments.
 fn desktop_exec_path(content: &str) -> Option<PathBuf> {
-    let exec = content
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("Exec="))?
-        .trim();
+    let exec = content.lines().find_map(|l| l.trim().strip_prefix("Exec="))?.trim();
     // VoxCtrl writes the path unquoted and with no arguments; take the first
     // word in case someone added a field code such as %U by hand.
     let program = exec.split_whitespace().next()?;
@@ -388,17 +376,15 @@ pub async fn run_gui_installer() -> Result<(), String> {
     }
 
     if !command_exists("pkexec") {
-        return Err(
-            "pkexec is not installed, so VoxCtrl cannot ask for administrator access. \
+        return Err("pkexec is not installed, so VoxCtrl cannot ask for administrator access. \
              Run the commands shown under \"Set it up manually\" in a terminal instead."
-                .to_string(),
-        );
+            .to_string());
     }
 
     let script_clone = full_script.clone();
-    let status = tokio::task::spawn_blocking(move || {
-        run_command_status("pkexec", &["sh", "-c", &script_clone])
-    }).await.map_err(|e| format!("Spawn error: {}", e))??;
+    let status = tokio::task::spawn_blocking(move || run_command_status("pkexec", &["sh", "-c", &script_clone]))
+        .await
+        .map_err(|e| format!("Spawn error: {}", e))??;
 
     if !status.success() {
         return Err("Installing the host packages failed or was canceled.".to_string());
@@ -413,8 +399,8 @@ pub async fn run_gui_installer() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_get_install_packages_command() {
@@ -438,18 +424,8 @@ mod tests {
         // process running as this user read every keystroke on the machine.
         for mgr in ["pacman", "apt", "dnf", "zypper", "unknown"] {
             let script = build_privileged_setup_script(mgr);
-            for forbidden in [
-                "udev",
-                "uaccess",
-                "usermod",
-                "/dev/input",
-                "99-voxctrl.rules",
-                "udevadm",
-            ] {
-                assert!(
-                    !script.contains(forbidden),
-                    "{mgr} setup script must not mention `{forbidden}`:\n{script}"
-                );
+            for forbidden in ["udev", "uaccess", "usermod", "/dev/input", "99-voxctrl.rules", "udevadm"] {
+                assert!(!script.contains(forbidden), "{mgr} setup script must not mention `{forbidden}`:\n{script}");
             }
         }
     }
@@ -476,10 +452,7 @@ mod tests {
         let manual = manual_setup_commands("apt");
         assert!(manual.contains("apt-get install"));
         for forbidden in ["udev", "usermod", "uaccess", "/dev/input"] {
-            assert!(
-                !manual.contains(forbidden),
-                "manual commands must not mention `{forbidden}`"
-            );
+            assert!(!manual.contains(forbidden), "manual commands must not mention `{forbidden}`");
         }
         assert!(manual_setup_commands("unknown").is_empty());
     }
@@ -501,7 +474,7 @@ mod tests {
         let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         let temp_dir = tempdir().unwrap();
         let home_path = temp_dir.path().to_path_buf();
-        
+
         // Mock HOME directory environment variable
         std::env::set_var("HOME", &home_path);
         // Mock APPIMAGE environment variable
@@ -532,7 +505,9 @@ mod tests {
         // poison the shared env lock and cascade failures into unrelated tests.
         #[cfg(unix)]
         {
-            let uid = std::process::Command::new("id").arg("-u").output()
+            let uid = std::process::Command::new("id")
+                .arg("-u")
+                .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                 .unwrap_or_default();
             if uid == "0" {
@@ -553,7 +528,7 @@ mod tests {
         let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "success");
-        
+
         let temp_dir = tempdir().unwrap();
         std::env::set_var("HOME", temp_dir.path());
 
@@ -570,7 +545,7 @@ mod tests {
         let _lock = crate::test_utils::get_env_lock().lock().unwrap();
         std::env::set_var("VOXCTRL_PKG_MANAGER_MOCK", "apt");
         std::env::set_var("VOXCTRL_INSTALLER_TEST_MOCK", "failure");
-        
+
         let temp_dir = tempdir().unwrap();
         std::env::set_var("HOME", temp_dir.path());
 

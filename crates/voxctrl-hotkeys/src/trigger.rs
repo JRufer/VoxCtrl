@@ -37,15 +37,10 @@ impl std::fmt::Display for TriggerProblem {
                 "a shortcut needs at least one regular key — modifiers on their own \
                  (Super, Ctrl, Alt, Shift) cannot be registered with your desktop"
             ),
-            Self::MultipleKeys => write!(
-                f,
-                "a shortcut is any number of modifiers plus exactly one regular key"
-            ),
-            Self::UnsupportedKey(k) => write!(
-                f,
-                "{} has no equivalent in the desktop shortcut specification",
-                k.trim_start_matches("KEY_")
-            ),
+            Self::MultipleKeys => write!(f, "a shortcut is any number of modifiers plus exactly one regular key"),
+            Self::UnsupportedKey(k) => {
+                write!(f, "{} has no equivalent in the desktop shortcut specification", k.trim_start_matches("KEY_"))
+            }
         }
     }
 }
@@ -73,8 +68,7 @@ pub fn accelerator(keys: &[String]) -> Result<String, TriggerProblem> {
                 }
             }
             None => {
-                let named =
-                    keysym_name(k).ok_or_else(|| TriggerProblem::UnsupportedKey(k.clone()))?;
+                let named = keysym_name(k).ok_or_else(|| TriggerProblem::UnsupportedKey(k.clone()))?;
                 if key.is_some() {
                     return Err(TriggerProblem::MultipleKeys);
                 }
@@ -227,10 +221,7 @@ pub const RESERVED_KEYS: &[&str] = &["KEY_ESC", "KEY_ESCAPE"];
 /// nothing else is listening for, so it is an ordinary shortcut and is
 /// registered for the life of the process like any other.
 pub fn is_reserved_for_the_desktop(keys: &[String]) -> bool {
-    !keys.is_empty()
-        && keys
-            .iter()
-            .all(|k| RESERVED_KEYS.contains(&k.to_ascii_uppercase().as_str()))
+    !keys.is_empty() && keys.iter().all(|k| RESERVED_KEYS.contains(&k.to_ascii_uppercase().as_str()))
 }
 
 /// True for a key that only ever acts as a modifier, so it cannot be the one
@@ -249,14 +240,8 @@ mod tests {
 
     #[test]
     fn combos_translate_to_accelerator_syntax() {
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTMETA", "KEY_SPACE"])).unwrap(),
-            "LOGO+space"
-        );
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_D"])).unwrap(),
-            "CTRL+ALT+d"
-        );
+        assert_eq!(accelerator(&keys(&["KEY_LEFTMETA", "KEY_SPACE"])).unwrap(), "LOGO+space");
+        assert_eq!(accelerator(&keys(&["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_D"])).unwrap(), "CTRL+ALT+d");
         assert_eq!(accelerator(&keys(&["KEY_F5"])).unwrap(), "F5");
     }
 
@@ -270,28 +255,16 @@ mod tests {
 
     #[test]
     fn left_and_right_modifiers_are_the_same_accelerator() {
-        assert_eq!(
-            accelerator(&keys(&["KEY_RIGHTCTRL", "KEY_A"])).unwrap(),
-            "CTRL+a"
-        );
+        assert_eq!(accelerator(&keys(&["KEY_RIGHTCTRL", "KEY_A"])).unwrap(), "CTRL+a");
     }
 
     #[test]
     fn a_bare_modifier_is_rejected_with_a_reason() {
         // The case the settings UI has to catch: a lone Super looks like a
         // perfectly good hotkey to a user, and no desktop can bind it.
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTMETA"])),
-            Err(TriggerProblem::ModifiersOnly)
-        );
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTCTRL", "KEY_LEFTSHIFT"])),
-            Err(TriggerProblem::ModifiersOnly)
-        );
-        assert_eq!(
-            accelerator(&keys(&["KEY_RIGHTMETA"])),
-            Err(TriggerProblem::ModifiersOnly)
-        );
+        assert_eq!(accelerator(&keys(&["KEY_LEFTMETA"])), Err(TriggerProblem::ModifiersOnly));
+        assert_eq!(accelerator(&keys(&["KEY_LEFTCTRL", "KEY_LEFTSHIFT"])), Err(TriggerProblem::ModifiersOnly));
+        assert_eq!(accelerator(&keys(&["KEY_RIGHTMETA"])), Err(TriggerProblem::ModifiersOnly));
     }
 
     #[test]
@@ -310,16 +283,10 @@ mod tests {
         // Ctrl+Escape takes nothing from the desktop: no app is listening for
         // the combination, so it is registered for the life of the process and
         // needs none of the arming machinery.
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTCTRL", "KEY_ESC"])).unwrap(),
-            "CTRL+Escape"
-        );
+        assert_eq!(accelerator(&keys(&["KEY_LEFTCTRL", "KEY_ESC"])).unwrap(), "CTRL+Escape");
         let ctrl_escape = keys(&["KEY_LEFTCTRL", "KEY_ESC"]);
         assert!(!is_reserved_for_the_desktop(&ctrl_escape));
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTMETA", "KEY_ESCAPE"])).unwrap(),
-            "LOGO+Escape"
-        );
+        assert_eq!(accelerator(&keys(&["KEY_LEFTMETA", "KEY_ESCAPE"])).unwrap(), "LOGO+Escape");
     }
 
     #[test]
@@ -328,24 +295,15 @@ mod tests {
         // combination the user picked on purpose, and taking it back between
         // utterances would break setups that work today.
         for k in ["KEY_F5", "KEY_SPACE", "KEY_A", "KEY_TAB", "KEY_ENTER"] {
-            assert!(
-                !is_reserved_for_the_desktop(&keys(&[k])),
-                "{k} must stay an ordinary standing shortcut"
-            );
+            assert!(!is_reserved_for_the_desktop(&keys(&[k])), "{k} must stay an ordinary standing shortcut");
         }
         assert!(!is_reserved_for_the_desktop(&[]));
     }
 
     #[test]
     fn two_regular_keys_are_rejected() {
-        assert_eq!(
-            accelerator(&keys(&["KEY_A", "KEY_B"])),
-            Err(TriggerProblem::MultipleKeys)
-        );
-        assert_eq!(
-            accelerator(&keys(&["KEY_LEFTCTRL", "KEY_A", "KEY_B"])),
-            Err(TriggerProblem::MultipleKeys)
-        );
+        assert_eq!(accelerator(&keys(&["KEY_A", "KEY_B"])), Err(TriggerProblem::MultipleKeys));
+        assert_eq!(accelerator(&keys(&["KEY_LEFTCTRL", "KEY_A", "KEY_B"])), Err(TriggerProblem::MultipleKeys));
     }
 
     #[test]
@@ -366,11 +324,7 @@ mod tests {
             ("KEY_KPPLUS", "KP_Add"),
             ("KEY_KPSLASH", "KP_Divide"),
         ] {
-            assert_eq!(
-                accelerator(&keys(&["KEY_LEFTCTRL", key])).unwrap(),
-                format!("CTRL+{sym}"),
-                "{key}"
-            );
+            assert_eq!(accelerator(&keys(&["KEY_LEFTCTRL", key])).unwrap(), format!("CTRL+{sym}"), "{key}");
         }
     }
 
@@ -427,8 +381,14 @@ mod tests {
     #[test]
     fn modifiers_are_recognised_on_both_sides_of_the_keyboard() {
         for k in [
-            "KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_LEFTALT", "KEY_RIGHTALT",
-            "KEY_LEFTSHIFT", "KEY_RIGHTSHIFT", "KEY_LEFTMETA", "KEY_RIGHTMETA",
+            "KEY_LEFTCTRL",
+            "KEY_RIGHTCTRL",
+            "KEY_LEFTALT",
+            "KEY_RIGHTALT",
+            "KEY_LEFTSHIFT",
+            "KEY_RIGHTSHIFT",
+            "KEY_LEFTMETA",
+            "KEY_RIGHTMETA",
         ] {
             assert!(is_modifier(k), "{k} must count as a modifier");
         }
@@ -453,9 +413,6 @@ mod tests {
     #[test]
     fn portal_trigger_collapses_problems_to_none() {
         assert_eq!(portal_trigger(&keys(&["KEY_LEFTMETA"])), None);
-        assert_eq!(
-            portal_trigger(&keys(&["KEY_LEFTMETA", "KEY_SPACE"])).as_deref(),
-            Some("LOGO+space")
-        );
+        assert_eq!(portal_trigger(&keys(&["KEY_LEFTMETA", "KEY_SPACE"])).as_deref(), Some("LOGO+space"));
     }
 }
