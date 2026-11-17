@@ -241,11 +241,21 @@ GPU support is decided at compile time and differs by engine — which is why th
 
 ### AUR packages
 
-`packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
+`packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). **Paused since 0.9.20:** the AUR packages do not build at the moment, so the `AUR packages` and `Publish to AUR` workflows are disabled in the repository's Actions settings, and the release workflow's `aur-smoke` job is set to `if: false`. Turn all three back on together. If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
 
 ### Release notes
 
 The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.
+
+### Release candidates
+
+A release candidate is a SemVer pre-release: `./scripts/bump_version.sh 1.0.0-rc.1`, with notes in `docs/release-notes/1.0.0-rc.1.md`. Use `alpha`, `beta` or `rc` followed by a dot and a number; the script refuses other forms (`rc1` would sort `rc10` before `rc9`). What is different about one:
+
+- **GitHub release:** the draft is marked as a pre-release, so it is never "latest".
+- **In-app updates:** the updater reads `/releases/latest`, so nobody is offered a candidate. Testers install it by hand. When `1.0.0` is published, a machine running `1.0.0-rc.N` is offered it, since a pre-release sorts below its release.
+- **`.deb`:** its version becomes `1.0.0~rc.1` (`scripts/deb_prerelease_version.sh`). dpkg reads a `-` as the Debian revision and would sort `1.0.0-rc.1` *above* `1.0.0`, so apt would call the real release a downgrade. `~` sorts below it.
+- **AUR:** `pkgver` may not contain `-`, so the script leaves the PKGBUILDs at the last full release.
+- **Server compatibility:** an app at `1.0.0-rc.1` counts as older than `1.0.0` when compared with a server's `min_client` (see [clients.md](clients.md)).
 
 ### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 on the GPU
 

@@ -495,6 +495,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p upload
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
           find . \( -name "*.AppImage" -o -name "*.deb" \) \
               ! -name "*.AppImage.zsync" \
               ! -path "*/.cargo/*" | \
@@ -503,6 +504,12 @@ jobs:
             ext="${base##*.}"
             dest="upload/VoxCtrl-${{ matrix.artifact_label }}.${ext}"
             cp "$f" "$dest"
+            # dpkg reads 1.0.0-rc.1 as version 1.0.0, Debian revision rc.1,
+            # which sorts above 1.0.0: apt would call the real release a
+            # downgrade. 1.0.0~rc.1 sorts below it, as it should.
+            if [[ "$ext" == deb && "$VERSION" == *-* ]]; then
+              scripts/deb_prerelease_version.sh "$dest"
+            fi
             echo "Collected: $dest ($(du -sh "$f" | cut -f1))"
           done
           ls -lh upload/
@@ -546,10 +553,15 @@ jobs:
   # a broken package from this release: fix it before publishing the draft.
   # Not a dependency of `publish`, so an Arch-only problem never holds up the
   # draft for every other platform.
+  #
+  # Off for now, with the AUR workflows (aur.yml, aur-publish.yml), which are
+  # disabled in the repository's Actions settings: the AUR packages do not
+  # build at the moment, so this only spent a runner. Restore the condition
+  # below when they are turned back on.
   aur-smoke:
     name: AUR package smoke test
     needs: build
-    if: always() && contains(needs.build.result, 'success')
+    if: false # was: always() && contains(needs.build.result, 'success')
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -679,6 +691,10 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           name: "VoxCtrl ${{ steps.tag.outputs.name }}"
           draft: true
+          # A pre-release version (1.0.0-rc.1) is published as a GitHub
+          # pre-release: not "latest", and never offered by the in-app
+          # updater, which reads /releases/latest.
+          prerelease: ${{ contains(steps.tag.outputs.name, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: release-artifacts/*
