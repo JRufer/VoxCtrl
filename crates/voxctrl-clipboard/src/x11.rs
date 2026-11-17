@@ -231,7 +231,7 @@ pub fn snapshot() -> Result<Snapshot> {
             // saying so beats pretending the clipboard was empty.
             bail!("the clipboard owner did not list its formats");
         };
-        let targets: Vec<Atom> = raw.chunks_exact(4).map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]])).collect();
+        let targets: Vec<Atom> = raw.as_chunks::<4>().0.iter().map(|c| u32::from_ne_bytes(*c)).collect();
 
         let mut items = Vec::new();
         let mut total = 0usize;

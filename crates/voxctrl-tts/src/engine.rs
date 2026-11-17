@@ -608,7 +608,7 @@ fn speak_on_server(
 // ── Audio playback ────────────────────────────────────────────────────────────
 
 fn play_raw_audio(sink: &rodio::Sink, raw: &[u8], sample_rate: u32) -> Result<()> {
-    let samples: Vec<i16> = raw.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    let samples: Vec<i16> = raw.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b)).collect();
 
     sink.append(rodio::buffer::SamplesBuffer::new(1, sample_rate, samples));
     sink.sleep_until_end();

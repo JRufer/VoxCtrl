@@ -912,7 +912,7 @@ mod tests {
         backend.load().expect("load redux");
         let path = std::env::var("REDUX_TEST_PCM").expect("REDUX_TEST_PCM");
         let bytes = std::fs::read(path).unwrap();
-        let audio: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let audio: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
         let req = TranscribeRequest {
             audio,
             language: None,
@@ -942,7 +942,7 @@ mod tests {
         backend.load().expect("load phonon-2");
         let path = std::env::var("PHONON2_TEST_PCM").expect("PHONON2_TEST_PCM");
         let bytes = std::fs::read(path).unwrap();
-        let audio: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let audio: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
         let req = TranscribeRequest {
             audio,
             language: None,
