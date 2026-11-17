@@ -1,7 +1,7 @@
 {
   "name": "voxctrl",
   "private": true,
-  "version": "0.9.20",
+  "version": "1.0.0-rc.1",
   "type": "module",
   "scripts": {
     "predev": "pkill -x voxctrl 2>/dev/null || true; fuser -k 5173/tcp 2>/dev/null || true",
