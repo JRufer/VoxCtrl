@@ -214,10 +214,22 @@ async fn root() -> Json<serde_json::Value> {
     Json(json!({ "name": "voxctrl-server", "version": env!("CARGO_PKG_VERSION") }))
 }
 
+/// The client contract revision this server speaks: see docs/clients.md.
+/// Raised only for a breaking change; a client that knows a lower revision
+/// tells its user to update instead of failing in some stranger way.
+pub const CONTRACT_REVISION: u32 = 1;
+
+/// The oldest VoxCtrl app this server works with. Every 0.9 client speaks
+/// revision 1. Raise this alongside [`CONTRACT_REVISION`], or when the server
+/// stops accepting something an older app still sends.
+pub const MIN_CLIENT_VERSION: &str = "0.9.0";
+
 async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     Json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
+        "contract": CONTRACT_REVISION,
+        "min_client": MIN_CLIENT_VERSION,
         "model": state.engine.info().model_id(),
         "cleanup": state.cleanup.is_some(),
         "tts": state.speech.is_some(),

@@ -37,6 +37,8 @@ pub fn recheck() {
 pub struct RemoteStatusPayload {
     pub state: RemoteState,
     pub reason: Option<String>,
+    /// About a server that works: that it runs an older VoxCtrl, say.
+    pub notice: Option<String>,
     /// The fallback engine's name, or `None` when no fallback is set.
     pub fallback: Option<String>,
 }
@@ -46,6 +48,7 @@ impl RemoteStatusPayload {
         Self {
             state: status.state,
             reason: status.reason,
+            notice: status.notice,
             fallback: fallback_label(cfg.engine.remote_openai.fallback, cfg),
         }
     }
@@ -107,8 +110,13 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
                     )
                     .await
                     {
-                        Ok(()) => remote_status::set_online(),
-                        Err(reason) => remote_status::set_offline(reason),
+                        Ok(notice) => remote_status::set_checked(notice),
+                        Err(voxctrl_inference::ProbeFailure::Unreachable(reason)) => {
+                            remote_status::set_offline(reason)
+                        }
+                        Err(voxctrl_inference::ProbeFailure::Incompatible(reason)) => {
+                            remote_status::set_incompatible(reason)
+                        }
                     }
                 }
             }

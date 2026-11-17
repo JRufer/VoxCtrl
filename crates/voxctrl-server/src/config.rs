@@ -39,6 +39,10 @@ pub struct ServerConfig {
     #[serde(skip_serializing_if = "tts_untouched")]
     pub tts: voxctrl_config::TtsConfig,
     pub speech: SpeechConfig,
+    /// On for a new install (no `server.toml` yet). A file written before
+    /// 0.9.19 that has no `[tls]` section keeps serving plain HTTP, so an
+    /// upgrade never disconnects the clients already set up against it.
+    #[serde(default = "TlsConfig::existing_file")]
     pub tls: TlsConfig,
     pub llm: LlmConfig,
     /// The name or IP address clients use to reach this machine, put into the
@@ -48,14 +52,32 @@ pub struct ServerConfig {
     pub public_host: String,
 }
 
-/// Encryption between clients and this server. Off by default so existing
-/// clients keep working; turning it on means pairing each client again.
+/// Encryption between clients and this server.
+///
+/// On for a new install since 0.9.19. Turning it on for an existing server
+/// means pairing each client again, so a `server.toml` from an earlier release
+/// that does not mention it is left as it was (see [`TlsConfig::existing_file`]).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct TlsConfig {
     /// `true` serves HTTPS only, with a certificate the server makes for
     /// itself on first start and keeps beside this file.
     pub enabled: bool,
+}
+
+impl TlsConfig {
+    /// What a new install starts with: encrypted.
+    pub fn new_install() -> Self {
+        Self { enabled: true }
+    }
+
+    /// What a `server.toml` without a `[tls]` section means: written before
+    /// encryption existed or before it became the default, by a server whose
+    /// clients connect over plain HTTP. Switching it on under them would
+    /// disconnect every one of them on upgrade.
+    pub fn existing_file() -> Self {
+        Self { enabled: false }
+    }
 }
 
 /// AI processing for clients: an OpenAI-compatible language model service
@@ -151,7 +173,7 @@ impl Default for ServerConfig {
             cleanup: CleanupConfig::default(),
             tts: voxctrl_config::TtsConfig::default(),
             speech: SpeechConfig::default(),
-            tls: TlsConfig::default(),
+            tls: TlsConfig::new_install(),
             llm: LlmConfig::default(),
             public_host: String::new(),
         }
@@ -415,13 +437,39 @@ mod tests {
     }
 
     #[test]
-    fn encryption_is_off_until_asked_for_in_the_file_or_the_environment() {
-        assert!(!ServerConfig::default().tls.enabled);
+    fn a_new_install_is_encrypted_and_an_old_file_keeps_plain_http() {
+        // No server.toml yet: a new install.
+        assert!(ServerConfig::default().tls.enabled);
+        let missing = tempfile::tempdir().unwrap().path().join("server.toml");
+        assert!(ServerConfig::load(&missing).unwrap().tls.enabled);
+
+        // A file from before 0.9.19 with no [tls] section: its clients
+        // connect over plain HTTP, and an upgrade must not cut them off.
+        let old = ServerConfig::from_toml_str("api_key = \"k\"\nbind = \"0.0.0.0:8787\"\n").unwrap();
+        assert!(!old.tls.enabled);
+
+        // Whatever the file says is kept, and is written back as it was.
+        let off = ServerConfig::from_toml_str("[tls]\nenabled = false\n").unwrap();
+        assert!(!off.tls.enabled);
+        let saved = toml::to_string_pretty(&ServerConfig::default()).unwrap();
+        assert!(ServerConfig::from_toml_str(&saved).unwrap().tls.enabled, "{saved}");
+        let saved = toml::to_string_pretty(&old).unwrap();
+        assert!(!ServerConfig::from_toml_str(&saved).unwrap().tls.enabled, "{saved}");
+    }
+
+    #[test]
+    fn encryption_can_be_set_in_the_file_or_the_environment() {
         let from_file = ServerConfig::from_toml_str("public_host = \"speechbox.lan\"\n[tls]\nenabled = true\n").unwrap();
         assert!(from_file.tls.enabled);
         assert_eq!(from_file.public_host, "speechbox.lan");
+        let from_env_off = {
+            let mut cfg = ServerConfig::default();
+            cfg.apply_env(env(&[("VOXCTRL_SERVER_TLS", "false")])).unwrap();
+            cfg
+        };
+        assert!(!from_env_off.tls.enabled);
 
-        let mut from_env = ServerConfig::default();
+        let mut from_env = ServerConfig { tls: TlsConfig::existing_file(), ..ServerConfig::default() };
         from_env
             .apply_env(env(&[("VOXCTRL_SERVER_TLS", "true"), ("VOXCTRL_SERVER_PUBLIC_HOST", "192.168.1.50")]))
             .unwrap();
@@ -431,9 +479,11 @@ mod tests {
     }
 
     #[test]
-    fn empty_file_is_the_defaults() {
+    fn empty_file_is_the_defaults_except_encryption() {
         let cfg = ServerConfig::from_toml_str("").unwrap();
-        assert_eq!(cfg, ServerConfig::default());
+        // A file that exists but says nothing about [tls] is an existing
+        // server's: it keeps plain HTTP (see TlsConfig::existing_file).
+        assert_eq!(cfg, ServerConfig { tls: TlsConfig::existing_file(), ..ServerConfig::default() });
         assert_eq!(cfg.bind, DEFAULT_BIND);
         assert!(cfg.require_api_key);
     }

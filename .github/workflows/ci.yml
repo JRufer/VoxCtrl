@@ -159,7 +159,12 @@ jobs:
         with:
           key: test-linux
 
-      # Run tests for crates that have unit tests and no heavy system deps.
+      # Every crate in the workspace. This used to be a hand-kept list, and by
+      # 0.9.18 it had left out voxctrl-inference (the remote server client
+      # among it), audio, inject, clipboard, mcp, llm and dbus — over 200 tests
+      # that no pull request ran — while the Windows lane's comment below said
+      # this one "runs the whole suite". `--workspace` cannot fall behind.
+      #
       # voxctrl-tts's phoneme-frontend tests exercise the real `espeak-ng`
       # binary when it is present, and skip cleanly when it isn't — it is
       # installed above so they actually run here.
@@ -172,7 +177,11 @@ jobs:
       # suite passing. Without a display here those tests silently skip and the
       # gap reopens.
       - name: cargo test
-        run: xvfb-run -a cargo test -p voxctrl-config -p voxctrl-routing -p voxctrl-hotkeys -p voxctrl-winput -p voxctrl-tts -p voxctrl-update -p voxctrl-bugreport -p voxctrl-pairing -p voxctrl-server -p voxctrl-app
+        run: xvfb-run -a cargo test --workspace
+
+      # Dictated text must never reach a log field (docs/privacy.md).
+      - name: No dictated text in logs
+        run: ./scripts/check_log_privacy.sh
 
   # ── Unit tests (Windows) ──────────────────────────────────────────────────────
   #

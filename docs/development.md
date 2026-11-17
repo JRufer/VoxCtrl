@@ -390,7 +390,14 @@ cargo test --workspace
 # Run tests for a specific backend crate
 cargo test -p voxctrl-config
 cargo test -p voxctrl-routing
+
+# Check that no log field carries dictated text (CI runs this too)
+./scripts/check_log_privacy.sh
 ```
+
+CI runs `xvfb-run -a cargo test --workspace` on Linux, so a new crate's tests
+run without anyone adding it to a list. Log what a dictation was like (word
+counts, durations), never its words: see `docs/privacy.md`.
 
 The overlay's visualizer/animation logic lives in the Svelte components under `src/lib/Overlay/` (see `docs/overlays.md`) and is covered by the frontend test suite (`npm run test:unit`), not backend Rust tests.
 

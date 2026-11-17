@@ -53,7 +53,7 @@ VoxCtrl/
     ├── voxctrl-dbus/       # DBus service (Linux session bus)
     ├── voxctrl-llm/        # OpenAI-compatible LLM HTTP client
     ├── voxctrl-text/       # Shared snippet expansion + fuzzy vocab correction
-    ├── voxctrl-update/     # GitHub release check, download, verify, self-replace
+    ├── voxctrl-update/     # GitHub release check, download, verify, self-replace; its version comparison also backs voxctrl-inference's server compatibility check
     ├── voxctrl-bugreport/  # Diagnostic collection, allowlist redaction, telemetry-free reporting
     ├── voxctrl-pairing/    # Pairing codes and certificate pinning between the app and an encrypted server
     ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup

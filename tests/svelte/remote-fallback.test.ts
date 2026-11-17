@@ -86,6 +86,18 @@ describe("server status line", () => {
     expect(statusSummary({ state: "not_in_use", reason: null, fallback: null })?.text).toContain("Save your settings");
     expect(statusSummary(null)).toBeNull();
   });
+
+  test("passes on what the server's version check found", () => {
+    expect(
+      statusSummary({
+        state: "online",
+        reason: null,
+        notice: "The server runs VoxCtrl 0.9.10. Update the server.",
+        fallback: null,
+      }),
+    ).toEqual({ tone: "warn", text: "Connected to the server. The server runs VoxCtrl 0.9.10. Update the server." });
+    expect(statusSummary({ state: "online", reason: null, notice: null, fallback: null })?.tone).toBe("ok");
+  });
 });
 
 describe("EngineTab remote fallback", () => {

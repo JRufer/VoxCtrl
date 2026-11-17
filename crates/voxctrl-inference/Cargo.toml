@@ -7,6 +7,8 @@ edition.workspace = true
 voxctrl-config  = { workspace = true }
 voxctrl-routing = { workspace = true }
 voxctrl-llm    = { workspace = true }
+# Version comparison for the server compatibility check (`remote_openai::compatibility`).
+voxctrl-update = { workspace = true }
 voxctrl-text   = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

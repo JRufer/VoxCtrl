@@ -124,8 +124,9 @@ The first start downloads the model, then prints the address, the API key and
 a pairing code:
 
 ```text
-voxctrl-server 0.9.17 is ready
-  Endpoint: http://0.0.0.0:8787/v1  (use this machine's address from a client)
+voxctrl-server 0.9.19 is ready
+  Endpoint: https://0.0.0.0:8787/v1  (use this machine's address from a client)
+  Encryption: on. Certificate fingerprint 3F:9A:…
   API key:  vx_…
   Pairing code (paste it into the app instead of the address and key): vxpair_…
 ```
@@ -271,10 +272,12 @@ docker compose logs -f
 On the first start the server downloads the model, loads it, and then prints:
 
 ```
-INFO voxctrl_server: voxctrl-server 0.9.0 is ready
+INFO voxctrl_server: voxctrl-server 0.9.19 is ready
 INFO voxctrl_server:   Model:    parakeet/tdt-0.6b-v3
-INFO voxctrl_server:   Endpoint: http://0.0.0.0:8787/v1  (use this machine's address from a client)
+INFO voxctrl_server:   Endpoint: https://0.0.0.0:8787/v1  (use this machine's address from a client)
+INFO voxctrl_server:   Encryption: on. Certificate fingerprint 3F:9A:…
 INFO voxctrl_server:   API key:  vx_3f9a…
+INFO voxctrl_server:   Pairing code (paste it into the app instead of the address and key): vxpair_…
 ```
 
 **Copy the API key.** It is printed only this once, when it is first generated.
@@ -292,8 +295,8 @@ docker compose exec voxctrl-server \
 ### 6. Check it from the server itself
 
 ```bash
-curl http://localhost:8787/health
-# {"model":"parakeet/tdt-0.6b-v3","status":"ok","version":"0.9.0"}
+curl -k https://localhost:8787/health
+# {"contract":1,"min_client":"0.9.0","model":"parakeet/tdt-0.6b-v3","status":"ok","version":"0.9.19",…}
 ```
 
 `docker compose ps` also shows the container as `healthy` once the model is
@@ -420,7 +423,7 @@ no network access to compile, add `--no-default-features`.
 
 It writes a config file to `~/.config/voxctrl/server.toml`, generates an API
 key and prints it, downloads the default model, and starts listening. Check it
-with `curl http://localhost:8787/health`, then stop it with `Ctrl-C`.
+with `curl -k https://localhost:8787/health`, then stop it with `Ctrl-C`.
 
 ### 4. Install it as a service
 
@@ -507,7 +510,8 @@ Then continue with step 5 below.
 ### By hand
 
 You need the server's address and the API key. This does not work for a server
-with encryption on.
+with encryption on, which is every server set up from 0.9.19 on unless it was
+turned off ([Encryption](#encryption)): use the pairing code for those.
 
 1. Open **Settings → Engine** and set **Backend** to **Remote Speech
    Engine**. The server settings appear below it.
@@ -1092,10 +1096,10 @@ port accordingly.
 
 - **Keep the API key on.** Every request must carry it. Without it, anyone who
   can reach the port can use your server.
-- **The connection is not encrypted unless you turn encryption on.** By
-  default the server speaks plain HTTP, so audio and the API key cross the
-  network in the clear. On your own LAN that is usually acceptable. Anywhere
-  else it is not: turn on [encryption](#encryption).
+- **Keep encryption on.** A server set up from 0.9.19 on is encrypted from
+  its first start. One set up before then still speaks plain HTTP, so audio
+  and the API key cross the network in the clear, and its log warns about it
+  on every start: turn on [encryption](#encryption).
 - **Do not forward the port from the internet**, with or without encryption.
 - **For access from outside your network**, use a VPN such as WireGuard or
   Tailscale and point the client at the server's VPN address, or put the server
@@ -1123,22 +1127,39 @@ port accordingly.
 With encryption on, everything between the app and the server (audio, text,
 voices, the API key) travels over HTTPS, and the app talks only to your server.
 
-**Turn it on.** Set `VOXCTRL_SERVER_TLS=true` in `.env` (Docker) or add this to
-`server.toml`, then restart:
+**A new server is encrypted.** From 0.9.19, a server that starts with no
+`server.toml` turns encryption on: it makes a certificate for itself and keeps
+it beside `server.toml` (`server-cert.pem` and `server-key.pem`, in the data
+volume on Docker), and writes `enabled = true` under `[tls]` when it saves the
+file. The log shows `Encryption: on` and the certificate's fingerprint. Connect
+each app with the [pairing code](#with-a-pairing-code).
+
+**A server set up before 0.9.19 is left as it was.** A `server.toml` with no
+`[tls]` section keeps serving plain HTTP, so the upgrade disconnects no one.
+The log warns `Encryption: off` on every start. One case is not covered: a
+server that has no `server.toml` at all (its key set only through
+`VOXCTRL_SERVER_API_KEY`) looks like a new install and starts encrypted. Set
+`VOXCTRL_SERVER_TLS=false` to keep it on plain HTTP.
+
+**Turn it on for an existing server.** Set `VOXCTRL_SERVER_TLS=true` in `.env`
+(Docker) or add this to `server.toml`, then restart:
 
 ```toml
 [tls]
 enabled = true
 ```
 
-On that start the server makes a certificate for itself and keeps it beside
-`server.toml` (`server-cert.pem` and `server-key.pem`, in the data volume on
-Docker). The log shows `Encryption: on` and the certificate's fingerprint.
-
 **Pair each client again.** The server now answers HTTPS only, so clients set
 up before stop connecting until they are paired: print the
 [pairing code](#with-a-pairing-code) and paste it into each app. A client whose
-fallback engine is set keeps dictating locally in the meantime.
+fallback engine is set keeps dictating locally in the meantime. A client that
+still sends plain HTTP gets an answer saying so (HTTP 426, *This server only
+accepts encrypted connections*), which the app shows as the reason it is
+offline.
+
+**Turn it off** with `enabled = false` under `[tls]` or
+`VOXCTRL_SERVER_TLS=false`, only on a network where you trust everyone who can
+reach the port: the API key and every recording then cross it unencrypted.
 
 **How the app knows it is your server.** No certificate authority vouches for
 the server's certificate. Instead the pairing code carries its fingerprint, and
@@ -1209,7 +1230,7 @@ Vulkan device and is running on the CPU.
 | See the logs | `docker compose logs -f` | `sudo journalctl -u voxctrl-server -f` |
 | Restart | `docker compose restart` | `sudo systemctl restart voxctrl-server` |
 | Stop | `docker compose down` | `sudo systemctl stop voxctrl-server` |
-| Is it healthy? | `docker compose ps` | `curl http://localhost:8787/health` |
+| Is it healthy? | `docker compose ps` | `curl -k https://localhost:8787/health` |
 | Change the model | Edit `.env`, then `docker compose up -d` | Edit `server.toml`, then restart |
 | Upgrade | `git pull`, then `docker compose up -d --build` | `git pull`, rebuild, reinstall the binary, restart |
 
@@ -1248,7 +1269,7 @@ keyboard. Before changing an endpoint, see
 
 | Method and path | Key needed | Purpose |
 |---|---|---|
-| `GET /health` | No | Liveness check |
+| `GET /health` | No | Liveness check, version and compatibility (below) |
 | `GET /v1/models` | Yes | The model the server is running |
 | `POST /v1/audio/transcriptions` | Yes | Transcribe audio |
 | `GET /v1/cleanup` | Yes | Whether cleanup is enabled: `{"available": true, "model": "s1-mini"}` |
@@ -1266,6 +1287,23 @@ The voice endpoints, and speech with an uploaded voice, need an
 
 `GET /health` also reports `"cleanup"`, `"tts"` and `"llm"` as `true` or `false`. `/v1/cleanup` is
 VoxCtrl's own and not part of the OpenAI API.
+
+`GET /health` says which apps the server works with (from 0.9.19):
+
+| Field | Meaning |
+|---|---|
+| `version` | The server's VoxCtrl version |
+| `contract` | The [client contract revision](./clients.md#client-contract-revisions) it speaks. Absent before 0.9.19, which means revision 1 |
+| `min_client` | The oldest VoxCtrl app it works with |
+
+The app reads these with its regular check of the server. If the server speaks
+a newer contract or needs a newer app, the app counts the server as offline,
+uses its fallback engine, and says to update VoxCtrl. If the server is older
+than the app expects (before 0.9.16, which lacks AI processing), Settings →
+Engine says so and dictation carries on.
+
+The `curl` examples below use `http://`. With encryption on, use `https://`
+and either `--cacert server-cert.pem` or `-k`.
 
 Send the key as `Authorization: Bearer <key>`.
 
@@ -1462,6 +1500,20 @@ The endpoint was changed to an `http://` address while a certificate is still
 saved. Paste the pairing code again to restore the address, or click **Remove
 pairing** under **Settings → Engine** if the server no longer encrypts.
 
+### "The server only accepts encrypted connections"
+
+The app is set up with an `http://` address, and the server has encryption on
+(every server set up from 0.9.19 has). Paste the server's
+[pairing code](#with-a-pairing-code) instead of its address.
+
+### "Update VoxCtrl on this machine" or "The server runs VoxCtrl …"
+
+The app and the server compared versions ([`GET /health`](#api-reference)).
+*Update VoxCtrl on this machine*: the server is newer than this app can work
+with, so dictation uses the fallback engine until the app is updated. *The
+server runs VoxCtrl …*: the server is older than this app expects; dictation
+works, and updating the server brings back what is missing.
+
 ### Clients stopped connecting after encryption was turned on
 
 Expected: the server answers HTTPS only once `tls.enabled` is set. Pair each
@@ -1477,14 +1529,16 @@ a desktop environment's base libraries, or use Docker or the system service.
 
 The client could not reach the server at all.
 
-1. On the server, confirm it is running and ready: `curl http://localhost:8787/health`.
-   If that fails, look at the logs; the model may still be downloading.
-2. From the client, try the server's address: `curl http://192.168.1.50:8787/health`.
+1. On the server, confirm it is running and ready: `curl -k https://localhost:8787/health`
+   (`http://` if encryption is off). If that fails, look at the logs; the model
+   may still be downloading.
+2. From the client, try the server's address: `curl -k https://192.168.1.50:8787/health`.
    If this fails while step 1 works, it is the network: check the firewall
    ([step 7](#7-open-the-port)), that `bind` is not `127.0.0.1`, and with Docker
    that the port is published (`docker compose ps` shows `0.0.0.0:8787->8787`).
-3. Check the Endpoint URL in the app starts with `http://` (not `https://`) and
-   ends with `/v1`.
+3. Check the Endpoint URL in the app ends with `/v1`, and starts with
+   `https://` for an encrypted server (the pairing code sets this) or `http://`
+   for one with encryption off.
 
 ### "HTTP 401" or "The API key was not accepted"
 

@@ -9,6 +9,7 @@
 //! dictation that just succeeded or failed — and read by everyone else.
 //! [`subscribe`] wakes a listener only when the answer actually changes.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use serde::Serialize;
@@ -33,13 +34,23 @@ pub struct RemoteStatus {
     /// Why the server counts as offline, worded for the user. `None` unless
     /// `state` is [`RemoteState::Offline`].
     pub reason: Option<String>,
+    /// Something the user should know about a server that is working: that
+    /// it runs an older VoxCtrl than this app expects, say. Only ever set
+    /// while `state` is [`RemoteState::Online`].
+    pub notice: Option<String>,
 }
 
 impl RemoteStatus {
     const fn new(state: RemoteState) -> Self {
-        Self { state, reason: None }
+        Self { state, reason: None, notice: None }
     }
 }
+
+/// Set while the server answers but speaks a newer client contract than this
+/// app (see `remote_openai::compatibility`). A dictation that happens to work
+/// must not mark such a server online again: only the next check of the
+/// server's version may.
+static INCOMPATIBLE: AtomicBool = AtomicBool::new(false);
 
 fn channel() -> &'static watch::Sender<RemoteStatus> {
     static CHANNEL: OnceLock<watch::Sender<RemoteStatus>> = OnceLock::new();
@@ -75,21 +86,47 @@ pub fn is_offline() -> bool {
 }
 
 pub fn set_not_in_use() {
+    INCOMPATIBLE.store(false, Ordering::SeqCst);
     set(RemoteStatus::new(RemoteState::NotInUse));
 }
 
 /// A remote engine was just selected (or its address changed): whatever was
 /// known about the previous one no longer applies.
 pub fn set_unknown() {
+    INCOMPATIBLE.store(false, Ordering::SeqCst);
     set(RemoteStatus::new(RemoteState::Unknown));
 }
 
+/// The server just answered a request. Keeps a notice the last check of the
+/// server found, and changes nothing while the server is known to be
+/// incompatible with this app.
 pub fn set_online() {
-    set(RemoteStatus::new(RemoteState::Online));
+    if INCOMPATIBLE.load(Ordering::SeqCst) {
+        return;
+    }
+    let notice = {
+        let current = channel().borrow();
+        (current.state == RemoteState::Online).then(|| current.notice.clone()).flatten()
+    };
+    set(RemoteStatus { state: RemoteState::Online, reason: None, notice });
+}
+
+/// The background check found the server reachable and compatible; `notice`
+/// is what it found worth telling the user, if anything.
+pub fn set_checked(notice: Option<String>) {
+    INCOMPATIBLE.store(false, Ordering::SeqCst);
+    set(RemoteStatus { state: RemoteState::Online, reason: None, notice });
 }
 
 pub fn set_offline(reason: impl Into<String>) {
-    set(RemoteStatus { state: RemoteState::Offline, reason: Some(reason.into()) });
+    set(RemoteStatus { state: RemoteState::Offline, reason: Some(reason.into()), notice: None });
+}
+
+/// The server answers but this app cannot work with it: offline, with
+/// `reason`, until a check of the server says otherwise.
+pub fn set_incompatible(reason: impl Into<String>) {
+    INCOMPATIBLE.store(true, Ordering::SeqCst);
+    set_offline(reason);
 }
 
 /// Held by every test in this crate that writes the status: it is one value
@@ -129,8 +166,26 @@ mod tests {
         set_offline("The server rejected the API key (HTTP 401)");
         assert!(rx.has_changed().unwrap());
 
+        // A notice from the version check survives a successful dictation.
+        set_checked(Some("The server runs VoxCtrl 0.9.10".into()));
+        set_online();
+        assert_eq!(current().notice.as_deref(), Some("The server runs VoxCtrl 0.9.10"));
+
+        // An incompatible server stays offline through a dictation that
+        // worked, until the version check clears it.
+        set_incompatible("Update VoxCtrl");
+        set_online();
+        assert!(is_offline());
+        assert_eq!(current().reason.as_deref(), Some("Update VoxCtrl"));
+        set_checked(None);
+        assert!(is_online());
+        set_incompatible("Update VoxCtrl");
+
+        // Choosing another server forgets all of it.
         set_unknown();
-        assert_eq!(current(), RemoteStatus { state: RemoteState::Unknown, reason: None });
+        assert_eq!(current(), RemoteStatus { state: RemoteState::Unknown, reason: None, notice: None });
+        set_online();
+        assert!(is_online());
         set_not_in_use();
         assert_eq!(current().state, RemoteState::NotInUse);
         assert!(!is_online() && !is_offline());
@@ -141,9 +196,10 @@ mod tests {
         let json = serde_json::to_value(RemoteStatus {
             state: RemoteState::Offline,
             reason: Some("down".into()),
+            notice: None,
         })
         .unwrap();
-        assert_eq!(json, serde_json::json!({ "state": "offline", "reason": "down" }));
+        assert_eq!(json, serde_json::json!({ "state": "offline", "reason": "down", "notice": null }));
         assert_eq!(
             serde_json::to_value(RemoteState::NotInUse).unwrap(),
             serde_json::json!("not_in_use")

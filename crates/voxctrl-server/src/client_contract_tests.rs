@@ -167,6 +167,45 @@ async fn a_streamed_upload_with_a_wrong_key_gets_the_servers_explanation() {
     assert_eq!(seen.lock().unwrap().calls, 0);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn this_app_and_this_server_agree_they_are_compatible() {
+    let (endpoint, _) = serve("unused").await;
+    // The probe reads /health; a server and app from the same release have
+    // nothing to say to each other.
+    let notice = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap();
+    assert_eq!(notice, None);
+
+    let health: serde_json::Value = reqwest::get(voxctrl_inference::remote_openai::normalize_health_url(&endpoint))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(health["contract"].as_u64(), Some(voxctrl_inference::remote_openai::CLIENT_CONTRACT));
+    assert_eq!(
+        voxctrl_inference::remote_openai::compatibility(&health, voxctrl_inference::remote_openai::APP_VERSION),
+        voxctrl_inference::remote_openai::Compatibility::Compatible
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_transcription_is_reported_once_not_uploaded_again() {
+    // The engine fails every request: the server answers 500.
+    let (engine, seen) = fake_engine("unused", true);
+    let (endpoint, seen) = serve_with(engine, seen, None).await;
+    let session = RemoteStreamingSession::start(
+        client_config(&endpoint, Some(KEY)),
+        None,
+        &tokio::runtime::Handle::current(),
+    );
+    session.send_chunk(vec![0.2; 16_000]);
+    let message = format!("{:#}", session.finish().await.unwrap_err());
+    assert!(message.contains("HTTP 500"), "{message}");
+    // Before 0.9.19 the whole recording was sent a second time as a plain
+    // upload, and the server transcribed (and failed) it twice.
+    assert_eq!(seen.lock().unwrap().calls, 1);
+}
+
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 
 use voxctrl_inference::remote_cleanup::{check_server_cleanup, clean_on_server};
@@ -499,7 +538,7 @@ async fn serve_encrypted() -> (String, String) {
     let endpoint = format!("https://{}/v1", listener.local_addr().unwrap());
     let tls = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(identity.server_config().unwrap()));
     tokio::spawn(async move {
-        axum_server::from_tcp_rustls(listener, tls).serve(router(state).into_make_service()).await
+        crate::plain_http::https_server(listener, tls).serve(router(state).into_make_service()).await
     });
     (endpoint, fingerprint)
 }
@@ -542,7 +581,7 @@ async fn a_different_certificate_is_refused_and_the_reason_is_given() {
     let test = test_remote_speech_engine(&endpoint, Some(KEY), "whisper-1", 10, Some(&other)).await.unwrap();
     assert!(!test.success);
 
-    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), Some(&other)).await.unwrap_err();
+    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), Some(&other)).await.unwrap_err().to_string();
     assert_eq!(reason, voxctrl_pairing::CERTIFICATE_MISMATCH_HELP);
 
     let cleanup = check_server_cleanup(&endpoint, Some(KEY), Some(&other)).await;
@@ -561,7 +600,7 @@ async fn a_different_certificate_is_refused_and_the_reason_is_given() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unpaired_client_does_not_trust_the_servers_own_certificate() {
     let (endpoint, _fingerprint) = serve_encrypted().await;
-    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap_err();
+    let reason = voxctrl_inference::probe_remote_speech_engine(&endpoint, Some(KEY), None).await.unwrap_err().to_string();
     assert!(reason.contains("Could not connect"), "{reason}");
 }
 
@@ -570,13 +609,39 @@ async fn a_paired_client_never_falls_back_to_an_unencrypted_address() {
     let (plain, _seen) = serve("sent in the clear").await;
     let fingerprint = "ab".repeat(32);
 
-    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), Some(&fingerprint)).await.unwrap_err();
+    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), Some(&fingerprint)).await.unwrap_err().to_string();
     assert!(reason.contains("must start with https://"), "{reason}");
 
     let backend = RemoteOpenAiBackend::new(paired(&plain, &fingerprint));
     let request = TranscribeRequest { audio: vec![0.0; 16_000], ..Default::default() };
     let refused = tokio::task::spawn_blocking(move || backend.transcribe(&request)).await.unwrap().unwrap_err();
     assert!(format!("{refused:#}").contains("must start with https://"), "{refused:#}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn plain_http_to_an_encrypted_server_is_told_to_pair() {
+    let (endpoint, _fingerprint) = serve_encrypted().await;
+    let plain = endpoint.replacen("https://", "http://", 1);
+
+    // The background check: the reason the app shows beside the offline mark.
+    let reason = voxctrl_inference::probe_remote_speech_engine(&plain, Some(KEY), None).await.unwrap_err().to_string();
+    assert!(reason.contains("pairing code"), "{reason}");
+
+    // Test connection in Settings shows the server's own words.
+    let test = test_remote_speech_engine(&plain, Some(KEY), "whisper-1", 10, None).await.unwrap();
+    assert!(!test.success);
+    assert!(test.message.contains("pairing code"), "{}", test.message);
+
+    // A dictation fails once with that message; it is not uploaded twice.
+    let session = RemoteStreamingSession::start(
+        client_config(&plain, Some(KEY)),
+        None,
+        &tokio::runtime::Handle::current(),
+    );
+    session.send_chunk(vec![0.1; 16_000]);
+    let failed = session.finish().await.unwrap_err();
+    assert!(format!("{failed:#}").contains("pairing code"), "{failed:#}");
+    assert!(format!("{failed:#}").contains("HTTP 426"), "{failed:#}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

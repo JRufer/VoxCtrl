@@ -1035,12 +1035,12 @@ fn the_status_payload_names_the_fallback_engine_and_its_model() {
     assert_eq!(fallback_label(FallbackChoice::None, &cfg), None);
 
     let payload = RemoteStatusPayload::new(
-        RemoteStatus { state: RemoteState::Offline, reason: Some("down".into()) },
+        RemoteStatus { state: RemoteState::Offline, reason: Some("down".into()), notice: None },
         &cfg,
     );
     assert_eq!(
         serde_json::to_value(&payload).unwrap(),
-        serde_json::json!({ "state": "offline", "reason": "down", "fallback": "Parakeet tdt-0.6b-v3" })
+        serde_json::json!({ "state": "offline", "reason": "down", "notice": null, "fallback": "Parakeet tdt-0.6b-v3" })
     );
 }
 

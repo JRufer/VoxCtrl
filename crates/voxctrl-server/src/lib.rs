@@ -18,6 +18,7 @@ mod config;
 mod engine;
 mod http;
 mod llm;
+mod plain_http;
 mod speech;
 mod tls;
 mod voices;
@@ -353,7 +354,11 @@ async fn run(cli: Cli) -> Result<()> {
             "  Encryption: on. Certificate fingerprint {}",
             voxctrl_pairing::display_fingerprint(&identity.fingerprint())
         ),
-        None => info!("  Encryption: off (set tls.enabled or VOXCTRL_SERVER_TLS to turn it on)"),
+        None => warn!(
+            "  Encryption: off. The API key and every recording cross the network unencrypted. \
+             Set enabled = true under [tls] in {} (or VOXCTRL_SERVER_TLS=true) and pair each client again.",
+            path.display()
+        ),
     }
     if generated_key {
         // The one time the key is shown: nobody has seen it yet, and on a
@@ -379,7 +384,9 @@ async fn run(cli: Cli) -> Result<()> {
                 stop.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
             });
             let tls = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(identity.server_config()?));
-            axum_server::from_tcp_rustls(listener, tls)
+            // A client that speaks plain HTTP to this port is answered with
+            // how to pair, rather than a connection that just closes.
+            plain_http::https_server(listener, tls)
                 .handle(handle)
                 .serve(app.into_make_service())
                 .await
