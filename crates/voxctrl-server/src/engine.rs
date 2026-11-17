@@ -1,7 +1,7 @@
 //! The one speech model this server runs: fetching it, loading it, and
 //! transcribing with it one request at a time.
 
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use anyhow::{bail, Context, Result};
 use tracing::info;
@@ -46,9 +46,99 @@ impl EngineInfo {
     }
 }
 
+/// Most dictations that may wait for the model at once. Past this the server
+/// answers 503 rather than let the queue, and every client's wait, grow
+/// without end: a dictation that would start minutes from now is better
+/// handed to the client's fallback engine straight away.
+pub const MAX_WAITING_DICTATIONS: usize = 8;
+
+/// What a transcription is for, which decides how it waits for the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// Someone has finished speaking and is waiting for the text. Queued.
+    Dictation,
+    /// A live-text pass over a recording still in progress. Its result is
+    /// replaced by the next pass, so it is never worth a dictation's wait:
+    /// it runs only when the model is free and nothing is queued.
+    Live,
+}
+
+/// Why a transcription did not run.
+#[derive(Debug)]
+pub enum TranscribeError {
+    /// The model is busy: with anything (a live pass), or with a full queue
+    /// (a dictation). Nothing was run; the client may try again.
+    Busy(Purpose),
+    /// The model ran and failed.
+    Failed(anyhow::Error),
+}
+
+impl std::fmt::Display for TranscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Busy(Purpose::Live) => f.write_str("busy: live pass skipped"),
+            Self::Busy(Purpose::Dictation) => f.write_str("busy: dictation queue full"),
+            Self::Failed(e) => write!(f, "{e:#}"),
+        }
+    }
+}
+
+/// Who has the model, and how many dictations are waiting for it.
+#[derive(Default)]
+struct Gate {
+    state: Mutex<GateState>,
+    freed: Condvar,
+}
+
+#[derive(Default)]
+struct GateState {
+    busy: bool,
+    waiting: usize,
+}
+
+/// The model, held: dropping it hands the model to the next dictation.
+struct Turn<'a>(&'a Gate);
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        self.0.state.lock().unwrap_or_else(|e| e.into_inner()).busy = false;
+        self.0.freed.notify_one();
+    }
+}
+
+impl Gate {
+    fn enter(&self, purpose: Purpose, max_waiting: usize) -> Result<Turn<'_>, TranscribeError> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match purpose {
+            Purpose::Live => {
+                if state.busy || state.waiting > 0 {
+                    return Err(TranscribeError::Busy(Purpose::Live));
+                }
+            }
+            Purpose::Dictation => {
+                if state.busy || state.waiting > 0 {
+                    if state.waiting >= max_waiting {
+                        return Err(TranscribeError::Busy(Purpose::Dictation));
+                    }
+                    state.waiting += 1;
+                    while state.busy {
+                        state = self.freed.wait(state).unwrap_or_else(|e| e.into_inner());
+                    }
+                    state.waiting -= 1;
+                }
+            }
+        }
+        state.busy = true;
+        Ok(Turn(self))
+    }
+}
+
 pub struct Engine {
-    /// One request at a time. The backends hold a single inference state, and
-    /// two transcriptions sharing one GPU would only take turns anyway.
+    /// One transcription at a time, dictations first: see [`Gate::enter`].
+    /// The backends hold a single inference state, and two transcriptions
+    /// sharing one GPU would only take turns anyway.
+    gate: Gate,
+    max_waiting: usize,
     backend: Mutex<Box<dyn TranscriptionBackend>>,
     info: EngineInfo,
     /// whisper.cpp takes its language per request; the ONNX backends read
@@ -78,13 +168,25 @@ impl Engine {
             .then(|| normalize_language(&cfg.engine.whisper_cpp.language))
             .flatten();
 
-        Ok(Self { backend: Mutex::new(backend), info, whisper_language })
+        Ok(Self {
+            gate: Gate::default(),
+            max_waiting: MAX_WAITING_DICTATIONS,
+            backend: Mutex::new(backend),
+            info,
+            whisper_language,
+        })
     }
 
     /// Wrap a backend that is already loaded. For tests.
     #[cfg(test)]
     pub fn from_backend(backend: Box<dyn TranscriptionBackend>, info: EngineInfo) -> Self {
-        Self { backend: Mutex::new(backend), info, whisper_language: None }
+        Self {
+            gate: Gate::default(),
+            max_waiting: MAX_WAITING_DICTATIONS,
+            backend: Mutex::new(backend),
+            info,
+            whisper_language: None,
+        }
     }
 
     pub fn info(&self) -> &EngineInfo {
@@ -100,7 +202,8 @@ impl Engine {
         audio: Vec<f32>,
         language: Option<String>,
         prompt: Option<String>,
-    ) -> Result<TranscriptionResult> {
+        purpose: Purpose,
+    ) -> Result<TranscriptionResult, TranscribeError> {
         let duration_ms = (audio.len() / 16) as u32;
         let language = language.as_deref().and_then(normalize_language).or_else(|| self.whisper_language.clone());
 
@@ -122,10 +225,18 @@ impl Engine {
             initial_prompt: prompt.filter(|p| !p.trim().is_empty()),
             interim_session: None,
         };
+        let _turn = self.gate.enter(purpose, self.max_waiting)?;
         // A panic in an earlier request must not take the server down for
         // every later one, so a poisoned lock is recovered rather than unwrapped.
         let backend = self.backend.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        backend.transcribe(&request)
+        backend.transcribe(&request).map_err(TranscribeError::Failed)
+    }
+
+    /// A smaller queue, for tests that fill it.
+    #[cfg(test)]
+    pub fn with_max_waiting(mut self, max_waiting: usize) -> Self {
+        self.max_waiting = max_waiting;
+        self
     }
 }
 
@@ -277,7 +388,7 @@ mod tests {
     #[test]
     fn silence_is_answered_without_running_the_model() {
         let (engine, seen) = fake_engine("should not appear", false);
-        let out = engine.transcribe(vec![0.0; 3200], None, None).unwrap();
+        let out = engine.transcribe(vec![0.0; 3200], None, None, Purpose::Dictation).unwrap();
         assert_eq!(out.text, "");
         assert_eq!(out.duration_ms, 200);
         assert_eq!(seen.lock().unwrap().calls, 0);
@@ -286,7 +397,7 @@ mod tests {
     #[test]
     fn empty_audio_is_answered_without_running_the_model() {
         let (engine, seen) = fake_engine("should not appear", false);
-        assert_eq!(engine.transcribe(Vec::new(), None, None).unwrap().text, "");
+        assert_eq!(engine.transcribe(Vec::new(), None, None, Purpose::Dictation).unwrap().text, "");
         assert_eq!(seen.lock().unwrap().calls, 0);
     }
 
@@ -294,7 +405,7 @@ mod tests {
     fn speech_reaches_the_model_with_its_language_and_prompt() {
         let (engine, seen) = fake_engine("hello there", false);
         let out = engine
-            .transcribe(vec![0.2; 16_000], Some(" EN ".into()), Some("VoxCtrl, Parakeet".into()))
+            .transcribe(vec![0.2; 16_000], Some(" EN ".into()), Some("VoxCtrl, Parakeet".into()), Purpose::Dictation)
             .unwrap();
         assert_eq!(out.text, "hello there");
         let seen = seen.lock().unwrap();
@@ -307,7 +418,7 @@ mod tests {
     #[test]
     fn auto_language_and_blank_prompt_are_passed_as_none() {
         let (engine, seen) = fake_engine("x", false);
-        engine.transcribe(vec![0.2; 1600], Some("auto".into()), Some("   ".into())).unwrap();
+        engine.transcribe(vec![0.2; 1600], Some("auto".into()), Some("   ".into()), Purpose::Dictation).unwrap();
         let seen = seen.lock().unwrap();
         assert_eq!(seen.language, None);
         assert_eq!(seen.prompt, None);
@@ -316,7 +427,7 @@ mod tests {
     #[test]
     fn a_model_error_is_returned_not_swallowed() {
         let (engine, _) = fake_engine("x", true);
-        let err = engine.transcribe(vec![0.2; 1600], None, None).unwrap_err();
+        let err = engine.transcribe(vec![0.2; 1600], None, None, Purpose::Dictation).unwrap_err();
         assert!(err.to_string().contains("fell over"));
     }
 
@@ -338,6 +449,127 @@ mod tests {
         let mut cfg = ServerConfig::default();
         cfg.engine.whisper_cpp.model_size = "/srv/models/ggml-custom-q5.bin".into();
         assert_eq!(EngineInfo::from_config(&cfg).model_id(), "whisper-cpp/ggml-custom-q5");
+    }
+
+    /// A backend that holds the model until told to let go, so a test can
+    /// see what other requests do meanwhile.
+    struct HeldBackend {
+        started: std::sync::mpsc::Sender<()>,
+        release: StdMutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    impl TranscriptionBackend for HeldBackend {
+        fn name(&self) -> &str {
+            "held"
+        }
+        fn load(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn transcribe(&self, req: &TranscribeRequest) -> Result<TranscriptionResult> {
+            self.started.send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(TranscriptionResult {
+                text: format!("{} samples", req.audio.len()),
+                language: "en".into(),
+                language_probability: 1.0,
+                duration_ms: 0,
+                inference_ms: 0,
+                word_timestamps: None,
+            })
+        }
+        fn unload(&mut self) {}
+        fn is_loaded(&self) -> bool {
+            true
+        }
+    }
+
+    use std::sync::Mutex as StdMutex;
+
+    fn held_engine(max_waiting: usize) -> (Arc<Engine>, std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (started_tx, started) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let backend = HeldBackend { started: started_tx, release: StdMutex::new(release_rx) };
+        let info = EngineInfo { backend: "held".into(), model: "test".into(), language: "auto".into() };
+        (Arc::new(Engine::from_backend(Box::new(backend), info).with_max_waiting(max_waiting)), started, release)
+    }
+
+    use std::sync::Arc;
+
+    fn speech(samples: usize) -> Vec<f32> {
+        vec![0.2; samples]
+    }
+
+    #[test]
+    fn a_live_pass_never_waits_for_the_model() {
+        let (engine, started, release) = held_engine(MAX_WAITING_DICTATIONS);
+        let first = {
+            let engine = engine.clone();
+            std::thread::spawn(move || engine.transcribe(speech(100), None, None, Purpose::Dictation))
+        };
+        started.recv().unwrap();
+
+        // The model is busy with a dictation: a live pass is turned away at once.
+        let live = engine.transcribe(speech(200), None, None, Purpose::Live);
+        assert!(matches!(live, Err(TranscribeError::Busy(Purpose::Live))), "{live:?}");
+
+        release.send(()).unwrap();
+        assert_eq!(first.join().unwrap().unwrap().text, "100 samples");
+
+        // Free again: a live pass runs.
+        let live = {
+            let engine = engine.clone();
+            std::thread::spawn(move || engine.transcribe(speech(300), None, None, Purpose::Live))
+        };
+        started.recv().unwrap();
+        release.send(()).unwrap();
+        assert_eq!(live.join().unwrap().unwrap().text, "300 samples");
+    }
+
+    #[test]
+    fn dictations_queue_up_to_the_limit_and_live_passes_yield_to_them() {
+        let (engine, started, release) = held_engine(2);
+        let spawn = |samples: usize| {
+            let engine = engine.clone();
+            std::thread::spawn(move || engine.transcribe(speech(samples), None, None, Purpose::Dictation))
+        };
+        let running = spawn(1);
+        started.recv().unwrap();
+        let waiting: Vec<_> = (2..=3).map(spawn).collect();
+        // Let both reach the queue.
+        while engine.gate.state.lock().unwrap().waiting < 2 {
+            std::thread::yield_now();
+        }
+
+        // The queue is full: one more dictation is refused, not queued.
+        let refused = engine.transcribe(speech(4), None, None, Purpose::Dictation);
+        assert!(matches!(refused, Err(TranscribeError::Busy(Purpose::Dictation))), "{refused:?}");
+        // A live pass may not jump the queue.
+        let live = engine.transcribe(speech(5), None, None, Purpose::Live);
+        assert!(matches!(live, Err(TranscribeError::Busy(Purpose::Live))), "{live:?}");
+
+        // Each queued dictation runs in turn.
+        release.send(()).unwrap();
+        assert_eq!(running.join().unwrap().unwrap().text, "1 samples");
+        for _ in 0..2 {
+            started.recv().unwrap();
+            release.send(()).unwrap();
+        }
+        let mut done: Vec<String> = waiting.into_iter().map(|w| w.join().unwrap().unwrap().text).collect();
+        done.sort();
+        assert_eq!(done, ["2 samples", "3 samples"]);
+        let state = engine.gate.state.lock().unwrap();
+        assert!(!state.busy && state.waiting == 0);
+    }
+
+    #[test]
+    fn a_failed_transcription_frees_the_model() {
+        let (engine, _) = fake_engine("x", true);
+        assert!(matches!(
+            engine.transcribe(speech(1600), None, None, Purpose::Dictation),
+            Err(TranscribeError::Failed(_))
+        ));
+        let live = engine.transcribe(speech(1600), None, None, Purpose::Live);
+        assert!(matches!(live, Err(TranscribeError::Failed(_))), "the model is free again: {live:?}");
     }
 
     #[test]

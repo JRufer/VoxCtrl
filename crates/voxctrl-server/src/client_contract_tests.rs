@@ -189,6 +189,46 @@ async fn this_app_and_this_server_agree_they_are_compatible() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_app_marks_live_passes_and_only_live_passes() {
+    use axum::routing::post;
+    // A stand-in server that answers every transcription and remembers the
+    // purpose header of each.
+    let seen: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+    let record = seen.clone();
+    let app = axum::Router::new().route(
+        "/v1/audio/transcriptions",
+        post(move |headers: axum::http::HeaderMap, _body: axum::body::Bytes| {
+            let record = record.clone();
+            async move {
+                let purpose = headers
+                    .get(voxctrl_inference::remote_openai::PURPOSE_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string);
+                record.lock().unwrap().push(purpose);
+                axum::Json(serde_json::json!({ "text": "ok" }))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let backend = Arc::new(RemoteOpenAiBackend::new(client_config(&endpoint, Some(KEY))));
+    for interim in [Some(7u64), None] {
+        let backend = backend.clone();
+        let request = TranscribeRequest { audio: vec![0.2; 16_000], interim_session: interim, ..Default::default() };
+        tokio::task::spawn_blocking(move || backend.transcribe(&request)).await.unwrap().unwrap();
+    }
+    // The dictation itself, streamed.
+    let session =
+        RemoteStreamingSession::start(client_config(&endpoint, Some(KEY)), None, &tokio::runtime::Handle::current());
+    session.send_chunk(vec![0.2; 16_000]);
+    session.finish().await.unwrap();
+
+    assert_eq!(*seen.lock().unwrap(), [Some("live".to_string()), None, None]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_failed_transcription_is_reported_once_not_uploaded_again() {
     // The engine fails every request: the server answers 500.
     let (engine, seen) = fake_engine("unused", true);
@@ -749,8 +789,7 @@ async fn ai_processing_that_cannot_happen_leaves_the_text_as_it_was_said() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hotkeys_ai_step_follows_the_use_the_server_setting() {
     let (endpoint, seen) = serve_with_llm("llama3.2:1b").await;
-    let mut app = voxctrl_config::AppConfig::default();
-    app.openai = ai_settings();
+    let mut app = voxctrl_config::AppConfig { openai: ai_settings(), ..Default::default() };
     app.engine.remote_openai = client_config(&endpoint, Some(KEY));
     let binding: voxctrl_routing::HotkeyBinding =
         serde_json::from_value(serde_json::json!({

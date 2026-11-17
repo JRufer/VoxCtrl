@@ -279,7 +279,7 @@ fn cleanup_model_item(cfg: &AppConfig, bindings: &[HotkeyBinding], layout: &Layo
 fn piper_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
     let configured = cfg.tts.voice_dir.trim();
     let dir = if configured.is_empty() { layout.data_dir.join("piper-voices") } else { expand_tilde(configured) };
-    let selected = (cfg.tts.enabled && cfg.tts.engine == TtsEngine::Piper).then(|| cfg.tts.voice.as_str());
+    let selected = (cfg.tts.enabled && cfg.tts.engine == TtsEngine::Piper).then_some(cfg.tts.voice.as_str());
 
     let mut items = Vec::new();
     // Only voices from VoxCtrl's own catalogue: a Piper voice the user put in

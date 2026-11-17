@@ -349,6 +349,7 @@ pub fn spawn_status_ticker(
         // What the last emitted payload said, so a tick that changes nothing
         // costs a few atomic loads instead of building a payload, two JSON
         // encodes, a webview event and a message to the overlay process.
+        #[allow(clippy::type_complexity)] // a snapshot to compare, named by the code that builds it
         let mut last_flags: Option<(bool, bool, bool, bool, bool, u32, bool, bool)> = None;
         let mut last_emit = tokio::time::Instant::now() - HEARTBEAT;
         // The label is derived from three rarely-changing strings and the

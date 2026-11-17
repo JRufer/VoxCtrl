@@ -41,6 +41,8 @@ use tracing::{info, warn};
 
 use crate::audio;
 use crate::cleanup::Cleaner;
+use crate::engine::{Purpose, TranscribeError, MAX_WAITING_DICTATIONS};
+use voxctrl_inference::remote_openai::PURPOSE_HEADER;
 use crate::speech::{SpeakError, Speaker};
 use crate::voices::{self, VoiceStore};
 
@@ -86,11 +88,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         // axum's default cap is 2 MB — about a minute of speech.
         .layer(DefaultBodyLimit::max(max_upload_bytes));
 
-    Router::new()
-        .route("/", get(root))
-        .route("/health", get(health))
-        .merge(protected)
-        .with_state(state)
+    crate::limits::with_body_timeout(
+        Router::new()
+            .route("/", get(root))
+            .route("/health", get(health))
+            .merge(protected)
+            .with_state(state),
+    )
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────
@@ -124,12 +128,21 @@ impl ApiError {
     fn server(message: impl Into<String>) -> Self {
         Self { status: StatusCode::INTERNAL_SERVER_ERROR, kind: "server_error", message: message.into() }
     }
+
+    /// 503 with `Retry-After`: nothing was run, and trying again shortly may work.
+    fn busy(message: impl Into<String>) -> Self {
+        Self { status: StatusCode::SERVICE_UNAVAILABLE, kind: "server_busy", message: message.into() }
+    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = Json(json!({ "error": { "message": self.message, "type": self.kind } }));
-        (self.status, body).into_response()
+        let mut response = (self.status, body).into_response();
+        if self.status == StatusCode::SERVICE_UNAVAILABLE {
+            response.headers_mut().insert(header::RETRY_AFTER, axum::http::HeaderValue::from_static("1"));
+        }
+        response
     }
 }
 
@@ -262,10 +275,23 @@ fn parse_response_format(value: &str) -> Result<ResponseFormat, ApiError> {
     }
 }
 
+/// What a transcription request is for, from the `X-VoxCtrl-Purpose` header
+/// (see `voxctrl_inference::remote_openai::PURPOSE_HEADER`): `live` for a
+/// live-text pass. Anything else, or no header (other clients, VoxCtrl
+/// before 0.9.20), is a dictation.
+fn purpose(headers: &HeaderMap) -> Purpose {
+    match headers.get(PURPOSE_HEADER).and_then(|v| v.to_str().ok()).map(str::trim) {
+        Some(p) if p.eq_ignore_ascii_case("live") => Purpose::Live,
+        _ => Purpose::Dictation,
+    }
+}
+
 async fn transcriptions(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Response, ApiError> {
+    let purpose = purpose(&headers);
     let mut file: Option<axum::body::Bytes> = None;
     let mut language: Option<String> = None;
     let mut prompt: Option<String> = None;
@@ -294,15 +320,27 @@ async fn transcriptions(
     let audio_secs = samples.len() as f64 / audio::TARGET_RATE as f64;
 
     let engine_state = state.clone();
-    let result = tokio::task::spawn_blocking(move || engine_state.engine.transcribe(samples, language, prompt))
+    let result = tokio::task::spawn_blocking(move || engine_state.engine.transcribe(samples, language, prompt, purpose))
         .await
         .map_err(|e| {
             warn!("Transcription task stopped unexpectedly: {e}");
             ApiError::server("The transcription stopped unexpectedly. See the server log.")
         })?
-        .map_err(|e| {
-            warn!("Transcription failed: {e:#}");
-            ApiError::server(format!("Transcription failed: {e:#}"))
+        .map_err(|e| match e {
+            // Routine: the next pass carries more of the recording anyway.
+            TranscribeError::Busy(Purpose::Live) => {
+                ApiError::busy("The server is busy with a dictation, so this live-text pass was skipped.")
+            }
+            TranscribeError::Busy(Purpose::Dictation) => {
+                warn!("Refused a dictation: {MAX_WAITING_DICTATIONS} are already waiting for the model");
+                ApiError::busy(format!(
+                    "The server is busy: {MAX_WAITING_DICTATIONS} dictations are already waiting. Try again in a moment."
+                ))
+            }
+            TranscribeError::Failed(e) => {
+                warn!("Transcription failed: {e:#}");
+                ApiError::server(format!("Transcription failed: {e:#}"))
+            }
         })?;
 
     // The length of what was said, never the words: this log stays on disk.
@@ -918,7 +956,9 @@ mod tests {
     #[tokio::test]
     async fn voice_uploads_that_should_not_be_stored_are_refused() {
         let wav = wav_bytes();
-        let cases: [(&str, Option<&str>, Vec<(&str, &[u8])>, &str); 5] = [
+        /// Voice name, client id, form parts, and what the refusal mentions.
+        type Case<'a> = (&'a str, Option<&'a str>, Vec<(&'a str, &'a [u8])>, &'a str);
+        let cases: [Case; 5] = [
             ("Rick", None, vec![("audio", &wav)], "hex digits"),
             ("Rick", Some("not-an-id"), vec![("audio", &wav)], "hex digits"),
             ("Rick.wav", Some(ALICE), vec![("audio", &wav)], "voice name"),
@@ -1116,6 +1156,44 @@ mod tests {
     async fn body_json(response: Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[test]
+    fn only_the_live_header_makes_a_live_pass() {
+        let with = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(PURPOSE_HEADER, value.parse().unwrap());
+            purpose(&headers)
+        };
+        assert_eq!(with("live"), Purpose::Live);
+        assert_eq!(with(" LIVE "), Purpose::Live);
+        assert_eq!(with("dictation"), Purpose::Dictation);
+        assert_eq!(with(""), Purpose::Dictation);
+        assert_eq!(purpose(&HeaderMap::new()), Purpose::Dictation);
+    }
+
+    #[tokio::test]
+    async fn busy_is_a_503_that_says_when_to_try_again() {
+        let res = ApiError::busy("busy").into_response();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(res.headers()[header::RETRY_AFTER], "1");
+        assert_eq!(body_json(res).await["error"]["type"], "server_busy");
+    }
+
+    #[tokio::test]
+    async fn a_live_pass_on_an_idle_server_is_transcribed() {
+        let (app, seen) = app("live words", false, Some(KEY));
+        let body = multipart(&[], Some(&speech_wav()));
+        let req = axum::http::Request::post("/v1/audio/transcriptions")
+            .header(header::AUTHORIZATION, format!("Bearer {KEY}"))
+            .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={BOUNDARY}"))
+            .header(PURPOSE_HEADER, "live")
+            .body(Body::from(body))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(body_json(res).await["text"], "live words");
+        assert_eq!(seen.lock().unwrap().calls, 1);
     }
 
     #[tokio::test]

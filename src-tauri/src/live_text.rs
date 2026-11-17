@@ -339,7 +339,7 @@ mod tests {
     fn no_pause_waits_until_the_tail_runs_long() {
         assert_eq!(plan_commit(&speech(8.0, &[]), 0), None);
         let cut = plan_commit(&speech(12.5, &[]), 0).expect("forced cut");
-        assert!(cut >= MIN_COMMIT_SAMPLES && cut <= 12 * S);
+        assert!((MIN_COMMIT_SAMPLES..=12 * S).contains(&cut));
     }
 
     #[test]

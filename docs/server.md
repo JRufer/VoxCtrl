@@ -783,11 +783,14 @@ cloned locally is there to pick.
   the server, and they are checked again before speech that uses one, so a
   clip you add or change is sent without you doing anything. **Send my voices
   now** does it on demand.
-- **They are private to the client.** Each client's clips are stored in a
+- **Each client sees only its own.** Each client's clips are stored in a
   folder of their own on the server
-  (`<data>/voxctrl/client-voices/<client id>/`). Another client does not see
-  them in its voice list and cannot speak with them. The client id is a hash of
-  the computer's machine id and the user name; neither is sent.
+  (`<data>/voxctrl/client-voices/<client id>/`), and another VoxCtrl app does
+  not see them in its voice list or speak with them. The client id is a hash
+  of the computer's machine id and the user name; neither is sent. This keeps
+  apps apart; it is not access control. The id is not a secret, and anyone
+  with the server's API key who learns it can use those voices, so share the
+  key only with people you would share the voices with.
 - **Deleting a clip on the client removes it from the server** the next time
   the voices are synced: when the TTS tab checks the server, when you pick a
   voice, or before the next speech with one of your voices.
@@ -795,9 +798,6 @@ cloned locally is there to pick.
   characters. Clips with other names stay local. A client can keep up to 50
   voices on a server, each within the server's upload limit (`max_upload_mb`).
 
-This separation keeps clients' voices apart; it is not a defence against
-someone who holds the server's API key and sets out to learn another client's
-id. Everyone with the key is trusted with the server.
 
 Things to know:
 
@@ -1247,13 +1247,37 @@ A client with live text on sends the server a short clip a few times a second
 while its user is speaking, on top of the one request per dictation. Each is
 small and the client waits for one to finish before sending the next, so the
 load follows how fast the server answers. With a fast model it is unnoticeable.
-With a slow one (a large Whisper model on a CPU) live text lags, and a live
-clip that is still being transcribed when the user stops can delay the final
-transcript by up to that clip's time.
+With a slow one (a large Whisper model on a CPU) live text lags.
 
-To stop it, turn off **Settings → Visual & Feedback → Show live transcript in
-overlay** on the client. The server log shows these as ordinary
-`Transcribed 1.4s of audio in … ms` lines.
+**Dictations come first.** The model transcribes one request at a time, and
+from 0.9.20 the server orders them:
+
+- A **dictation** (someone has stopped speaking and is waiting for the text)
+  waits its turn. Up to 8 may wait; a ninth is answered `503` with
+  `Retry-After: 1` (*The server is busy*), and the app hands that dictation to
+  its fallback engine instead of making its user wait minutes.
+- A **live-text clip** runs only when the model is free and no dictation is
+  waiting. Otherwise it is answered `503` at once and not run: the client's
+  next clip carries more of the recording anyway. So one person's live text
+  never delays another person's dictation, and a live clip still being
+  transcribed delays a dictation by at most that one clip.
+
+The VoxCtrl app marks its live clips with the header `X-VoxCtrl-Purpose: live`
+(from 0.9.20). Requests without it, from older apps and other clients, are
+treated as dictations, as every request was before.
+
+To stop live text, turn off **Settings → Visual & Feedback → Show live
+transcript in overlay** on the client. The server log shows live clips as
+ordinary `Transcribed 1.4s of audio in … ms` lines.
+
+### Stalled connections
+
+The server closes a connection that has not finished sending a request's
+headers within 30 seconds (this also ends idle kept-alive connections), and
+cuts off a request whose body pauses for 30 seconds. A dictation streamed while
+it is spoken is not affected: the app sends audio continuously for as long as
+the key is held. There is no limit on the number of connections; the server is
+meant for your own network or a VPN (see [Security](#security)).
 
 ---
 
@@ -1318,6 +1342,11 @@ A `multipart/form-data` request:
 | `prompt` | No | Words to bias recognition toward, such as names and jargon |
 | `response_format` | No | `json` (default), `text` or `verbose_json` |
 | `model` | No | Accepted and ignored |
+
+The optional header `X-VoxCtrl-Purpose: live` marks a live-text clip, which is
+run only when the model is idle and otherwise answered `503`. Without it the
+request is a dictation and waits its turn (up to 8 waiting; then `503`). See
+[Live text and server load](#live-text-and-server-load).
 
 **Audio format.** WAV only: PCM (8, 16, 24 or 32-bit) or IEEE float, any sample
 rate, any number of channels. It is converted to 16 kHz mono. 16 kHz mono

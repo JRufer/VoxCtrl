@@ -1442,7 +1442,7 @@ pub fn parse_voice_command(
         }
     }
 
-    candidate_entries.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    candidate_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1.len()));
 
     let after_trigger_lower = fold_case(after_trigger);
 

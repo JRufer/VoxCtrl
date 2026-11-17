@@ -9,6 +9,20 @@ use voxctrl_config::RemoteOpenAiConfig;
 
 use crate::backend::{TranscribeRequest, TranscriptionBackend, TranscriptionResult};
 
+/// How long an idle connection is kept for reuse: under a VoxCtrl server's
+/// 30-second keep-alive limit, so the app never sends a request down a
+/// connection the server is just closing (which fails as "connection closed
+/// before message completed").
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Header naming what a transcription request is for. `live` marks a
+/// live-text pass, which a VoxCtrl server answers only when it is idle
+/// (503 otherwise) so that it never delays a dictation. Absent means a
+/// dictation. Not a form field: other OpenAI-compatible servers may refuse
+/// unknown fields, and every one of them ignores an unknown header.
+pub const PURPOSE_HEADER: &str = "x-voxctrl-purpose";
+pub const PURPOSE_LIVE: &str = "live";
+
 /// How long to wait for the server to accept a connection, separately from
 /// how long a transcription may take. A server that is switched off or on
 /// another network does not refuse the connection, it just never answers, and
@@ -382,6 +396,7 @@ impl RemoteStreamingSession {
                         prompt_clone.as_deref(),
                         &samples,
                         start_inst,
+                        false,
                     )
                     .await;
                     let _ = result_tx.send(fallback_res);
@@ -456,6 +471,7 @@ async fn execute_multipart_transcribe(
     prompt: Option<&str>,
     audio: &[f32],
     start_inst: Instant,
+    live: bool,
 ) -> Result<TranscriptionResult> {
     let url = normalize_transcription_url(&cfg.endpoint);
     let wav_bytes = encode_wav(audio);
@@ -482,6 +498,11 @@ async fn execute_multipart_transcribe(
     }
 
     let mut req = client.post(&url).multipart(form);
+    if live {
+        // A VoxCtrl server skips a live pass rather than queue it behind a
+        // dictation; any other server ignores the header.
+        req = req.header(PURPOSE_HEADER, PURPOSE_LIVE);
+    }
     req = attach_auth(req, cfg.api_key.as_deref());
 
     let resp = req
@@ -526,7 +547,10 @@ impl RemoteOpenAiBackend {
 /// The HTTP client for a server: encrypted to its paired certificate when a
 /// fingerprint is saved, and never falling back to an unpinned connection.
 pub(crate) fn http_client(endpoint: &str, tls_fingerprint: Option<&str>, timeout: Duration) -> Result<reqwest::Client> {
-    let builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).timeout(timeout);
+    let builder = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(timeout)
+        .pool_idle_timeout(POOL_IDLE_TIMEOUT);
     voxctrl_pairing::pin(builder, endpoint, tls_fingerprint)?.build().context("Could not set up the connection")
 }
 
@@ -545,12 +569,15 @@ impl TranscriptionBackend for RemoteOpenAiBackend {
         let cfg = self.config.clone();
         let prompt = req.initial_prompt.clone();
         let audio = req.audio.clone();
+        // An interim pass is live text; the dictation itself is streamed by
+        // `RemoteStreamingSession`, or arrives here without a session.
+        let live = req.interim_session.is_some();
 
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 std::thread::spawn(move || {
                     handle.block_on(async move {
-                        execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start).await
+                        execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start, live).await
                     })
                 })
                 .join()
@@ -561,7 +588,7 @@ impl TranscriptionBackend for RemoteOpenAiBackend {
                     .enable_all()
                     .build()?;
                 rt.block_on(async move {
-                    execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start).await
+                    execute_multipart_transcribe(&client, &cfg, prompt.as_deref(), &audio, start, live).await
                 })
             }
         }
@@ -847,6 +874,9 @@ pub fn failure_reason(err: &anyhow::Error) -> String {
     }
     if message.contains("HTTP 426") {
         return ENCRYPTION_REQUIRED.into();
+    }
+    if message.contains("HTTP 503") {
+        return "The server is busy".into();
     }
     if message.contains("HTTP 5") {
         return "The server reported an error".into();

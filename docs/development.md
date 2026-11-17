@@ -393,7 +393,15 @@ cargo test -p voxctrl-routing
 
 # Check that no log field carries dictated text (CI runs this too)
 ./scripts/check_log_privacy.sh
+
+# Format, and lint with warnings as errors, as CI does
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+The style is in `rustfmt.toml` (120-column lines). The tree was reformatted
+once in 0.9.20; that commit is listed in `.git-blame-ignore-revs`, which GitHub
+skips in blame. Locally: `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 CI runs `xvfb-run -a cargo test --workspace` on Linux, so a new crate's tests
 run without anyone adding it to a list. Log what a dictation was like (word

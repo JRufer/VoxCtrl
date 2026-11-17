@@ -17,6 +17,7 @@ mod client_contract_tests;
 mod config;
 mod engine;
 mod http;
+mod limits;
 mod llm;
 mod plain_http;
 mod speech;
@@ -375,14 +376,14 @@ async fn run(cli: Cli) -> Result<()> {
         info!("  Pairing code: run `{} --pairing-code` to print it", program());
     }
 
+    let handle = axum_server::Handle::new();
+    let stop = handle.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        stop.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+    });
     match identity {
         Some(identity) => {
-            let handle = axum_server::Handle::new();
-            let stop = handle.clone();
-            tokio::spawn(async move {
-                shutdown_signal().await;
-                stop.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
-            });
             let tls = axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(identity.server_config()?));
             // A client that speaks plain HTTP to this port is answered with
             // how to pair, rather than a connection that just closes.
@@ -393,10 +394,9 @@ async fn run(cli: Cli) -> Result<()> {
                 .context("The HTTPS server stopped with an error")?;
         }
         None => {
-            let listener =
-                tokio::net::TcpListener::from_std(listener).context("Could not prepare the listening socket")?;
-            axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown_signal())
+            limits::apply(axum_server::from_tcp(listener))
+                .handle(handle)
+                .serve(app.into_make_service())
                 .await
                 .context("The HTTP server stopped with an error")?;
         }

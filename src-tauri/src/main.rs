@@ -55,30 +55,6 @@ fn server_options(args: &[String]) -> Option<&[String]> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::server_options;
-
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn server_mode_is_a_leading_server_flag_and_the_rest_are_its_options() {
-        let line = args(&["voxctrl", "--server", "--bind", "0.0.0.0:9000"]);
-        assert_eq!(server_options(&line), Some(&line[2..]));
-        assert_eq!(server_options(&args(&["voxctrl", "server"])), Some(&[][..]));
-    }
-
-    #[test]
-    fn the_app_starts_normally_otherwise() {
-        assert_eq!(server_options(&args(&["voxctrl"])), None);
-        assert_eq!(server_options(&args(&["voxctrl", "--version"])), None);
-        // Only the first argument counts: this is the app, started minimised.
-        assert_eq!(server_options(&args(&["voxctrl", "--minimized", "--server"])), None);
-    }
-}
-
 fn main() {
     if let Some(code) = run_as_server(&std::env::args().collect::<Vec<_>>()) {
         std::process::exit(code);
@@ -123,4 +99,28 @@ fn main() {
         .block_on(async {
             voxctrl_app_lib::run();
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::server_options;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn server_mode_is_a_leading_server_flag_and_the_rest_are_its_options() {
+        let line = args(&["voxctrl", "--server", "--bind", "0.0.0.0:9000"]);
+        assert_eq!(server_options(&line), Some(&line[2..]));
+        assert_eq!(server_options(&args(&["voxctrl", "server"])), Some(&[][..]));
+    }
+
+    #[test]
+    fn the_app_starts_normally_otherwise() {
+        assert_eq!(server_options(&args(&["voxctrl"])), None);
+        assert_eq!(server_options(&args(&["voxctrl", "--version"])), None);
+        // Only the first argument counts: this is the app, started minimised.
+        assert_eq!(server_options(&args(&["voxctrl", "--minimized", "--server"])), None);
+    }
 }

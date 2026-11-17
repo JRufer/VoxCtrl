@@ -526,6 +526,7 @@ end to end. Its steps say which. The two it cannot fix for you:
 ### Debugging & Crash Logs
 If the application crashes, fails to launch, or encounters hardware/model errors, you can check the local startup and error log file:
 - **Location:** `~/.local/share/voxctrl/startup_errors.log`
+- **Size:** once it passes 1 MB, VoxCtrl cuts it back to its most recent 256 KB the next time it starts.
 - **Privacy:** To protect your privacy, this file **never** records or contains any transcribed speech text or LLM prompts. It only logs system configurations (models loaded, input devices, sample rates) and application/compiler errors.
 - **Submitting Reports:** Please attach this log file when opening issues or submitting crash reports on GitHub to help us diagnose the problem.
 

@@ -417,9 +417,8 @@ mod tests {
             "Send my  address now.",    // doubled space
             "Send my. Address now.",    // sentence split inside the phrase
         ] {
-            assert_eq!(
+            assert!(
                 expand_snippets(text, &snips).contains("123 Main Street"),
-                true,
                 "should have expanded: {text:?}"
             );
         }

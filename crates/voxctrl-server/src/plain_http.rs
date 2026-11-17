@@ -63,7 +63,7 @@ pub fn https_server(
     tls: axum_server::tls_rustls::RustlsConfig,
 ) -> axum_server::Server<axum_server::tls_rustls::RustlsAcceptor<RefusePlainHttp>> {
     let acceptor = axum_server::tls_rustls::RustlsAcceptor::new(tls).acceptor(RefusePlainHttp);
-    axum_server::from_tcp(listener).acceptor(acceptor)
+    crate::limits::apply(axum_server::from_tcp(listener).acceptor(acceptor))
 }
 
 /// The inner acceptor of the server's `RustlsAcceptor`: it sees the raw TCP

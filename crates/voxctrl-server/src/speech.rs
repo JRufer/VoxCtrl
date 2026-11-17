@@ -605,6 +605,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)] // the worker's own signature, spelled out for a failing start
     fn a_model_that_will_not_load_fails_startup_with_its_reason() {
         let result = SpeechWorker::start(|| -> Result<fn(&PlannedSpeech) -> Result<Vec<u8>>> {
             Err(anyhow!("the voice file is missing"))

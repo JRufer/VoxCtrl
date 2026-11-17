@@ -162,11 +162,11 @@ fn clean_text(
     ctx.decode(&mut batch)?;
 
     let mut output = String::new();
-    let mut curr_pos = tokens.len() as i32;
     let mut decoder = encoding_rs::UTF_8.new_decoder();
 
     let max_gen_tokens = (tokens.len() * 2).clamp(128, 1024);
-    for _ in 0..max_gen_tokens {
+    // Each generated token takes the next position after the prompt.
+    for curr_pos in (tokens.len() as i32..).take(max_gen_tokens) {
         let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
         let mut candidates_arr = LlamaTokenDataArray::from_iter(candidates, false);
         let token = candidates_arr.sample_token_greedy();
@@ -183,7 +183,6 @@ fn clean_text(
 
         batch.clear();
         batch.add(token, curr_pos, &[0], true)?;
-        curr_pos += 1;
         ctx.decode(&mut batch)?;
     }
 

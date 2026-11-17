@@ -45,7 +45,8 @@ pub(crate) fn released(id: &str) {
     });
 }
 
-/// Is the trigger of binding `id` recorded as down?
+/// Is the trigger of binding `id` recorded as down? Read by the gesture tests.
+#[cfg(test)]
 pub(crate) fn is_down(id: &str) -> bool {
     with(|m| m.get(id).is_some_and(|at| at.elapsed() < STALE_AFTER))
 }
