@@ -51,10 +51,12 @@ trigger for the checklist below.
 | 7 | The fingerprint is the SHA-256 of the server certificate's DER bytes. A paired client accepts that one certificate, does not check the name in it, and never falls back to `http://` | `voxctrl-pairing` (`fingerprint`, `PinnedCertificate`, `pin_for`); `crates/voxctrl-server/src/tls.rs` | VoxCtrl Keys |
 | 8 | A bare host typed by a user means `http://<host>:8787/v1`; the default port is 8787 | `src/lib/Settings/server-setup.ts` (`normalizeServerAddress`); `crates/voxctrl-inference/src/remote_openai.rs` (`normalize_*_url`) | VoxCtrl Keys (completes addresses the same way) |
 | 9 | Live text is done by sending the recording so far to `/v1/audio/transcriptions` repeatedly, one request at a time. There is no separate live endpoint | [Live text and server load](./server.md#live-text-and-server-load) | VoxCtrl Keys |
-| 10 | The server handles one transcription at a time. A request without `X-VoxCtrl-Purpose: live` is a dictation and is queued; from 0.9.20 at most 8 wait, and past that the answer is `503` with `Retry-After` in the usual error envelope. A request with the header (a live-text clip) runs only when nothing else is running or waiting, else gets `503` at once | `crates/voxctrl-server/src/engine.rs` (`Gate`, `MAX_WAITING_DICTATIONS`); `http.rs` (`purpose`) | VoxCtrl Keys (a final upload waits behind at most one live clip; it does not send the header yet); the VoxCtrl app (marks its live passes) |
+| 10 | The server handles one transcription at a time. A request without `X-VoxCtrl-Purpose: live` is a dictation and is queued; from 0.9.20 at most 8 wait, and past that the answer is `503` with `Retry-After` in the usual error envelope. A request with the header (a live-text clip) runs only when nothing else is running or waiting, else gets `503` at once | `crates/voxctrl-server/src/engine.rs` (`Gate`, `MAX_WAITING_DICTATIONS`); `http.rs` (`purpose`) | VoxCtrl Keys (marks its live clips from 0.1.2, treats `503` on one as skipped and on a dictation as "Server busy" with Retry); the VoxCtrl app (marks its live passes) |
 
 VoxCtrl Keys does **not** use `/v1/cleanup`, `/v1/chat/completions`,
 `/v1/audio/speech` or `/v1/voices`, and does not send `X-VoxCtrl-Client`.
+It reads `contract` from `/health` (from Keys 0.1.2) but not `min_client`,
+which is about the desktop app.
 Those can change without affecting it.
 
 ## Before you change the server
@@ -144,11 +146,12 @@ plain HTTP with `426 Upgrade Required` and the usual error envelope, whose
 
 ## When a client changes
 
-**For VoxCtrl Keys, from 0.9.20:** sending `X-VoxCtrl-Purpose: live` on its
-live-text requests would keep its live clips from queueing in front of
-another device's dictation, and from being run after the user has stopped.
-It must then treat a `503` on a live clip as "skipped" and send the next one,
-not as an error. Nothing breaks without it.
+**VoxCtrl Keys 0.1.2** sends `X-VoxCtrl-Purpose: live` on its live-text
+requests, ignores a `503` on one (the next clip goes when due), keeps the
+recording for Retry on a `503` to a dictation, and reads `contract` from
+`/health` ([JRufer/voxctrl-keys#4](https://github.com/JRufer/voxctrl-keys/pull/4)).
+Keys 0.1.1 and earlier send no header: their live clips are treated as
+dictations, as before.
 
 A client that starts using more of the server (say, VoxCtrl Keys adding
 dictation cleanup through `/v1/cleanup`) should open a pull request here that
