@@ -24,6 +24,15 @@
 #
 # Usage:
 #   ./scripts/bump_version.sh 0.2.8
+#   ./scripts/bump_version.sh 1.0.0-rc.1     # a release candidate
+#
+# A pre-release version (`1.0.0-rc.1`) is a SemVer pre-release: it sorts below
+# `1.0.0`, which is what the updater, Cargo and npm all expect. Use the dotted
+# form, `rc.1`, so `rc.10` sorts after `rc.9`. The release workflow publishes
+# it as a GitHub pre-release, which the in-app updater never offers, and
+# rewrites the .deb's version to `1.0.0~rc.1` so apt also sorts it below
+# `1.0.0` (see scripts/deb_prerelease_version.sh). The AUR PKGBUILDs are left
+# alone: pkgver may not contain `-`.
 
 set -euo pipefail
 
@@ -36,8 +45,8 @@ if [ $# -ne 1 ]; then
 fi
 
 NEW_VERSION="$1"
-if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-    echo "Error: '$NEW_VERSION' doesn't look like a version number (expected e.g. 1.2.3)" >&2
+if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((\.[0-9]+)|(-(alpha|beta|rc)\.[0-9]+))?$ ]]; then
+    echo "Error: '$NEW_VERSION' doesn't look like a version number (expected e.g. 1.2.3 or 1.0.0-rc.1)" >&2
     exit 1
 fi
 

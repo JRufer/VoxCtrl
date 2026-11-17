@@ -172,7 +172,7 @@ under a git tag that didn't match what the built app actually reported.
 **Always bump with the script, never by hand-editing one file:**
 
 ```bash
-./scripts/bump_version.sh 0.2.8
+./scripts/bump_version.sh 0.2.8          # or 1.0.0-rc.1 for a release candidate
 cargo check   # refreshes Cargo.lock's recorded crate versions
 git add -A && git commit -m "Bump version to 0.2.8"
 ```
