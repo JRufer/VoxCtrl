@@ -291,6 +291,20 @@ if [ "$BUILD_MODE" = "vulkan" ]; then
     esac
 fi
 
+# The prebuilt ONNX Runtime that ort fetches (1.31) is itself built against
+# glibc 2.38 and GCC 13's libstdc++, WebGPU or not, so on an older host it does
+# not even link. There, link Microsoft's own libonnxruntime.so.1 (glibc 2.28)
+# dynamically and bundle it, as the ubuntu-22.04 release build does.
+ORT_SHARED_LIB=""
+if [ "$glibc_ok" = false ] && [ "$WEBGPU" = false ]; then
+    info "Host glibc ${HOST_GLIBC:-unknown} is older than 2.38; using Microsoft's ONNX Runtime shared library..."
+    ort_dir="$ROOT_DIR/target/onnxruntime-linux"
+    "$ROOT_DIR/scripts/fetch-onnxruntime-linux.sh" "$ort_dir"
+    export ORT_LIB_PATH="$ort_dir" ORT_PREFER_DYNAMIC_LINK=1
+    export LD_LIBRARY_PATH="$ort_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    ORT_SHARED_LIB="$ort_dir/libonnxruntime.so.1"
+fi
+
 info "Running Tauri release compiler with headless PATH..."
 # Set up a cleanup trap to restore /usr/lib/insync if it was hidden
 cleanup() {
@@ -390,6 +404,18 @@ if [ "$WEBGPU" = true ]; then
         cp -L "$dawn" "$root/usr/lib/libwebgpu_dawn.so"
         info "Bundled libwebgpu_dawn.so into the AppImage"
     fi
+fi
+
+# Same for Microsoft's ONNX Runtime on hosts older than glibc 2.38 (above),
+# with its licence.
+if [ -n "$ORT_SHARED_LIB" ]; then
+    if [ -z "$(find "$root" -name 'libonnxruntime.so.1' -print -quit)" ]; then
+        mkdir -p "$root/usr/lib"
+        cp -L "$ORT_SHARED_LIB" "$root/usr/lib/libonnxruntime.so.1"
+        info "Bundled libonnxruntime.so.1 into the AppImage"
+    fi
+    mkdir -p "$root/usr/share/doc/voxctrl/onnxruntime"
+    cp "$ROOT_DIR"/packaging/third-party-licenses/onnxruntime/* "$root/usr/share/doc/voxctrl/onnxruntime/"
 fi
 
 # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)

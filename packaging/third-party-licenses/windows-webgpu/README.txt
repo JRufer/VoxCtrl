@@ -26,5 +26,8 @@ does not include dxil.dll, Microsoft's closed-source DXIL signing library: the
 Dawn that VoxCtrl ships signs shaders with dxcompiler.dll alone, and the
 release build fails if a Dawn that still loads dxil.dll ever comes back.
 
+ONNX Runtime itself is linked into voxctrl.exe. Its MIT licence and
+third-party notices are the onnxruntime-*.txt files in this folder.
+
 VoxCtrl itself is MIT licensed; see the project's LICENSE file. The full list
 of open-source projects VoxCtrl builds on is in Settings -> About.

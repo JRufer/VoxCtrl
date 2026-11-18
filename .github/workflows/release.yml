@@ -275,6 +275,17 @@ jobs:
         if: runner.os == 'Linux' && matrix.vulkan
         run: cargo build --bin voxctrl-llm-sidecar --release --features vulkan
 
+      # This row builds on ubuntu-22.04 so it runs on 22.04 and Debian 12.
+      # ort's prebuilt ONNX Runtime 1.31 is built against glibc 2.38 and GCC
+      # 13's libstdc++ and does not link here, so link Microsoft's own
+      # libonnxruntime.so.1 (glibc 2.28) dynamically instead and ship it: the
+      # .deb installs it to /usr/lib/voxctrl, which the binary's rpath covers
+      # (src-tauri/build.rs), and LD_LIBRARY_PATH (set by the script) lets
+      # linuxdeploy put it in the AppImage. Its licence goes with it.
+      - name: ONNX Runtime shared library (Linux, Vulkan)
+        if: runner.os == 'Linux' && matrix.vulkan && !matrix.webgpu
+        run: ./scripts/fetch-onnxruntime-linux.sh "$RUNNER_TEMP/onnxruntime"
+
       - name: Build AppImage + deb (Linux, Vulkan)
         if: runner.os == 'Linux' && matrix.vulkan && !matrix.webgpu
         env:
@@ -283,7 +294,16 @@ jobs:
           # beforeBuildCommand rebuilds the sidecar; without the feature it
           # would bundle a CPU-only copy over the Vulkan one built above.
           VOXCTRL_SIDECAR_FEATURES: vulkan
-        run: npm run tauri build -- --features vulkan
+        run: |
+          lic="$PWD/packaging/third-party-licenses/onnxruntime"
+          cat > "$RUNNER_TEMP/tauri-ort.conf.json" <<EOF
+          {"bundle":{"linux":{"deb":{"files":{
+            "/usr/lib/voxctrl/libonnxruntime.so.1":"$ORT_SHARED_LIB",
+            "/usr/share/doc/voxctrl/onnxruntime/LICENSE":"$lic/LICENSE",
+            "/usr/share/doc/voxctrl/onnxruntime/ThirdPartyNotices.txt":"$lic/ThirdPartyNotices.txt"
+          }}}}}
+          EOF
+          npm run tauri build -- --config "$RUNNER_TEMP/tauri-ort.conf.json" --features vulkan
 
       # Dawn (libwebgpu_dawn.so) is a NEEDED library of the binary. ort leaves
       # it in target/release; LD_LIBRARY_PATH lets linuxdeploy resolve it, and
@@ -343,6 +363,17 @@ jobs:
             mkdir -p "$root/usr/lib"
             cp -L "$(find . -path '*/release/libwebgpu_dawn.so' -print -quit)" "$root/usr/lib/libwebgpu_dawn.so"
             echo "Bundled libwebgpu_dawn.so into the AppImage"
+          fi
+          # The 22.04 Vulkan build NEEDs Microsoft's libonnxruntime.so.1 (see
+          # its build step); same treatment, plus its licence.
+          if [ -n "${ORT_SHARED_LIB:-}" ]; then
+            if [ -z "$(find "$root" -name 'libonnxruntime.so.1' -print -quit)" ]; then
+              mkdir -p "$root/usr/lib"
+              cp -L "$ORT_SHARED_LIB" "$root/usr/lib/libonnxruntime.so.1"
+              echo "Bundled libonnxruntime.so.1 into the AppImage"
+            fi
+            mkdir -p "$root/usr/share/doc/voxctrl/onnxruntime"
+            cp packaging/third-party-licenses/onnxruntime/* "$root/usr/share/doc/voxctrl/onnxruntime/"
           fi
 
           # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)
@@ -547,12 +578,17 @@ jobs:
           }
 
           # Paths are relative to src-tauri, where tauri.conf.json lives.
-          $licenses = Get-ChildItem -File "packaging/third-party-licenses/windows-webgpu"
-          if ($licenses.Count -eq 0) {
-            throw "No licence texts found in packaging/third-party-licenses/windows-webgpu"
-          }
-          foreach ($file in $licenses) {
-            $resources["../packaging/third-party-licenses/windows-webgpu/$($file.Name)"] = "licenses/$($file.Name)"
+          # ONNX Runtime is linked into voxctrl.exe; its MIT licence and
+          # third-party notices go in the same folder.
+          foreach ($dir in @("windows-webgpu", "onnxruntime")) {
+            $licenses = Get-ChildItem -File "packaging/third-party-licenses/$dir"
+            if ($licenses.Count -eq 0) {
+              throw "No licence texts found in packaging/third-party-licenses/$dir"
+            }
+            foreach ($file in $licenses) {
+              $target = if ($dir -eq "onnxruntime") { "licenses/onnxruntime-$($file.Name)" } else { "licenses/$($file.Name)" }
+              $resources["../packaging/third-party-licenses/$dir/$($file.Name)"] = $target
+            }
           }
 
           @{ bundle = @{ resources = $resources } } |

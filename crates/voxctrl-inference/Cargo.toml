@@ -98,6 +98,12 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 # in ONNX Runtime 1.24 (rc.12) needed Microsoft's closed-source dxil.dll beside
 # dxcompiler.dll, and the one in 1.31 does not. release.yml refuses to build a
 # Windows installer whose Dawn still refers to dxil.dll.
+#
+# The cost is on old Linux: ort's 1.31 Linux prebuilt is built against glibc
+# 2.38 and GCC 13's libstdc++, so it does not link on Ubuntu 22.04 or Debian
+# 12. Builds there (the 22.04 release row, CI's test job, build_appimage.sh on
+# an old host) link Microsoft's own libonnxruntime.so.1 dynamically and ship
+# it; see scripts/fetch-onnxruntime-linux.sh.
 moonshine-webgpu = ["moonshine", "ort/webgpu"]
 
 # Parakeet ONNX backend via onnxruntime.
