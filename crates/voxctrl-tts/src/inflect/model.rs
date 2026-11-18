@@ -135,7 +135,8 @@ fn build_session(path: &Path) -> Result<Session> {
     // builder back for recovery and so isn't a `Send + Sync` std error that
     // anyhow can absorb — format via Display instead. This mirrors the same
     // dance in `voxctrl-inference::moonshine::build_session`.
-    Session::builder()
+    let env = voxctrl_ort::environment().map_err(|e| anyhow!("ONNX Runtime environment: {e}"))?;
+    Session::builder(env)
         .map_err(|e| anyhow!("ort session builder: {e}"))?
         .with_optimization_level(GraphOptimizationLevel::Level3)
         .map_err(|e| anyhow!("set optimization level: {e}"))?

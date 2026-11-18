@@ -317,7 +317,8 @@ impl ParakeetBackend {
     }
 
     fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
-        let builder = Session::builder()
+        let env = voxctrl_ort::environment().map_err(|e| anyhow!("ONNX Runtime environment: {e}"))?;
+        let builder = Session::builder(env)
             .map_err(|e| anyhow!("ort session builder: {e}"))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("set optimization level: {e}"))?
