@@ -185,7 +185,12 @@ jobs:
           # reports the two separately so nobody reads "Windows GPU" and
           # assumes it covers every engine.
           - name: windows-webgpu
-            os: windows-2022
+            # windows-2025 ships Visual Studio 2026 (MSVC 14.50). ort's
+            # prebuilt static ONNX Runtime (2.0.0-rc.15) calls the vectorized
+            # STL helpers newer MSVC added (__std_unique_8,
+            # __std_max_element_f_, ...), so linking it with windows-2022's
+            # MSVC 14.44 fails with LNK1120 unresolved externals.
+            os: windows-2025
             features: "moonshine-webgpu,parakeet-webgpu"
             artifact_label: windows-x86_64-webgpu
             cuda: false
@@ -450,7 +455,7 @@ jobs:
           #     "symbol lookup error: /usr/lib/libwebkit2gtk-4.1.so.0: undefined
           #     symbol: manette_device_get_mapping" (Arch, v0.9.20). So the
           #     libraries only WebKitGTK needs (libmanette, libsoup, libsecret,
-          #     enchant, hyphen, seccomp, xslt, lcms2, harfbuzz-icu, libatomic)
+          #     enchant, hyphen, seccomp, xslt, lcms2, harfbuzz-icu, libatomic, woff2)
           #     and what they in turn pull in (gudev, evdev, psl, nghttp2,
           #     brotli, sqlite, gcrypt) are host-first as well, still bundled
           #     for a desktop with no WebKitGTK. check-appimage-webkit-deps.sh,
@@ -466,7 +471,8 @@ jobs:
                      'libbrotlidec.so*' 'libbrotlicommon.so*' 'libsqlite3.so*' \
                      'libsecret-1.so*' 'libgcrypt.so*' 'libenchant-2.so*' \
                      'libhyphen.so*' 'libseccomp.so*' 'libxslt.so*' \
-                     'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*'; do
+                     'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*' \
+                     'libwoff2dec.so*' 'libwoff2common.so*'; do
             find "$root" -name "$pat" -not -path '*/fallback/*' -print \
               -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
           done
