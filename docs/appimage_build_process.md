@@ -232,6 +232,20 @@ stay clean on a newer host. The rules, each learned from a startup crash:
      desktop that has one (all rolling releases, and most others), and the
      bundled copy still starts on a desktop that has none, so rule 4's
      "always self-contained enough to run" property holds.
+   * **WebKitGTK's own dependencies** — `libmanette`, `libsoup-3.0`,
+     `libsecret-1`, `libenchant-2`, `libhyphen`, `libseccomp`, `libxslt`,
+     `liblcms2`, `libharfbuzz-icu`, `libatomic`, and what those pull in
+     (`libgudev`, `libevdev`, `libpsl`, `libnghttp2`, `libbrotli*`,
+     `libsqlite3`, `libgcrypt`). This is rule 2 applied to the bullet above:
+     once the host's WebKitGTK is the one loaded, a stale bundled dependency
+     on the normal library path shadows the host's copy. v0.9.20 shipped
+     `libmanette` that way, and Arch's WebKitGTK aborted at launch with
+     `undefined symbol: manette_device_get_mapping`.
+     `scripts/check-appimage-webkit-deps.sh` runs after the strip loop in
+     both `build_appimage.sh` and the release workflow, and fails the build
+     if any library that only the bundled WebKitGTK needs is still on the
+     normal path. When it fires, add the library to the fallback list in
+     both places.
 5. **WebKitGTK finds its helper processes relative to the working
    directory.** The Tauri bundler rewrites the compiled-in
    `/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1` to
