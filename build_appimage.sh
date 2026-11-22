@@ -457,11 +457,29 @@ done
 #     desktop without WebKitGTK of its own still has a working app, which is
 #     also why the helper processes bundled above stay where they are: they
 #     are only ever used when this bundled copy is.
+#   WebKitGTK's own dependencies — once the host's WebKitGTK wins (above),
+#     every library it links must come from the host too, or a stale bundled
+#     copy shadows the host's and the host WebKitGTK aborts: "symbol lookup
+#     error: /usr/lib/libwebkit2gtk-4.1.so.0: undefined symbol:
+#     manette_device_get_mapping" (Arch, v0.9.20). So the libraries only
+#     WebKitGTK needs (libmanette, libsoup, libsecret, enchant, hyphen,
+#     seccomp, xslt, lcms2, harfbuzz-icu, libatomic) and what they in turn
+#     pull in (gudev, evdev, psl, nghttp2, brotli, sqlite, gcrypt) are
+#     host-first as well, still bundled for a desktop with no WebKitGTK.
+#     check-appimage-webkit-deps.sh, run after the strip loop, fails the
+#     build if a new one appears.
 mkdir -p "$root/usr/lib/fallback"
 for pat in 'libsystemd.so*' 'libudev.so*' \
            'libgstgl-1.0.so*' 'libwayland-server.so*' \
            'libwebkit2gtk-4.*.so*' 'libjavascriptcoregtk-4.*.so*' \
-           'libsharpyuv.so*' 'libwebp.so*' 'libwebpdemux.so*' 'libwebpmux.so*'; do
+           'libsharpyuv.so*' 'libwebp.so*' 'libwebpdemux.so*' 'libwebpmux.so*' \
+           `# WebKitGTK-only dependencies, and theirs (see above)` \
+           'libmanette-0.2.so*' 'libgudev-1.0.so*' 'libevdev.so*' \
+           'libsoup-3.0.so*' 'libpsl.so*' 'libnghttp2.so*' \
+           'libbrotlidec.so*' 'libbrotlicommon.so*' 'libsqlite3.so*' \
+           'libsecret-1.so*' 'libgcrypt.so*' 'libenchant-2.so*' \
+           'libhyphen.so*' 'libseccomp.so*' 'libxslt.so*' \
+           'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done
@@ -500,6 +518,8 @@ for pat in \
     'libcolorreload-gtk-module.so' 'libwindow-decorations-gtk-module.so'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print -delete 2>/dev/null || true
 done
+
+"$ROOT_DIR/scripts/check-appimage-webkit-deps.sh" "$root"
 
 # Install the AppRun hook that exposes usr/lib/fallback host-first.
 cp "$ROOT_DIR/scripts/appimage-hooks/host-first-fallback.sh" "$root/apprun-hooks/"
