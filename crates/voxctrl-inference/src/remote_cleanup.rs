@@ -72,11 +72,22 @@ pub async fn clean_on_server(cfg: &RemoteOpenAiConfig, text: &str, styling: &str
         });
     }
     let value: serde_json::Value = serde_json::from_slice(&body).context("The server's cleanup reply was not JSON")?;
-    value
+    let cleaned = value
         .get("text")
         .and_then(|t| t.as_str())
         .map(str::to_string)
-        .ok_or_else(|| anyhow!("The server's cleanup reply had no text"))
+        .ok_or_else(|| anyhow!("The server's cleanup reply had no text"))?;
+    // A server from before 0.9.22 returns whatever its cleanup model produced,
+    // a runaway included. The caller delivers the transcript as it was on any
+    // error here, which is what a runaway calls for.
+    if crate::s1_mini::cleanup_ran_away(text, &cleaned) {
+        return Err(anyhow!(
+            "The server's cleanup output was discarded as a runaway ({} characters from {})",
+            cleaned.chars().count(),
+            text.chars().count()
+        ));
+    }
+    Ok(cleaned)
 }
 
 /// Whether a server offers cleanup, in words for the Settings window.

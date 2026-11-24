@@ -439,9 +439,47 @@ fn global_engine_cell() -> &'static Arc<Mutex<Option<S1MiniEngine>>> {
     GLOBAL_ENGINE.get_or_init(|| Arc::new(Mutex::new(None)))
 }
 
+/// Cleanup may make a transcript this many times longer, plus
+/// [`CLEANUP_GROWTH_SLACK`] characters, before its output is refused.
+///
+/// Cleanup removes fillers and false starts and adds punctuation: its output
+/// is about as long as its input or shorter. Far longer means the model ran
+/// on by itself.
+const CLEANUP_MAX_GROWTH: usize = 2;
+/// Room for a very short dictation to gain punctuation or a spelled-out
+/// number without tripping the limit.
+const CLEANUP_GROWTH_SLACK: usize = 40;
+
+/// Whether `cleaned` is something the cleanup model ran away with rather than
+/// a tidied `original`: far longer than it, or repeating one word or phrase
+/// over and over when the original did not.
+///
+/// The model decodes greedily with nothing to stop a loop but its token
+/// limit, so a bad pass used to be delivered as it came.
+pub(crate) fn cleanup_ran_away(original: &str, cleaned: &str) -> bool {
+    let limit = original.chars().count() * CLEANUP_MAX_GROWTH + CLEANUP_GROWTH_SLACK;
+    cleaned.chars().count() > limit
+        || (voxctrl_text::has_repetition_loop(cleaned) && !voxctrl_text::has_repetition_loop(original))
+}
+
 /// Run text cleanup through S1-mini, lazily loading the model if needed.
-/// Falls back to the original text on any error.
+/// Falls back to the original text on any error, and when the model's output
+/// is not a cleaned-up version of the input at all (see [`cleanup_ran_away`]).
 pub fn clean_dictation(text: &str, styling: &str, custom_dir: Option<&str>, gpu: bool) -> String {
+    let cleaned = run_cleanup(text, styling, custom_dir, gpu);
+    if cleanup_ran_away(text, &cleaned) {
+        // Sizes, never the words (docs/privacy.md).
+        warn!(
+            "Cleanup output was discarded as a runaway ({} characters from {}); delivering the transcript as it was",
+            cleaned.chars().count(),
+            text.chars().count()
+        );
+        return text.to_string();
+    }
+    cleaned
+}
+
+fn run_cleanup(text: &str, styling: &str, custom_dir: Option<&str>, gpu: bool) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return text.to_string();
@@ -515,6 +553,31 @@ mod tests {
         assert!(prompt.contains("[Styling: semi-formal]"));
         assert!(prompt.contains("VoxCtrl is a great app."));
         assert!(prompt.contains("<think>\n\n</think>"));
+    }
+
+    #[test]
+    fn cleanup_that_tidies_is_kept() {
+        let said = "um so uh we should definitely meet at 3pm tomorrow";
+        assert!(!cleanup_ran_away(said, "We should definitely meet at 3 PM tomorrow."));
+        // A short dictation may grow a little: punctuation, a spelled-out number.
+        assert!(!cleanup_ran_away("ok 3", "Okay, three."));
+        // Nothing left after cleaning (all fillers) is a valid result.
+        assert!(!cleanup_ran_away("um uh", ""));
+        // A loop the speaker really dictated is not cleanup's doing.
+        let chant = "go ".repeat(8);
+        assert!(!cleanup_ran_away(&chant, &chant));
+    }
+
+    #[test]
+    fn cleanup_that_ran_away_is_refused() {
+        let said = "send the report to the team today";
+        let looped = format!("Send the report to the {}", "team ".repeat(100));
+        assert!(cleanup_ran_away(said, &looped));
+        // A loop short enough to pass the length limit is still a loop.
+        assert!(cleanup_ran_away(said, "Send the the the the the the report."));
+        // Rambling on without repeating is caught by its length.
+        let essay = "Here is a much longer answer than anything that was dictated. ".repeat(4);
+        assert!(cleanup_ran_away(said, &essay));
     }
 
     #[test]

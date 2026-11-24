@@ -120,9 +120,29 @@ pub fn post_process_config<'a>(processing: &TargetProcessingConfig, app: &'a App
     }
 }
 
+/// `text` with any repetition loop collapsed to one copy of what it repeats
+/// (see [`voxctrl_text::collapse_repetition_loops`]), saying so in the log.
+///
+/// Every transcript goes through this, whichever engine produced it and
+/// whether that engine runs here or on a server: a speech decoder stuck on one
+/// word is not something any of them reports. `what` names the text for the
+/// log line, which gives word counts and never the words (docs/privacy.md).
+pub fn without_repetition_loops<'a>(text: &'a str, what: &str) -> std::borrow::Cow<'a, str> {
+    let collapsed = voxctrl_text::collapse_repetition_loops(text);
+    if let std::borrow::Cow::Owned(ref fixed) = collapsed {
+        tracing::warn!(
+            "Collapsed a repetition loop in the {what}: {} words down to {}",
+            text.split_whitespace().count(),
+            fixed.split_whitespace().count()
+        );
+    }
+    collapsed
+}
+
 /// Run the text pipeline over a raw transcript, then drop it if it is a known
 /// silence hallucination and the audio (energy `rms`) really was silence.
 pub fn post_process(raw_text: &str, rms: f32, processing: &TargetProcessingConfig, app: &AppConfig) -> String {
+    let raw_text = &*without_repetition_loops(raw_text, "transcript");
     let processed = run_pipeline(raw_text, &post_process_config(processing, app));
     if !processed.is_empty() && rms < SILENCE_RMS && is_silence_hallucination(&processed) {
         tracing::info!("Discarded silence hallucination '{processed}' (audio RMS: {rms:.5})");
@@ -191,6 +211,16 @@ mod tests {
         assert_eq!(noise_gate_threshold(1.0), 0.0);
         assert!((noise_gate_threshold(0.5) - 0.003).abs() < 1e-9);
         assert!((noise_gate_threshold(0.0) - 0.006).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_looped_transcript_is_delivered_once() {
+        let app = AppConfig::default();
+        let processing = TargetProcessingConfig::default();
+        let looped = format!("please send {}report today", "the ".repeat(60));
+        assert_eq!(post_process(&looped, 0.1, &processing, &app), "please send the report today");
+        // What a person said is not touched.
+        assert_eq!(post_process("no no no, not that one", 0.1, &processing, &app), "no no no, not that one");
     }
 
     #[test]

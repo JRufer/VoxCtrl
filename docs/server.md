@@ -1259,8 +1259,13 @@ from 0.9.20 the server orders them:
 - A **live-text clip** runs only when the model is free and no dictation is
   waiting. Otherwise it is answered `503` at once and not run: the client's
   next clip carries more of the recording anyway. So one person's live text
-  never delays another person's dictation, and a live clip still being
-  transcribed delays a dictation by at most that one clip.
+  never delays another person's dictation.
+- From 0.9.22 a dictation **stops a live-text clip that is running**. The
+  model checks between steps whether it has been told to stop, so the dictation
+  waits for one step, not for the rest of the clip; the clip's client is
+  answered `503`, as if the clip had been skipped. A clip is also stopped when
+  its client hangs up before the answer (the app gives a clip six seconds), so
+  the server never finishes work nobody is waiting for.
 
 The VoxCtrl app marks its live clips with the header `X-VoxCtrl-Purpose: live`
 (from 0.9.20). Requests without it, from older apps and other clients, are

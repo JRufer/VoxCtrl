@@ -113,5 +113,21 @@ echo "Done. Verify with:"
 echo "  jq -r .version package.json src-tauri/tauri.conf.json"
 echo "  grep -A1 '\\[workspace.package\\]' Cargo.toml"
 echo ""
-echo "Cargo.lock package entries (voxctrl-*) will pick up the new version on"
-echo "the next 'cargo build' / 'cargo check'; run one before committing."
+# Cargo.lock records each workspace crate's version too. Builds that pass
+# `--locked` (the Docker image, the AUR source packages) refuse a lockfile that
+# disagrees with the manifests, so it is brought up to date here rather than
+# left to "the next cargo build", which is how a stale entry once shipped.
+# `--workspace` touches only the workspace's own entries. `--offline` first,
+# as that needs nothing from the network; without it if the local index
+# cannot answer.
+if command -v cargo &>/dev/null; then
+    if cargo update --workspace --offline --quiet 2>/dev/null || cargo update --workspace --quiet; then
+        echo "  Cargo.lock -> $NEW_VERSION (workspace crates)"
+    else
+        echo "  WARNING: could not refresh Cargo.lock. Run 'cargo update --workspace'" >&2
+        echo "           and commit the result: '--locked' builds fail without it." >&2
+    fi
+else
+    echo "  WARNING: cargo not found, so Cargo.lock still has the old version." >&2
+    echo "           Run 'cargo update --workspace' and commit the result." >&2
+fi

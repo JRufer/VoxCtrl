@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod bench;
+pub mod decode_guard;
 pub mod finalize;
 #[cfg(feature = "moonshine")]
 pub mod moonshine;
@@ -202,14 +203,65 @@ static INTERIM_CANCELLED_UP_TO: std::sync::atomic::AtomicU64 = std::sync::atomic
 /// the final pass over the whole recording replaces them. One already running
 /// would otherwise hold the single inference thread, and the final pass would
 /// wait for it before it could even start. Queued passes are skipped; a
-/// running whisper.cpp pass stops part-way. Never affects the final pass.
+/// running pass stops part-way (whisper.cpp through its abort callback, the
+/// ONNX backends between decode steps). Never affects the final pass.
 pub fn cancel_interim_passes(session: u64) {
     INTERIM_CANCELLED_UP_TO.fetch_max(session, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Whether live passes for `session` have been cancelled.
+/// Whether live passes for `session` have been cancelled: with every pass up
+/// to it ([`cancel_interim_passes`]) or by itself ([`cancel_interim_pass`]).
 pub fn interim_cancelled(session: u64) -> bool {
-    session <= INTERIM_CANCELLED_UP_TO.load(std::sync::atomic::Ordering::SeqCst)
+    use std::sync::atomic::Ordering;
+    session <= INTERIM_CANCELLED_UP_TO.load(Ordering::SeqCst)
+        || (CANCELLED_PASS_COUNT.load(Ordering::SeqCst) > 0
+            && CANCELLED_PASSES.lock().unwrap_or_else(|e| e.into_inner()).contains(&session))
+}
+
+/// Passes cancelled one at a time. The first of them: `voxctrl-server`'s
+/// passes are numbered from here, so that numbering can never meet the app's
+/// recording sessions, which count up from 1 and are cancelled in order.
+pub const FIRST_SINGLE_PASS: u64 = 1 << 63;
+
+static CANCELLED_PASSES: std::sync::Mutex<std::collections::BTreeSet<u64>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+/// How many passes are in [`CANCELLED_PASSES`]: almost always none, and then
+/// [`interim_cancelled`], which the backends poll at every step, takes no lock.
+static CANCELLED_PASS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Stop one live pass and no other.
+///
+/// The app's passes belong to one recording at a time, so cancelling "this
+/// session and everything before it" is exactly right there. A server runs
+/// passes for several clients, and stopping one client's pass must leave the
+/// others alone. Follow with [`forget_interim_pass`] once the pass has ended.
+pub fn cancel_interim_pass(pass: u64) {
+    let mut cancelled = CANCELLED_PASSES.lock().unwrap_or_else(|e| e.into_inner());
+    cancelled.insert(pass);
+    CANCELLED_PASS_COUNT.store(cancelled.len(), std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Drop the record that `pass` was cancelled, now that it has ended and
+/// nothing will ask about it again. Harmless for a pass that never was.
+pub fn forget_interim_pass(pass: u64) {
+    let mut cancelled = CANCELLED_PASSES.lock().unwrap_or_else(|e| e.into_inner());
+    cancelled.remove(&pass);
+    CANCELLED_PASS_COUNT.store(cancelled.len(), std::sync::atomic::Ordering::SeqCst);
+}
+
+/// For a backend's decode loop: stop with an error if this is a live pass
+/// (`session` is `Some`) whose recording has ended. A dictation's own pass
+/// (`None`) is never stopped.
+///
+/// whisper.cpp polls [`interim_cancelled`] through its abort callback. The
+/// ONNX backends have no such hook, so their loops call this between steps;
+/// without it a Parakeet or Moonshine live pass ran to its end while the
+/// dictation it belonged to waited behind it.
+pub(crate) fn stop_if_cancelled(session: Option<u64>) -> Result<()> {
+    match session {
+        Some(session) if interim_cancelled(session) => Err(anyhow::anyhow!(CANCELLED)),
+        _ => Ok(()),
+    }
 }
 
 /// The error a cancelled live pass reports. The caller treats an interim
@@ -834,6 +886,20 @@ mod tests {
         cfg.engine.backend = BackendChoice::RemoteOpenAi;
         cfg.engine.remote_openai.fallback = fallback;
         cfg
+    }
+
+    #[test]
+    fn one_pass_can_be_cancelled_without_the_others() {
+        let (mine, theirs) = (FIRST_SINGLE_PASS + 7_001, FIRST_SINGLE_PASS + 7_002);
+        assert!(!interim_cancelled(mine));
+        cancel_interim_pass(mine);
+        assert!(interim_cancelled(mine));
+        assert!(!interim_cancelled(theirs), "a later pass was stopped too");
+        assert!(stop_if_cancelled(Some(mine)).is_err());
+        assert!(stop_if_cancelled(Some(theirs)).is_ok());
+        assert!(stop_if_cancelled(None).is_ok(), "a dictation's own pass is never stopped");
+        forget_interim_pass(mine);
+        assert!(!interim_cancelled(mine));
     }
 
     #[test]
