@@ -278,6 +278,29 @@ fn purpose(headers: &HeaderMap) -> Purpose {
     }
 }
 
+/// A live pass in progress. Dropped before [`finished`](Self::finished) is
+/// called, it tells the model to stop that pass: that is what happens when
+/// the client hangs up and this request's handler is dropped mid-pass.
+struct LivePass {
+    ticket: u64,
+    finished: bool,
+}
+
+impl LivePass {
+    /// The pass came back by itself: there is nothing left to stop.
+    fn finished(mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for LivePass {
+    fn drop(&mut self) {
+        if !self.finished {
+            voxctrl_inference::cancel_interim_pass(self.ticket);
+        }
+    }
+}
+
 async fn transcriptions(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -312,30 +335,44 @@ async fn transcriptions(
     let samples = audio::decode_wav(&file).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let audio_secs = samples.len() as f64 / audio::TARGET_RATE as f64;
 
+    // A live pass is given a ticket by which it can be stopped. If the client
+    // hangs up first (the app gives a live pass six seconds), this handler is
+    // dropped while the model is still running; `live_pass` is dropped with
+    // it, which stops the pass at its next step instead of letting it run on
+    // with a dictation waiting behind it.
+    let live_pass =
+        (purpose == Purpose::Live).then(|| LivePass { ticket: state.engine.live_ticket(), finished: false });
+    let live_ticket = live_pass.as_ref().map(|pass| pass.ticket);
+
     let engine_state = state.clone();
-    let result =
-        tokio::task::spawn_blocking(move || engine_state.engine.transcribe(samples, language, prompt, purpose))
-            .await
-            .map_err(|e| {
-                warn!("Transcription task stopped unexpectedly: {e}");
-                ApiError::server("The transcription stopped unexpectedly. See the server log.")
-            })?
-            .map_err(|e| match e {
-                // Routine: the next pass carries more of the recording anyway.
-                TranscribeError::Busy(Purpose::Live) => {
-                    ApiError::busy("The server is busy with a dictation, so this live-text pass was skipped.")
-                }
-                TranscribeError::Busy(Purpose::Dictation) => {
-                    warn!("Refused a dictation: {MAX_WAITING_DICTATIONS} are already waiting for the model");
-                    ApiError::busy(format!(
+    let outcome = tokio::task::spawn_blocking(move || {
+        engine_state.engine.transcribe_as(samples, language, prompt, purpose, live_ticket)
+    })
+    .await;
+    if let Some(pass) = live_pass {
+        pass.finished();
+    }
+    let result = outcome
+        .map_err(|e| {
+            warn!("Transcription task stopped unexpectedly: {e}");
+            ApiError::server("The transcription stopped unexpectedly. See the server log.")
+        })?
+        .map_err(|e| match e {
+            // Routine: the next pass carries more of the recording anyway.
+            TranscribeError::Busy(Purpose::Live) => {
+                ApiError::busy("The server is busy with a dictation, so this live-text pass was skipped.")
+            }
+            TranscribeError::Busy(Purpose::Dictation) => {
+                warn!("Refused a dictation: {MAX_WAITING_DICTATIONS} are already waiting for the model");
+                ApiError::busy(format!(
                 "The server is busy: {MAX_WAITING_DICTATIONS} dictations are already waiting. Try again in a moment."
             ))
-                }
-                TranscribeError::Failed(e) => {
-                    warn!("Transcription failed: {e:#}");
-                    ApiError::server(format!("Transcription failed: {e:#}"))
-                }
-            })?;
+            }
+            TranscribeError::Failed(e) => {
+                warn!("Transcription failed: {e:#}");
+                ApiError::server(format!("Transcription failed: {e:#}"))
+            }
+        })?;
 
     // The length of what was said, never the words: this log stays on disk.
     info!(
@@ -1204,6 +1241,50 @@ mod tests {
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(res.headers()[header::RETRY_AFTER], "1");
         assert_eq!(body_json(res).await["error"]["type"], "server_busy");
+    }
+
+    /// The app gives a live pass six seconds and then hangs up. The server
+    /// used to finish the pass regardless, with any dictation waiting behind
+    /// it. Over a real connection, since hanging up is the thing under test.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_live_pass_is_stopped_when_its_client_hangs_up() {
+        use tokio::io::AsyncWriteExt;
+
+        let (engine, started, stopped) = crate::engine::test_support::stoppable_engine();
+        let state = Arc::new(AppState {
+            engine,
+            cleanup: None,
+            llm: None,
+            speech: None,
+            voices: None,
+            api_key: None,
+            max_upload_bytes: 1024 * 1024,
+        });
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let service = router(state).into_make_service();
+        tokio::spawn(async move { axum_server::from_tcp(listener).serve(service).await });
+
+        let body = multipart(&[], Some(&speech_wav()));
+        let head = format!(
+            "POST /v1/audio/transcriptions HTTP/1.1\r\nhost: {addr}\r\n\
+             content-type: multipart/form-data; boundary={BOUNDARY}\r\n\
+             {PURPOSE_HEADER}: live\r\ncontent-length: {}\r\n\r\n",
+            body.len()
+        );
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client.write_all(head.as_bytes()).await.unwrap();
+        client.write_all(&body).await.unwrap();
+
+        let wait = std::time::Duration::from_secs(5);
+        let started = tokio::task::spawn_blocking(move || started.recv_timeout(wait)).await.unwrap();
+        started.expect("the live pass never reached the model");
+
+        // The client gives up. Nothing else here asks the pass to stop.
+        drop(client);
+        let stopped = tokio::task::spawn_blocking(move || stopped.recv_timeout(wait)).await.unwrap();
+        stopped.expect("the live pass ran on after its client hung up");
     }
 
     #[tokio::test]

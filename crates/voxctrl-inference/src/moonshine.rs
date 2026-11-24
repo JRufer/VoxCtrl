@@ -136,17 +136,10 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
         }
         let url = format!("{HF_BASE_URL}/{size}/float/{file}");
         info!("Downloading Moonshine file: {url}");
-        let response = reqwest::get(&url)
-            .await
-            .with_context(|| format!("request {url}"))?
-            .error_for_status()
-            .with_context(|| format!("fetch {url}"))?;
-        let bytes = response.bytes().await.with_context(|| format!("read {url}"))?;
-        // Write to a temp path then rename so an interrupted download never
-        // leaves a half-written file that later looks "present".
-        let tmp = path.with_extension("part");
-        tokio::fs::write(&tmp, &bytes).await.with_context(|| format!("write {}", tmp.display()))?;
-        tokio::fs::rename(&tmp, &path).await.with_context(|| format!("finalize {}", path.display()))?;
+        // Streamed to a `.part` file and renamed when complete, so an
+        // interrupted download never leaves a half-written file that later
+        // looks "present", and the graph is never held whole in memory.
+        crate::util::download_file(&url, &path).await?;
     }
 
     info!("Moonshine '{size}' model ready in {}", dir.display());
@@ -398,7 +391,7 @@ impl TranscriptionBackend for MoonshineBackend {
         }
 
         let t0 = Instant::now();
-        let text = run_inference(state, &req.audio)?;
+        let text = run_inference(state, &req.audio, req.interim_session)?;
         let inference_ms = t0.elapsed().as_millis() as u32;
 
         Ok(TranscriptionResult {
@@ -427,7 +420,7 @@ impl TranscriptionBackend for MoonshineBackend {
 /// the pre-first-step placeholder cache.
 type CacheVal = (Vec<i64>, Vec<f32>);
 
-fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
+fn run_inference(state: &mut Loaded, audio: &[f32], live_session: Option<u64>) -> Result<String> {
     let n_samples = audio.len();
     let needs_mask =
         state.encoder_has_attention_mask || state.decoder_plan.iter().any(|s| matches!(s, DecoderInput::EncoderMask));
@@ -469,7 +462,14 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let mut tokens: Vec<i64> = vec![SOT_TOKEN];
     let mut next_input: i64 = SOT_TOKEN;
 
-    for step in 0..MAX_TOKENS {
+    // Held to what this much audio can contain, so a short clip cannot run to
+    // `MAX_TOKENS` of one repeated word. See `decode_guard`.
+    let token_limit = crate::decode_guard::moonshine_token_limit(n_samples, MAX_TOKENS);
+
+    for step in 0..token_limit {
+        // A live pass whose recording has ended stops here, so the final pass
+        // is not left waiting behind it.
+        crate::stop_if_cancelled(live_session)?;
         let use_cache = step > 0;
 
         // Per-step tensors. Cache tensors are rebuilt from the accumulated data;

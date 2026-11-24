@@ -181,7 +181,12 @@ fn attach_auth(req: reqwest::RequestBuilder, api_key: Option<&str>) -> reqwest::
 pub struct RemoteStreamingSession {
     chunk_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<f32>>>,
     result_rx: tokio::sync::oneshot::Receiver<Result<TranscriptionResult>>,
+    /// Everything recorded so far, kept by [`send_chunk`](Self::send_chunk)
+    /// itself: the second upload after a failed stream is made from this, so
+    /// it must not depend on how much the stream got round to sending.
     buffered_samples: Arc<Mutex<Vec<f32>>>,
+    /// Told when the recording is over. A second upload waits for it.
+    recording_done_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl RemoteStreamingSession {
@@ -190,9 +195,9 @@ impl RemoteStreamingSession {
     pub fn start(config: RemoteOpenAiConfig, initial_prompt: Option<String>, handle: &tokio::runtime::Handle) -> Self {
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let (recording_done_tx, recording_done_rx) = tokio::sync::oneshot::channel::<()>();
 
         let buffered_samples = Arc::new(Mutex::new(Vec::<f32>::new()));
-        let buffered_for_stream = buffered_samples.clone();
         let buffered_for_fallback = buffered_samples.clone();
 
         let cfg_clone = config.clone();
@@ -266,10 +271,6 @@ impl RemoteStreamingSession {
                     StreamState::Streaming => {
                         match chunk_rx.poll_recv(_cx) {
                             std::task::Poll::Ready(Some(chunk)) => {
-                                {
-                                    let mut buf = buffered_for_stream.lock().unwrap();
-                                    buf.extend_from_slice(&chunk);
-                                }
                                 let pcm = samples_to_pcm16(&chunk);
                                 std::task::Poll::Ready(Some(Ok(Bytes::from(pcm))))
                             }
@@ -328,7 +329,7 @@ impl RemoteStreamingSession {
                 Ok(resp) if resp.status().is_success() => {
                     let inference_ms = start_inst.elapsed().as_millis() as u32;
                     let body_bytes = resp.bytes().await.unwrap_or_default();
-                    let total_samples = buffered_for_fallback.lock().unwrap().len();
+                    let total_samples = buffered_for_fallback.lock().unwrap_or_else(|e| e.into_inner()).len();
                     let duration_ms = (total_samples as f32 / 16.0) as u32;
                     let result = parse_transcription_response(&body_bytes, duration_ms, inference_ms);
                     let _ = result_tx.send(result);
@@ -363,7 +364,18 @@ impl RemoteStreamingSession {
                         err.as_ref().map(|r| r.status())
                     );
 
-                    let samples = buffered_for_fallback.lock().unwrap().clone();
+                    // A stream can break while the user is still talking. The
+                    // second upload has to be the whole recording, so it waits
+                    // for the recording to end: sent now, it would carry only
+                    // the opening words, and their transcript would be
+                    // delivered as if it were the whole dictation.
+                    if recording_done_rx.await.is_err() {
+                        // The session was dropped without being finished:
+                        // nobody is waiting for a transcript.
+                        return;
+                    }
+
+                    let samples = buffered_for_fallback.lock().unwrap_or_else(|e| e.into_inner()).clone();
                     if samples.is_empty() {
                         let _ = result_tx.send(Err(anyhow!("No audio was captured")));
                         return;
@@ -374,7 +386,7 @@ impl RemoteStreamingSession {
                         &cfg_clone,
                         prompt_clone.as_deref(),
                         &samples,
-                        start_inst,
+                        Instant::now(),
                         false,
                     )
                     .await;
@@ -383,11 +395,15 @@ impl RemoteStreamingSession {
             }
         });
 
-        Self { chunk_tx: Some(chunk_tx), result_rx, buffered_samples }
+        Self { chunk_tx: Some(chunk_tx), result_rx, buffered_samples, recording_done_tx: Some(recording_done_tx) }
     }
 
     /// Feed a newly recorded audio chunk to the live stream.
     pub fn send_chunk(&self, chunk: Vec<f32>) {
+        // Kept here rather than as the stream sends it: once a stream has
+        // failed nothing reads the channel, and the chunks recorded after
+        // that are exactly the ones a second upload must not lose.
+        self.buffered_samples.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(&chunk);
         if let Some(ref tx) = self.chunk_tx {
             let _ = tx.send(chunk);
         }
@@ -397,6 +413,10 @@ impl RemoteStreamingSession {
     pub async fn finish(mut self) -> Result<TranscriptionResult> {
         // Drop the channel sender to signal end of stream
         drop(self.chunk_tx.take());
+        // The recording is complete: a second upload, if one is needed, may go.
+        if let Some(done) = self.recording_done_tx.take() {
+            let _ = done.send(());
+        }
 
         self.result_rx.await.map_err(|_| anyhow!("Streaming transcription task cancelled"))?
     }
@@ -408,7 +428,7 @@ impl RemoteStreamingSession {
 
     /// Access the accumulated samples for noise-gate / RMS checks.
     pub fn buffered_samples(&self) -> Vec<f32> {
-        self.buffered_samples.lock().unwrap().clone()
+        self.buffered_samples.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -895,6 +915,93 @@ mod tests {
         assert!(is_connect_failure(&err));
         assert!(!is_connect_failure(&anyhow!("Remote speech engine returned HTTP 500: boom")));
         assert_eq!(failure_reason(&err), "Could not connect to the server");
+    }
+
+    /// A server whose first connection is cut part-way through the upload and
+    /// whose second takes a whole request. Returns its endpoint, a signal for
+    /// the cut, and the number of PCM bytes the second upload carried.
+    async fn server_that_drops_the_first_upload(
+    ) -> (String, tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Receiver<usize>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let (cut_tx, cut_rx) = tokio::sync::oneshot::channel();
+        let (pcm_tx, pcm_rx) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            // First connection: take the start of the streamed upload, then hang up.
+            let (mut first, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = first.read(&mut buf).await;
+            drop(first);
+            let _ = cut_tx.send(());
+
+            // Second connection: an ordinary upload with a Content-Length.
+            let (mut second, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let body_start = loop {
+                let n = second.read(&mut buf).await.unwrap();
+                assert!(n > 0, "the second upload ended before its headers");
+                request.extend_from_slice(&buf[..n]);
+                if let Some(at) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break at + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&request[..body_start]).to_lowercase();
+            let length: usize = headers
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .expect("the second upload must declare its length")
+                .trim()
+                .parse()
+                .unwrap();
+            while request.len() < body_start + length {
+                let n = second.read(&mut buf).await.unwrap();
+                assert!(n > 0, "the second upload ended early");
+                request.extend_from_slice(&buf[..n]);
+            }
+            // The WAV header states how many bytes of audio follow it.
+            let body = &request[body_start..];
+            let riff = body.windows(4).position(|w| w == b"RIFF").expect("no WAV in the upload");
+            let pcm_bytes = u32::from_le_bytes(body[riff + 40..riff + 44].try_into().unwrap()) as usize;
+
+            let reply = r#"{"text":"the whole dictation"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+                reply.len()
+            );
+            second.write_all(response.as_bytes()).await.unwrap();
+            let _ = second.shutdown().await;
+            let _ = pcm_tx.send(pcm_bytes);
+        });
+
+        (endpoint, cut_rx, pcm_rx)
+    }
+
+    /// A stream that breaks while the user is still talking must not end the
+    /// dictation there. The second upload used to go out at once with only
+    /// what had been streamed so far, and that fragment's transcript was
+    /// delivered as the whole dictation.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stream_cut_mid_recording_is_followed_by_the_whole_recording() {
+        let (endpoint, cut, pcm_bytes) = server_that_drops_the_first_upload().await;
+        let cfg = RemoteOpenAiConfig { endpoint, ..Default::default() };
+        let session = RemoteStreamingSession::start(cfg, None, &tokio::runtime::Handle::current());
+
+        session.send_chunk(vec![0.2; 1600]);
+        cut.await.unwrap();
+        // Long enough for the client to notice the cut and reach its retry.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Still talking.
+        session.send_chunk(vec![0.2; 1600]);
+        session.send_chunk(vec![0.2; 1600]);
+        assert_eq!(session.buffered_samples().len(), 4800);
+
+        let result = session.finish().await.unwrap();
+        assert_eq!(result.text, "the whole dictation");
+        assert_eq!(result.duration_ms, 300);
+        assert_eq!(pcm_bytes.await.unwrap(), 4800 * 2, "the second upload did not carry the whole recording");
     }
 
     #[test]

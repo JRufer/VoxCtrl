@@ -243,6 +243,13 @@ jobs:
       - name: No dictated text in logs
         run: ./scripts/check_log_privacy.sh
 
+      # The Docker image and the AUR source packages build with `--locked`,
+      # which refuses a Cargo.lock that does not match the manifests. Nothing
+      # else here uses `--locked`, so a lockfile left behind by a version bump
+      # (0.9.21 shipped one) went unnoticed until those builds failed.
+      - name: Cargo.lock is up to date
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
   # ── Unit tests (Windows) ──────────────────────────────────────────────────────
   #
   # The Linux lane above runs the whole suite; this one runs the crates whose

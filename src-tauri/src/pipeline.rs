@@ -496,7 +496,17 @@ pub fn spawn_text_delivery_worker(
                 continue;
             }
 
-            state.set_interim_in_flight(false);
+            // A final transcript ends its own recording's live passes (one
+            // may have been dropped from the queue to make way for it). It
+            // says nothing about a later recording's: a server's answer to
+            // the previous dictation can arrive after the next one has begun,
+            // and clearing the flag then let a second live pass start while
+            // the first was still out, so the two results were taken for each
+            // other's audio and the overlay showed words twice.
+            let recording_now = state.live_session.lock().unwrap_or_else(|e| e.into_inner()).session_id;
+            if recording_now <= output.session_id {
+                state.set_interim_in_flight(false);
+            }
             state.set_processing(false);
 
             // The final transcript replaces the live guess in the overlay,
