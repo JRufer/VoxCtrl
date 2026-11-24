@@ -141,6 +141,26 @@
     <p class="field-help" style="margin: -4px 0 12px 16px; opacity: 0.75; font-size: 11px; line-height: 1.45; color: var(--text-muted, #888); max-width: 480px;">
       Only opens the microphone stream when recording is triggered, which saves power but cannot capture anything spoken while the microphone is still opening. Turn this off to keep the stream open: the last 300ms before you trigger recording is then kept and included, so a first word spoken early — the one carrying a voice command's "Hey Vox" or "Vox Control" — is not lost.
     </p>
+
+    <label class="field">
+      <span>Longest recording (minutes)</span>
+      <input
+        type="number"
+        min="0"
+        max="240"
+        step="1"
+        value={Math.round((cfg.audio.max_recording_secs ?? 600) / 60)}
+        onchange={(e) => {
+          const minutes = Math.max(0, Math.min(240, Math.round(Number(e.currentTarget.value) || 0)));
+          cfg.audio.max_recording_secs = minutes * 60;
+          e.currentTarget.value = String(minutes);
+          markDirty();
+        }}
+      />
+    </label>
+    <p class="field-help" style="margin: -4px 0 12px 16px; opacity: 0.75; font-size: 11px; line-height: 1.45; color: var(--text-muted, #888); max-width: 480px;">
+      A recording that reaches this length stops by itself, and what you said is transcribed as usual. It is there for the recording nobody stops, such as a toggle shortcut pressed once and forgotten. 0 means no limit.
+    </p>
   </div>
 
   <div class="field-group">

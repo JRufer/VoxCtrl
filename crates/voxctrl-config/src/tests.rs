@@ -723,3 +723,21 @@ fn remote_fallback_defaults_to_none_and_reads_kebab_case() {
         assert_eq!(serde_json::to_string(&choice).unwrap(), format!("\"{text}\""));
     }
 }
+
+#[test]
+fn a_recording_is_limited_to_ten_minutes_unless_told_otherwise() {
+    let audio = AudioConfig::default();
+    assert_eq!(audio.max_recording_secs, 600);
+    assert_eq!(audio.max_recording_samples(), Some(600 * 16_000));
+
+    // A config written before the setting existed gets the default.
+    let old: AudioConfig = serde_json::from_str(
+        r#"{"vad_threshold":0.5,"input_device_index":null,"evdev_device":null,"noise_suppression":false}"#,
+    )
+    .unwrap();
+    assert_eq!(old.max_recording_secs, 600);
+
+    // 0 turns the limit off.
+    let unlimited = AudioConfig { max_recording_secs: 0, ..AudioConfig::default() };
+    assert_eq!(unlimited.max_recording_samples(), None);
+}
