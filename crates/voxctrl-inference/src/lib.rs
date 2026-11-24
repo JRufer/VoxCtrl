@@ -264,6 +264,10 @@ pub(crate) fn stop_if_cancelled(session: Option<u64>) -> Result<()> {
     }
 }
 
+/// The error for a pass during which the engine panicked. Where it panicked
+/// is in the log line the app's panic hook writes just before this one.
+const ENGINE_PANICKED: &str = "The speech engine stopped unexpectedly while transcribing";
+
 /// The error a cancelled live pass reports. The caller treats an interim
 /// error as "this pass produced nothing", which is exactly right here.
 const CANCELLED: &str = "live pass cancelled: the recording ended";
@@ -786,7 +790,15 @@ pub fn run_worker_with_config(
                         // Kept for the error report, which would otherwise lose
                         // which target and hotkey the failed utterance was for.
                         let (target_id, binding_id) = (req.target_id.clone(), req.binding_id.clone());
-                        let output = engine.process_routed(req, route).unwrap_or_else(|e| {
+                        // A panic in one pass must not end this thread: it is the
+                        // only one that transcribes, and with it gone every later
+                        // dictation records and then silently produces nothing.
+                        // The pass fails like any other; the next one starts clean.
+                        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            engine.process_routed(req, route)
+                        }))
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!(ENGINE_PANICKED)));
+                        let output = attempt.unwrap_or_else(|e| {
                             error!("Inference error: {e:?}");
                             InferenceOutput::failed(target_id, binding_id, &e, is_interim, session_id)
                         });

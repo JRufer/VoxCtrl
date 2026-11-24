@@ -384,7 +384,7 @@ Under `engine.remote_openai` in `config.json`:
 | `api_key` | string or null | `null` | Optional Bearer authentication token. Leave blank for unauthenticated LAN servers. |
 | `model` | string | `"whisper-1"` | Model identifier expected by the server (e.g. `whisper-1`, `Systran/faster-whisper-large-v3`, `large-v3`). |
 | `language` | string | `""` | Optional ISO language code (e.g. `en`, `es`, `fr`, or blank for automatic detection). |
-| `timeout_secs` | integer | `30` | Request timeout in seconds (5–300). |
+| `timeout_secs` | integer | `30` | How long the server gets to answer, in seconds (5–300). For a dictation it is counted from the moment you stop speaking, so it does not limit how long you may talk. |
 | `fallback` | string | `"none"` | On-device engine used while the server is unreachable: `none`, `whisper-cpp`, `moonshine` or `parakeet`. |
 
 ### Fallback when the server is unreachable

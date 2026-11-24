@@ -185,8 +185,9 @@ pub struct RemoteStreamingSession {
     /// itself: the second upload after a failed stream is made from this, so
     /// it must not depend on how much the stream got round to sending.
     buffered_samples: Arc<Mutex<Vec<f32>>>,
-    /// Told when the recording is over. A second upload waits for it.
-    recording_done_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Set once the recording is over. The server's answer is timed from
+    /// then, and a second upload waits for it.
+    recording_done_tx: tokio::sync::watch::Sender<bool>,
 }
 
 impl RemoteStreamingSession {
@@ -195,7 +196,7 @@ impl RemoteStreamingSession {
     pub fn start(config: RemoteOpenAiConfig, initial_prompt: Option<String>, handle: &tokio::runtime::Handle) -> Self {
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-        let (recording_done_tx, recording_done_rx) = tokio::sync::oneshot::channel::<()>();
+        let (recording_done_tx, mut recording_done_rx) = tokio::sync::watch::channel(false);
 
         let buffered_samples = Arc::new(Mutex::new(Vec::<f32>::new()));
         let buffered_for_fallback = buffered_samples.clone();
@@ -302,17 +303,17 @@ impl RemoteStreamingSession {
                 }
             });
 
-            let client = match http_client(
-                &cfg_clone.endpoint,
-                cfg_clone.tls_fingerprint.as_deref(),
-                Duration::from_secs(cfg_clone.timeout_secs),
-            ) {
+            // No timeout on the request itself: it is open for as long as
+            // the user talks. `timeout_secs` is how long the server gets to
+            // answer once they have stopped.
+            let client = match streaming_http_client(&cfg_clone.endpoint, cfg_clone.tls_fingerprint.as_deref()) {
                 Ok(c) => c,
                 Err(e) => {
                     let _ = result_tx.send(Err(e));
                     return;
                 }
             };
+            let answer_timeout = Duration::from_secs(cfg_clone.timeout_secs);
 
             let url = normalize_transcription_url(&cfg_clone.endpoint);
             let mut req = client
@@ -323,7 +324,23 @@ impl RemoteStreamingSession {
             req = attach_auth(req, cfg_clone.api_key.as_deref());
 
             debug!("Starting streaming upload to {url}");
-            let res = req.send().await;
+            // The answer is due `timeout_secs` after the recording ends,
+            // however long the recording was. Timing the whole request, as
+            // this did before, failed every dictation longer than the timeout
+            // (30 s by default) while it was still being spoken. A session
+            // dropped unfinished counts as ended, so this never waits for ever.
+            let mut ended = recording_done_rx.clone();
+            let overdue = async move {
+                let _ = ended.wait_for(|done| *done).await;
+                tokio::time::sleep(answer_timeout).await;
+            };
+            let res = tokio::select! {
+                res = req.send() => res,
+                _ = overdue => {
+                    let _ = result_tx.send(Err(anyhow!("The speech server at {url} {NO_ANSWER_IN_TIME}")));
+                    return;
+                }
+            };
 
             match res {
                 Ok(resp) if resp.status().is_success() => {
@@ -369,7 +386,7 @@ impl RemoteStreamingSession {
                     // for the recording to end: sent now, it would carry only
                     // the opening words, and their transcript would be
                     // delivered as if it were the whole dictation.
-                    if recording_done_rx.await.is_err() {
+                    if recording_done_rx.wait_for(|done| *done).await.is_err() {
                         // The session was dropped without being finished:
                         // nobody is waiting for a transcript.
                         return;
@@ -381,6 +398,16 @@ impl RemoteStreamingSession {
                         return;
                     }
 
+                    // An ordinary upload, so an ordinary client: one whose
+                    // timeout covers the whole request.
+                    let client =
+                        match http_client(&cfg_clone.endpoint, cfg_clone.tls_fingerprint.as_deref(), answer_timeout) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = result_tx.send(Err(e));
+                                return;
+                            }
+                        };
                     let fallback_res = execute_multipart_transcribe(
                         &client,
                         &cfg_clone,
@@ -395,7 +422,7 @@ impl RemoteStreamingSession {
             }
         });
 
-        Self { chunk_tx: Some(chunk_tx), result_rx, buffered_samples, recording_done_tx: Some(recording_done_tx) }
+        Self { chunk_tx: Some(chunk_tx), result_rx, buffered_samples, recording_done_tx }
     }
 
     /// Feed a newly recorded audio chunk to the live stream.
@@ -413,10 +440,9 @@ impl RemoteStreamingSession {
     pub async fn finish(mut self) -> Result<TranscriptionResult> {
         // Drop the channel sender to signal end of stream
         drop(self.chunk_tx.take());
-        // The recording is complete: a second upload, if one is needed, may go.
-        if let Some(done) = self.recording_done_tx.take() {
-            let _ = done.send(());
-        }
+        // The recording is complete: the server's answer is now on the
+        // clock, and a second upload, if one is needed, may go.
+        self.recording_done_tx.send_replace(true);
 
         self.result_rx.await.map_err(|_| anyhow!("Streaming transcription task cancelled"))?
     }
@@ -529,10 +555,28 @@ impl RemoteOpenAiBackend {
 /// The HTTP client for a server: encrypted to its paired certificate when a
 /// fingerprint is saved, and never falling back to an unpinned connection.
 pub(crate) fn http_client(endpoint: &str, tls_fingerprint: Option<&str>, timeout: Duration) -> Result<reqwest::Client> {
-    let builder = reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(timeout)
-        .pool_idle_timeout(POOL_IDLE_TIMEOUT);
+    build_http_client(endpoint, tls_fingerprint, Some(timeout))
+}
+
+/// [`http_client`] for the upload that streams while the user is talking.
+///
+/// reqwest's timeout covers a request from its first byte to the last byte of
+/// the answer, and this request stays open for as long as the user speaks. So
+/// it has none: [`RemoteStreamingSession`] times the server's answer itself,
+/// from the moment the recording ends. Connecting is still limited.
+fn streaming_http_client(endpoint: &str, tls_fingerprint: Option<&str>) -> Result<reqwest::Client> {
+    build_http_client(endpoint, tls_fingerprint, None)
+}
+
+fn build_http_client(
+    endpoint: &str,
+    tls_fingerprint: Option<&str>,
+    timeout: Option<Duration>,
+) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT).pool_idle_timeout(POOL_IDLE_TIMEOUT);
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
+    }
     voxctrl_pairing::pin(builder, endpoint, tls_fingerprint)?.build().context("Could not set up the connection")
 }
 
@@ -796,6 +840,10 @@ impl std::fmt::Display for ProbeFailure {
     }
 }
 
+/// How the error for a streamed upload the server never answered ends; what
+/// [`failure_reason`] recognises it by.
+const NO_ANSWER_IN_TIME: &str = "did not answer in time";
+
 /// What an encrypted VoxCtrl server answers plain HTTP with (426 Upgrade
 /// Required), as the offline reason.
 const ENCRYPTION_REQUIRED: &str =
@@ -845,6 +893,9 @@ pub fn failure_reason(err: &anyhow::Error) -> String {
     }
     if message.contains("HTTP 426") {
         return ENCRYPTION_REQUIRED.into();
+    }
+    if message.contains(NO_ANSWER_IN_TIME) {
+        return "The server did not answer in time".into();
     }
     if message.contains("HTTP 503") {
         return "The server is busy".into();
@@ -977,6 +1028,37 @@ mod tests {
         });
 
         (endpoint, cut_rx, pcm_rx)
+    }
+
+    /// A server that takes the upload and never answers. The dictation must
+    /// fail `timeout_secs` after the recording ends: not sooner, however long
+    /// the recording was, and not never.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_servers_answer_is_timed_from_the_end_of_the_recording() {
+        use tokio::io::AsyncReadExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            // Read for as long as the client sends, and say nothing.
+            while matches!(socket.read(&mut buf).await, Ok(n) if n > 0) {}
+        });
+
+        let cfg = RemoteOpenAiConfig { endpoint, timeout_secs: 1, ..Default::default() };
+        let session = RemoteStreamingSession::start(cfg, None, &tokio::runtime::Handle::current());
+        // Talk for well over the timeout. This alone used to fail the upload.
+        for _ in 0..25 {
+            session.send_chunk(vec![0.2; 1600]);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let released = Instant::now();
+        let err = session.finish().await.expect_err("a server that never answers is a failure");
+        let waited = released.elapsed();
+        assert!(waited >= Duration::from_millis(900), "gave up {waited:?} after release, before the timeout");
+        assert!(waited < Duration::from_secs(4), "took {waited:?} to give up");
+        assert_eq!(failure_reason(&err), "The server did not answer in time");
     }
 
     /// A stream that breaks while the user is still talking must not end the
