@@ -245,6 +245,24 @@ GPU support is decided at compile time and differs by engine — which is why th
 
 `packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). **Paused since 0.9.20:** the AUR packages do not build at the moment, so the `AUR packages` and `Publish to AUR` workflows are disabled in the repository's Actions settings, and the release workflow's `aur-smoke` job is set to `if: false`. Turn all three back on together. If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
 
+### Server Docker image
+
+`.github/workflows/server-image.yml` builds `packaging/docker/Dockerfile` and publishes it to the GitHub Container Registry as `ghcr.io/jrufer/voxctrl-server`, in a CPU build and a Vulkan build (tag suffix `-vulkan`). Before publishing, it starts the server in the finished image and checks that both binaries find their shared libraries.
+
+| What happens | Tags published |
+|---|---|
+| A release is published | The version (`0.9.22`), and `latest` unless it is a pre-release |
+| A push to `master` | `edge`: the code the current draft release is built from |
+| Run by hand with a tag | That version; `latest` too if asked |
+| Run by hand without a tag | None. Builds and tests the image only |
+| A pull request that changes `packaging/docker/`, `.dockerignore` or the workflow | None. Builds and tests the image only |
+
+To try a server before publishing its release, set `VOXCTRL_SERVER_VERSION=edge` in the server's `.env` and `docker compose pull`.
+
+**One-time setup:** the registry creates the package private. After the first run that publishes, open the `voxctrl-server` package under the repository owner's Packages, and in its settings change the visibility to public. Until then nobody else can pull the image.
+
+The release workflow attaches `docker-compose.yml`, `docker-compose.gpu.yml` and `voxctrl-server.env` (the repository's `.env.example`) to each release, which is what [the server guide](server.md#install-with-docker) tells people to download. The Compose files default to the `latest` image, so they are the same for every release.
+
 ### Release notes
 
 The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.

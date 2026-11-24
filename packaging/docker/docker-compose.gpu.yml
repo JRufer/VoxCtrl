@@ -1,14 +1,16 @@
-# EXPERIMENTAL: NVIDIA GPU access for a Vulkan build of voxctrl-server.
-# Has not been tested on real hardware yet. See "GPU acceleration" in
-# docs/server.md, including why a GPU often is not needed.
+# EXPERIMENTAL: NVIDIA GPU access for voxctrl-server, using the Vulkan build
+# of the published image. Has not been tested on real hardware yet. See "GPU
+# acceleration" in docs/server.md, including why a GPU often is not needed.
 #
-# Requires the NVIDIA Container Toolkit on the host, and
-# VOXCTRL_BUILD_FEATURES=vulkan in .env. Then:
+# Requires the NVIDIA Container Toolkit on the host. Then:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 services:
   voxctrl-server:
+    # The same release as docker-compose.yml, built with whisper.cpp and
+    # dictation cleanup on Vulkan.
+    image: ghcr.io/jrufer/voxctrl-server:${VOXCTRL_SERVER_VERSION:-latest}-vulkan
     environment:
       # Vulkan needs the driver's graphics libraries, not only compute.
       NVIDIA_VISIBLE_DEVICES: all

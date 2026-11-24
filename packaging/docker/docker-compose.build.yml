@@ -1,0 +1,19 @@
+# Build voxctrl-server's image from this checkout instead of pulling the
+# published one. For working on the server, or for a platform the published
+# image is not built for. Needs the whole repository, not just this folder.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# With a GPU, name docker-compose.gpu.yml before this file and set
+# VOXCTRL_BUILD_FEATURES=vulkan in .env.
+
+services:
+  voxctrl-server:
+    build:
+      context: ../..
+      dockerfile: packaging/docker/Dockerfile
+      args:
+        FEATURES: ${VOXCTRL_BUILD_FEATURES:-}
+    image: voxctrl-server:local
+    # Never look for `voxctrl-server:local` in a registry.
+    pull_policy: build
