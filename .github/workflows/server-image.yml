@@ -1,0 +1,216 @@
+name: Server image
+
+# Builds voxctrl-server's Docker image and publishes it to the GitHub Container
+# Registry, so that running the server is `docker compose up -d` with nothing
+# to compile (docs/server.md, "Install with Docker").
+#
+#   ghcr.io/jrufer/voxctrl-server:<tag>          CPU: whisper.cpp, Moonshine, Parakeet
+#   ghcr.io/jrufer/voxctrl-server:<tag>-vulkan   whisper.cpp and cleanup on a Vulkan GPU
+#
+# Which <tag> depends on what started the run:
+#
+#   a release is published     the version (0.9.22), and `latest` unless it is
+#                              a pre-release (1.0.0-rc.1 never becomes latest)
+#   a push to master           `edge`: what the current draft release is built
+#                              from, for trying a server before publishing it
+#   run by hand with a tag     that version; `latest` too if asked
+#   run by hand without one    builds and tests the image, publishes nothing
+#   a pull request that touches the image's own files: the same, as a check
+#
+# ONE-TIME SETUP. The registry creates the package private. After the first
+# run that publishes, make it public or nobody else can pull it:
+#   github.com/JRufer → Packages → voxctrl-server → Package settings →
+#   Change visibility → Public
+# No secret is needed: the workflow's own token may write this repository's
+# packages.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches:
+      - master
+  pull_request:
+    paths:
+      - packaging/docker/**
+      - .dockerignore
+      - .github/workflows/server-image.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish (e.g. v0.9.22). Blank: build and test this branch, publish nothing."
+        required: false
+        type: string
+      latest:
+        description: "Also move `latest` to this build. Only with a tag."
+        required: false
+        default: false
+        type: boolean
+
+# A newer push to master replaces an `edge` build still running. Release and
+# manual runs have refs of their own and are never cancelled by it.
+concurrency:
+  group: server-image-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            features: ""
+            suffix: ""
+          - variant: vulkan
+            features: vulkan
+            suffix: "-vulkan"
+
+    steps:
+      # What to build, and under which names to publish it.
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_LATEST: ${{ inputs.latest }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/voxctrl-server"
+          ref="$GITHUB_SHA"
+          tags=()
+          version="edge"
+          case "$EVENT" in
+            release)
+              ref="$RELEASE_TAG"
+              version="${RELEASE_TAG#v}"
+              tags+=("$version")
+              # A version with a hyphen (1.0.0-rc.1) is a pre-release whatever
+              # the release's own checkbox says, as in release.yml.
+              if [[ "$RELEASE_IS_PRERELEASE" != "true" && "$version" != *-* ]]; then
+                tags+=("latest")
+              fi
+              ;;
+            push)
+              tags+=("edge")
+              ;;
+            workflow_dispatch)
+              if [[ -n "$INPUT_TAG" ]]; then
+                ref="$INPUT_TAG"
+                version="${INPUT_TAG#v}"
+                tags+=("$version")
+                if [[ "$INPUT_LATEST" == "true" ]]; then
+                  tags+=("latest")
+                fi
+              fi
+              ;;
+          esac
+
+          names=""
+          for tag in "${tags[@]}"; do
+            names+="${image}:${tag}${SUFFIX}"$'\n'
+          done
+          {
+            echo "ref=$ref"
+            echo "version=$version"
+            echo "publish=$([[ ${#tags[@]} -gt 0 ]] && echo true || echo false)"
+            echo "names<<EOF"
+            printf '%s' "$names"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $ref as:"
+          if [[ -n "$names" ]]; then printf '%s' "$names"; else echo "  (nothing: build and test only)"; fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.plan.outputs.ref }}
+
+      # The build compiles whisper.cpp, llama.cpp and the server with full
+      # link-time optimisation, inside Docker's own storage. The runner's
+      # preinstalled SDKs take the room that needs.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built into the runner's own Docker first, so the image can be started
+      # before anything is published.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/docker/Dockerfile
+          build-args: |
+            FEATURES=${{ matrix.features }}
+          load: true
+          tags: voxctrl-server:test
+          cache-from: type=gha,scope=server-image-${{ matrix.variant }}
+          cache-to: type=gha,scope=server-image-${{ matrix.variant }},mode=max
+
+      # The server is built on Debian and runs on Ubuntu, and the two have
+      # disagreed before (a missing shared library, a glibc too old). Starting
+      # the binary in the finished image is what catches that.
+      - name: The image starts
+        run: |
+          docker run --rm voxctrl-server:test --version
+          # The cleanup helper talks over a pipe and has no flag that just
+          # exits, so check that every library it links is there instead.
+          docker run --rm --entrypoint sh voxctrl-server:test -c '
+            for bin in voxctrl-server voxctrl-llm-sidecar; do
+              if ldd "/usr/local/bin/$bin" | grep "not found"; then
+                echo "::error::$bin is missing a shared library in the runtime image"
+                exit 1
+              fi
+            done'
+
+      - name: Log in to the registry
+        if: steps.plan.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The same build again, answered from the cache the step above filled.
+      - name: Publish
+        if: steps.plan.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/docker/Dockerfile
+          build-args: |
+            FEATURES=${{ matrix.features }}
+          push: true
+          tags: ${{ steps.plan.outputs.names }}
+          labels: |
+            org.opencontainers.image.title=voxctrl-server
+            org.opencontainers.image.description=VoxCtrl's headless speech server (${{ matrix.variant }} build)
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}/blob/master/docs/server.md
+            org.opencontainers.image.version=${{ steps.plan.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=server-image-${{ matrix.variant }}
+
+      - name: Summary
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          NAMES: ${{ steps.plan.outputs.names }}
+        run: |
+          {
+            echo "### Published"
+            echo '```'
+            echo "$NAMES"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

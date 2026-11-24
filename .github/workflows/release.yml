@@ -759,6 +759,17 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      # What someone needs to run the server in Docker, with nothing to clone
+      # or build: the Compose file (which pulls the image server-image.yml
+      # publishes), its GPU companion, and the list of settings. Added here so
+      # they are checksummed and signed like every other download.
+      - name: Add the server's Compose files
+        run: |
+          cp packaging/docker/docker-compose.yml packaging/docker/docker-compose.gpu.yml release-artifacts/
+          # `.env.example` cannot be an asset name: GitHub renames a file that
+          # starts with a dot.
+          cp packaging/docker/.env.example release-artifacts/voxctrl-server.env
+
       - name: List release artifacts
         run: ls -lh release-artifacts/
 

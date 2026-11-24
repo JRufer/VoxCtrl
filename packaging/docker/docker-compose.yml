@@ -1,18 +1,23 @@
 # voxctrl-server with Docker Compose. Full guide: docs/server.md
 #
-#   cd packaging/docker
-#   cp .env.example .env        # then edit .env: pick a model, set a key
-#   docker compose up -d --build
+# This file is all you need: it runs the image published with each VoxCtrl
+# release, so nothing is compiled on your machine.
+#
+#   docker compose up -d
 #   docker compose logs -f      # wait for "voxctrl-server ... is ready"
+#
+# Every setting has a default. To change one, put it in a file named `.env`
+# beside this one (voxctrl-server.env from the same release lists them all).
+#
+# Upgrade:  docker compose pull && docker compose up -d
+#
+# To build the image from source instead, see docker-compose.build.yml.
 
 services:
   voxctrl-server:
-    build:
-      context: ../..
-      dockerfile: packaging/docker/Dockerfile
-      args:
-        FEATURES: ${VOXCTRL_BUILD_FEATURES:-}
-    image: voxctrl-server:local
+    # `latest` is the newest release. Set VOXCTRL_SERVER_VERSION to stay on
+    # one version (0.9.22), or to `edge` for the build of the next release.
+    image: ghcr.io/jrufer/voxctrl-server:${VOXCTRL_SERVER_VERSION:-latest}
     container_name: voxctrl-server
     restart: unless-stopped
     ports:
