@@ -98,7 +98,7 @@ impl EngineSpeaker {
             if !synth::supports(engine) {
                 anyhow::bail!(
                     "The TTS engine \"{}\" cannot run on the server. Use piper, espeak, pocket_tts, breeze_tts_2, \
-                     vox_cpm_2 or kitten_tts_2.",
+                     vox_cpm_2, kitten_tts_2 or reverb.",
                     synth::engine_id(engine)
                 );
             }
@@ -168,14 +168,19 @@ fn engine_name(engine: &TtsEngine) -> &'static str {
         TtsEngine::BreezeTts2 => "Breeze-TTS-2",
         TtsEngine::VoxCpm2 => "VoxCPM2",
         TtsEngine::KittenTts2 => "Kitten TTS 2",
+        TtsEngine::Reverb => "Reverb-TTS",
         TtsEngine::InflectMicro => "Inflect-Micro",
         TtsEngine::Server => "VoxCtrl server",
     }
 }
 
-/// Engines that can speak with a reference clip.
+/// Engines that can speak with a reference clip. Kitten TTS 2 and Reverb also
+/// need the clip's transcript, which uploads carry as `<name>.txt`.
 fn clones(engine: &TtsEngine) -> bool {
-    matches!(engine, TtsEngine::PocketTts | TtsEngine::BreezeTts2 | TtsEngine::VoxCpm2 | TtsEngine::KittenTts2)
+    matches!(
+        engine,
+        TtsEngine::PocketTts | TtsEngine::BreezeTts2 | TtsEngine::VoxCpm2 | TtsEngine::KittenTts2 | TtsEngine::Reverb
+    )
 }
 
 /// The engine's own voices that are ready to use on this machine.
@@ -196,6 +201,7 @@ fn builtin_voices(config: &TtsConfig, engine: &TtsEngine) -> Vec<String> {
             .filter(|id| voxctrl_tts::is_pocket_tts_ready(id, &config.pocket_tts.voice_dir))
             .collect(),
         TtsEngine::KittenTts2 => voxctrl_tts::KITTEN_TTS_2_VOICES.iter().map(|v| v.to_string()).collect(),
+        TtsEngine::Reverb => voxctrl_tts::REVERB_VOICES.iter().map(|v| v.to_string()).collect(),
         _ => Vec::new(),
     }
 }
@@ -256,6 +262,11 @@ fn plan(base: &TtsConfig, offered: &[TtsEngine], request: &SpeechRequest) -> Res
                 config.kitten_tts_2.cloned_voice = custom.to_string();
                 config.kitten_tts_2.voice_dir = folder;
             }
+            TtsEngine::Reverb => {
+                config.reverb.voice_mode = "clone".into();
+                config.reverb.cloned_voice = custom.to_string();
+                config.reverb.voice_dir = folder;
+            }
             _ => unreachable!("clones() covers exactly these engines"),
         }
         return Ok(config);
@@ -279,6 +290,10 @@ fn plan(base: &TtsConfig, offered: &[TtsEngine], request: &SpeechRequest) -> Res
         TtsEngine::KittenTts2 => {
             config.kitten_tts_2.voice_mode = "preset".into();
             config.kitten_tts_2.voice = voice.to_string();
+        }
+        TtsEngine::Reverb => {
+            config.reverb.voice_mode = "preset".into();
+            config.reverb.voice = voice.to_string();
         }
         _ => {}
     }
@@ -361,6 +376,7 @@ pub fn configured_voice(config: &TtsConfig) -> Option<String> {
         TtsEngine::Piper => named(&config.voice),
         TtsEngine::PocketTts => named(&config.pocket_tts.voice),
         TtsEngine::KittenTts2 => named(&config.kitten_tts_2.voice),
+        TtsEngine::Reverb => named(&config.reverb.voice),
         _ => None,
     }
 }
@@ -389,6 +405,27 @@ mod tests {
 
     fn say(text: &str) -> PlannedSpeech {
         PlannedSpeech { config: TtsConfig::default(), text: text.to_string(), abandoned: Default::default() }
+    }
+
+    #[test]
+    fn reverb_offers_its_presets_and_takes_one_by_name() {
+        let config = TtsConfig { engine: TtsEngine::Reverb, ..Default::default() };
+        let offered = vec![TtsEngine::Reverb];
+        let reverb = offer(&config, &TtsEngine::Reverb);
+        assert_eq!(reverb.id, "reverb");
+        assert_eq!(reverb.name, "Reverb-TTS");
+        assert!(reverb.voices.contains(&"en_female_narrator".to_string()));
+        assert!(reverb.custom_voices);
+        let planned = plan(&config, &offered, &request(Some("reverb"), Some("de_male_standard"), None)).unwrap();
+        assert_eq!(planned.reverb.voice, "de_male_standard");
+        assert_eq!(planned.reverb.voice_mode, "preset");
+
+        let mine = tempfile::tempdir().unwrap();
+        std::fs::write(mine.path().join("Rick.wav"), b"RIFF").unwrap();
+        let cloned = plan(&config, &offered, &request(Some("reverb"), Some("custom:Rick"), Some(mine.path()))).unwrap();
+        assert_eq!(cloned.reverb.voice_mode, "clone");
+        assert_eq!(cloned.reverb.cloned_voice, "Rick");
+        assert_eq!(cloned.reverb.voice_dir, mine.path().to_string_lossy());
     }
 
     #[test]

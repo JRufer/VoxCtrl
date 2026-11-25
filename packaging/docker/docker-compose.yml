@@ -31,6 +31,7 @@ services:
       VOXCTRL_SERVER_TTS_ENGINES: ${VOXCTRL_SERVER_TTS_ENGINES:-}
       VOXCTRL_SERVER_TTS_ENGINE: ${VOXCTRL_SERVER_TTS_ENGINE:-}
       VOXCTRL_SERVER_TTS_VOICE: ${VOXCTRL_SERVER_TTS_VOICE:-}
+      VOXCTRL_SERVER_AUDIOCPP_SERVER: ${VOXCTRL_SERVER_AUDIOCPP_SERVER:-}
       # true = pass clients' AI-processing requests on to the language model
       # service below. See "AI processing through the server" in docs/server.md.
       VOXCTRL_SERVER_LLM: ${VOXCTRL_SERVER_LLM:-}

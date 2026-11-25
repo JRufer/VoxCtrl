@@ -6,14 +6,20 @@
 
 VoxCtrl includes a neural TTS engine for voice output. This is useful for reading back transcriptions, confirming commands, or building conversational voice interactions via the MCP server.
 
-Four of the neural engines — Pocket-TTS, Breeze-TTS-2, VoxCPM2, and Kitten TTS 2 —
-run through [audio.cpp](https://github.com/0xShug0/audio.cpp), a ggml-based,
+Five of the neural engines — Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2
+and Reverb-TTS — run through [audio.cpp](https://github.com/0xShug0/audio.cpp), a ggml-based,
 Apache-2.0-licensed C++ inference engine with a Vulkan GPU backend. VoxCtrl
 downloads audio.cpp's prebuilt binaries (release `v0.9.4`, pinned as
 `AUDIOCPP_RELEASE_VERSION` in `audiocpp.rs`) — no C++ toolchain, no Python, and no proprietary
 dependencies (this replaced an earlier pure-Rust/Candle implementation that
 pulled in `intel-mkl-src`, a proprietary-licensed Intel MKL redistribution
 incompatible with VoxCtrl's MIT license).
+
+`tts.audiocpp_server` replaces that managed runtime with an `audiocpp_server`
+binary of your own, for every audio.cpp engine, while it is set. Reverb-TTS
+needs this today, because no audio.cpp release has its family yet. VoxCtrl
+neither installs nor upgrades a binary you point it at, and restarts the
+resident session when the path changes.
 
 Synthesis runs through a long-lived `audiocpp_server` process per engine
 (`crates/voxctrl-tts/src/audiocpp.rs`, `AudioCppSession`) rather than a fresh
@@ -254,6 +260,62 @@ expression tags. VoxCtrl runs it through audio.cpp's `kitten_tts2` family
   global `tts.speed` slider has no effect on this engine (audio.cpp has no speed
   control for it).
 
+### Reverb-TTS (Neural, 7 Languages, Voice Cloning)
+[Reverb-TTS](https://huggingface.co/software-mansion/Reverb-TTS) by Software
+Mansion is a 297M-parameter zero-shot voice-cloning model, a pruned and
+retrained OmniVoice, for English, German, French, Spanish, Italian, Polish and
+Portuguese. It is small and fast: about 0.1 s of compute per request on an RTX
+4090, with English word error rate on par with models several times its size.
+VoxCtrl runs it through audio.cpp's `reverb` family
+(`crates/voxctrl-tts/src/reverb.rs`), producing 24 kHz mono audio.
+
+> **License:** the weights are **CC BY-NC 4.0** (non-commercial use, with
+> attribution), and the bundled Higgs Audio v2 codec is under the Boson Higgs
+> Audio 2 Community License. Neither is VoxCtrl's MIT license. Settings shows
+> the notice before the download.
+
+> **Needs an audio.cpp build with `reverb`.** The family is in review upstream
+> and in no audio.cpp release yet, so VoxCtrl's managed runtime (v0.9.4) cannot
+> run it. Build `audiocpp_server` from the `reverb-tts` branch and set its path
+> as **audio.cpp server** in TTS settings (`tts.audiocpp_server`):
+>
+> ```bash
+> git clone -b reverb-tts https://github.com/JRufer/audio.cpp
+> cd audio.cpp
+> cmake -B build -DCMAKE_BUILD_TYPE=Release -DENGINE_ENABLE_VULKAN=ON   # or -DENGINE_ENABLE_CUDA=ON, or neither for CPU
+> cmake --build build -j --target audiocpp_server
+> ```
+>
+> Until that is set the engine reports itself not ready and Settings says why.
+> The setup wizard does not offer Reverb-TTS yet for the same reason.
+
+- **Voices** (`tts.reverb.voice_mode`):
+  - `"preset"` (default) — one of the 16 voices built into the package
+    (`tts.reverb.voice`, default `"en_female_narrator"`; `REVERB_VOICES`).
+    The prefix is the voice's own language: `en_male_angry`,
+    `de_female_standard`, `it_male_expressive` and so on.
+  - `"clone"` — a short clip of one speaker from the shared voice folder
+    (`tts.reverb.cloned_voice`). Cloning **requires** the clip's exact
+    transcript in `<id>.txt` next to `<id>.wav`; VoxCtrl says so before sending
+    the request. 3 to 10 seconds of clean speech works best.
+- **Language** (`tts.reverb.language`): `"en"`, `"de"`, `"fr"`, `"es"`, `"it"`,
+  `"pl"` or `"pt"`, sent as the `language` request option. Empty (default)
+  means the preset's own language, or English for a clone. Any voice can speak
+  any of the seven; write the text in the language you pick.
+- **Numbers:** for English, VoxCtrl spells out digits, money, ordinals and
+  times first (`voxctrl_text::spell_out_numbers_en`), as for Kitten TTS 2.
+- **Model download:** `JRufer/Reverb-TTS-GGUF/reverb-tts-q8_0.gguf` (875 MB, the
+  Q8_0 generator plus the Higgs codec in one file; ungated) into
+  `~/.local/share/voxctrl/models/reverb-tts/` (`tts.reverb.model_dir`). VoxCtrl
+  starts audio.cpp on that file, not the folder, so an F16 conversion kept
+  beside it does not confuse the loader.
+- **Memory:** about 2 to 2.3 GB, on the CPU or in VRAM.
+- **GPU acceleration** (`tts.reverb.gpu`, off by default): Vulkan, as for the
+  other audio.cpp engines. Validated on CPU, CUDA and Vulkan; the first Vulkan
+  request compiles pipelines and is slower.
+- **Limitations:** no streaming, and `tts.speed` has no effect (the model has
+  its own pacing).
+
 ### Espeak-ng (Lightweight)
 If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. It is invoked as a subprocess with the text as an argument. Quality is lower but espeak-ng is always available as a system package.
 
@@ -261,13 +323,13 @@ If Piper is unavailable or no voice is downloaded, VoxCtrl can use `espeak-ng`. 
 
 ## GPU Acceleration
 
-Five engines can run on the GPU, each through its own mechanism:
+Six engines can run on the GPU, each through its own mechanism:
 
 *   **Piper** (`tts.gpu`): appends the `--cuda` CLI flag to the spawned `piper`
     subprocess at runtime. Needs the app built with the `cuda` feature.
 *   **Pocket-TTS** (`tts.pocket_tts.gpu`), **Breeze-TTS-2**
     (`tts.breeze_tts_2.gpu`), **VoxCPM2** (`tts.vox_cpm_2.gpu`), and **Kitten
-    TTS 2** (`tts.kitten_tts_2.gpu`): each starts its `audiocpp_server` with
+    TTS 2** (`tts.kitten_tts_2.gpu`), and **Reverb-TTS** (`tts.reverb.gpu`): each starts its `audiocpp_server` with
     `"backend": "vulkan"` instead of `"cpu"`. No special build feature is needed — audio.cpp's prebuilt Linux
     release already ships a Vulkan backend alongside CPU.
 
@@ -515,7 +577,7 @@ Under `tts` in `config.json`:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS functionality |
-| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"kitten_tts_2"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
+| `engine` | string | `"espeak"` | `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"kitten_tts_2"`, `"reverb"`, or `"espeak"`. eSpeak-NG is the default because it's a system package with no model download; the others need a voice/model download first. |
 | `voice` | string | `"en-us-lessac-medium"` | Default voice for Piper (hyphen-delimited) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/` |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that interrupt playback |
@@ -549,6 +611,15 @@ Under `tts` in `config.json`:
 | `kitten_tts_2.model_dir` | string | `""` | GGUF model directory; empty = `~/.local/share/voxctrl/models/kitten-tts-2/` |
 | `kitten_tts_2.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
 | `kitten_tts_2.gpu` | bool | `false` | Enable Vulkan GPU acceleration (experimental for this family) |
+| `reverb.voice_mode` | string | `"preset"` | `"preset"` for a built-in voice, `"clone"` for a reference clip + transcript |
+| `reverb.voice` | string | `"en_female_narrator"` | Built-in voice id, used in `"preset"` mode |
+| `reverb.cloned_voice` | string | `""` | Voice id from the shared clip folder, used in `"clone"` mode; needs `<id>.txt` |
+| `reverb.voice_dir` | string | `""` | Shared clip folder; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
+| `reverb.language` | string | `""` | `"en"`, `"de"`, `"fr"`, `"es"`, `"it"`, `"pl"` or `"pt"`; empty = the preset's own language |
+| `reverb.model_dir` | string | `""` | GGUF model directory; empty = `~/.local/share/voxctrl/models/reverb-tts/` |
+| `reverb.prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis |
+| `reverb.gpu` | bool | `false` | Enable Vulkan GPU acceleration |
+| `audiocpp_server` | string | `""` | An `audiocpp_server` binary to use for every audio.cpp engine instead of the managed one; Reverb-TTS needs one with the `reverb` family |
 | `memory_mode` | string | `"always_loaded"` | `"always_loaded"` or `"on_demand"` — see [Model Memory](#model-memory-on-demand-loading) |
 | `idle_unload_secs` | int | `900` | Idle seconds before the model is unloaded in `"on_demand"` mode (minimum 30) |
 | `snippets` | object | *(VoxCtrl pronunciations)* | Word → spoken expansion map, applied to speech only |

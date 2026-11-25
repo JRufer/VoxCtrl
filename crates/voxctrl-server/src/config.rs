@@ -135,7 +135,7 @@ pub struct SpeechConfig {
 fn parse_tts_engine(var: &str, value: &str) -> Result<voxctrl_config::TtsEngine> {
     serde_json::from_value(serde_json::Value::String(value.trim().to_string())).map_err(|_| {
         anyhow::anyhow!(
-            "{var}: unknown engine '{}'. Use piper, espeak, pocket_tts, breeze_tts_2, vox_cpm_2 or kitten_tts_2.",
+            "{var}: unknown engine '{}'. Use piper, espeak, pocket_tts, breeze_tts_2, vox_cpm_2, kitten_tts_2 or reverb.",
             value.trim()
         )
     })
@@ -286,8 +286,12 @@ impl ServerConfig {
             match self.tts.engine {
                 voxctrl_config::TtsEngine::PocketTts => self.tts.pocket_tts.voice = voice,
                 voxctrl_config::TtsEngine::KittenTts2 => self.tts.kitten_tts_2.voice = voice,
+                voxctrl_config::TtsEngine::Reverb => self.tts.reverb.voice = voice,
                 _ => self.tts.voice = voice,
             }
+        }
+        if let Some(v) = var("VOXCTRL_SERVER_AUDIOCPP_SERVER") {
+            self.tts.audiocpp_server = v.trim().to_string();
         }
         if let Some(v) = var("VOXCTRL_SERVER_LLM") {
             self.llm.enabled = parse_bool("VOXCTRL_SERVER_LLM", &v)?;
@@ -387,6 +391,20 @@ mod tests {
 
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn reverb_engine_voice_and_audiocpp_server_from_env() {
+        let mut cfg = ServerConfig::default();
+        cfg.apply_env(env(&[
+            ("VOXCTRL_SERVER_TTS_ENGINE", "reverb"),
+            ("VOXCTRL_SERVER_TTS_VOICE", "fr_female_standard"),
+            ("VOXCTRL_SERVER_AUDIOCPP_SERVER", " /opt/audiocpp/bin/audiocpp_server "),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.tts.engine, voxctrl_config::TtsEngine::Reverb);
+        assert_eq!(cfg.tts.reverb.voice, "fr_female_standard");
+        assert_eq!(cfg.tts.audiocpp_server, "/opt/audiocpp/bin/audiocpp_server");
     }
 
     #[test]

@@ -382,6 +382,21 @@ Downloads the Kitten TTS 2 GGUF (3.3 GB) from the ungated `audio-cpp/audio.cpp-g
 #### `list_kitten_tts_2_voices() → string[]`
 The built-in preset voice names Settings offers for Kitten TTS 2.
 
+#### `check_reverb_ready(modelDir: string, audiocppServer: string | null) → boolean`
+Returns whether the Reverb-TTS GGUF exists locally and the audio.cpp runtime has the `reverb` family. `audiocppServer` is the **audio.cpp server** path as typed (it need not be saved yet); it replaces the managed runtime for this check and later synthesis.
+
+#### `reverb_runtime_supported(audiocppServer: string | null) → boolean`
+Whether the runtime can run Reverb-TTS at all: true for a user-supplied `audiocpp_server` (the setting, or one on `PATH` with no managed install), false for the managed v0.9.4 runtime.
+
+#### `download_reverb(modelDir: string, hfToken: string | null) → void`
+Downloads `reverb-tts-q8_0.gguf` (875 MB) from the ungated `JRufer/Reverb-TTS-GGUF` repository. `hfToken` is optional.
+
+#### `list_reverb_voices() → string[]`
+The 16 built-in preset voice ids, e.g. `"en_female_narrator"`.
+
+#### `list_reverb_languages() → string[]`
+The language codes Reverb-TTS speaks: `en`, `de`, `fr`, `es`, `it`, `pl`, `pt`.
+
 #### `check_breeze_tts_2_ready(modelDir: string) → boolean`
 Returns whether Breeze-TTS-2 model weights and tokenizer exist locally.
 
@@ -1018,6 +1033,17 @@ interface KittenTts2Config {
   gpu: boolean;
 }
 
+interface ReverbConfig {
+  voice_mode: "preset" | "clone";
+  voice: string;            // built-in voice id, e.g. "en_female_narrator"
+  cloned_voice: string;     // clip id in voice_dir; needs <id>.txt
+  voice_dir: string;
+  language: string;         // en|de|fr|es|it|pl|pt, "" = the preset's own
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
 interface VoxCpm2Config {
   voice_mode: "prompt" | "clone";
   speaker_prompt: string;
@@ -1031,7 +1057,7 @@ interface VoxCpm2Config {
 
 interface TtsConfig {
   enabled: boolean;
-  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2" | "kitten_tts_2";
+  engine: "piper" | "espeak" | "pocket_tts" | "inflect_micro" | "breeze_tts_2" | "vox_cpm_2" | "kitten_tts_2" | "reverb" | "server";
   voice: string;
   voice_dir: string;
   stop_key: string[];       // singular field name, plural value
@@ -1044,6 +1070,8 @@ interface TtsConfig {
   breeze_tts_2: BreezeTts2Config;
   vox_cpm_2: VoxCpm2Config;
   kitten_tts_2: KittenTts2Config;
+  reverb: ReverbConfig;
+  audiocpp_server: string;  // "" = the managed audio.cpp runtime
   memory_mode: "always_loaded" | "on_demand"; // "on_demand" unloads model after 15 min idle
   idle_unload_secs: number;  // idle seconds before unloading (default 900)
   snippets: Record<string, string>;   // pronunciation guide, speech only

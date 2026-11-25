@@ -151,6 +151,17 @@ Full schema with defaults:
       "prewarm": false,
       "gpu": false
     },
+    "reverb": {
+      "voice_mode": "preset",
+      "voice": "en_female_narrator",
+      "cloned_voice": "",
+      "voice_dir": "",
+      "language": "",
+      "model_dir": "",
+      "prewarm": false,
+      "gpu": false
+    },
+    "audiocpp_server": "",
     "memory_mode": "always_loaded",
     "idle_unload_secs": 900,
     "snippets": {
@@ -328,16 +339,18 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Enable TTS subsystem |
-| `engine` | string | `"espeak"` | Synthesis engine: `"kitten_tts_2"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"espeak"`, or `"server"`. `"server"` has the VoxCtrl server at `engine.remote_openai.endpoint` synthesize with its own engine and voice, and plays the result here; see [VoxCtrl server](./tts.md#voxctrl-server) |
+| `engine` | string | `"espeak"` | Synthesis engine: `"kitten_tts_2"`, `"reverb"`, `"breeze_tts_2"`, `"vox_cpm_2"`, `"piper"`, `"pocket_tts"`, `"inflect_micro"`, `"espeak"`, or `"server"`. `"server"` has the VoxCtrl server at `engine.remote_openai.endpoint` synthesize with its own engine and voice, and plays the result here; see [VoxCtrl server](./tts.md#voxctrl-server) |
 | `voice` | string | `"en-us-lessac-medium"` | Active Piper voice name (hyphen-delimited, e.g. `"en-us-ryan-high"`) |
 | `voice_dir` | string | `""` | Directory for Piper voice files; empty = `~/.local/share/voxctrl/piper-voices/`. Supports `~` expansion. |
 | `stop_key` | string[] | `["KEY_ESCAPE"]` | Keys that cancel current TTS playback |
 | `response_overlay` | bool | `true` | Show overlay indicator while TTS is speaking |
-| `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0); not used by Pocket-TTS or Kitten TTS 2 |
+| `speed` | float | `1.0` | Speech synthesis speed multiplier (0.5 – 2.0); not used by Pocket-TTS, Kitten TTS 2 or Reverb-TTS |
 | `gpu` | bool | `false` | Enable GPU acceleration (CUDA) for Piper |
 | `breeze_tts_2` | object | | Breeze-TTS-2 engine sub-configuration (see below) |
 | `vox_cpm_2` | object | | VoxCPM2 engine sub-configuration (see below) |
 | `kitten_tts_2` | object | | Kitten TTS 2 engine sub-configuration (see below) |
+| `reverb` | object | | Reverb-TTS engine sub-configuration (see below) |
+| `audiocpp_server` | string | `""` | Path to an `audiocpp_server` binary used by every audio.cpp engine instead of the one VoxCtrl manages. Reverb-TTS needs one built with the `reverb` family; see [tts.md](tts.md#reverb-tts-neural-7-languages-voice-cloning). Empty = managed |
 | `server_engine` | string | `""` | With `engine: "server"`: which of the server's engines to speak with, by id (e.g. `"kitten_tts_2"`). Empty means the server's default |
 | `server_voice` | string | `""` | With `engine: "server"`: a voice of that engine, or `"custom:<name>"` for one of this computer's own voice clips, which is uploaded to the server. Empty means the engine's default on the server |
 | `pocket_tts` | object | | Pocket-TTS engine sub-configuration (see below) |
@@ -389,6 +402,21 @@ text) and the **user prompt** (the message itself). The user prompt must contain
 | `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/kitten-tts-2/` |
 | `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
 | `gpu` | bool | `false` | Enable Vulkan GPU acceleration (experimental for this model) |
+
+**`reverb` sub-object:**
+
+[Reverb-TTS](https://huggingface.co/software-mansion/Reverb-TTS) is a 297M-parameter voice-cloning model by Software Mansion for seven languages, released under **CC BY-NC 4.0** (non-commercial). It needs `audiocpp_server` set to a build with the `reverb` family. See [tts.md](tts.md#reverb-tts-neural-7-languages-voice-cloning).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `voice_mode` | string | `"preset"` | `"preset"` for a voice built into the model, `"clone"` for a reference clip from `voice_dir` |
+| `voice` | string | `"en_female_narrator"` | Built-in voice id, e.g. `"de_female_standard"` |
+| `cloned_voice` | string | `""` | Reference clip ID from `voice_dir`; needs a matching `<id>.txt` transcript |
+| `voice_dir` | string | `""` | Directory holding custom `.wav` reference clips; empty = `~/.local/share/voxctrl/cloned-tts-voices/` |
+| `language` | string | `""` | `"en"`, `"de"`, `"fr"`, `"es"`, `"it"`, `"pl"` or `"pt"`; empty = the preset's own language (English for a clone) |
+| `model_dir` | string | `""` | Directory holding the GGUF model; empty = `~/.local/share/voxctrl/models/reverb-tts/` |
+| `prewarm` | bool | `false` | Pre-warm the model on startup for faster first synthesis (see [tts.md](tts.md#pre-warming)) |
+| `gpu` | bool | `false` | Enable Vulkan GPU acceleration |
 
 **`pocket_tts` sub-object:**
 

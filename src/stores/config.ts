@@ -186,6 +186,20 @@ export interface KittenTts2Config {
   gpu: boolean;
 }
 
+export interface ReverbConfig {
+  /** "preset" (a voice built into the model) or "clone" (a voice-folder clip). */
+  voice_mode: "preset" | "clone";
+  /** Built-in voice id, e.g. "en_female_narrator". */
+  voice: string;
+  cloned_voice: string;
+  voice_dir: string;
+  /** "en", "de", "fr", "es", "it", "pl" or "pt"; "" = the preset's own language. */
+  language: string;
+  model_dir: string;
+  prewarm: boolean;
+  gpu: boolean;
+}
+
 export interface TtsConfig {
   enabled: boolean;
   /** "server" speaks on the VoxCtrl server set as the Remote Speech Engine. */
@@ -197,6 +211,7 @@ export interface TtsConfig {
     | "breeze_tts_2"
     | "vox_cpm_2"
     | "kitten_tts_2"
+    | "reverb"
     | "server";
   /** With the "server" engine: which of the server's engines. "" = its default. */
   server_engine?: string;
@@ -218,6 +233,12 @@ export interface TtsConfig {
   breeze_tts_2: BreezeTts2Config;
   vox_cpm_2: VoxCpm2Config;
   kitten_tts_2: KittenTts2Config;
+  reverb: ReverbConfig;
+  /**
+   * An audiocpp_server binary to use instead of the one VoxCtrl manages.
+   * Reverb-TTS needs one built with the `reverb` family. "" = managed.
+   */
+  audiocpp_server: string;
   memory_mode: TtsMemoryMode;
   idle_unload_secs: number;
   snippets: Record<string, string>;
@@ -366,6 +387,17 @@ const defaultConfig: AppConfig = {
       prewarm: false,
       gpu: false,
     },
+    reverb: {
+      voice_mode: "preset",
+      voice: "en_female_narrator",
+      cloned_voice: "",
+      voice_dir: "",
+      language: "",
+      model_dir: "",
+      prewarm: false,
+      gpu: false,
+    },
+    audiocpp_server: "",
     memory_mode: "always_loaded",
     idle_unload_secs: 900,
     snippets: {
