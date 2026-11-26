@@ -24,6 +24,15 @@
 #
 # Usage:
 #   ./scripts/bump_version.sh 0.2.8
+#   ./scripts/bump_version.sh 1.0.0-rc.1     # a release candidate
+#
+# A pre-release version (`1.0.0-rc.1`) is a SemVer pre-release: it sorts below
+# `1.0.0`, which is what the updater, Cargo and npm all expect. Use the dotted
+# form, `rc.1`, so `rc.10` sorts after `rc.9`. The release workflow publishes
+# it as a GitHub pre-release, which the in-app updater never offers, and
+# rewrites the .deb's version to `1.0.0~rc.1` so apt also sorts it below
+# `1.0.0` (see scripts/deb_prerelease_version.sh). The AUR PKGBUILDs are left
+# alone: pkgver may not contain `-`.
 
 set -euo pipefail
 
@@ -36,8 +45,8 @@ if [ $# -ne 1 ]; then
 fi
 
 NEW_VERSION="$1"
-if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-    echo "Error: '$NEW_VERSION' doesn't look like a version number (expected e.g. 1.2.3)" >&2
+if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+((\.[0-9]+)|(-(alpha|beta|rc)\.[0-9]+))?$ ]]; then
+    echo "Error: '$NEW_VERSION' doesn't look like a version number (expected e.g. 1.2.3 or 1.0.0-rc.1)" >&2
     exit 1
 fi
 
@@ -104,5 +113,21 @@ echo "Done. Verify with:"
 echo "  jq -r .version package.json src-tauri/tauri.conf.json"
 echo "  grep -A1 '\\[workspace.package\\]' Cargo.toml"
 echo ""
-echo "Cargo.lock package entries (voxctrl-*) will pick up the new version on"
-echo "the next 'cargo build' / 'cargo check'; run one before committing."
+# Cargo.lock records each workspace crate's version too. Builds that pass
+# `--locked` (the Docker image, the AUR source packages) refuse a lockfile that
+# disagrees with the manifests, so it is brought up to date here rather than
+# left to "the next cargo build", which is how a stale entry once shipped.
+# `--workspace` touches only the workspace's own entries. `--offline` first,
+# as that needs nothing from the network; without it if the local index
+# cannot answer.
+if command -v cargo &>/dev/null; then
+    if cargo update --workspace --offline --quiet 2>/dev/null || cargo update --workspace --quiet; then
+        echo "  Cargo.lock -> $NEW_VERSION (workspace crates)"
+    else
+        echo "  WARNING: could not refresh Cargo.lock. Run 'cargo update --workspace'" >&2
+        echo "           and commit the result: '--locked' builds fail without it." >&2
+    fi
+else
+    echo "  WARNING: cargo not found, so Cargo.lock still has the old version." >&2
+    echo "           Run 'cargo update --workspace' and commit the result." >&2
+fi

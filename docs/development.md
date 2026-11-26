@@ -70,6 +70,7 @@ VoxCtrl/
 │   ├── voxctrl-audio/
 │   ├── voxctrl-hotkeys/
 │   ├── voxctrl-inference/
+│   ├── voxctrl-ort/        # Shared ONNX Runtime environment
 │   ├── voxctrl-routing/
 │   ├── voxctrl-inject/     # Paste-or-type delivery; key sending per platform
 │   ├── voxctrl-clipboard/  # Full-format clipboard backup/restore
@@ -84,6 +85,7 @@ VoxCtrl/
 │   ├── voxctrl-llm-sidecar/# Vulkan-accelerated llama.cpp sidecar for S1-mini dictation cleanup
 │   └── voxctrl-server/     # Headless speech server binary (docs/server.md)
 │
+├── packaging/third-party-licenses/ # Licence texts shipped with bundled native libraries
 ├── packaging/aur/          # AUR PKGBUILDs, publish + smoke-test scripts (docs/aur.md)
 ├── packaging/docker/       # Dockerfile + Compose files for voxctrl-server (docs/server.md)
 ├── packaging/systemd/      # systemd unit for voxctrl-server (docs/server.md)
@@ -241,11 +243,39 @@ GPU support is decided at compile time and differs by engine — which is why th
 
 ### AUR packages
 
-`packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
+`packaging/aur/` holds the PKGBUILDs for `voxctrl-bin`, `voxctrl` and `voxctrl-git`. They're checked on Arch in CI and pushed to the AUR when a release is published; see [AUR packages](aur.md). **Paused since 0.9.20:** the AUR packages do not build at the moment, so the `AUR packages` and `Publish to AUR` workflows are disabled in the repository's Actions settings, and the release workflow's `aur-smoke` job is set to `if: false`. Turn all three back on together. If you change what the app installs or where it looks for files, update the PKGBUILDs and `packaging/aur/smoke-test.sh`'s expected file list in the same PR.
+
+### Server Docker image
+
+`.github/workflows/server-image.yml` builds `packaging/docker/Dockerfile` and publishes it to the GitHub Container Registry as `ghcr.io/jrufer/voxctrl-server`, in a CPU build and a Vulkan build (tag suffix `-vulkan`). Before publishing, it starts the server in the finished image and checks that both binaries find their shared libraries.
+
+| What happens | Tags published |
+|---|---|
+| A release is published | The version (`0.9.22`), and `latest` unless it is a pre-release |
+| A push to `master` | `edge`: the code the current draft release is built from |
+| Run by hand with a tag | That version; `latest` too if asked |
+| Run by hand without a tag | None. Builds and tests the image only |
+| A pull request that changes `packaging/docker/`, `.dockerignore` or the workflow | None. Builds and tests the image only |
+
+To try a server before publishing its release, set `VOXCTRL_SERVER_VERSION=edge` in the server's `.env` and `docker compose pull`.
+
+**One-time setup:** the registry creates the package private. After the first run that publishes, open the `voxctrl-server` package under the repository owner's Packages, and in its settings change the visibility to public. Until then nobody else can pull the image.
+
+The release workflow attaches `docker-compose.yml`, `docker-compose.gpu.yml` and `voxctrl-server.env` (the repository's `.env.example`) to each release, which is what [the server guide](server.md#install-with-docker) tells people to download. The Compose files default to the `latest` image, so they are the same for every release.
 
 ### Release notes
 
 The release page's "What's new" comes from `docs/release-notes/<version>.md`, and the permanent Downloads text from `.github/release-body/downloads.md`. `./scripts/bump_version.sh <version>` creates a stub notes file, and CI refuses to build a release while it is missing or still the stub.
+
+### Release candidates
+
+A release candidate is a SemVer pre-release: `./scripts/bump_version.sh 1.0.0-rc.1`, with notes in `docs/release-notes/1.0.0-rc.1.md`. Use `alpha`, `beta` or `rc` followed by a dot and a number; the script refuses other forms (`rc1` would sort `rc10` before `rc9`). What is different about one:
+
+- **GitHub release:** the draft is marked as a pre-release, so it is never "latest".
+- **In-app updates:** the updater reads `/releases/latest`, so nobody is offered a candidate. Testers install it by hand. When `1.0.0` is published, a machine running `1.0.0-rc.N` is offered it, since a pre-release sorts below its release.
+- **`.deb`:** its version becomes `1.0.0~rc.1` (`scripts/deb_prerelease_version.sh`). dpkg reads a `-` as the Debian revision and would sort `1.0.0-rc.1` *above* `1.0.0`, so apt would call the real release a downgrade. `~` sorts below it.
+- **AUR:** `pkgver` may not contain `-`, so the script leaves the PKGBUILDs at the last full release.
+- **Server compatibility:** an app at `1.0.0-rc.1` counts as older than `1.0.0` when compared with a server's `min_client` (see [clients.md](clients.md)).
 
 ### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 / Reverb-TTS on the GPU
 

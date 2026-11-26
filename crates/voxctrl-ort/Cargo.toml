@@ -1,0 +1,13 @@
+[package]
+name = "voxctrl-ort"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The one ONNX Runtime environment every VoxCtrl ONNX engine shares"
+
+# The same `ort` the engines use (default features: ONNX Runtime fetched at
+# build time and linked in). Cargo unifies features across the graph, so a
+# `webgpu`/`cuda`/`coreml` feature turned on by voxctrl-inference applies here
+# too: there is one `ort` in the binary.
+[dependencies]
+ort = { version = "2.0.0-rc.15" }

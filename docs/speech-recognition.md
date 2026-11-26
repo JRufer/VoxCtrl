@@ -8,7 +8,7 @@ VoxCtrl supports four speech-to-text engine backends to match your hardware and 
 
 1. **`whisper.cpp`**: Reference-grade on-device Whisper transcription (via `whisper-rs`) supporting multi-threaded CPU, Vulkan, and CUDA GPU acceleration.
 2. **`Moonshine`**: Streaming ONNX speech recognition tuned for real rooms with ambient background noise; runs efficiently on CPU.
-3. **`Parakeet TDT`**: NVIDIA FastConformer TDT 0.6B delivering ultra-fast non-autoregressive transcription with zero repetition loops.
+3. **`Parakeet TDT`**: NVIDIA FastConformer TDT 0.6B delivering ultra-fast non-autoregressive transcription that rarely falls into repetition loops.
 4. **`Remote Speech Engine (Bring Your Own Voice Engine)`**: Offload transcription to any local network or remote speech-to-text service implementing the OpenAI-compatible `/v1/audio/transcriptions` API (e.g. Faster-Whisper-Server, vLLM, LocalAI, Whisper standalone, or cloud providers).
 
 By default, VoxCtrl runs 100% on-device and offline with no data leaving your machine. If you configure a Remote Speech Engine, audio is streamed directly to your designated endpoint.
@@ -85,7 +85,10 @@ The worker runs:
    └─ Reuses pre-allocated WhisperState (KV cache + attention buffers loaded once at startup)
    └─ Returns raw_text with inference_ms and language
 
-5. Post-processing pipeline (in order):
+5. Repetition loop guard
+   └─ a word or short phrase repeated over and over is collapsed to one copy
+
+6. Post-processing pipeline (in order):
    a. Filler word removal (if enabled)
    b. Spoken punctuation conversion (if enabled)
    c. Auto-format list detection (if enabled)
@@ -93,12 +96,12 @@ The worker runs:
    e. Custom vocabulary fuzzy correction
    f. Code mode conversion (if enabled)
 
-6. Silence hallucination filter
+7. Silence hallucination filter
    └─ rms < 0.003 AND text is a known Whisper hallucination → return ""
 
-7. Optional LLM post-processing via the OpenAI API (if target.processing.openai_enabled)
+8. Optional LLM post-processing via the OpenAI API (if target.processing.openai_enabled)
 
-8. Voice Command Resolution & S1-mini Dictation Cleanup:
+9. Voice Command Resolution & S1-mini Dictation Cleanup:
    a. Check for leading voice command trigger ("VoxCtrl <target> <payload>")
    b. If command matches: target resolved, payload isolated
    c. If trigger word used without matching command: preserve entire string intact
@@ -106,7 +109,7 @@ The worker runs:
       text/payload via local S1-mini (Qwen3-0.6B) model
    e. Deliver final text directly to resolved target(s)
 
-9. Return InferenceOutput {
+10. Return InferenceOutput {
        text: String,            // Final processed text
        raw_text: String,        // Pre-processing Whisper output
        inference_ms: u32,       // Whisper wall time
@@ -245,6 +248,33 @@ This threshold (0.003 RMS) is intentionally below any genuine speech energy, so 
 
 ---
 
+## Repetition Loop Guard
+
+Every engine here decodes one token at a time, and each can reach a state where the likeliest next token is the one it just produced. The model does not notice. The result is one word, or one short phrase, repeated until a length limit ends the pass: `send it to the the the the the the …`.
+
+VoxCtrl stops this in three places.
+
+**In the decoders.**
+
+- *Parakeet* may emit several tokens on one 80 ms audio frame. Five identical tokens in a row on one frame, without the model once asking to move on, is treated as a stuck decoder: the first copy is kept, the decoder is put back to where it stood after it, and decoding continues from the next frame. The log says how many frames were affected.
+- *Moonshine* is limited to about 6.5 tokens per second of audio (plus a small allowance), as its reference runtimes are. Without that, a half-second live-text clip could produce 192 tokens of one word.
+- *whisper.cpp* has its own check, but only for outputs longer than 32 tokens, so short clips rely on the next step.
+
+**On every transcript.** Whatever produced it, on this machine or on a server, a transcript passes through `voxctrl_text::collapse_repetition_loops` before anything else is done with it:
+
+```
+one word      repeated 5 or more times in a row  → one copy
+a 2–6 word phrase repeated 4 or more times in a row → one copy
+```
+
+Shorter runs are left alone because people say them: "no no no no", "very very very very good", "ha ha ha ha". Case and punctuation are ignored when comparing ("Okay, okay okay." is a run of three). `voxctrl-server` applies the same guard to what it serves, so clients other than the VoxCtrl app are covered too.
+
+**On cleanup output.** The S1-mini cleanup model also decodes greedily. Its output is discarded, and the transcript delivered as it was said, when the output is more than twice as long as the transcript (plus 40 characters) or contains a repetition loop the transcript did not.
+
+When any of these fires the log has a line saying so, with word or character counts and never the words.
+
+---
+
 ## Context Prompting
 
 The Whisper initial prompt is a fixed VoxCtrl preamble plus the
@@ -313,7 +343,7 @@ Moonshine and Parakeet default to the CPU: they run part of their work on the CP
 
 ## Parakeet TDT Backend
 
-[Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is an NVIDIA FastConformer transducer model offering state-of-the-art accuracy, real-time transcription speeds, and immune to the autoregressive repetition loops that Whisper can occasionally experience on background noise.
+[Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) is an NVIDIA FastConformer transducer model offering state-of-the-art accuracy, real-time transcription speeds, and far less prone than Whisper to repetition loops on background noise. It is not immune: its decoder can stick on one token, which VoxCtrl detects and stops (see [Repetition Loop Guard](#repetition-loop-guard)).
 
 - **Model size**: ~665 MB (INT8 quantized ONNX).
 - **Execution**: Runs through ONNX Runtime with optional GPU offloading.
@@ -354,7 +384,7 @@ Under `engine.remote_openai` in `config.json`:
 | `api_key` | string or null | `null` | Optional Bearer authentication token. Leave blank for unauthenticated LAN servers. |
 | `model` | string | `"whisper-1"` | Model identifier expected by the server (e.g. `whisper-1`, `Systran/faster-whisper-large-v3`, `large-v3`). |
 | `language` | string | `""` | Optional ISO language code (e.g. `en`, `es`, `fr`, or blank for automatic detection). |
-| `timeout_secs` | integer | `30` | Request timeout in seconds (5–300). |
+| `timeout_secs` | integer | `30` | How long the server gets to answer, in seconds (5–300). For a dictation it is counted from the moment you stop speaking, so it does not limit how long you may talk. |
 | `fallback` | string | `"none"` | On-device engine used while the server is unreachable: `none`, `whisper-cpp`, `moonshine` or `parakeet`. |
 
 ### Fallback when the server is unreachable
@@ -460,7 +490,7 @@ When you press your dictation hotkey:
 | **Speed** | Fast (GPU) / Medium (CPU) | Fast (CPU) | Ultra-fast (non-autoregressive) | Network + Server speed |
 | **Quiet Room Accuracy** | Reference-grade (0.97) | High (0.77) | SOTA (0.94) | Server-model dependent |
 | **Noisy Room Accuracy** | Moderate | Very high (0.93 retention) | High (0.88 retention) | Server-model dependent |
-| **Repetition Loops** | Possible on silent/noisy audio | Rare | None (TDT alignment) | Server-model dependent |
+| **Repetition Loops** | Possible on silent/noisy audio | Rare | Rare | Server-model dependent |
 | **Offline Operation** | Yes | Yes | Yes | LAN / Internet |
 
 ---

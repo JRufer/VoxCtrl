@@ -5,6 +5,11 @@ this release from the AUR, usually within minutes of it being published, and
 pacman keeps it updated. See
 [Installation → Arch Linux](https://github.com/JRufer/VoxCtrl/blob/master/docs/installation.md#arch-linux-aur).
 
+**VoxCtrl Server in Docker:** download `docker-compose.yml` from this release
+and run `docker compose up -d` beside it. The image is pulled, not built.
+`voxctrl-server.env` lists the settings; save it as `.env` to change any. See
+[VoxCtrl Server → Install with Docker](https://github.com/JRufer/VoxCtrl/blob/master/docs/server.md#install-with-docker).
+
 `SHA256SUMS` lists the checksum of every file below; check a download with
 `sha256sum -c --ignore-missing SHA256SUMS`.
 

@@ -45,7 +45,7 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
   * Local JSON-RPC server (a Unix socket in `$XDG_RUNTIME_DIR` on Linux, also at `/tmp/voxctrl-mcp.sock`, or a named pipe on Windows) exposing `transcribe_voice`, `speak_text`, `get_status` and `set_target` tools to AI clients like Claude Desktop and Cursor, plus `get_recent_transcripts` if you allow it.
 * **First-Run Setup Wizard & In-App Updates**:
   * 7-step interactive wizard (`voxctrl --setup`) for instant microphone, engine, hotkey, and overlay configuration.
-  * Self-contained updater that downloads, cryptographically verifies (SHA-256), and atomically replaces application binaries on release.
+  * Self-contained updater that downloads each release, checks its SHA-256 digest and its [minisign signature](docs/release-signing.md), and atomically replaces the application binaries.
   * Redacted, allowlist-filtered one-click bug reporting.
 
 ---
@@ -72,7 +72,7 @@ VoxCtrl turns your voice into a programmable router via `targets.toml`:
 
 ## 🛠️ Architecture
 
-VoxCtrl is designed with strict modularity, memory isolation, and high concurrency across 16 specialized Rust workspace crates:
+VoxCtrl is designed with strict modularity, memory isolation, and high concurrency across 21 Rust workspace crates:
 
 ![VoxCtrl Audio Pipeline Architecture](assets/audio-pipeline-diagram.svg)
 
@@ -81,7 +81,6 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | Crate | Responsibility |
 | :--- | :--- |
 | **`voxctrl-app`** | Tauri 2 application shell, Svelte IPC commands, system tray, and window management. |
-| **`voxctrl-core`** | Shared domain types, audio buffer representations, and engine traits. |
 | **`voxctrl-audio`** | `cpal` audio input stream, ring buffers, device enumeration, VAD, and RNNoise. |
 | **`voxctrl-inference`** | Multi-engine STT runner (`whisper.cpp`, `Moonshine`, `Parakeet TDT`, and remote HTTP) and the CPU-vs-GPU Speed test (`bench.rs`). |
 | **`voxctrl-llm-sidecar`** | Independent companion process running `llama.cpp` (`llama_cpp_2`) with Vulkan GPU offload and CPU fallback for S1-mini text cleanup. |
@@ -94,8 +93,11 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | **`voxctrl-winput`** | Windows `SendInput`: Unicode typing, paste shortcuts, focused-window class. |
 | **`voxctrl-mcp`** | Native Model Context Protocol (MCP) JSON-RPC server and client. |
 | **`voxctrl-config`** | Hot-reloadable TOML and JSON configuration management and validation. |
-| **`voxctrl-text`** | Text normalization, filler-word sanitization, and regex replacement filters. |
-| **`voxctrl-update`** | GitHub release checking, SHA-256 verification, and atomic self-updating. |
+| **`voxctrl-text`** | Snippet expansion, custom-vocabulary correction, spoken numbers, and the repetition-loop guard every transcript passes through. |
+| **`voxctrl-history`** | Dictation history: in memory by default, encrypted on disk when the user opts in. |
+| **`voxctrl-dbus`** | The `ai.voxctrl` session-bus interface: status, control, and dictation signals. |
+| **`voxctrl-ort`** | The one ONNX Runtime environment shared by every ONNX engine in the process. |
+| **`voxctrl-update`** | GitHub release checking, SHA-256 and minisign signature verification, and atomic self-updating. |
 | **`voxctrl-bugreport`**| Allowlist-redacted diagnostic bundle generation and GitHub issue submission. |
 | **`voxctrl-pairing`** | Pairing codes and certificate pinning between the app and an encrypted VoxCtrl server. |
 | **`voxctrl-server`** | Headless speech server: runs one STT model and serves it to VoxCtrl clients over an OpenAI-compatible HTTP API ([docs/server.md](docs/server.md)). |
@@ -109,6 +111,8 @@ Pre-built binaries are available on the [Latest Releases](https://github.com/JRu
 ### Linux
 
 **Arch, Manjaro, EndeavourOS, CachyOS** — install from the AUR. That's all on Wayland; on X11, also add `xdotool` so VoxCtrl can type into other windows:
+
+> **The AUR packages are being repaired** and may not build or install at the moment. Until they are back, use the AppImage below: it runs on Arch as it is.
 
 ```
 paru -S voxctrl-bin        # or: yay -S voxctrl-bin

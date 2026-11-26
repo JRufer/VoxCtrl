@@ -133,6 +133,25 @@ async fn a_streamed_upload_is_transcribed_in_full() {
     assert_eq!(seen.prompt.as_deref(), Some("Hey Vox"));
 }
 
+/// `timeout_secs` is how long the server gets to answer, not how long the
+/// user may talk. The streamed upload used to be under it from its first
+/// byte, so any dictation longer than the timeout (30 s by default) failed
+/// while it was still being spoken.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dictation_longer_than_the_timeout_is_transcribed() {
+    let (endpoint, seen) = serve("a long dictation").await;
+    let mut cfg = client_config(&endpoint, Some(KEY));
+    cfg.timeout_secs = 1;
+    let session = RemoteStreamingSession::start(cfg, None, &tokio::runtime::Handle::current());
+    for _ in 0..25 {
+        session.send_chunk(vec![0.2; 1600]);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let result = session.finish().await.unwrap();
+    assert_eq!(result.text, "a long dictation");
+    assert_eq!(seen.lock().unwrap().samples, 25 * 1600);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_client_with_no_key_gets_the_servers_explanation() {
     let (endpoint, _) = serve("unused").await;

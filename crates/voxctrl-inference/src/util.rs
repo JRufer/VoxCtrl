@@ -1,6 +1,8 @@
 //! Small helpers shared by the transcription backends.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
 
 /// How many threads a transcription backend should run on.
 ///
@@ -46,6 +48,58 @@ pub(crate) fn expand_tilde(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+// ── Model downloads ───────────────────────────────────────────────────────────
+
+/// Stream `url` to `path` through a `.part` file, renamed into place only once
+/// the whole body has arrived.
+///
+/// Every model download goes through here. Streaming keeps memory flat: the
+/// files run from 75 MB to 3.1 GB (Whisper `large-v3`), and buffering one with
+/// `Response::bytes()` holds all of it in RAM before a byte reaches disk, which
+/// a small server does not have.
+/// When the server sends a length, a body that ends short is rejected rather
+/// than renamed into place, where the backend's `is_model_downloaded` would later take it
+/// for a finished file. A failed attempt removes its `.part` file.
+pub(crate) async fn download_file(url: &str, path: &Path) -> Result<()> {
+    let tmp = path.with_extension("part");
+    let result = stream_to(url, &tmp).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+    result?;
+    tokio::fs::rename(&tmp, path).await.with_context(|| format!("finalize {}", path.display()))
+}
+
+async fn stream_to(url: &str, tmp: &Path) -> Result<()> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let response = reqwest::get(url)
+        .await
+        .with_context(|| format!("request {url}"))?
+        .error_for_status()
+        .with_context(|| format!("fetch {url}"))?;
+    let expected = response.content_length();
+
+    let mut file = tokio::fs::File::create(tmp).await.with_context(|| format!("create {}", tmp.display()))?;
+    let mut written: u64 = 0;
+    let mut body = response.bytes_stream();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.with_context(|| format!("read {url}"))?;
+        file.write_all(&chunk).await.with_context(|| format!("write {}", tmp.display()))?;
+        written += chunk.len() as u64;
+    }
+    file.flush().await.with_context(|| format!("flush {}", tmp.display()))?;
+    file.sync_all().await.with_context(|| format!("sync {}", tmp.display()))?;
+
+    if let Some(expected) = expected {
+        if written != expected {
+            bail!("download of {url} ended early: got {written} of {expected} bytes");
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

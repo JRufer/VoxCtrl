@@ -172,9 +172,11 @@ jobs:
           # to the CPU cleanly when no usable GPU is found
           # (crates/voxctrl-inference/src/moonshine.rs, `with_execution_providers`
           # error path), so a separate CPU artifact bought nothing but a second
-          # download for users to choose wrong between. Measured at release
-          # v0.6.3, the CPU and WebGPU installers were 17.1 MB and 17 MB — the
-          # WebGPU feature costs nothing in binary size either.
+          # download for users to choose wrong between. The WebGPU provider
+          # does need Dawn and the DirectX Shader Compiler beside the exe; the
+          # "Stage Dawn DLLs" step below bundles them, which adds several MB to
+          # the installer. (Up to 0.9.20 they were missing, and the installed
+          # app could not start.)
           #
           # This accelerates Moonshine, not whisper.cpp: ggml's Vulkan backend
           # is the only GPU path whisper.cpp has here and it does not register
@@ -183,7 +185,12 @@ jobs:
           # reports the two separately so nobody reads "Windows GPU" and
           # assumes it covers every engine.
           - name: windows-webgpu
-            os: windows-2022
+            # windows-2025 ships Visual Studio 2026 (MSVC 14.50). ort's
+            # prebuilt static ONNX Runtime (2.0.0-rc.15) calls the vectorized
+            # STL helpers newer MSVC added (__std_unique_8,
+            # __std_max_element_f_, ...), so linking it with windows-2022's
+            # MSVC 14.44 fails with LNK1120 unresolved externals.
+            os: windows-2025
             features: "moonshine-webgpu,parakeet-webgpu"
             artifact_label: windows-x86_64-webgpu
             cuda: false
@@ -273,6 +280,17 @@ jobs:
         if: runner.os == 'Linux' && matrix.vulkan
         run: cargo build --bin voxctrl-llm-sidecar --release --features vulkan
 
+      # This row builds on ubuntu-22.04 so it runs on 22.04 and Debian 12.
+      # ort's prebuilt ONNX Runtime 1.31 is built against glibc 2.38 and GCC
+      # 13's libstdc++ and does not link here, so link Microsoft's own
+      # libonnxruntime.so.1 (glibc 2.28) dynamically instead and ship it: the
+      # .deb installs it to /usr/lib/voxctrl, which the binary's rpath covers
+      # (src-tauri/build.rs), and LD_LIBRARY_PATH (set by the script) lets
+      # linuxdeploy put it in the AppImage. Its licence goes with it.
+      - name: ONNX Runtime shared library (Linux, Vulkan)
+        if: runner.os == 'Linux' && matrix.vulkan && !matrix.webgpu
+        run: ./scripts/fetch-onnxruntime-linux.sh "$RUNNER_TEMP/onnxruntime"
+
       - name: Build AppImage + deb (Linux, Vulkan)
         if: runner.os == 'Linux' && matrix.vulkan && !matrix.webgpu
         env:
@@ -281,7 +299,16 @@ jobs:
           # beforeBuildCommand rebuilds the sidecar; without the feature it
           # would bundle a CPU-only copy over the Vulkan one built above.
           VOXCTRL_SIDECAR_FEATURES: vulkan
-        run: npm run tauri build -- --features vulkan
+        run: |
+          lic="$PWD/packaging/third-party-licenses/onnxruntime"
+          cat > "$RUNNER_TEMP/tauri-ort.conf.json" <<EOF
+          {"bundle":{"linux":{"deb":{"files":{
+            "/usr/lib/voxctrl/libonnxruntime.so.1":"$ORT_SHARED_LIB",
+            "/usr/share/doc/voxctrl/onnxruntime/LICENSE":"$lic/LICENSE",
+            "/usr/share/doc/voxctrl/onnxruntime/ThirdPartyNotices.txt":"$lic/ThirdPartyNotices.txt"
+          }}}}}
+          EOF
+          npm run tauri build -- --config "$RUNNER_TEMP/tauri-ort.conf.json" --features vulkan
 
       # Dawn (libwebgpu_dawn.so) is a NEEDED library of the binary. ort leaves
       # it in target/release; LD_LIBRARY_PATH lets linuxdeploy resolve it, and
@@ -341,6 +368,17 @@ jobs:
             mkdir -p "$root/usr/lib"
             cp -L "$(find . -path '*/release/libwebgpu_dawn.so' -print -quit)" "$root/usr/lib/libwebgpu_dawn.so"
             echo "Bundled libwebgpu_dawn.so into the AppImage"
+          fi
+          # The 22.04 Vulkan build NEEDs Microsoft's libonnxruntime.so.1 (see
+          # its build step); same treatment, plus its licence.
+          if [ -n "${ORT_SHARED_LIB:-}" ]; then
+            if [ -z "$(find "$root" -name 'libonnxruntime.so.1' -print -quit)" ]; then
+              mkdir -p "$root/usr/lib"
+              cp -L "$ORT_SHARED_LIB" "$root/usr/lib/libonnxruntime.so.1"
+              echo "Bundled libonnxruntime.so.1 into the AppImage"
+            fi
+            mkdir -p "$root/usr/share/doc/voxctrl/onnxruntime"
+            cp packaging/third-party-licenses/onnxruntime/* "$root/usr/share/doc/voxctrl/onnxruntime/"
           fi
 
           # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)
@@ -417,7 +455,7 @@ jobs:
           #     "symbol lookup error: /usr/lib/libwebkit2gtk-4.1.so.0: undefined
           #     symbol: manette_device_get_mapping" (Arch, v0.9.20). So the
           #     libraries only WebKitGTK needs (libmanette, libsoup, libsecret,
-          #     enchant, hyphen, seccomp, xslt, lcms2, harfbuzz-icu, libatomic)
+          #     enchant, hyphen, seccomp, xslt, lcms2, harfbuzz-icu, libatomic, woff2)
           #     and what they in turn pull in (gudev, evdev, psl, nghttp2,
           #     brotli, sqlite, gcrypt) are host-first as well, still bundled
           #     for a desktop with no WebKitGTK. check-appimage-webkit-deps.sh,
@@ -433,7 +471,8 @@ jobs:
                      'libbrotlidec.so*' 'libbrotlicommon.so*' 'libsqlite3.so*' \
                      'libsecret-1.so*' 'libgcrypt.so*' 'libenchant-2.so*' \
                      'libhyphen.so*' 'libseccomp.so*' 'libxslt.so*' \
-                     'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*'; do
+                     'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*' \
+                     'libwoff2dec.so*' 'libwoff2common.so*'; do
             find "$root" -name "$pat" -not -path '*/fallback/*' -print \
               -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
           done
@@ -504,9 +543,88 @@ jobs:
 
       # Split from the step above rather than interpolating a possibly-empty
       # `--features`, which passes tauri a bare flag and fails the build.
+      #
+      # ort-sys downloads the WebGPU ONNX Runtime prebuilt during the build and
+      # drops webgpu_dawn.dll and dxcompiler.dll into target/release. Tauri
+      # bundles the app and externalBin only, and voxctrl.exe has a load-time
+      # import on webgpu_dawn.dll, so an NSIS installer without it cannot
+      # start on a machine that never ran a WebGPU build. Build once so ort
+      # stages the DLLs, then add them to the bundle as resources.
+      #
+      # dxcompiler.dll is not imported by anything: Dawn loads it by name when
+      # it creates a D3D12 device, and without it every ONNX engine quietly
+      # runs on the CPU. So it is required here too.
+      #
+      # dxil.dll, Microsoft's closed-source DXIL signing library, is never
+      # bundled. It is not open source: shipping it would bind VoxCtrl's
+      # distributors and users to Microsoft's licence terms (an end-user
+      # agreement and an indemnity), which an MIT app cannot pass on. The Dawn
+      # in ONNX Runtime 1.24 (ort rc.12) would not use DXC without it; the
+      # Dawn in ONNX Runtime 1.31 (ort rc.15) only needs dxcompiler.dll, which
+      # has signed shaders with its own validator since DXC 1.8.2502. So if
+      # webgpu_dawn.dll mentions dxil.dll at all, an `ort` change has brought
+      # back a Dawn that needs it: fail here instead of shipping a GPU build
+      # that silently falls back to FXC or the CPU.
+      #
+      # The licence texts these libraries require travel with them, in
+      # `licenses\` beside the exe (packaging/third-party-licenses/windows-webgpu).
+      - name: Stage Dawn DLLs (Windows, GPU)
+        if: runner.os == 'Windows' && matrix.features != ''
+        shell: pwsh
+        run: |
+          npm run build
+          cargo build --release -p voxctrl-app --features "${{ matrix.features }}"
+
+          $dawn = (Resolve-Path -LiteralPath "target/release/webgpu_dawn.dll").Path
+          $bytes = [System.IO.File]::ReadAllBytes($dawn)
+          $ascii = [System.Text.Encoding]::GetEncoding(28591).GetString($bytes)
+          $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
+          $bytes = $null
+          if ($ascii.IndexOf("dxil.dll", [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+              $utf16.IndexOf("dxil.dll", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "webgpu_dawn.dll refers to dxil.dll. This Dawn needs Microsoft's closed-source DXIL library, which VoxCtrl does not ship. Move ort to a release whose Dawn uses dxcompiler.dll alone."
+          }
+          $ascii = $null
+          $utf16 = $null
+          Write-Host "webgpu_dawn.dll does not refer to dxil.dll."
+
+          New-Item -ItemType Directory -Force -Path "src-tauri/dawn" | Out-Null
+          $resources = [ordered]@{}
+          foreach ($name in @("webgpu_dawn.dll", "dxcompiler.dll")) {
+            $src = Join-Path "target/release" $name
+            if (-not (Test-Path -LiteralPath $src)) {
+              throw "$name was not staged into target/release by the WebGPU build"
+            }
+            Copy-Item -LiteralPath $src -Destination (Join-Path "src-tauri/dawn" $name) -Force
+            $resources["dawn/$name"] = $name
+            # In the log, so a later question about which libraries a release
+            # shipped can be answered from the run.
+            $version = (Get-Item -LiteralPath $src).VersionInfo.FileVersion
+            Write-Host ("Staged {0} (version {1})" -f $name, $version)
+          }
+
+          # Paths are relative to src-tauri, where tauri.conf.json lives.
+          # ONNX Runtime is linked into voxctrl.exe; its MIT licence and
+          # third-party notices go in the same folder.
+          foreach ($dir in @("windows-webgpu", "onnxruntime")) {
+            $licenses = Get-ChildItem -File "packaging/third-party-licenses/$dir"
+            if ($licenses.Count -eq 0) {
+              throw "No licence texts found in packaging/third-party-licenses/$dir"
+            }
+            foreach ($file in $licenses) {
+              $target = if ($dir -eq "onnxruntime") { "licenses/onnxruntime-$($file.Name)" } else { "licenses/$($file.Name)" }
+              $resources["../packaging/third-party-licenses/$dir/$($file.Name)"] = $target
+            }
+          }
+
+          @{ bundle = @{ resources = $resources } } |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -Path "tauri-webgpu.conf.json" -Encoding utf8
+          Get-Content "tauri-webgpu.conf.json"
+
       - name: Build installer (Windows, GPU)
         if: runner.os == 'Windows' && matrix.features != ''
-        run: npx tauri build --bundles nsis --features ${{ matrix.features }}
+        run: npx tauri build --bundles nsis --features ${{ matrix.features }} --config tauri-webgpu.conf.json
 
       # ── Collect and rename Linux artifacts ──────────────────────────────────
       # Search the whole workspace so the path is correct regardless of whether
@@ -515,6 +633,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p upload
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
           find . \( -name "*.AppImage" -o -name "*.deb" \) \
               ! -name "*.AppImage.zsync" \
               ! -path "*/.cargo/*" | \
@@ -523,6 +642,12 @@ jobs:
             ext="${base##*.}"
             dest="upload/VoxCtrl-${{ matrix.artifact_label }}.${ext}"
             cp "$f" "$dest"
+            # dpkg reads 1.0.0-rc.1 as version 1.0.0, Debian revision rc.1,
+            # which sorts above 1.0.0: apt would call the real release a
+            # downgrade. 1.0.0~rc.1 sorts below it, as it should.
+            if [[ "$ext" == deb && "$VERSION" == *-* ]]; then
+              scripts/deb_prerelease_version.sh "$dest"
+            fi
             echo "Collected: $dest ($(du -sh "$f" | cut -f1))"
           done
           ls -lh upload/
@@ -566,10 +691,15 @@ jobs:
   # a broken package from this release: fix it before publishing the draft.
   # Not a dependency of `publish`, so an Arch-only problem never holds up the
   # draft for every other platform.
+  #
+  # Off for now, with the AUR workflows (aur.yml, aur-publish.yml), which are
+  # disabled in the repository's Actions settings: the AUR packages do not
+  # build at the moment, so this only spent a runner. Restore the condition
+  # below when they are turned back on.
   aur-smoke:
     name: AUR package smoke test
     needs: build
-    if: always() && contains(needs.build.result, 'success')
+    if: false # was: always() && contains(needs.build.result, 'success')
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -628,6 +758,17 @@ jobs:
         with:
           path: release-artifacts
           merge-multiple: true
+
+      # What someone needs to run the server in Docker, with nothing to clone
+      # or build: the Compose file (which pulls the image server-image.yml
+      # publishes), its GPU companion, and the list of settings. Added here so
+      # they are checksummed and signed like every other download.
+      - name: Add the server's Compose files
+        run: |
+          cp packaging/docker/docker-compose.yml packaging/docker/docker-compose.gpu.yml release-artifacts/
+          # `.env.example` cannot be an asset name: GitHub renames a file that
+          # starts with a dot.
+          cp packaging/docker/.env.example release-artifacts/voxctrl-server.env
 
       - name: List release artifacts
         run: ls -lh release-artifacts/
@@ -699,6 +840,10 @@ jobs:
           tag_name: ${{ steps.tag.outputs.name }}
           name: "VoxCtrl ${{ steps.tag.outputs.name }}"
           draft: true
+          # A pre-release version (1.0.0-rc.1) is published as a GitHub
+          # pre-release: not "latest", and never offered by the in-app
+          # updater, which reads /releases/latest.
+          prerelease: ${{ contains(steps.tag.outputs.name, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: release-artifacts/*

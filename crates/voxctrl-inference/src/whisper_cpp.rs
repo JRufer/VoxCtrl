@@ -324,10 +324,10 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
     let url = format!("{}{}", GGUF_BASE_URL, filename);
     info!("Downloading Whisper model: {}", url);
 
-    let response = reqwest::get(&url).await?.error_for_status()?;
-    let bytes = response.bytes().await?;
-
-    tokio::fs::write(&path, bytes).await.context("save model file")?;
+    // Streamed to a `.part` file and renamed when complete: `large-v3` is
+    // 3.1 GB, more than a small server has in RAM, and a download cut short
+    // must not leave a file `is_model_downloaded` takes for a whole model.
+    crate::util::download_file(&url, &path).await.context("save model file")?;
 
     info!("Whisper model downloaded successfully to: {}", path.display());
     Ok(())

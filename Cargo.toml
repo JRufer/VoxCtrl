@@ -5,6 +5,7 @@ members = [
     "crates/voxctrl-hotkeys",
     "crates/voxctrl-audio",
     "crates/voxctrl-inference",
+    "crates/voxctrl-ort",
     "crates/voxctrl-tts",
     "crates/voxctrl-inject",
     "crates/voxctrl-winput",
@@ -24,7 +25,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.9.22"
+version = "0.9.24"
 edition = "2021"
 authors = ["VoxCtrl Contributors"]
 license = "MIT"
@@ -120,7 +121,7 @@ chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.5"
 
 # ONNX inference (optional Moonshine STT backend)
-ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+ort = { version = "2.0.0-rc.15", features = ["load-dynamic"] }
 ndarray = "0.16"
 
 # Internal crates
@@ -129,6 +130,7 @@ voxctrl-routing  = { path = "crates/voxctrl-routing" }
 voxctrl-hotkeys  = { path = "crates/voxctrl-hotkeys" }
 voxctrl-audio    = { path = "crates/voxctrl-audio" }
 voxctrl-inference = { path = "crates/voxctrl-inference" }
+voxctrl-ort      = { path = "crates/voxctrl-ort" }
 voxctrl-tts      = { path = "crates/voxctrl-tts", default-features = false }
 voxctrl-pairing  = { path = "crates/voxctrl-pairing" }
 voxctrl-server   = { path = "crates/voxctrl-server", default-features = false }

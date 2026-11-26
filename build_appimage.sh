@@ -291,6 +291,20 @@ if [ "$BUILD_MODE" = "vulkan" ]; then
     esac
 fi
 
+# The prebuilt ONNX Runtime that ort fetches (1.31) is itself built against
+# glibc 2.38 and GCC 13's libstdc++, WebGPU or not, so on an older host it does
+# not even link. There, link Microsoft's own libonnxruntime.so.1 (glibc 2.28)
+# dynamically and bundle it, as the ubuntu-22.04 release build does.
+ORT_SHARED_LIB=""
+if [ "$glibc_ok" = false ] && [ "$WEBGPU" = false ]; then
+    info "Host glibc ${HOST_GLIBC:-unknown} is older than 2.38; using Microsoft's ONNX Runtime shared library..."
+    ort_dir="$ROOT_DIR/target/onnxruntime-linux"
+    "$ROOT_DIR/scripts/fetch-onnxruntime-linux.sh" "$ort_dir"
+    export ORT_LIB_PATH="$ort_dir" ORT_PREFER_DYNAMIC_LINK=1
+    export LD_LIBRARY_PATH="$ort_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    ORT_SHARED_LIB="$ort_dir/libonnxruntime.so.1"
+fi
+
 info "Running Tauri release compiler with headless PATH..."
 # Set up a cleanup trap to restore /usr/lib/insync if it was hidden
 cleanup() {
@@ -392,6 +406,18 @@ if [ "$WEBGPU" = true ]; then
     fi
 fi
 
+# Same for Microsoft's ONNX Runtime on hosts older than glibc 2.38 (above),
+# with its licence.
+if [ -n "$ORT_SHARED_LIB" ]; then
+    if [ -z "$(find "$root" -name 'libonnxruntime.so.1' -print -quit)" ]; then
+        mkdir -p "$root/usr/lib"
+        cp -L "$ORT_SHARED_LIB" "$root/usr/lib/libonnxruntime.so.1"
+        info "Bundled libonnxruntime.so.1 into the AppImage"
+    fi
+    mkdir -p "$root/usr/share/doc/voxctrl/onnxruntime"
+    cp "$ROOT_DIR"/packaging/third-party-licenses/onnxruntime/* "$root/usr/share/doc/voxctrl/onnxruntime/"
+fi
+
 # Bundle WebKitGTK 4.1 helper processes (WebKitNetworkProcess, WebKitWebProcess)
 helper_dir=""
 for dir in "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" "/usr/lib/webkit2gtk-4.1" "/usr/lib64/webkit2gtk-4.1"; do
@@ -463,7 +489,7 @@ done
 #     error: /usr/lib/libwebkit2gtk-4.1.so.0: undefined symbol:
 #     manette_device_get_mapping" (Arch, v0.9.20). So the libraries only
 #     WebKitGTK needs (libmanette, libsoup, libsecret, enchant, hyphen,
-#     seccomp, xslt, lcms2, harfbuzz-icu, libatomic) and what they in turn
+#     seccomp, xslt, lcms2, harfbuzz-icu, libatomic, woff2) and what they in turn
 #     pull in (gudev, evdev, psl, nghttp2, brotli, sqlite, gcrypt) are
 #     host-first as well, still bundled for a desktop with no WebKitGTK.
 #     check-appimage-webkit-deps.sh, run after the strip loop, fails the
@@ -479,7 +505,8 @@ for pat in 'libsystemd.so*' 'libudev.so*' \
            'libbrotlidec.so*' 'libbrotlicommon.so*' 'libsqlite3.so*' \
            'libsecret-1.so*' 'libgcrypt.so*' 'libenchant-2.so*' \
            'libhyphen.so*' 'libseccomp.so*' 'libxslt.so*' \
-           'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*'; do
+           'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*' \
+           'libwoff2dec.so*' 'libwoff2common.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done

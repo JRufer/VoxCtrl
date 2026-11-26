@@ -144,6 +144,7 @@ Backed by `src-tauri/src/bug_report.rs` and the `voxctrl-bugreport` crate.
 ### About Tab
 - Version information
 - Links to documentation and source
+- Open Source Attributions: every bundled project and model with its licence, including the GPU runtime libraries (Dawn, and the DirectX Shader Compiler on Windows)
 
 ---
 

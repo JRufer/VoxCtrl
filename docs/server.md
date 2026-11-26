@@ -217,31 +217,43 @@ the service afterwards.
 ## Install with Docker
 
 This is the simplest way to run the server on a machine that already has
-Docker.
+Docker. Each VoxCtrl release publishes the server as an image, so there is
+nothing to clone and nothing to compile: one file and one command.
 
-There is no published image yet, so the image is built on your machine from the
-source. The build compiles whisper.cpp and the server and can take from several
-minutes to half an hour depending on the machine; it only happens on the first
-start and after an upgrade.
+| Image | Contains |
+|---|---|
+| `ghcr.io/jrufer/voxctrl-server:latest` | The newest release. whisper.cpp, Moonshine and Parakeet on the CPU |
+| `ghcr.io/jrufer/voxctrl-server:0.9.22` | One release, for staying on it |
+| `ghcr.io/jrufer/voxctrl-server:latest-vulkan` | The same with whisper.cpp and dictation cleanup on a Vulkan GPU. See [GPU acceleration](#gpu-acceleration) |
+| `ghcr.io/jrufer/voxctrl-server:edge` | The build of the next release, before it is published. For testing |
+
+The images are for 64-bit x86 (`linux/amd64`). On anything else, [build the
+image yourself](#build-the-image-yourself).
 
 ### 1. Prerequisites
 
 - [Docker Engine](https://docs.docker.com/engine/install/) with the Compose
   plugin (`docker compose version` should print a version).
-- `git`.
-- A few gigabytes of free disk space for the build, plus the size of your model.
+- Disk space for the image plus the size of your model.
 
-### 2. Get the source
+### 2. Get the Compose file
 
 ```bash
-git clone https://github.com/JRufer/VoxCtrl.git
-cd VoxCtrl/packaging/docker
+mkdir voxctrl-server && cd voxctrl-server
+curl -LO https://github.com/JRufer/VoxCtrl/releases/latest/download/docker-compose.yml
 ```
 
-### 3. Choose your settings
+It is also on every [release page](https://github.com/JRufer/VoxCtrl/releases)
+under Assets, and in the repository at `packaging/docker/docker-compose.yml`.
+
+### 3. Choose your settings (optional)
+
+With no settings the server runs Parakeet `tdt-0.6b-v3` on port 8787 and makes
+its own API key. To change anything, download the list of settings, save it as
+`.env` beside the Compose file, and edit it:
 
 ```bash
-cp .env.example .env
+curl -L -o .env https://github.com/JRufer/VoxCtrl/releases/latest/download/voxctrl-server.env
 nano .env        # or any editor
 ```
 
@@ -257,11 +269,13 @@ VOXCTRL_SERVER_API_KEY=
 VOXCTRL_SERVER_PORT=8787
 ```
 
-### 4. Build and start
+### 4. Start
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+The first start downloads the image. Later ones start at once.
 
 ### 5. Watch the first start and collect the API key
 
@@ -331,20 +345,57 @@ Everything the server writes is in one named volume, `voxctrl-data`, mounted at
 The volume survives `docker compose down` and upgrades. `docker compose down -v`
 deletes it: the models are downloaded again and a new API key is generated.
 
+### Upgrade, or stay on one version
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+That moves the server to the newest release. Your models and API key are in
+the volume and are kept.
+
+To stay on one release, name it in `.env`; change the number when you choose to
+upgrade:
+
+```ini
+VOXCTRL_SERVER_VERSION=0.9.22
+```
+
+Keep the app and the server reasonably close in version. The app warns you
+when the server's version does not suit it.
+
 ### Without Compose
 
 ```bash
-# From the repository root
-docker build -f packaging/docker/Dockerfile -t voxctrl-server .
-
 docker run -d --name voxctrl-server --restart unless-stopped \
   -p 8787:8787 \
   -e VOXCTRL_SERVER_BACKEND=parakeet \
   -e VOXCTRL_SERVER_MODEL=tdt-0.6b-v3 \
   -v voxctrl-data:/var/lib/voxctrl \
-  voxctrl-server
+  ghcr.io/jrufer/voxctrl-server:latest
 
 docker logs -f voxctrl-server
+```
+
+### Build the image yourself
+
+Only needed to work on the server, or to run it on a platform the published
+image is not built for. It needs the whole repository, and compiles whisper.cpp,
+llama.cpp and the server, which takes from several minutes to half an hour.
+
+```bash
+git clone https://github.com/JRufer/VoxCtrl.git
+cd VoxCtrl/packaging/docker
+cp .env.example .env        # optional
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+`docker-compose.build.yml` replaces the published image with one built from
+your checkout, tagged `voxctrl-server:local`. Or, without Compose, from the
+repository root:
+
+```bash
+docker build -f packaging/docker/Dockerfile -t voxctrl-server .
 ```
 
 ---
@@ -620,9 +671,8 @@ ends, and has to be turned on at both.
 
 **On the server**, turn cleanup on and restart:
 
-- Docker: set `VOXCTRL_SERVER_CLEANUP=true` in `packaging/docker/.env`, then
-  `docker compose up -d --build`. An image built before 0.9.5 has to be
-  rebuilt; the new one also contains the cleanup helper.
+- Docker: set `VOXCTRL_SERVER_CLEANUP=true` in `.env`, then
+  `docker compose up -d`. The published image contains the cleanup helper.
 - System service: add this to `server.toml`, then
   `sudo systemctl restart voxctrl-server`.
 
@@ -691,8 +741,7 @@ both.
 
 **On the server**, say which engines to offer, turn it on, and restart.
 
-- Docker: in `packaging/docker/.env`, then `docker compose up -d --build`
-  (an image built before 0.9.11 has to be rebuilt):
+- Docker: in `.env`, then `docker compose up -d`:
 
   ```bash
   VOXCTRL_SERVER_TTS=true
@@ -1209,16 +1258,19 @@ cargo build --release -p voxctrl-server --features vulkan
 cargo build --release -p voxctrl-llm-sidecar --features vulkan   # GPU dictation cleanup
 ```
 
-**Docker — experimental.** The files are provided but have not yet been tested
-on real hardware, so expect to adjust them:
+**Docker — experimental.** A Vulkan build of the image is published with each
+release (`…:latest-vulkan`), and `docker-compose.gpu.yml` runs it with the GPU
+passed through. Neither has been tested on real hardware yet, so expect to
+adjust them:
 
 ```bash
-# in packaging/docker/.env
-VOXCTRL_BUILD_FEATURES=vulkan
+curl -LO https://github.com/JRufer/VoxCtrl/releases/latest/download/docker-compose.gpu.yml
+
+# in .env
 VOXCTRL_SERVER_BACKEND=whisper-cpp
 VOXCTRL_SERVER_MODEL=large-v3-turbo
 
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 This needs the [NVIDIA Container
@@ -1238,7 +1290,7 @@ Vulkan device and is running on the CPU.
 | Stop | `docker compose down` | `sudo systemctl stop voxctrl-server` |
 | Is it healthy? | `docker compose ps` | `curl -k https://localhost:8787/health` |
 | Change the model | Edit `.env`, then `docker compose up -d` | Edit `server.toml`, then restart |
-| Upgrade | `git pull`, then `docker compose up -d --build` | `git pull`, rebuild, reinstall the binary, restart |
+| Upgrade | `docker compose pull && docker compose up -d` | `git pull`, rebuild, reinstall the binary, restart |
 
 Changing the model downloads the new one on the next start. Models you no
 longer use stay on disk until you delete them from the models directory.
@@ -1265,8 +1317,13 @@ from 0.9.20 the server orders them:
 - A **live-text clip** runs only when the model is free and no dictation is
   waiting. Otherwise it is answered `503` at once and not run: the client's
   next clip carries more of the recording anyway. So one person's live text
-  never delays another person's dictation, and a live clip still being
-  transcribed delays a dictation by at most that one clip.
+  never delays another person's dictation.
+- From 0.9.22 a dictation **stops a live-text clip that is running**. The
+  model checks between steps whether it has been told to stop, so the dictation
+  waits for one step, not for the rest of the clip; the clip's client is
+  answered `503`, as if the clip had been skipped. A clip is also stopped when
+  its client hangs up before the answer (the app gives a clip six seconds), so
+  the server never finishes work nobody is waiting for.
 
 The VoxCtrl app marks its live clips with the header `X-VoxCtrl-Purpose: live`
 (from 0.9.20). Requests without it, from older apps and other clients, are
@@ -1458,9 +1515,9 @@ text-to-speech turned off answers HTTP 501 with `"type": "not_enabled"`. An Open
 ### A neural TTS engine will not start on the server: `GLIBC_2.43 not found`
 
 Pocket-TTS, Kitten TTS 2, Breeze-TTS-2 and VoxCPM2 run on a runtime that needs
-glibc 2.43 or newer. A Docker image built before 0.9.11 was based on Debian 13,
-which is too old: rebuild it (`docker compose up -d --build`) to get the Ubuntu
-26.04 base. For a system service on an older distribution, use Piper or eSpeak,
+glibc 2.43 or newer. The published Docker image has it. One you built yourself
+before 0.9.11 was based on Debian 13, which is too old: build it again, or
+switch to the published image. For a system service on an older distribution, use Piper or eSpeak,
 or run the server in Docker.
 
 ### Nothing is spoken with the "VoxCtrl server" engine

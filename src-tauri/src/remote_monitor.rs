@@ -74,6 +74,24 @@ pub fn offline_notification(reason: Option<&str>, fallback: Option<&str>) -> (St
     ("VoxCtrl — speech server unreachable".to_string(), format!("{reason}. {consequence}"))
 }
 
+/// How soon to look again after a check of a working server fails.
+const RECHECK_AFTER_MISS: Duration = Duration::from_secs(3);
+
+/// Whether a failed check is enough to call the server unreachable.
+///
+/// Not the first one while the server was working: one check lost to a busy
+/// server or a moment of bad Wi-Fi used to take live text away in the middle
+/// of a dictation and, with a fallback engine set, send the next dictations
+/// to it. A second failure a few seconds later is an outage. When the server
+/// was not known to be working (at startup, or already unreachable) the first
+/// failure counts, so a server that is down is reported at once.
+///
+/// A dictation that cannot connect still marks the server unreachable
+/// immediately; this is only about the background check.
+pub fn check_failure_counts(consecutive_failures: u32, was_online: bool) -> bool {
+    !was_online || consecutive_failures >= 2
+}
+
 /// Whether a change of status is the moment to notify: the server has just
 /// been lost. Staying offline (a new reason, a later probe) is not news.
 pub fn should_notify(previous: RemoteState, now: RemoteState) -> bool {
@@ -86,7 +104,10 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
         // The server last asked, so that pointing the app at a different one
         // (or changing the key) forgets what was known about the old one.
         let mut watched: Option<(String, Option<String>, Option<String>)> = None;
+        // Failed checks in a row. See `check_failure_counts`.
+        let mut failures = 0u32;
         loop {
+            let mut wait = PROBE_INTERVAL;
             let remote = {
                 let cfg = probe_state.config.lock().await;
                 (cfg.data.engine.backend == BackendChoice::RemoteOpenAi).then(|| cfg.data.engine.remote_openai.clone())
@@ -94,6 +115,7 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
             match remote {
                 None => {
                     watched = None;
+                    failures = 0;
                     remote_status::set_not_in_use();
                 }
                 Some(remote) => {
@@ -101,6 +123,7 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
                     if watched.as_ref() != Some(&key) {
                         remote_status::set_unknown();
                         watched = Some(key);
+                        failures = 0;
                     }
                     match voxctrl_inference::probe_remote_speech_engine(
                         &remote.endpoint,
@@ -109,16 +132,30 @@ pub fn spawn(app: tauri::AppHandle, state: Arc<AppState>) {
                     )
                     .await
                     {
-                        Ok(notice) => remote_status::set_checked(notice),
-                        Err(voxctrl_inference::ProbeFailure::Unreachable(reason)) => remote_status::set_offline(reason),
+                        Ok(notice) => {
+                            failures = 0;
+                            remote_status::set_checked(notice)
+                        }
+                        Err(voxctrl_inference::ProbeFailure::Unreachable(reason)) => {
+                            failures += 1;
+                            if check_failure_counts(failures, remote_status::is_online()) {
+                                remote_status::set_offline(reason);
+                            } else {
+                                tracing::warn!(
+                                    "A check of the speech server failed ({reason}); checking again before calling it unreachable"
+                                );
+                                wait = RECHECK_AFTER_MISS;
+                            }
+                        }
                         Err(voxctrl_inference::ProbeFailure::Incompatible(reason)) => {
+                            failures = 0;
                             remote_status::set_incompatible(reason)
                         }
                     }
                 }
             }
             tokio::select! {
-                _ = tokio::time::sleep(PROBE_INTERVAL) => {}
+                _ = tokio::time::sleep(wait) => {}
                 _ = RECHECK.notified() => {}
             }
         }
