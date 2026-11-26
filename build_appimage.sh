@@ -13,14 +13,28 @@ FORCE_VULKAN_FLAG=false
 # Vulkan backend alone only accelerates whisper.cpp. "auto" turns it on when the
 # build host's glibc can run Dawn (see below), --webgpu / --no-webgpu override.
 WEBGPU_MODE=auto
+# --audiocpp-server=PATH (or AUDIOCPP_SERVER=PATH) bundles an audiocpp_server
+# you built yourself, e.g. from the reverb-tts branch so Reverb-TTS works with
+# no setting. It is linked against this machine's glibc, so the AppImage then
+# runs only on systems at least as new as this one; release builds never set it.
+BUNDLE_AUDIOCPP_SERVER="${AUDIOCPP_SERVER:-}"
 for arg in "$@"; do
     case "$arg" in
+        --audiocpp-server=*) BUNDLE_AUDIOCPP_SERVER="${arg#--audiocpp-server=}" ;;
         --cpu) FORCE_CPU_FLAG=true ;;
         --vulkan) FORCE_VULKAN_FLAG=true ;;
         --webgpu) WEBGPU_MODE=on ;;
         --no-webgpu) WEBGPU_MODE=off ;;
     esac
 done
+if [ -n "$BUNDLE_AUDIOCPP_SERVER" ]; then
+    BUNDLE_AUDIOCPP_SERVER="${BUNDLE_AUDIOCPP_SERVER/#\~/$HOME}"
+    if [ ! -x "$BUNDLE_AUDIOCPP_SERVER" ] || [ -d "$BUNDLE_AUDIOCPP_SERVER" ]; then
+        echo "--audiocpp-server: $BUNDLE_AUDIOCPP_SERVER is not an executable file" >&2
+        exit 1
+    fi
+    BUNDLE_AUDIOCPP_SERVER="$(cd "$(dirname "$BUNDLE_AUDIOCPP_SERVER")" && pwd)/$(basename "$BUNDLE_AUDIOCPP_SERVER")"
+fi
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -555,6 +569,16 @@ cp "$ROOT_DIR/scripts/appimage-hooks/host-first-fallback.sh" "$root/apprun-hooks
 chmod +x "$root/apprun-hooks/host-first-fallback.sh"
 if ! grep -q "host-first-fallback.sh" "$root/AppRun"; then
     sed -i '/^exec /i source "$this_dir"/apprun-hooks/host-first-fallback.sh' "$root/AppRun"
+fi
+
+# An audiocpp_server of the user's own (--audiocpp-server), in usr/lib/voxctrl
+# where crates/voxctrl-tts/src/audiocpp.rs looks for a bundled one. It wins
+# over the runtime VoxCtrl would otherwise download; the "audio.cpp server"
+# setting still wins over it.
+if [ -n "$BUNDLE_AUDIOCPP_SERVER" ]; then
+    mkdir -p "$root/usr/lib/voxctrl"
+    install -m 755 "$BUNDLE_AUDIOCPP_SERVER" "$root/usr/lib/voxctrl/audiocpp_server"
+    info "Bundled audiocpp_server from $BUNDLE_AUDIOCPP_SERVER"
 fi
 
 # Repackage the AppImage. appimage-pack.sh embeds a runtime that also works on

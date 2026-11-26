@@ -121,10 +121,13 @@ fn custom_server() -> Option<PathBuf> {
 }
 
 /// Resolves the `audiocpp_server` binary: the `tts.audiocpp_server` override,
-/// else VoxCtrl's own managed install, then PATH — mirroring `piper_binary()`.
+/// else one bundled in the package, else VoxCtrl's own managed install, then PATH — mirroring `piper_binary()`.
 fn audiocpp_server_binary() -> Option<PathBuf> {
     if let Some(custom) = custom_server() {
         return custom.is_file().then_some(custom);
+    }
+    if let Some(bundled) = bundled_server() {
+        return Some(bundled);
     }
     let exe = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
     let local = audiocpp_dir().join(exe);
@@ -132,6 +135,20 @@ fn audiocpp_server_binary() -> Option<PathBuf> {
         return Some(local);
     }
     voxctrl_config::find_in_path("audiocpp_server")
+}
+
+/// Where a package ships its own `audiocpp_server`, relative to the app
+/// binary: `usr/bin/voxctrl` → `usr/lib/voxctrl/audiocpp_server`. A local
+/// `build_appimage.sh --audiocpp-server PATH` build puts one there.
+fn bundled_server_beside(exe: &Path) -> Option<PathBuf> {
+    let name = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
+    let path = exe.parent()?.parent()?.join("lib").join("voxctrl").join(name);
+    path.is_file().then_some(path)
+}
+
+fn bundled_server() -> Option<PathBuf> {
+    static BUNDLED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    BUNDLED.get_or_init(|| std::env::current_exe().ok().and_then(|exe| bundled_server_beside(&exe))).clone()
 }
 
 /// What runtime the audio.cpp engines would run on right now.
@@ -149,6 +166,11 @@ pub enum AudioCppRuntime {
     /// The `audiocpp_server` set in `tts.audiocpp_server`, which wins over the
     /// managed install and PATH. Like `System`, VoxCtrl never replaces it.
     Custom,
+    /// An `audiocpp_server` shipped inside the package (see
+    /// [`bundled_server_beside`]). Wins over the managed install and PATH,
+    /// loses to `tts.audiocpp_server`. Only builds made from the `reverb-tts`
+    /// branch are bundled, so it is taken to have every family, Reverb included.
+    Bundled,
     Missing,
 }
 
@@ -178,6 +200,9 @@ pub fn audiocpp_runtime() -> AudioCppRuntime {
     if custom_server().is_some() {
         return AudioCppRuntime::Custom;
     }
+    if bundled_server().is_some() {
+        return AudioCppRuntime::Bundled;
+    }
     classify_runtime(&audiocpp_dir(), voxctrl_config::find_in_path("audiocpp_server").is_some())
 }
 
@@ -193,7 +218,9 @@ pub async fn ensure_audiocpp_runtime() -> Result<()> {
     static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _installing = INSTALLING.lock().await;
     match audiocpp_runtime() {
-        AudioCppRuntime::Current | AudioCppRuntime::System | AudioCppRuntime::Custom => Ok(()),
+        AudioCppRuntime::Current | AudioCppRuntime::System | AudioCppRuntime::Custom | AudioCppRuntime::Bundled => {
+            Ok(())
+        }
         AudioCppRuntime::Outdated | AudioCppRuntime::Missing => {
             download_audiocpp_binary().await.context("download audio.cpp runtime")
         }
@@ -984,5 +1011,17 @@ mod tests {
         let p = partial_path(Path::new("/m/kitten-tts2-20261021-q8_0.gguf"));
         assert_eq!(p, Path::new("/m/kitten-tts2-20261021-q8_0.gguf.part"));
         assert_ne!(p.extension().and_then(|e| e.to_str()), Some("gguf"));
+    }
+
+    #[test]
+    fn bundled_server_is_found_beside_the_app_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let exe = root.path().join("usr/bin/voxctrl");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        assert_eq!(bundled_server_beside(&exe), None);
+        let server = root.path().join("usr/lib/voxctrl/audiocpp_server");
+        std::fs::create_dir_all(server.parent().unwrap()).unwrap();
+        std::fs::write(&server, b"#!/bin/sh\n").unwrap();
+        assert_eq!(bundled_server_beside(&exe), Some(server));
     }
 }

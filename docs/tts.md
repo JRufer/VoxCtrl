@@ -16,7 +16,10 @@ pulled in `intel-mkl-src`, a proprietary-licensed Intel MKL redistribution
 incompatible with VoxCtrl's MIT license).
 
 `tts.audiocpp_server` replaces that managed runtime with an `audiocpp_server`
-binary of your own, for every audio.cpp engine, while it is set. Reverb-TTS
+binary of your own, for every audio.cpp engine, while it is set. A package can
+also ship one in `usr/lib/voxctrl/audiocpp_server` (beside `usr/bin/`); VoxCtrl
+then uses it instead of downloading the runtime, unless the setting is set. The
+order is: the setting, the bundled server, VoxCtrl's own install, then `PATH`. Reverb-TTS
 needs this today, because no audio.cpp release has its family yet. VoxCtrl
 neither installs nor upgrades a binary you point it at, and restarts the
 resident session when the path changes.
@@ -286,7 +289,13 @@ VoxCtrl runs it through audio.cpp's `reverb` family
 > cmake --build build -j 4 --target audiocpp_server   # a bare -j has no limit and can run out of RAM
 > ```
 >
-> Until that is set the engine reports itself not ready and Settings says why.
+> A local AppImage can carry that build instead:
+> `./build_appimage.sh --audiocpp-server=/path/to/audiocpp_server` puts it in
+> `usr/lib/voxctrl/`, where VoxCtrl prefers it to the runtime it would
+> download, so Reverb-TTS works with no setting. Such an AppImage runs only on
+> systems at least as new as the machine that built the server.
+>
+> Until one of those is in place the engine reports itself not ready and Settings says why.
 > The setup wizard does not offer Reverb-TTS yet for the same reason.
 
 - **Voices** (`tts.reverb.voice_mode`):

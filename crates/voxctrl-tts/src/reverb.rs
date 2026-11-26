@@ -90,7 +90,7 @@ pub fn reverb_runtime_supported() -> bool {
 
 fn runtime_can_run_reverb(runtime: AudioCppRuntime) -> bool {
     match runtime {
-        AudioCppRuntime::Custom | AudioCppRuntime::System => true,
+        AudioCppRuntime::Custom | AudioCppRuntime::System | AudioCppRuntime::Bundled => true,
         AudioCppRuntime::Current => audiocpp::AUDIOCPP_RELEASE_HAS_REVERB,
         AudioCppRuntime::Outdated | AudioCppRuntime::Missing => false,
     }
@@ -321,6 +321,7 @@ mod tests {
     fn test_runtime_must_have_the_reverb_family() {
         assert!(runtime_can_run_reverb(AudioCppRuntime::Custom));
         assert!(runtime_can_run_reverb(AudioCppRuntime::System));
+        assert!(runtime_can_run_reverb(AudioCppRuntime::Bundled));
         assert_eq!(runtime_can_run_reverb(AudioCppRuntime::Current), audiocpp::AUDIOCPP_RELEASE_HAS_REVERB);
         assert!(!runtime_can_run_reverb(AudioCppRuntime::Outdated));
         assert!(!runtime_can_run_reverb(AudioCppRuntime::Missing));
