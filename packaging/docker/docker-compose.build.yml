@@ -6,6 +6,11 @@
 #
 # With a GPU, name docker-compose.gpu.yml before this file and set
 # VOXCTRL_BUILD_FEATURES=vulkan in .env.
+#
+# For Reverb-TTS, set VOXCTRL_BUILD_AUDIOCPP_REF=reverb-tts in .env: the image
+# then builds audio.cpp's server from that branch and uses it, with no
+# VOXCTRL_SERVER_AUDIOCPP_SERVER needed. It adds a long compile (tens of
+# minutes); VOXCTRL_BUILD_AUDIOCPP_JOBS (default 2) trades memory for speed.
 
 services:
   voxctrl-server:
@@ -14,6 +19,8 @@ services:
       dockerfile: packaging/docker/Dockerfile
       args:
         FEATURES: ${VOXCTRL_BUILD_FEATURES:-}
+        AUDIOCPP_REF: ${VOXCTRL_BUILD_AUDIOCPP_REF:-}
+        AUDIOCPP_JOBS: ${VOXCTRL_BUILD_AUDIOCPP_JOBS:-2}
     image: voxctrl-server:local
     # Never look for `voxctrl-server:local` in a registry.
     pull_policy: build

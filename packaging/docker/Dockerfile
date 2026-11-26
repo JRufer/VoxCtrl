@@ -10,6 +10,11 @@
 # Parakeet, all on the CPU). `--build-arg FEATURES=vulkan` builds whisper.cpp
 # with Vulkan GPU offload; see "GPU acceleration" in docs/server.md before
 # relying on it.
+#
+# AUDIOCPP_REF builds audio.cpp's audiocpp_server from source into the image,
+# for TTS engines no audio.cpp release has yet: `--build-arg
+# AUDIOCPP_REF=reverb-tts` gives Reverb-TTS. Empty (the default) builds nothing
+# and the server downloads the released runtime as before.
 
 ARG DEBIAN_RELEASE=trixie
 # The image the server runs in. It has to provide glibc 2.43 or newer: the
@@ -56,6 +61,34 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
        fi \
     && cp target/release/voxctrl-server target/release/voxctrl-llm-sidecar /usr/local/bin/
 
+# ── audio.cpp server (optional) ───────────────────────────────────────────────
+# Built on the runtime image itself, so it links the same glibc and libstdc++
+# it will run with. Every model family is built, so the released engines keep
+# working on it. A Vulkan build when FEATURES has `vulkan`, else CPU only.
+# AUDIOCPP_JOBS bounds the compile: each job can take 4-5 GB of memory, and
+# Vulkan's shader generators start up to 16 glslc processes each, so they get
+# one make job of their own.
+FROM ${RUNTIME_IMAGE} AS audiocpp
+ARG FEATURES=""
+ARG AUDIOCPP_REPO=https://github.com/JRufer/audio.cpp
+ARG AUDIOCPP_REF=""
+ARG AUDIOCPP_JOBS=2
+RUN mkdir -p /out \
+    && if [ -n "${AUDIOCPP_REF}" ]; then \
+         set -e; \
+         vulkan=OFF; \
+         if echo ",${FEATURES}," | grep -q ",vulkan,"; then vulkan=ON; fi; \
+         apt-get update; \
+         apt-get install -y --no-install-recommends ca-certificates git cmake g++ make; \
+         if [ "$vulkan" = ON ]; then apt-get install -y --no-install-recommends libvulkan-dev glslc; fi; \
+         git clone --depth 1 --branch "${AUDIOCPP_REF}" "${AUDIOCPP_REPO}" /audio.cpp; \
+         cmake -S /audio.cpp -B /audio.cpp/build -DCMAKE_BUILD_TYPE=Release -DENGINE_ENABLE_VULKAN=$vulkan; \
+         if [ "$vulkan" = ON ]; then cmake --build /audio.cpp/build --target ggml-vulkan --parallel 1; fi; \
+         cmake --build /audio.cpp/build --target audiocpp_server --parallel "${AUDIOCPP_JOBS}"; \
+         install -m 755 /audio.cpp/build/bin/audiocpp_server /out/audiocpp_server; \
+         rm -rf /audio.cpp /var/lib/apt/lists/*; \
+       fi
+
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM ${RUNTIME_IMAGE}
 ARG FEATURES=""
@@ -84,6 +117,10 @@ ENV HOME=/var/lib/voxctrl \
     VOXCTRL_SERVER_BIND=0.0.0.0:8787
 
 COPY --from=build /usr/local/bin/voxctrl-server /usr/local/bin/voxctrl-llm-sidecar /usr/local/bin/
+# The server looks for a bundled audiocpp_server in ../lib/voxctrl beside its
+# own binary and prefers it to the runtime it would download. Empty unless
+# AUDIOCPP_REF was set.
+COPY --from=audiocpp /out/ /usr/local/lib/voxctrl/
 
 USER voxctrl
 VOLUME /var/lib/voxctrl
