@@ -97,6 +97,13 @@ fn runtime_can_run_reverb(runtime: AudioCppRuntime) -> bool {
 }
 
 /// Ready means the model is on disk *and* a runtime that can run it is there.
+/// Why Reverb-TTS cannot run on the current audio.cpp runtime.
+pub(crate) const REVERB_RUNTIME_MISSING: &str =
+    "Reverb-TTS needs an audio.cpp server with the `reverb` model family, which no audio.cpp release \
+     has yet. Set \"audio.cpp server\" in TTS settings (tts.audiocpp_server, or \
+     VOXCTRL_SERVER_AUDIOCPP_SERVER for the server) to an audiocpp_server built from source, or build \
+     the server's Docker image with VOXCTRL_BUILD_AUDIOCPP_REF=reverb-tts (see docs/tts.md).";
+
 pub fn is_reverb_ready(model_dir: &str) -> bool {
     is_reverb_downloaded(model_dir) && reverb_runtime_supported()
 }
@@ -211,11 +218,7 @@ fn ensure_session<'a>(config: &TtsConfig, session: &'a mut Option<AudioCppSessio
     }
     audiocpp::upgrade_outdated_runtime_blocking();
     if !reverb_runtime_supported() {
-        anyhow::bail!(
-            "Reverb-TTS needs an audio.cpp server with the `reverb` model family, which no \
-             audio.cpp release has yet. Set \"audio.cpp server\" in TTS settings to an \
-             audiocpp_server built from source (see docs/tts.md)."
-        );
+        anyhow::bail!(REVERB_RUNTIME_MISSING);
     }
     // The GGUF itself, not its folder: a folder holding both the Q8_0 and the
     // F16 conversion is ambiguous to audio.cpp, which then refuses to start.

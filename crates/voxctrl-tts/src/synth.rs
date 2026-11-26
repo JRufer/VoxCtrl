@@ -147,8 +147,13 @@ pub async fn ensure_assets(config: &TtsConfig) -> Result<()> {
             Ok(())
         }
         TtsEngine::Reverb => {
-            audiocpp::ensure_audiocpp_runtime().await.context("downloading the audio.cpp runtime")?;
-            if !crate::reverb::is_reverb_ready(&config.reverb.model_dir) {
+            // No released runtime has the family, so downloading one, or the
+            // 875 MB model, would not make the engine runnable. Say so now
+            // rather than at the first request, and before any download.
+            if !crate::reverb::reverb_runtime_supported() {
+                anyhow::bail!(crate::reverb::REVERB_RUNTIME_MISSING);
+            }
+            if !crate::reverb::is_reverb_downloaded(&config.reverb.model_dir) {
                 crate::reverb::download_reverb_assets(&config.reverb.model_dir, token)
                     .await
                     .context("downloading Reverb-TTS")?;
