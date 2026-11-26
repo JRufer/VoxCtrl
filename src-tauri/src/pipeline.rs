@@ -246,9 +246,11 @@ pub fn spawn_audio_coordinator(
         let mut session_id: u64 = 0;
         let mut last_interim_sample_count: usize = 0;
         let mut last_interim_instant = std::time::Instant::now();
+        // The most samples one recording may hold (`audio.max_recording_secs`).
+        let mut recording_limit: Option<usize> = None;
 
         while let Ok(chunk) = audio_rx.recv() {
-            let is_recording = state_for_audio.is_recording();
+            let mut is_recording = state_for_audio.is_recording();
 
             if is_recording {
                 if !was_recording {
@@ -261,6 +263,7 @@ pub fn spawn_audio_coordinator(
                     state_for_audio.set_interim_in_flight(false);
 
                     let cfg = state_for_audio.config.blocking_lock().data.clone();
+                    recording_limit = cfg.audio.max_recording_samples();
                     // Early command detection only pays off when a command
                     // could match (some non-router target exists) and the
                     // local model is fast enough to transcribe mid-recording.
@@ -352,51 +355,74 @@ pub fn spawn_audio_coordinator(
                         let _ = inference_tx.send(ctx.request(accumulated_audio[range].to_vec(), true, session_id));
                     }
                 }
-            } else {
-                if was_recording {
-                    // The key is up: live text and early command detection
-                    // have nothing left to do, and a pass still running would
-                    // make the final one below wait for it. Stop them first.
-                    // The overlay keeps the words it already shows until the
-                    // final transcript replaces them, as before.
-                    voxctrl_inference::cancel_interim_passes(session_id);
-                    if is_remote_backend {
-                        if let Some(session) = remote_session.take() {
-                            let audio = std::mem::take(&mut accumulated_audio);
-                            if !audio.is_empty() {
-                                state_for_audio.set_processing(true);
-                                let state_clone = state_for_audio.clone();
-                                let text_tx_clone = text_tx.clone();
-                                let inference_tx_clone = inference_tx.clone();
-                                let ctx = ctx.clone();
 
-                                rt_handle.spawn(async move {
-                                    let res = session.finish().await;
-                                    process_remote_transcription(
-                                        res,
-                                        audio,
-                                        ctx,
-                                        session_id,
-                                        state_clone,
-                                        inference_tx_clone,
-                                        text_tx_clone,
-                                    )
-                                    .await;
-                                });
-                            }
-                        }
-                    } else {
-                        if !accumulated_audio.is_empty() {
-                            let req = ctx.request(std::mem::take(&mut accumulated_audio), false, session_id);
+                // A recording nobody stops (a toggle pressed once and
+                // forgotten, a recording started over D-Bus) would otherwise
+                // grow until memory ran out. At the limit it ends as if the
+                // shortcut had been released: what was said is transcribed
+                // below, in this same pass.
+                if recording_limit.is_some_and(|limit| accumulated_audio.len() >= limit) {
+                    let minutes = accumulated_audio.len() / 16_000 / 60;
+                    tracing::warn!("Recording stopped at its limit of {minutes} min (audio.max_recording_secs)");
+                    voxctrl_inject::show_notification("VoxCtrl", &recording_limit_notice(accumulated_audio.len()));
+                    state_for_audio.end_recording_from_audio_thread();
+                    is_recording = false;
+                }
+            }
+            if !is_recording && was_recording {
+                // The key is up: live text and early command detection
+                // have nothing left to do, and a pass still running would
+                // make the final one below wait for it. Stop them first.
+                // The overlay keeps the words it already shows until the
+                // final transcript replaces them, as before.
+                voxctrl_inference::cancel_interim_passes(session_id);
+                if is_remote_backend {
+                    if let Some(session) = remote_session.take() {
+                        let audio = std::mem::take(&mut accumulated_audio);
+                        if !audio.is_empty() {
                             state_for_audio.set_processing(true);
-                            let _ = inference_tx.send(req);
+                            let state_clone = state_for_audio.clone();
+                            let text_tx_clone = text_tx.clone();
+                            let inference_tx_clone = inference_tx.clone();
+                            let ctx = ctx.clone();
+
+                            rt_handle.spawn(async move {
+                                let res = session.finish().await;
+                                process_remote_transcription(
+                                    res,
+                                    audio,
+                                    ctx,
+                                    session_id,
+                                    state_clone,
+                                    inference_tx_clone,
+                                    text_tx_clone,
+                                )
+                                .await;
+                            });
                         }
                     }
-                    was_recording = false;
+                } else {
+                    if !accumulated_audio.is_empty() {
+                        let req = ctx.request(std::mem::take(&mut accumulated_audio), false, session_id);
+                        state_for_audio.set_processing(true);
+                        let _ = inference_tx.send(req);
+                    }
                 }
+                was_recording = false;
             }
         }
     });
+}
+
+/// What the user is told when a recording of `samples` 16 kHz samples was
+/// ended by `audio.max_recording_secs`.
+pub(crate) fn recording_limit_notice(samples: usize) -> String {
+    let secs = samples / 16_000;
+    let length = if secs >= 120 { format!("{} minutes", secs / 60) } else { format!("{secs} seconds") };
+    format!(
+        "Recording stopped at its {length} limit. What you said is being transcribed. \
+         The limit is Settings → Audio → Longest recording."
+    )
 }
 
 fn live_text_wanted_now(state: &AppState) -> bool {
@@ -496,7 +522,17 @@ pub fn spawn_text_delivery_worker(
                 continue;
             }
 
-            state.set_interim_in_flight(false);
+            // A final transcript ends its own recording's live passes (one
+            // may have been dropped from the queue to make way for it). It
+            // says nothing about a later recording's: a server's answer to
+            // the previous dictation can arrive after the next one has begun,
+            // and clearing the flag then let a second live pass start while
+            // the first was still out, so the two results were taken for each
+            // other's audio and the overlay showed words twice.
+            let recording_now = state.live_session.lock().unwrap_or_else(|e| e.into_inner()).session_id;
+            if recording_now <= output.session_id {
+                state.set_interim_in_flight(false);
+            }
             state.set_processing(false);
 
             // The final transcript replaces the live guess in the overlay,

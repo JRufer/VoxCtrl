@@ -317,6 +317,17 @@ impl AppState {
         }
     }
 
+    /// [`set_recording(false)`](Self::set_recording) for the thread that
+    /// consumes the audio channel, which must not use that one: it ends by
+    /// sending an empty chunk down the channel to wake this very thread, and
+    /// the channel is bounded, so with it full the thread would wait for ever
+    /// on room only it can make. It needs no waking; it is already here.
+    pub fn end_recording_from_audio_thread(&self) {
+        self.recording.store(false, Ordering::SeqCst);
+        self.wake_audio();
+        *self.released_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    }
+
     /// Milliseconds since the last recording stopped, for timing logs.
     pub fn ms_since_release(&self) -> Option<u128> {
         self.released_at.lock().unwrap_or_else(|e| e.into_inner()).map(|t| t.elapsed().as_millis())

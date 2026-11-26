@@ -51,7 +51,7 @@ vulkan = ["whisper-rs/vulkan"]
 # system `libonnxruntime` at runtime (nothing else in the workspace provides
 # one). Decoding uses the `tokenizers` crate with a tokenizer embedded in the
 # binary (see `assets/moonshine_tokenizer.json`).
-moonshine = ["dep:ort"]
+moonshine = ["dep:ort", "dep:voxctrl-ort"]
 
 # GPU offload for the Moonshine backend. Opt-in for the same reason as
 # voxctrl-tts's `breeze-cuda`: the CUDA execution provider needs the CUDA
@@ -69,7 +69,10 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 
 # Cross-vendor GPU offload for Moonshine, via ONNX Runtime's WebGPU execution
 # provider. This is the Windows counterpart to what `vulkan` does for
-# whisper.cpp: any modern GPU, no vendor SDK at build time, no runtime to ship.
+# whisper.cpp: any modern GPU, no vendor SDK at build time, no vendor runtime
+# for the user to install. Dawn itself is a shared library that has to ship
+# beside the binary (and on Windows, dxcompiler.dll with it); packaging does
+# that (release.yml, build_appimage.sh).
 # On Windows ORT's WebGPU EP runs on Dawn over D3D12, so it covers NVIDIA, AMD
 # and Intel alike.
 #
@@ -83,18 +86,39 @@ moonshine-coreml = ["moonshine", "ort/coreml"]
 # and shipping Microsoft's own onnxruntime.dll and DirectML.dll, which gives up
 # the self-contained binary the rest of this file is arranged around.
 #
-# `wgpu` is a tag `resolve_dist()` does understand, and
-# `x86_64-pc-windows-msvc+wgpu` is a prebuilt that exists.
+# `webgpu` is a tag `resolve_dist()` does understand, and
+# `x86_64-pc-windows-msvc+webgpu` is a prebuilt that exists.
+#
+# (That was true up to ort 2.0.0-rc.12. From rc.14 ort-sys's table, now
+# build/download/dist.tsv, does carry `directml` prebuilts for Windows, so
+# DirectML is worth another look. WebGPU stays for now: it is the same provider
+# the Linux WebGPU build uses.)
+#
+# ort is held at rc.15 or later (ONNX Runtime 1.31) because of Dawn: the Dawn
+# in ONNX Runtime 1.24 (rc.12) needed Microsoft's closed-source dxil.dll beside
+# dxcompiler.dll, and the one in 1.31 does not. release.yml refuses to build a
+# Windows installer whose Dawn still refers to dxil.dll.
+#
+# The cost is on old Linux: ort's 1.31 Linux prebuilt is built against glibc
+# 2.38 and GCC 13's libstdc++, so it does not link on Ubuntu 22.04 or Debian
+# 12. Builds there (the 22.04 release row, CI's test job, build_appimage.sh on
+# an old host) link Microsoft's own libonnxruntime.so.1 dynamically and ship
+# it; see scripts/fetch-onnxruntime-linux.sh.
 moonshine-webgpu = ["moonshine", "ort/webgpu"]
 
 # Parakeet ONNX backend via onnxruntime.
-parakeet = ["dep:ort"]
+parakeet = ["dep:ort", "dep:voxctrl-ort"]
 parakeet-cuda = ["parakeet", "ort/cuda"]
 parakeet-coreml = ["parakeet", "ort/coreml"]
 parakeet-webgpu = ["parakeet", "ort/webgpu"]
 
+# The one ONNX Runtime environment, shared with voxctrl-tts (see that crate).
+[dependencies.voxctrl-ort]
+workspace = true
+optional = true
+
 [dependencies.ort]
-version = "2.0.0-rc.12"
+version = "2.0.0-rc.15"
 optional = true
 
 [dependencies.tokenizers]

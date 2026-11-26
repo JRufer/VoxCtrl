@@ -1,6 +1,7 @@
 //! The one speech model this server runs: fetching it, loading it, and
 //! transcribing with it one request at a time.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use anyhow::{bail, Context, Result};
@@ -133,12 +134,22 @@ impl Gate {
     }
 }
 
+/// Numbers live passes across the whole process, so each can be told to stop
+/// on its own (see [`Engine::live_ticket`]). Process-wide because the record
+/// of cancelled passes the backends poll is.
+static LIVE_TICKETS: AtomicU64 = AtomicU64::new(voxctrl_inference::FIRST_SINGLE_PASS);
+
 pub struct Engine {
     /// One transcription at a time, dictations first: see [`Gate::enter`].
     /// The backends hold a single inference state, and two transcriptions
     /// sharing one GPU would only take turns anyway.
     gate: Gate,
     max_waiting: usize,
+    /// The ticket of the live pass that has the model now, or 0.
+    running_live: AtomicU64,
+    /// The newest live pass a dictation told to stop, so that pass's error
+    /// is reported as "busy" and not as a failure of the model.
+    preempted_live: AtomicU64,
     backend: Mutex<Box<dyn TranscriptionBackend>>,
     info: EngineInfo,
     /// whisper.cpp takes its language per request; the ONNX backends read
@@ -171,6 +182,8 @@ impl Engine {
         Ok(Self {
             gate: Gate::default(),
             max_waiting: MAX_WAITING_DICTATIONS,
+            running_live: AtomicU64::new(0),
+            preempted_live: AtomicU64::new(0),
             backend: Mutex::new(backend),
             info,
             whisper_language,
@@ -183,6 +196,8 @@ impl Engine {
         Self {
             gate: Gate::default(),
             max_waiting: MAX_WAITING_DICTATIONS,
+            running_live: AtomicU64::new(0),
+            preempted_live: AtomicU64::new(0),
             backend: Mutex::new(backend),
             info,
             whisper_language: None,
@@ -193,16 +208,59 @@ impl Engine {
         &self.info
     }
 
-    /// Transcribe 16 kHz mono audio. Blocking: call it off the async runtime.
-    ///
-    /// `language` is the request's own choice and wins over the configured one;
-    /// `prompt` is the client's vocabulary hint.
+    /// A number for a live pass about to be made, by which it can be stopped:
+    /// `voxctrl_inference::cancel_interim_pass(ticket)` ends it between two
+    /// steps of the model. The HTTP layer does that when the client that asked
+    /// for the pass has hung up, so the server does not finish work nobody is
+    /// waiting for while a dictation queues behind it.
+    pub fn live_ticket(&self) -> u64 {
+        LIVE_TICKETS.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// [`transcribe_as`](Self::transcribe_as) with a ticket of its own for a
+    /// live pass. For tests, which have no client that could hang up.
+    #[cfg(test)]
     pub fn transcribe(
         &self,
         audio: Vec<f32>,
         language: Option<String>,
         prompt: Option<String>,
         purpose: Purpose,
+    ) -> Result<TranscriptionResult, TranscribeError> {
+        let ticket = (purpose == Purpose::Live).then(|| self.live_ticket());
+        self.transcribe_as(audio, language, prompt, purpose, ticket)
+    }
+
+    /// Transcribe 16 kHz mono audio. Blocking: call it off the async runtime.
+    ///
+    /// `language` is the request's own choice and wins over the configured one;
+    /// `prompt` is the client's vocabulary hint. `live_ticket` is the number
+    /// the caller took from [`live_ticket`](Self::live_ticket) to be able to
+    /// stop a live pass; it is ignored for a dictation, which nothing may stop.
+    pub fn transcribe_as(
+        &self,
+        audio: Vec<f32>,
+        language: Option<String>,
+        prompt: Option<String>,
+        purpose: Purpose,
+        live_ticket: Option<u64>,
+    ) -> Result<TranscriptionResult, TranscribeError> {
+        let live_ticket = live_ticket.filter(|_| purpose == Purpose::Live);
+        let result = self.run(audio, language, prompt, purpose, live_ticket);
+        // The pass is over, so nothing will ask again whether it was stopped.
+        if let Some(ticket) = live_ticket {
+            voxctrl_inference::forget_interim_pass(ticket);
+        }
+        result
+    }
+
+    fn run(
+        &self,
+        audio: Vec<f32>,
+        language: Option<String>,
+        prompt: Option<String>,
+        purpose: Purpose,
+        live_ticket: Option<u64>,
     ) -> Result<TranscriptionResult, TranscribeError> {
         let duration_ms = (audio.len() / 16) as u32;
         let language = language.as_deref().and_then(normalize_language).or_else(|| self.whisper_language.clone());
@@ -223,13 +281,45 @@ impl Engine {
             language,
             word_timestamps: false,
             initial_prompt: prompt.filter(|p| !p.trim().is_empty()),
-            interim_session: None,
+            // What lets a live pass be stopped part-way. `None` for a dictation.
+            interim_session: live_ticket,
         };
+        if purpose == Purpose::Dictation {
+            // Someone has finished speaking. A live pass that has the model
+            // only feeds an overlay, and its result is about to be replaced
+            // (often by this very dictation): stop it now, so this request
+            // waits for one step of the model and not for the whole pass.
+            let running = self.running_live.load(Ordering::SeqCst);
+            if running != 0 {
+                self.preempted_live.fetch_max(running, Ordering::SeqCst);
+                voxctrl_inference::cancel_interim_pass(running);
+            }
+        }
         let _turn = self.gate.enter(purpose, self.max_waiting)?;
         // A panic in an earlier request must not take the server down for
         // every later one, so a poisoned lock is recovered rather than unwrapped.
         let backend = self.backend.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        backend.transcribe(&request).map_err(TranscribeError::Failed)
+        self.running_live.store(live_ticket.unwrap_or(0), Ordering::SeqCst);
+        let outcome = backend.transcribe(&request);
+        self.running_live.store(0, Ordering::SeqCst);
+        let mut result = outcome.map_err(|e| match live_ticket {
+            // Stopped to let a dictation through: routine, and to the client
+            // the same as having found the model busy.
+            Some(ticket) if ticket <= self.preempted_live.load(Ordering::SeqCst) => {
+                TranscribeError::Busy(Purpose::Live)
+            }
+            _ => TranscribeError::Failed(e),
+        })?;
+        // The server otherwise serves the model's words untouched, and leaves
+        // post-processing to the client. A decoder stuck on one word is the
+        // exception: it is the model's fault, not a matter of the client's
+        // taste, and a client that is not the VoxCtrl app has no guard for it.
+        if let std::borrow::Cow::Owned(fixed) =
+            voxctrl_inference::finalize::without_repetition_loops(&result.text, "transcript")
+        {
+            result.text = fixed;
+        }
+        Ok(result)
     }
 
     /// A smaller queue, for tests that fill it.
@@ -378,6 +468,58 @@ pub(crate) mod test_support {
         let info = EngineInfo { backend: "fake".into(), model: "test".into(), language: "auto".into() };
         (Engine::from_backend(Box::new(backend), info), seen)
     }
+
+    /// A backend whose live passes run until they are told to stop, as a real
+    /// one does between steps of its model. Dictations return at once.
+    pub struct StoppableBackend {
+        /// Told when a live pass has the model...
+        pub started: std::sync::mpsc::Sender<()>,
+        /// ...and when it has been stopped.
+        pub stopped: std::sync::mpsc::Sender<()>,
+    }
+
+    impl TranscriptionBackend for StoppableBackend {
+        fn name(&self) -> &str {
+            "stoppable"
+        }
+        fn load(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn transcribe(&self, req: &TranscribeRequest) -> Result<TranscriptionResult> {
+            if let Some(ticket) = req.interim_session {
+                let _ = self.started.send(());
+                let waited = std::time::Instant::now();
+                while !voxctrl_inference::interim_cancelled(ticket) {
+                    assert!(waited.elapsed() < std::time::Duration::from_secs(10), "the live pass was never stopped");
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                let _ = self.stopped.send(());
+                bail!("live pass cancelled");
+            }
+            Ok(TranscriptionResult {
+                text: "the dictation".into(),
+                language: "en".into(),
+                language_probability: 1.0,
+                duration_ms: 0,
+                inference_ms: 0,
+                word_timestamps: None,
+            })
+        }
+        fn unload(&mut self) {}
+        fn is_loaded(&self) -> bool {
+            true
+        }
+    }
+
+    /// An engine on a [`StoppableBackend`], with its "started" and "stopped"
+    /// signals.
+    pub fn stoppable_engine() -> (Engine, std::sync::mpsc::Receiver<()>, std::sync::mpsc::Receiver<()>) {
+        let (started_tx, started) = std::sync::mpsc::channel();
+        let (stopped_tx, stopped) = std::sync::mpsc::channel();
+        let backend = StoppableBackend { started: started_tx, stopped: stopped_tx };
+        let info = EngineInfo { backend: "stoppable".into(), model: "test".into(), language: "auto".into() };
+        (Engine::from_backend(Box::new(backend), info), started, stopped)
+    }
 }
 
 #[cfg(test)]
@@ -413,6 +555,14 @@ mod tests {
         assert_eq!(seen.samples, 16_000);
         assert_eq!(seen.language.as_deref(), Some("en"));
         assert_eq!(seen.prompt.as_deref(), Some("VoxCtrl, Parakeet"));
+    }
+
+    #[test]
+    fn a_looped_transcript_is_served_once() {
+        let looped = format!("call me {}back", "right ".repeat(50));
+        let (engine, _) = fake_engine(&looped, false);
+        let out = engine.transcribe(vec![0.2; 16_000], None, None, Purpose::Dictation).unwrap();
+        assert_eq!(out.text, "call me right back");
     }
 
     #[test]
@@ -559,6 +709,47 @@ mod tests {
         assert_eq!(done, ["2 samples", "3 samples"]);
         let state = engine.gate.state.lock().unwrap();
         assert!(!state.busy && state.waiting == 0);
+    }
+
+    #[test]
+    fn a_dictation_stops_the_live_pass_that_has_the_model() {
+        let (engine, started, _stopped) = super::test_support::stoppable_engine();
+        let engine = Arc::new(engine);
+        let live = {
+            let engine = engine.clone();
+            std::thread::spawn(move || engine.transcribe(speech(1600), None, None, Purpose::Live))
+        };
+        started.recv().unwrap();
+
+        // The live pass would run for ever; the dictation must not wait for it.
+        let out = engine.transcribe(speech(1600), None, None, Purpose::Dictation).unwrap();
+        assert_eq!(out.text, "the dictation");
+
+        // To its client the stopped pass looks like any skipped one.
+        let live = live.join().unwrap();
+        assert!(matches!(live, Err(TranscribeError::Busy(Purpose::Live))), "{live:?}");
+        let state = engine.gate.state.lock().unwrap();
+        assert!(!state.busy && state.waiting == 0);
+    }
+
+    #[test]
+    fn a_live_pass_stops_when_its_ticket_is_cancelled() {
+        let (engine, started, _stopped) = super::test_support::stoppable_engine();
+        let engine = Arc::new(engine);
+        let ticket = engine.live_ticket();
+        let live = {
+            let engine = engine.clone();
+            std::thread::spawn(move || engine.transcribe_as(speech(1600), None, None, Purpose::Live, Some(ticket)))
+        };
+        started.recv().unwrap();
+        // What the HTTP layer does when the client has hung up.
+        voxctrl_inference::cancel_interim_pass(ticket);
+        // Nobody preempted it, so this is the model's own error, not "busy".
+        let live = live.join().unwrap();
+        assert!(matches!(live, Err(TranscribeError::Failed(_))), "{live:?}");
+        // The model is free for the next request, and the ticket is spent.
+        assert_eq!(engine.transcribe(speech(1600), None, None, Purpose::Dictation).unwrap().text, "the dictation");
+        assert!(!voxctrl_inference::interim_cancelled(ticket));
     }
 
     #[test]

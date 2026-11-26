@@ -262,6 +262,21 @@ pub fn run() {
         let _ = registry.try_init();
     }
 
+    // A panic on a background thread ends that thread and nothing else: the
+    // app stays up and looks healthy while, say, nothing is transcribed any
+    // more. Its message went only to stderr, which nobody sees for an app
+    // started from a menu. Put where it happened in the log. The location
+    // only: a panic message can quote the data that caused it.
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let at = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "an unknown location".to_string());
+        tracing::error!("Thread '{}' panicked at {at}", std::thread::current().name().unwrap_or("unnamed"));
+        default_panic_hook(info);
+    }));
+
     // First line in every log and every bug report: which build this is. A
     // report or a reproduction attempt against an unidentified build has
     // repeatedly turned out to be against one that predated the change in

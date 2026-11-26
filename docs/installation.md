@@ -116,6 +116,14 @@ Windows builds are distributed as self-contained NSIS setup installers:
 2. Run the installer (if prompted by SmartScreen, click **More info** → **Run anyway**).
 3. Complete the installer and launch VoxCtrl. See **[Windows Testing Guide](./windows_testing.md)** for a detailed walkthrough.
 
+The installer places two GPU runtime libraries next to `voxctrl.exe`:
+`webgpu_dawn.dll` (Dawn) and `dxcompiler.dll` (DirectX Shader Compiler). Both
+are open source; their licence texts are in the `licenses` folder beside them,
+and Settings → About credits them. Do not delete them: without
+`webgpu_dawn.dll` the app cannot start, and without `dxcompiler.dll` it runs
+Moonshine and Parakeet on the CPU. The installer does not include Microsoft's
+closed-source `dxil.dll`, and VoxCtrl does not need it.
+
 ---
 
 ### Just run it

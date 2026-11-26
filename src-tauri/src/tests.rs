@@ -963,6 +963,28 @@ fn losing_the_server_notifies_once_and_says_what_happens_next() {
 }
 
 #[test]
+fn one_failed_check_of_a_working_server_is_not_an_outage() {
+    use crate::remote_monitor::check_failure_counts;
+
+    // The server was answering: one lost check gets a second look.
+    assert!(!check_failure_counts(1, true));
+    assert!(check_failure_counts(2, true));
+    // It was not known to be working (startup, or already unreachable): a
+    // server that is down is reported at the first failure.
+    assert!(check_failure_counts(1, false));
+    assert!(check_failure_counts(5, false));
+}
+
+#[test]
+fn a_recording_that_hits_its_limit_says_how_long_it_was_and_where_the_limit_is() {
+    let ten_minutes = crate::pipeline::recording_limit_notice(600 * 16_000);
+    assert!(ten_minutes.starts_with("Recording stopped at its 10 minutes limit."), "{ten_minutes}");
+    assert!(ten_minutes.contains("is being transcribed"));
+    assert!(ten_minutes.contains("Settings → Audio → Longest recording"));
+    assert!(crate::pipeline::recording_limit_notice(90 * 16_000).contains("90 seconds limit"));
+}
+
+#[test]
 fn the_status_payload_names_the_fallback_engine_and_its_model() {
     use crate::remote_monitor::{fallback_label, RemoteStatusPayload};
     use voxctrl_config::FallbackChoice;

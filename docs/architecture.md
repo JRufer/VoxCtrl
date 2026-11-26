@@ -44,6 +44,7 @@ VoxCtrl/
     ├── voxctrl-audio/      # Microphone capture, resampling, VU meter
     ├── voxctrl-hotkeys/    # Global shortcuts (XDG portal / evdev / Windows hook / D-Bus)
     ├── voxctrl-inference/  # whisper.cpp/Moonshine/Parakeet/Remote STT + post-processing
+    ├── voxctrl-ort/        # The one ONNX Runtime environment the ONNX engines (Moonshine, Parakeet, Inflect-Micro) share
     ├── voxctrl-routing/    # OutputTarget + HotkeyBinding data models, 11-target router
     ├── voxctrl-inject/     # Text delivery: paste (with clipboard restore) or type; key sending per platform
     ├── voxctrl-clipboard/  # Full-format clipboard backup/restore (Windows / X11 / Wayland)

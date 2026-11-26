@@ -357,9 +357,168 @@ pub fn normalize_brand_name(text: &str) -> Cow<'_, str> {
     })
 }
 
+// ── Repetition loops ──────────────────────────────────────────────────────────
+
+/// One word said this many times in a row is treated as a decoder loop.
+///
+/// People do repeat a word ("no, no, no", "very very very"), so the bar sits
+/// above what speech produces and well below what a stuck decoder does: a
+/// loop runs until a token limit stops it, which is dozens of copies.
+pub const LOOP_MIN_WORD_REPEATS: usize = 5;
+/// A phrase of two to [`LOOP_MAX_PHRASE_WORDS`] words said this many times in
+/// a row is treated as a decoder loop.
+pub const LOOP_MIN_PHRASE_REPEATS: usize = 4;
+/// The longest phrase looked for. Loops longer than this are rare, and each
+/// extra length costs another pass over the transcript.
+pub const LOOP_MAX_PHRASE_WORDS: usize = 6;
+
+/// How a word compares when looking for repeats: case and the punctuation
+/// around it are ignored ("Okay," and "okay" are the same word). A token that
+/// is only punctuation compares as itself.
+fn loop_key(word: &str) -> String {
+    let core = word.trim_matches(|c: char| !c.is_alphanumeric());
+    if core.is_empty() {
+        word.to_string()
+    } else {
+        core.to_lowercase()
+    }
+}
+
+/// The shortest phrase starting at `at` that repeats often enough to be a
+/// loop, as `(phrase length in words, times it occurs in a row)`.
+fn loop_at(keys: &[String], at: usize) -> Option<(usize, usize)> {
+    for len in 1..=LOOP_MAX_PHRASE_WORDS {
+        if at + len > keys.len() {
+            break;
+        }
+        let phrase = &keys[at..at + len];
+        let mut repeats = 1;
+        while keys.get(at + repeats * len..at + (repeats + 1) * len) == Some(phrase) {
+            repeats += 1;
+        }
+        let needed = if len == 1 { LOOP_MIN_WORD_REPEATS } else { LOOP_MIN_PHRASE_REPEATS };
+        if repeats >= needed {
+            return Some((len, repeats));
+        }
+    }
+    None
+}
+
+/// Whether `text` contains a word or short phrase repeated so many times in a
+/// row that a model must have produced it, not a person. See
+/// [`collapse_repetition_loops`].
+pub fn has_repetition_loop(text: &str) -> bool {
+    let keys: Vec<String> = text.split_whitespace().map(loop_key).collect();
+    (0..keys.len()).any(|at| loop_at(&keys, at).is_some())
+}
+
+/// Replace each repetition loop in `text` with a single copy of what it
+/// repeats: "send it to the the the the the the team" becomes "send it to the
+/// team".
+///
+/// Speech models and the cleanup model all decode one token at a time, and
+/// each can fall into a state where the likeliest next token is the one it
+/// just produced. Nothing inside them notices; the output is one word, or one
+/// short phrase, over and over until a length limit ends it. This is the
+/// last line of defence, applied to every transcript whatever produced it.
+///
+/// A loop is one word [`LOOP_MIN_WORD_REPEATS`] or more times in a row, or a
+/// phrase of up to [`LOOP_MAX_PHRASE_WORDS`] words [`LOOP_MIN_PHRASE_REPEATS`]
+/// or more times. Shorter runs are left alone: they are things people say.
+///
+/// Borrows when there is no loop, which is almost every transcript. When
+/// there is one, the words are joined back with single spaces.
+pub fn collapse_repetition_loops(text: &str) -> Cow<'_, str> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let keys: Vec<String> = words.iter().map(|w| loop_key(w)).collect();
+
+    let mut kept: Vec<&str> = Vec::new();
+    let mut changed = false;
+    let mut at = 0;
+    while at < words.len() {
+        match loop_at(&keys, at) {
+            Some((len, repeats)) => {
+                // The last copy, not the first: it carries the punctuation
+                // that ends the run ("okay okay okay okay okay." → "okay.").
+                let last = at + (repeats - 1) * len;
+                kept.extend_from_slice(&words[last..last + len]);
+                at += repeats * len;
+                changed = true;
+            }
+            None => {
+                kept.push(words[at]);
+                at += 1;
+            }
+        }
+    }
+
+    if changed {
+        Cow::Owned(kept.join(" "))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Repetition loops ──────────────────────────────────────────────────────
+
+    #[test]
+    fn a_word_looped_by_a_decoder_is_collapsed_to_one() {
+        let looped = format!("send it to {}team", "the ".repeat(40));
+        assert_eq!(collapse_repetition_loops(&looped), "send it to the team");
+        assert!(has_repetition_loop(&looped));
+    }
+
+    #[test]
+    fn a_looped_phrase_is_collapsed_to_one() {
+        let looped = "I think so. I think so. I think so. I think so. And then we left.";
+        assert_eq!(collapse_repetition_loops(looped), "I think so. And then we left.");
+        let two = "thank you thank you thank you thank you";
+        assert_eq!(collapse_repetition_loops(two), "thank you");
+    }
+
+    #[test]
+    fn what_people_actually_say_is_left_alone() {
+        for said in [
+            "no no no no, that is not what I meant",
+            "it was very very very very good",
+            "ha ha ha ha",
+            "bye bye, bye bye, see you",
+            "that that is is that that is not is not",
+            "one two three one two three one two three",
+            "",
+        ] {
+            assert!(matches!(collapse_repetition_loops(said), Cow::Borrowed(_)), "changed: {said}");
+            assert!(!has_repetition_loop(said), "flagged: {said}");
+        }
+    }
+
+    #[test]
+    fn case_and_punctuation_do_not_hide_a_loop() {
+        assert_eq!(collapse_repetition_loops("Okay, okay okay. Okay okay OKAY! Let's go."), "OKAY! Let's go.");
+    }
+
+    #[test]
+    fn a_transcript_without_a_loop_keeps_its_spacing() {
+        let said = "first line\nsecond  line";
+        assert_eq!(collapse_repetition_loops(said), said);
+    }
+
+    #[test]
+    fn several_loops_in_one_transcript_are_each_collapsed() {
+        let looped = format!("{}and then {}done", "so ".repeat(9), "we went ".repeat(6));
+        assert_eq!(collapse_repetition_loops(&looped), "so and then we went done");
+    }
+
+    #[test]
+    fn collapsing_is_idempotent() {
+        let looped = format!("start {}end", "loop ".repeat(30));
+        let once = collapse_repetition_loops(&looped).into_owned();
+        assert_eq!(collapse_repetition_loops(&once), once);
+    }
 
     #[test]
     fn levenshtein_identical_strings_is_zero() {

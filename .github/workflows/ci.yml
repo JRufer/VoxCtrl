@@ -230,12 +230,25 @@ jobs:
       # — which every server refuses, so no key ever arrived — with the whole
       # suite passing. Without a display here those tests silently skip and the
       # gap reopens.
+      # ort's prebuilt ONNX Runtime 1.31 needs glibc 2.38 and does not link on
+      # this runner; link Microsoft's own libonnxruntime.so instead, as the
+      # 22.04 release build does (scripts/fetch-onnxruntime-linux.sh).
+      - name: ONNX Runtime shared library
+        run: ./scripts/fetch-onnxruntime-linux.sh "$RUNNER_TEMP/onnxruntime"
+
       - name: cargo test
         run: xvfb-run -a cargo test --workspace
 
       # Dictated text must never reach a log field (docs/privacy.md).
       - name: No dictated text in logs
         run: ./scripts/check_log_privacy.sh
+
+      # The Docker image and the AUR source packages build with `--locked`,
+      # which refuses a Cargo.lock that does not match the manifests. Nothing
+      # else here uses `--locked`, so a lockfile left behind by a version bump
+      # (0.9.21 shipped one) went unnoticed until those builds failed.
+      - name: Cargo.lock is up to date
+        run: cargo metadata --locked --format-version 1 > /dev/null
 
   # ── Unit tests (Windows) ──────────────────────────────────────────────────────
   #

@@ -91,6 +91,8 @@ export interface AudioConfig {
   noise_suppression: boolean;
   gain: number;
   dynamic_stream: boolean;
+  /** The longest one recording may run, in seconds; 0 for no limit. */
+  max_recording_secs: number;
 }
 
 export interface UiConfig {
@@ -304,6 +306,7 @@ const defaultConfig: AppConfig = {
     noise_suppression: false,
     gain: 1.0,
     dynamic_stream: true,
+    max_recording_secs: 600,
   },
   ui: {
     show_overlay: true,

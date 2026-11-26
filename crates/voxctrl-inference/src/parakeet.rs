@@ -182,58 +182,10 @@ pub async fn download_model(size: &str, model_dir: &str) -> Result<()> {
         }
         let url = format!("{base_url}/{remote}");
         info!("Downloading Parakeet file: {url}");
-        download_file(&url, &path).await?;
+        crate::util::download_file(&url, &path).await?;
     }
 
     info!("Parakeet '{size}' model ready in {}", dir.display());
-    Ok(())
-}
-
-/// Stream `url` to `path` through a `.part` file, renamed into place only once
-/// the whole body has arrived.
-///
-/// Streaming keeps memory flat: the encoders are 400–660 MB, and buffering one
-/// with `Response::bytes()` held all of it in RAM before a byte reached disk.
-/// When the server sends a length, a body that ends short is rejected rather
-/// than renamed into place, where `is_model_downloaded` would later have taken
-/// it for a finished file. A failed attempt removes its `.part` file.
-async fn download_file(url: &str, path: &Path) -> Result<()> {
-    let tmp = path.with_extension("part");
-    let result = stream_to(url, &tmp).await;
-    if result.is_err() {
-        let _ = tokio::fs::remove_file(&tmp).await;
-    }
-    result?;
-    tokio::fs::rename(&tmp, path).await.with_context(|| format!("finalize {}", path.display()))
-}
-
-async fn stream_to(url: &str, tmp: &Path) -> Result<()> {
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
-
-    let response = reqwest::get(url)
-        .await
-        .with_context(|| format!("request {url}"))?
-        .error_for_status()
-        .with_context(|| format!("fetch {url}"))?;
-    let expected = response.content_length();
-
-    let mut file = tokio::fs::File::create(tmp).await.with_context(|| format!("create {}", tmp.display()))?;
-    let mut written: u64 = 0;
-    let mut body = response.bytes_stream();
-    while let Some(chunk) = body.next().await {
-        let chunk = chunk.with_context(|| format!("read {url}"))?;
-        file.write_all(&chunk).await.with_context(|| format!("write {}", tmp.display()))?;
-        written += chunk.len() as u64;
-    }
-    file.flush().await.with_context(|| format!("flush {}", tmp.display()))?;
-    file.sync_all().await.with_context(|| format!("sync {}", tmp.display()))?;
-
-    if let Some(expected) = expected {
-        if written != expected {
-            bail!("download of {url} ended early: got {written} of {expected} bytes");
-        }
-    }
     Ok(())
 }
 
@@ -317,7 +269,8 @@ impl ParakeetBackend {
     }
 
     fn build_session(path: &Path, use_gpu: bool) -> Result<Session> {
-        let builder = Session::builder()
+        let env = voxctrl_ort::environment().map_err(|e| anyhow!("ONNX Runtime environment: {e}"))?;
+        let builder = Session::builder(env)
             .map_err(|e| anyhow!("ort session builder: {e}"))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!("set optimization level: {e}"))?
@@ -464,7 +417,7 @@ impl TranscriptionBackend for ParakeetBackend {
         }
         let mut parts: Vec<String> = Vec::with_capacity(ranges.len());
         for range in ranges {
-            let part = run_inference(state, &req.audio[range])?;
+            let part = run_inference(state, &req.audio[range], req.interim_session)?;
             let part = part.trim();
             if !part.is_empty() {
                 parts.push(part.to_string());
@@ -586,7 +539,7 @@ pub(crate) fn chunk_ranges(audio: &[f32]) -> Vec<Range<usize>> {
     ranges
 }
 
-fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
+fn run_inference(state: &mut Loaded, audio: &[f32], live_session: Option<u64>) -> Result<String> {
     let n_samples = audio.len();
 
     // ── 1. Preprocessor: Waveform → 128-channel Mel Spectrogram ──────────────
@@ -620,7 +573,9 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
     let enc_feed: Vec<(&str, SessionInputValue)> =
         vec![("audio_signal", audio_signal_tensor.into()), ("length", length_tensor.into())];
 
+    crate::stop_if_cancelled(live_session)?;
     let enc_out = state.encoder.run(enc_feed).context("encoder run")?;
+    crate::stop_if_cancelled(live_session)?;
     let (enc_shape, enc_data) = enc_out[0].try_extract_tensor::<f32>().context("extract encoder outputs")?;
 
     // Determine time dimension T'
@@ -655,7 +610,17 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
 
     let mut enc_frame = vec![0.0f32; ENCODER_DIM];
 
+    // Loop guard (see `decode_guard`): the run of identical tokens on the
+    // current frame, and the decoder state as it was after the first of them.
+    let mut run = crate::decode_guard::FrameRun::default();
+    let mut run_state: (Vec<f32>, Vec<f32>) = (Vec::new(), Vec::new());
+    let mut stuck_frames = 0usize;
+
     while t < t_prime {
+        // A live pass whose recording has ended stops here, so the final pass
+        // is not left waiting behind it.
+        crate::stop_if_cancelled(live_session)?;
+
         // Extract encoder frame slice for time index t
         if channels_first {
             for c in 0..ENCODER_DIM {
@@ -667,6 +632,7 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
         }
 
         let mut tokens_in_frame = 0;
+        run.reset();
 
         loop {
             let enc_tensor = Tensor::from_array((enc_slice_shape.clone(), enc_frame.clone()))
@@ -722,6 +688,23 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
                 state_1 = next_s1.to_vec();
                 state_2 = next_s2.to_vec();
 
+                if run.push(best_token) {
+                    run_state = (state_1.clone(), state_2.clone());
+                }
+                // The same token again and again without once asking to move
+                // on: the decoder is stuck on this frame. Keep the first copy,
+                // put the decoder back where it stood after it, and step past
+                // the frame, rather than emit copies up to the per-frame limit
+                // and carry the looped state into the frames that follow.
+                if let Some(excess) = run.stuck_excess() {
+                    emitted_tokens.truncate(emitted_tokens.len() - excess);
+                    state_1.clone_from(&run_state.0);
+                    state_2.clone_from(&run_state.1);
+                    stuck_frames += 1;
+                    t += 1;
+                    break;
+                }
+
                 tokens_in_frame += 1;
                 if best_duration > 0 || tokens_in_frame >= MAX_TOKENS_PER_STEP {
                     t += best_duration.max(1);
@@ -732,6 +715,13 @@ fn run_inference(state: &mut Loaded, audio: &[f32]) -> Result<String> {
                 break;
             }
         }
+    }
+
+    if stuck_frames > 0 {
+        // A count, never the words (docs/privacy.md).
+        tracing::warn!(
+            "Parakeet: the decoder repeated one token on {stuck_frames} frame(s) of {t_prime}; the copies were dropped"
+        );
     }
 
     Ok(detokenize(&emitted_tokens, &state.vocab))
