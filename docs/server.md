@@ -398,6 +398,21 @@ repository root:
 docker build -f packaging/docker/Dockerfile -t voxctrl-server .
 ```
 
+#### With Reverb-TTS
+
+No audio.cpp release has the `reverb` family yet, so the published image cannot
+run Reverb-TTS. A self-built one can: set `VOXCTRL_BUILD_AUDIOCPP_REF=reverb-tts`
+in `.env` (or `--build-arg AUDIOCPP_REF=reverb-tts` with `docker build`). The
+image then builds `audiocpp_server` from that branch of JRufer/audio.cpp, with
+every model family, on the same Ubuntu base it runs on, and puts it in
+`/usr/local/lib/voxctrl/`. The server uses it in place of the runtime it would
+download, so `VOXCTRL_SERVER_AUDIOCPP_SERVER` stays blank.
+
+The audio.cpp compile adds tens of minutes and needs memory:
+`VOXCTRL_BUILD_AUDIOCPP_JOBS` (default 2) sets the parallel compiles, each up to
+4–5 GB. With `VOXCTRL_BUILD_FEATURES=vulkan` it is a Vulkan build too, so
+Reverb-TTS can use the GPU (`[tts.reverb] gpu = true`).
+
 ---
 
 ## Install as a system service
@@ -779,7 +794,7 @@ nothing on a server.
 | `espeak` | Nothing. Needs `espeak-ng` installed; the Docker image includes it | none |
 | `pocket_tts` | The audio.cpp runtime, the Pocket-TTS model and its five built-in voices | `[tts.pocket_tts] voice` |
 | `kitten_tts_2` | The audio.cpp runtime and the Kitten TTS 2 model | `[tts.kitten_tts_2] voice` |
-| `reverb` | The Reverb-TTS model. Needs `[tts] audiocpp_server` (or `VOXCTRL_SERVER_AUDIOCPP_SERVER`) pointing at an audio.cpp build with the `reverb` family, since no release has it yet | `[tts.reverb] voice` |
+| `reverb` | The Reverb-TTS model. Needs an audio.cpp build with the `reverb` family, since no release has it yet: a self-built image with it ([With Reverb-TTS](#with-reverb-tts)), or `[tts] audiocpp_server` (`VOXCTRL_SERVER_AUDIOCPP_SERVER`) | `[tts.reverb] voice` |
 | `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
 | `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
 
@@ -1116,7 +1131,7 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_TTS_ENGINE` | `tts.engine` | `piper` |
 | `VOXCTRL_SERVER_TTS_ENGINES` | `speech.engines`: every engine clients may choose between, comma-separated. The first is the default unless `VOXCTRL_SERVER_TTS_ENGINE` is set | `kitten_tts_2,piper` |
 | `VOXCTRL_SERVER_TTS_VOICE` | The default voice of the default engine (`piper`, `pocket_tts`, `kitten_tts_2`, `reverb`) | `en-us-lessac-medium` |
-| `VOXCTRL_SERVER_AUDIOCPP_SERVER` | `tts.audiocpp_server`: an `audiocpp_server` binary to use instead of the managed one. In Docker, mount it into the container | `/opt/audiocpp/audiocpp_server` |
+| `VOXCTRL_SERVER_AUDIOCPP_SERVER` | `tts.audiocpp_server`: an `audiocpp_server` binary to use instead of the one in the image or the managed one. In Docker, mount it into the container; it must be built against the image's glibc | `/opt/audiocpp/audiocpp_server` |
 | `VOXCTRL_SERVER_LLM` | `llm.enabled` | `true` |
 | `VOXCTRL_SERVER_LLM_ENDPOINT` | `llm.endpoint` | `http://host.docker.internal:11434` |
 | `VOXCTRL_SERVER_LLM_MODEL` | `llm.model` | `llama3.2:1b` |
