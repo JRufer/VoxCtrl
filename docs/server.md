@@ -783,6 +783,12 @@ nothing on a server.
 | `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
 | `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
 
+Every engine the server offers is downloaded at startup, before it starts
+listening, so a client's first request never waits on a download. If one cannot
+be made ready the server does not start, and says why. For `reverb` that
+includes an audio.cpp runtime without the `reverb` family: the server stops
+before downloading the model, rather than failing at the first request.
+
 Inflect-Micro is not available on the server yet. The voice settings above are
 only each engine's **default**, used when a client picks none;
 `VOXCTRL_SERVER_TTS_VOICE` sets it for the default engine. For Piper, clients
