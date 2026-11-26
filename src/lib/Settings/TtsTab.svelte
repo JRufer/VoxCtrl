@@ -31,6 +31,8 @@
       ? { backend: "vulkan", on: cfg.tts.vox_cpm_2.gpu }
       : cfg.tts.engine === "kitten_tts_2"
       ? { backend: "vulkan", on: cfg.tts.kitten_tts_2.gpu }
+      : cfg.tts.engine === "reverb"
+      ? { backend: "vulkan", on: cfg.tts.reverb.gpu }
       : null,
   );
   function setTtsGpu(v: boolean) {
@@ -39,6 +41,7 @@
     else if (cfg.tts.engine === "breeze_tts_2") cfg.tts.breeze_tts_2.gpu = v;
     else if (cfg.tts.engine === "vox_cpm_2") cfg.tts.vox_cpm_2.gpu = v;
     else if (cfg.tts.engine === "kitten_tts_2") cfg.tts.kitten_tts_2.gpu = v;
+    else if (cfg.tts.engine === "reverb") cfg.tts.reverb.gpu = v;
     markDirty();
   }
 
@@ -210,6 +213,9 @@
     } else if (cfg.tts.engine === "kitten_tts_2") {
       engineName = "Kitten TTS 2";
       voice = null;
+    } else if (cfg.tts.engine === "reverb") {
+      engineName = "Reverb";
+      voice = null;
     } else if (cfg.tts.engine === "inflect_micro") {
       engineName = "Inflect Micro";
       voice = null;
@@ -271,6 +277,13 @@
       if (!kittenReady) return "Download the model first.";
       if (kittenCloneNeedsClip()) return "Pick a voice clip to clone first.";
     }
+    if (cfg.tts.engine === "reverb") {
+      if (!reverbRuntimeOk) return "Set an audio.cpp server that has Reverb-TTS first.";
+      if (reverbChecking) return "Checking local model files...";
+      if (reverbDownloading) return "Downloading the model...";
+      if (!reverbReady) return "Download the model first.";
+      if (reverbCloneNeedsClip()) return "Pick a voice clip to clone first.";
+    }
     return null;
   }
 
@@ -294,6 +307,9 @@
     if (cfg.tts.engine === "kitten_tts_2") {
       return kittenChecking || kittenDownloading || !kittenReady || kittenCloneNeedsClip();
     }
+    if (cfg.tts.engine === "reverb") {
+      return !reverbRuntimeOk || reverbChecking || reverbDownloading || !reverbReady || reverbCloneNeedsClip();
+    }
     if (cfg.tts.engine === "inflect_micro") {
       return inflectChecking || inflectDownloading || !inflectReady || !inflectAvailable;
     }
@@ -309,6 +325,7 @@
     if (cfg.tts.engine === "vox_cpm_2") return cfg.tts.vox_cpm_2.voice_dir || "";
     if (cfg.tts.engine === "breeze_tts_2") return cfg.tts.breeze_tts_2.voice_dir || "";
     if (cfg.tts.engine === "kitten_tts_2") return cfg.tts.kitten_tts_2.voice_dir || "";
+    if (cfg.tts.engine === "reverb") return cfg.tts.reverb.voice_dir || "";
     return cfg.tts.pocket_tts.voice_dir || "";
   }
 
@@ -336,6 +353,15 @@
       (!cfg.tts.kitten_tts_2.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.kitten_tts_2.cloned_voice))
     ) {
       cfg.tts.kitten_tts_2.cloned_voice = firstVoice;
+      changed = true;
+    }
+
+    // Reverb-TTS: the same, only when cloning.
+    if (
+      cfg.tts.reverb.voice_mode === "clone" &&
+      (!cfg.tts.reverb.cloned_voice || !pocketTtsVoices.some(v => v.id === cfg.tts.reverb.cloned_voice))
+    ) {
+      cfg.tts.reverb.cloned_voice = firstVoice;
       changed = true;
     }
 
@@ -415,7 +441,7 @@
   // ── Model memory ───────────────────────────────────────────────────────────
   //
   // Only the neural engines (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2,
-  // Inflect-Micro-v2) keep weights resident; Piper and eSpeak shell out to a
+  // Reverb-TTS, Inflect-Micro-v2) keep weights resident; Piper and eSpeak shell out to a
   // process per utterance and hold nothing between them.
 
   const memoryModeOptions = [
@@ -445,6 +471,7 @@
 
   const engineOptions = [
     { value: "kitten_tts_2", label: "Kitten TTS 2 (neural, multilingual, voice cloning)" },
+    { value: "reverb", label: "Reverb-TTS (neural, 7 languages, voice cloning, fast)" },
     { value: "vox_cpm_2", label: "VoxCPM2 (neural, voice cloning & design)" },
     { value: "breeze_tts_2", label: "Breeze-TTS-2 (neural, voice design)" },
     { value: "pocket_tts", label: "Pocket-TTS (neural, voice cloning)" },
@@ -850,6 +877,96 @@
     }
   }
 
+  // ── Reverb-TTS ─────────────────────────────────────────────────────────────
+  //
+  // Presets built into the GGUF, or a clip from the shared voice folder with
+  // its exact transcript next to it. No audio.cpp release has the `reverb`
+  // family yet, so the engine also needs "audio.cpp server" pointed at a build
+  // that does; `reverbRuntimeOk` says whether the current runtime has it.
+
+  let reverbReady = $state(false);
+  let reverbChecking = $state(false);
+  let reverbDownloading = $state(false);
+  let reverbRuntimeOk = $state(true);
+  let reverbVoices = $state<string[]>(["en_female_narrator"]);
+
+  const reverbVoiceModeOptions = [
+    { value: "preset", label: "Built-in voice" },
+    { value: "clone", label: "Clone a voice clip" },
+  ];
+  const REVERB_LANGUAGE_NAMES: Record<string, string> = {
+    en: "English", de: "German", fr: "French", es: "Spanish", it: "Italian", pl: "Polish", pt: "Portuguese",
+  };
+  const reverbLanguageOptions = [
+    { value: "", label: "Automatic (the voice's own language)" },
+    ...Object.entries(REVERB_LANGUAGE_NAMES).map(([value, label]) => ({ value, label })),
+  ];
+  // "en_female_narrator" → "English · female narrator"
+  function reverbVoiceLabel(id: string): string {
+    const [lang, ...rest] = id.split("_");
+    const name = REVERB_LANGUAGE_NAMES[lang];
+    return name ? `${name} · ${rest.join(" ")}` : id;
+  }
+  let reverbVoiceOptions = $derived(
+    (reverbVoices.includes(cfg.tts.reverb.voice) || !cfg.tts.reverb.voice
+      ? reverbVoices
+      : [cfg.tts.reverb.voice, ...reverbVoices]
+    ).map(v => ({ value: v, label: reverbVoiceLabel(v) }))
+  );
+
+  function reverbCloneNeedsClip(): boolean {
+    return cfg.tts.reverb.voice_mode === "clone" && !cfg.tts.reverb.cloned_voice;
+  }
+
+  async function loadReverbVoices() {
+    try {
+      const found = await invoke<string[]>("list_reverb_voices");
+      if (found.length > 0) reverbVoices = found;
+    } catch (e) {
+      console.error("list_reverb_voices:", e);
+    }
+  }
+
+  async function checkReverbReady() {
+    reverbChecking = true;
+    try {
+      const audiocppServer = cfg.tts.audiocpp_server ?? "";
+      reverbRuntimeOk = await invoke<boolean>("reverb_runtime_supported", { audiocppServer });
+      reverbReady = await invoke<boolean>("check_reverb_ready", {
+        modelDir: cfg.tts.reverb.model_dir,
+        audiocppServer,
+      });
+    } catch (e) {
+      console.error("check_reverb_ready:", e);
+      reverbReady = false;
+    } finally {
+      reverbChecking = false;
+    }
+  }
+
+  async function downloadReverb() {
+    if (reverbDownloading) return;
+    reverbDownloading = true;
+    try {
+      await invoke("download_reverb", {
+        modelDir: cfg.tts.reverb.model_dir,
+        hfToken: cfg.tts.hf_token,
+      });
+      await checkReverbReady();
+    } catch (e) {
+      alert(`Failed to download Reverb-TTS: ${e}`);
+    } finally {
+      reverbDownloading = false;
+    }
+  }
+
+  async function onReverbVoiceModeChanged() {
+    markDirty();
+    if (cfg.tts.reverb.voice_mode === "clone") {
+      await loadPocketTtsVoices();
+    }
+  }
+
   /**
    * Whether the session has an `HF_TOKEN` environment variable, shown as a
    * note by the gated-engine panels. The token itself is entered once in the
@@ -888,6 +1005,11 @@
         kittenReady = false;
         await loadKittenVoices();
         await checkKittenReady();
+        await loadPocketTtsVoices();
+      } else if (cfg.tts.engine === "reverb") {
+        reverbReady = false;
+        await loadReverbVoices();
+        await checkReverbReady();
         await loadPocketTtsVoices();
       } else if (cfg.tts.engine === "pocket_tts") {
         pocketTtsReady = false;
@@ -943,6 +1065,11 @@
     if (cfg.tts.engine === "kitten_tts_2") {
       loadKittenVoices();
       checkKittenReady();
+    }
+
+    if (cfg.tts.engine === "reverb") {
+      loadReverbVoices();
+      checkReverbReady();
     }
 
     if (cfg.tts.engine === "pocket_tts") {
@@ -1247,6 +1374,154 @@
     <label class="field">
       <span>Pre-warm on startup</span>
       <input type="checkbox" bind:checked={cfg.tts.vox_cpm_2.prewarm} onchange={markDirty} />
+    </label>
+    <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
+  </div>
+  {/if}
+
+  <!-- ── Reverb-TTS section ─────────────────────────────────────────────── -->
+  {#if cfg.tts.engine === "reverb"}
+  <div class="field-group">
+    <h3>Reverb-TTS Voice</h3>
+
+    <div class="non-commercial-warning">
+      <div class="warning-header">
+        <span class="warning-icon">⚠️</span>
+        <strong>Non-Commercial License Warning</strong>
+      </div>
+      <p class="warning-text">
+        Reverb-TTS model weights by Software Mansion are released under <strong>CC BY-NC 4.0</strong>:
+        non-commercial use only, with attribution. The bundled Higgs Audio v2 codec is under the Boson
+        Higgs Audio 2 Community License. Clone only voices you have the right to use.
+      </p>
+    </div>
+
+    {#if !reverbRuntimeOk}
+      <div class="license-warning-card" style="margin-bottom: 8px;">
+        <p class="license-title">⚠️ Needs an audio.cpp server with Reverb-TTS</p>
+        <p class="license-text">
+          No audio.cpp release includes Reverb-TTS yet. Build <code>audiocpp_server</code> from the
+          <code>reverb-tts</code> branch and enter its path under <strong>audio.cpp server</strong> below.
+          See docs/tts.md for the build steps.
+        </p>
+      </div>
+    {/if}
+
+    <label class="field col">
+      <span class="field-title">Voice source</span>
+      <CustomSelect
+        bind:value={cfg.tts.reverb.voice_mode}
+        options={reverbVoiceModeOptions}
+        onchange={onReverbVoiceModeChanged}
+      />
+    </label>
+
+    {#if cfg.tts.reverb.voice_mode === "clone"}
+      <label class="field col">
+        <span class="field-title">Cloned Voice Reference Clip</span>
+        <CustomSelect
+          bind:value={cfg.tts.reverb.cloned_voice}
+          options={pocketTtsVoiceOptions}
+          defaultToFirst={true}
+          onchange={markDirty}
+        />
+      </label>
+
+      <div class="field">
+        <span>Shared Voice Folder (leave blank for default)</span>
+        <input
+          type="text"
+          bind:value={cfg.tts.reverb.voice_dir}
+          onchange={() => { markDirty(); validatePocketTtsVoiceDir(cfg.tts.reverb.voice_dir); }}
+        />
+      </div>
+      <p class="hint">Default directory: <code>~/.local/share/voxctrl/cloned-tts-voices/</code></p>
+
+      <div class="license-warning-card" style="margin-top: 4px; margin-bottom: 8px;">
+        <p class="license-title">⚠️ Voice Cloning Transcript Required</p>
+        <p class="license-text">
+          Reverb-TTS clones from a short clip of one speaker (3–10 seconds works best) and needs a
+          matching text file (e.g. <code>voice_name.txt</code> next to <code>voice_name.wav</code>)
+          containing exactly what is spoken in it. Only clone voices you have permission to use.
+        </p>
+      </div>
+    {:else}
+      <label class="field col">
+        <span class="field-title">Built-in voice</span>
+        <CustomSelect
+          bind:value={cfg.tts.reverb.voice}
+          options={reverbVoiceOptions}
+          onchange={markDirty}
+        />
+      </label>
+    {/if}
+
+    <label class="field col">
+      <span class="field-title">Language</span>
+      <CustomSelect
+        bind:value={cfg.tts.reverb.language}
+        options={reverbLanguageOptions}
+        onchange={markDirty}
+      />
+    </label>
+    <p class="hint" style="margin-top: -6px;">
+      Any voice can speak any of the seven languages; it sounds most natural in its own. Write the
+      text in the language you pick.
+    </p>
+
+    <div class="voice-status-container">
+      {#if reverbChecking}
+        <span class="status-checking">⏳ Checking local model files...</span>
+      {:else if reverbDownloading}
+        <span class="status-downloading">⏳ Downloading Reverb-TTS from HuggingFace (875 MB)...</span>
+      {:else}
+        <div class="status-missing-wrapper">
+          <span class={reverbReady ? "status-downloaded" : "status-missing"}>
+            {reverbReady
+              ? "✔ Model downloaded and ready"
+              : reverbRuntimeOk
+              ? "❌ Model file missing"
+              : "❌ Not ready: the audio.cpp server has no Reverb-TTS"}
+          </span>
+          <button class="btn-download" onclick={downloadReverb} disabled={reverbReady || reverbDownloading}>
+            {reverbReady ? "Downloaded" : "📥 Download"}
+          </button>
+        </div>
+      {/if}
+    </div>
+
+    <p class="hint">
+      Reverb-TTS is a 297M-parameter model run through audio.cpp — no HuggingFace token required.
+      It uses about 2 GB of RAM (or VRAM with the GPU on) and is fast on CPU, CUDA and Vulkan.
+    </p>
+
+    <div class="field">
+      <span>audio.cpp server (leave blank for the one VoxCtrl manages)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.audiocpp_server}
+        placeholder="~/src/audio.cpp/build/bin/audiocpp_server"
+        onchange={() => { markDirty(); checkReverbReady(); }}
+      />
+    </div>
+    <p class="hint">
+      Used by every audio.cpp engine (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2, Reverb-TTS)
+      while it is set.
+    </p>
+
+    <div class="field">
+      <span>Model directory (leave blank for default)</span>
+      <input
+        type="text"
+        bind:value={cfg.tts.reverb.model_dir}
+        onchange={() => { markDirty(); checkReverbReady(); }}
+      />
+    </div>
+    <p class="hint">Default directory: <code>~/.local/share/voxctrl/models/reverb-tts/</code></p>
+
+    <label class="field">
+      <span>Pre-warm on startup</span>
+      <input type="checkbox" bind:checked={cfg.tts.reverb.prewarm} onchange={markDirty} />
     </label>
     <p class="hint" style="margin-top: -6px;">Loads the model at startup so the first reply doesn't pay the load cost.</p>
   </div>

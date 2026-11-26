@@ -60,5 +60,5 @@ Microphone → Audio Capture → Speech Inference (whisper.cpp / Moonshine / Par
 - **Backend:** Rust (Tokio async), 16 specialized workspace crates
 - **Speech Recognition:** whisper.cpp (GGUF, CPU/Vulkan/CUDA), Moonshine (ONNX, optional WebGPU), Parakeet TDT (ONNX, optional WebGPU), Remote Speech Engine (OpenAI-compatible)
 - **Dictation Cleanup:** S1-mini (Qwen3-0.6B) via `voxctrl-llm-sidecar` (llama.cpp, Vulkan GPU offload with CPU fallback)
-- **Text-to-Speech:** Kitten TTS 2, Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, eSpeak-NG (with on-demand idle unload)
+- **Text-to-Speech:** Reverb-TTS, Kitten TTS 2, Breeze-TTS-2, Piper, Pocket-TTS, Inflect-Micro-v2, VoxCPM2, eSpeak-NG (with on-demand idle unload)
 - **Config:** TOML + JSON, hot-reloadable

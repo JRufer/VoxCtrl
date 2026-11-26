@@ -151,6 +151,7 @@ fn custom_voice_dirs(cfg: &AppConfig, layout: &Layout) -> Vec<PathBuf> {
         &cfg.tts.breeze_tts_2.voice_dir,
         &cfg.tts.vox_cpm_2.voice_dir,
         &cfg.tts.kitten_tts_2.voice_dir,
+        &cfg.tts.reverb.voice_dir,
     ] {
         let configured = configured.trim();
         if !configured.is_empty() {
@@ -308,7 +309,7 @@ fn piper_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
 /// directory. One the user has moved to a folder of their own (`model_dir`)
 /// is left alone: that folder is theirs.
 fn tts_folder_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
-    let engines: [(&str, &str, &str, TtsEngine, bool); 5] = [
+    let engines: [(&str, &str, &str, TtsEngine, bool); 6] = [
         ("pocket-tts", "pocket-tts", "Pocket-TTS", TtsEngine::PocketTts, true),
         (
             "breeze-tts-2",
@@ -325,6 +326,7 @@ fn tts_folder_items(cfg: &AppConfig, layout: &Layout) -> Vec<CleanupItem> {
             TtsEngine::KittenTts2,
             cfg.tts.kitten_tts_2.model_dir.trim().is_empty(),
         ),
+        ("reverb-tts", "reverb-tts", "Reverb-TTS", TtsEngine::Reverb, cfg.tts.reverb.model_dir.trim().is_empty()),
         (
             "inflect-micro",
             "inflect-micro",
@@ -640,6 +642,22 @@ mod tests {
         cfg.tts.enabled = false;
         let off = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
         assert!(off.items.iter().filter(|i| i.kind == ItemKind::Voice).all(CleanupItem::removable));
+    }
+
+    #[test]
+    fn reverb_is_listed_and_kept_only_while_selected() {
+        let fx = fixture();
+        write(&fx.layout.models().join("reverb-tts/reverb-tts-q8_0.gguf"), 440);
+        let mut cfg = AppConfig::default();
+        cfg.tts.enabled = true;
+        cfg.tts.engine = TtsEngine::Reverb;
+        let selected = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
+        let reverb = item(&selected, "reverb-tts");
+        assert_eq!(reverb.bytes, 440);
+        assert_eq!(reverb.kept_because.as_deref(), Some("Selected text-to-speech engine"));
+        cfg.tts.engine = TtsEngine::Piper;
+        let other = plan(&cfg, &[], FallbackChoice::None, &fx.layout);
+        assert!(item(&other, "reverb-tts").removable());
     }
 
     #[test]

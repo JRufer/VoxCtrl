@@ -78,6 +78,45 @@ pub fn list_kitten_tts_2_voices() -> Vec<&'static str> {
     voxctrl_tts::KITTEN_TTS_2_VOICES.to_vec()
 }
 
+/// Whether Reverb-TTS can run: the model is downloaded and the audio.cpp
+/// runtime (`audiocpp_server`, or the managed one) has the `reverb` family.
+/// Takes the server path as typed, which may not be saved yet.
+#[tauri::command]
+pub async fn check_reverb_ready(model_dir: String, audiocpp_server: Option<String>) -> Result<bool, String> {
+    if let Some(path) = audiocpp_server.as_deref() {
+        voxctrl_tts::set_audiocpp_server_override(path);
+    }
+    Ok(voxctrl_tts::is_reverb_ready(&model_dir))
+}
+
+/// Whether the configured audio.cpp runtime can run Reverb at all. No released
+/// audio.cpp build ships the `reverb` family yet, so this is false until the
+/// user points "audio.cpp server" at a build that has it.
+#[tauri::command]
+pub fn reverb_runtime_supported(audiocpp_server: Option<String>) -> bool {
+    if let Some(path) = audiocpp_server.as_deref() {
+        voxctrl_tts::set_audiocpp_server_override(path);
+    }
+    voxctrl_tts::reverb_runtime_supported()
+}
+
+#[tauri::command]
+pub async fn download_reverb(model_dir: String, hf_token: Option<String>) -> Result<(), String> {
+    voxctrl_tts::download_reverb_assets(&model_dir, hf_token).await.map_err(|e| e.to_string())
+}
+
+/// Reverb-TTS's built-in preset voice ids, for the Settings voice picker.
+#[tauri::command]
+pub fn list_reverb_voices() -> Vec<&'static str> {
+    voxctrl_tts::REVERB_VOICES.to_vec()
+}
+
+/// The language codes Reverb-TTS speaks (en, de, fr, es, it, pl, pt).
+#[tauri::command]
+pub fn list_reverb_languages() -> Vec<&'static str> {
+    voxctrl_tts::REVERB_LANGUAGES.to_vec()
+}
+
 #[tauri::command]
 pub async fn check_pocket_tts_ready(voice: String, voice_dir: String) -> Result<bool, String> {
     Ok(voxctrl_tts::is_pocket_tts_ready(&voice, &voice_dir))
@@ -135,7 +174,7 @@ pub async fn inflect_micro_inspect(model_dir: String) -> Result<serde_json::Valu
 }
 
 /// The resolved, absolute path to the shared voice-cloning reference-clip
-/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2), for display in Settings.
+/// folder (Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2, Reverb), for display in Settings.
 #[tauri::command]
 pub fn get_cloned_tts_voices_dir() -> String {
     voxctrl_tts::cloned_tts_voices_dir().display().to_string()

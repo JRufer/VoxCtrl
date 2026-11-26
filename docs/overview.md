@@ -68,7 +68,7 @@ Applied after transcription before delivery:
 - Optional LLM rewrite via any OpenAI-compatible API server (clean, formal, casual, bullet, concise, or custom prompt)
 
 ### Text-to-Speech
-- Seven local and neural TTS engines: Kitten TTS 2 (multilingual voices and voice cloning), Breeze-TTS-2 (voice cloning), Piper (neural ONNX voices), Pocket-TTS (voice cloning from audio clips), Inflect-Micro-v2 (compact 38 MB ONNX), VoxCPM2 (voice cloning), and eSpeak-NG (lightweight fallback)
+- Eight local and neural TTS engines: Reverb-TTS (fast voice cloning in seven languages), Kitten TTS 2 (multilingual voices and voice cloning), Breeze-TTS-2 (voice cloning), Piper (neural ONNX voices), Pocket-TTS (voice cloning from audio clips), Inflect-Micro-v2 (compact 38 MB ONNX), VoxCPM2 (voice cloning), and eSpeak-NG (lightweight fallback)
 - **On-demand model memory mode**: unloads large neural weights after 15 minutes of inactivity to conserve RAM
 - Pronunciation snippet expansion dictionary
 - `speak_text` callable from hotkeys, MCP, or routing targets

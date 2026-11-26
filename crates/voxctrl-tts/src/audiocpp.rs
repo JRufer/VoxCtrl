@@ -74,6 +74,13 @@ pub const FAMILY_POCKET_TTS: &str = "pocket_tts";
 pub const FAMILY_BREEZE_TTS: &str = "breeze_tts";
 pub const FAMILY_VOXCPM2: &str = "voxcpm2";
 pub const FAMILY_KITTEN_TTS2: &str = "kitten_tts2";
+pub const FAMILY_REVERB: &str = "reverb";
+
+/// Whether [`AUDIOCPP_RELEASE_VERSION`] ships the `reverb` family. No audio.cpp
+/// release does yet (it was contributed upstream after v0.9.4), so Reverb-TTS
+/// needs an `audiocpp_server` the user supplies: `tts.audiocpp_server`, or one
+/// on PATH with no managed install. Set this when the pinned release has it.
+pub const AUDIOCPP_RELEASE_HAS_REVERB: bool = false;
 
 pub fn audiocpp_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("voxctrl").join("audiocpp")
@@ -93,9 +100,32 @@ pub(crate) fn resolve_model_dir(model_dir: &str, default: impl FnOnce() -> PathB
     }
 }
 
-/// Resolves the `audiocpp_server` binary: VoxCtrl's own managed install
-/// first, then PATH — mirroring `piper_binary()`.
+/// The `audiocpp_server` set in `tts.audiocpp_server`, if any. Process-wide,
+/// like [`set_helper_niceness`]: the TTS worker and the server's synthesizer
+/// set it whenever they apply a config, and Settings' readiness checks pass it
+/// along with the model directory.
+static CUSTOM_SERVER: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Run the audio.cpp engines with this `audiocpp_server` from now on, in place
+/// of the managed install and PATH (`tts.audiocpp_server`; empty = no
+/// override). A running session started with another binary is replaced on its
+/// next request.
+pub fn set_audiocpp_server_override(path: &str) {
+    let path = path.trim();
+    let value = (!path.is_empty()).then(|| expand_tilde(path));
+    *CUSTOM_SERVER.write().unwrap_or_else(|e| e.into_inner()) = value;
+}
+
+fn custom_server() -> Option<PathBuf> {
+    CUSTOM_SERVER.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Resolves the `audiocpp_server` binary: the `tts.audiocpp_server` override,
+/// else VoxCtrl's own managed install, then PATH — mirroring `piper_binary()`.
 fn audiocpp_server_binary() -> Option<PathBuf> {
+    if let Some(custom) = custom_server() {
+        return custom.is_file().then_some(custom);
+    }
     let exe = if cfg!(target_os = "windows") { "audiocpp_server.exe" } else { "audiocpp_server" };
     let local = audiocpp_dir().join(exe);
     if local.exists() {
@@ -116,6 +146,9 @@ pub enum AudioCppRuntime {
     /// No managed install, but an `audiocpp_server` on PATH. The user manages
     /// that one; VoxCtrl never replaces it, and can't know what it supports.
     System,
+    /// The `audiocpp_server` set in `tts.audiocpp_server`, which wins over the
+    /// managed install and PATH. Like `System`, VoxCtrl never replaces it.
+    Custom,
     Missing,
 }
 
@@ -142,6 +175,9 @@ fn classify_runtime(managed_dir: &Path, on_path: bool) -> AudioCppRuntime {
 }
 
 pub fn audiocpp_runtime() -> AudioCppRuntime {
+    if custom_server().is_some() {
+        return AudioCppRuntime::Custom;
+    }
     classify_runtime(&audiocpp_dir(), voxctrl_config::find_in_path("audiocpp_server").is_some())
 }
 
@@ -157,7 +193,7 @@ pub async fn ensure_audiocpp_runtime() -> Result<()> {
     static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _installing = INSTALLING.lock().await;
     match audiocpp_runtime() {
-        AudioCppRuntime::Current | AudioCppRuntime::System => Ok(()),
+        AudioCppRuntime::Current | AudioCppRuntime::System | AudioCppRuntime::Custom => Ok(()),
         AudioCppRuntime::Outdated | AudioCppRuntime::Missing => {
             download_audiocpp_binary().await.context("download audio.cpp runtime")
         }
@@ -493,6 +529,7 @@ pub(crate) struct AudioCppServer {
     family: &'static str,
     model_dir: PathBuf,
     gpu: bool,
+    binary: PathBuf,
     // Kept alive for the server's lifetime — it reads this file once at
     // startup, but only after `spawn()` returns; dropping it any earlier
     // would race the child's own read of the file.
@@ -564,11 +601,14 @@ impl AudioCppServer {
     /// Model weights are *not* loaded yet at this point (`lazy_load: true`):
     /// that happens lazily on the first `speak()` call.
     fn spawn(family: &'static str, model_dir: &Path, gpu: bool) -> Result<Self> {
-        let binary = audiocpp_server_binary().ok_or_else(|| {
-            anyhow::anyhow!(
+        let binary = audiocpp_server_binary().ok_or_else(|| match custom_server() {
+            Some(custom) => {
+                anyhow::anyhow!("The audio.cpp server set in TTS settings ({}) was not found.", custom.display())
+            }
+            None => anyhow::anyhow!(
                 "audio.cpp server binary not found. Download it from TTS settings, or install \
                  audiocpp_server system-wide."
-            )
+            ),
         })?;
 
         let port = free_local_port().context("find a free port for audiocpp_server")?;
@@ -643,6 +683,7 @@ impl AudioCppServer {
             family,
             model_dir: model_dir.to_path_buf(),
             gpu,
+            binary,
             _config_file: config_file,
         })
     }
@@ -777,9 +818,13 @@ impl AudioCppSession {
         model_dir: &Path,
         gpu: bool,
     ) -> Result<()> {
-        let matches = slot
-            .as_ref()
-            .is_some_and(|s| s.server.family == family && s.server.model_dir == model_dir && s.server.gpu == gpu);
+        let binary = audiocpp_server_binary();
+        let matches = slot.as_ref().is_some_and(|s| {
+            s.server.family == family
+                && s.server.model_dir == model_dir
+                && s.server.gpu == gpu
+                && binary.as_deref() == Some(s.server.binary.as_path())
+        });
         // A server that has exited (crashed, ran out of memory, was killed)
         // cannot be reused: without this check every later request would be
         // sent to a port nobody listens on, until the app restarted.
@@ -893,6 +938,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(classify_runtime(dir.path(), false), AudioCppRuntime::Missing);
         assert_eq!(classify_runtime(dir.path(), true), AudioCppRuntime::System);
+    }
+
+    #[test]
+    fn test_custom_server_override_wins_and_clears() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("audiocpp_server");
+        std::fs::write(&exe, b"").unwrap();
+        set_audiocpp_server_override(exe.to_str().unwrap());
+        assert_eq!(audiocpp_runtime(), AudioCppRuntime::Custom);
+        assert_eq!(audiocpp_server_binary().as_deref(), Some(exe.as_path()));
+        // Set but missing: still the user's choice, so nothing else is used.
+        set_audiocpp_server_override(dir.path().join("missing").to_str().unwrap());
+        assert_eq!(audiocpp_runtime(), AudioCppRuntime::Custom);
+        assert_eq!(audiocpp_server_binary(), None);
+        set_audiocpp_server_override("  ");
+        assert_ne!(audiocpp_runtime(), AudioCppRuntime::Custom);
     }
 
     #[test]

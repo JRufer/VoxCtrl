@@ -120,6 +120,15 @@ pub const CONFIG_HANDLING: &[(&str, Handling)] = &[
     ("tts.kitten_tts_2.voice_dir", Path),
     ("tts.kitten_tts_2.preset", Safe),
     ("tts.kitten_tts_2.model_dir", Path),
+    ("tts.reverb.voice_mode", Safe),
+    ("tts.reverb.voice", Safe),
+    ("tts.reverb.cloned_voice", Safe),
+    ("tts.reverb.voice_dir", Path),
+    ("tts.reverb.language", Safe),
+    ("tts.reverb.model_dir", Path),
+    ("tts.reverb.prewarm", Safe),
+    ("tts.reverb.gpu", Safe),
+    ("tts.audiocpp_server", Path),
     ("updates.skipped_version", Safe),
 ];
 

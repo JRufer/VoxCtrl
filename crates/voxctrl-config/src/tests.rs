@@ -527,6 +527,32 @@ fn kitten_tts_2_section_defaults_when_absent() {
 }
 
 #[test]
+fn test_reverb_serde() {
+    let json = serde_json::to_string(&TtsEngine::Reverb).unwrap();
+    assert_eq!(json, r#""reverb""#);
+    for alias in [r#""reverb""#, r#""reverb_tts""#, r#""reverb-tts""#] {
+        let parsed: TtsEngine = serde_json::from_str(alias).unwrap();
+        assert_eq!(parsed, TtsEngine::Reverb, "{alias}");
+    }
+}
+
+/// A config written before Reverb-TTS existed loads with its defaults.
+#[test]
+fn reverb_section_defaults_when_absent() {
+    let data: TtsConfig = serde_json::from_str(
+        r#"{"enabled": true, "engine": "piper", "voice": "en-us-lessac-medium",
+            "stop_key": ["KEY_ESC"], "response_overlay": true}"#,
+    )
+    .unwrap();
+    let r = &data.reverb;
+    assert_eq!(r.voice_mode, "preset");
+    assert_eq!(r.voice, "en_female_narrator");
+    assert!(r.language.is_empty() && r.cloned_voice.is_empty() && r.model_dir.is_empty());
+    assert!(!r.gpu && !r.prewarm);
+    assert!(data.audiocpp_server.is_empty());
+}
+
+#[test]
 fn test_vox_cpm_2_serde() {
     let engine = TtsEngine::VoxCpm2;
     let json = serde_json::to_string(&engine).unwrap();
