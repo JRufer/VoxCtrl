@@ -234,9 +234,11 @@ stay clean on a newer host. The rules, each learned from a startup crash:
      "always self-contained enough to run" property holds.
    * **WebKitGTK's own dependencies** — `libmanette`, `libsoup-3.0`,
      `libsecret-1`, `libenchant-2`, `libhyphen`, `libseccomp`, `libxslt`,
-     `liblcms2`, `libharfbuzz-icu`, `libatomic`, `libwoff2dec`, and what those
-     pull in (`libwoff2common`, `libgudev`, `libevdev`, `libpsl`, `libnghttp2`, `libbrotli*`,
-     `libsqlite3`, `libgcrypt`). This is rule 2 applied to the bullet above:
+     `liblcms2`, `libharfbuzz-icu`, `libatomic`, `libwoff2dec`, and, in newer
+     WebKitGTK builds, `libavif` and `libjxl`, plus what those pull in
+     (`libwoff2common`, `libjxl_threads`, `libjxl_cms`, `libhwy`, `libgudev`,
+     `libevdev`, `libpsl`, `libnghttp2`, `libbrotli*`, `libsqlite3`,
+     `libgcrypt`). This is rule 2 applied to the bullet above:
      once the host's WebKitGTK is the one loaded, a stale bundled dependency
      on the normal library path shadows the host's copy. v0.9.20 shipped
      `libmanette` that way, and Arch's WebKitGTK aborted at launch with
