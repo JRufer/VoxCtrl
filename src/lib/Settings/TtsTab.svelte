@@ -278,10 +278,10 @@
       if (kittenCloneNeedsClip()) return "Pick a voice clip to clone first.";
     }
     if (cfg.tts.engine === "reverb") {
-      if (!reverbRuntimeOk) return "Set an audio.cpp server that has Reverb-TTS first.";
       if (reverbChecking) return "Checking local model files...";
       if (reverbDownloading) return "Downloading the model...";
       if (!reverbReady) return "Download the model first.";
+      if (!reverbRuntimeOk) return "Set an audio.cpp server that has Reverb-TTS first.";
       if (reverbCloneNeedsClip()) return "Pick a voice clip to clone first.";
     }
     return null;
@@ -945,7 +945,7 @@
   }
 
   async function downloadReverb() {
-    if (reverbDownloading) return;
+    if (reverbDownloading || reverbReady) return;
     reverbDownloading = true;
     try {
       await invoke("download_reverb", {
@@ -1477,11 +1477,11 @@
       {:else}
         <div class="status-missing-wrapper">
           <span class={reverbReady ? "status-downloaded" : "status-missing"}>
-            {reverbReady
+            {reverbReady && reverbRuntimeOk
               ? "✔ Model downloaded and ready"
-              : reverbRuntimeOk
-              ? "❌ Model file missing"
-              : "❌ Not ready: the audio.cpp server has no Reverb-TTS"}
+              : reverbReady
+              ? "✔ Model downloaded (set the audio.cpp server below to use it)"
+              : "❌ Model file missing"}
           </span>
           <button class="btn-download" onclick={downloadReverb} disabled={reverbReady || reverbDownloading}>
             {reverbReady ? "Downloaded" : "📥 Download"}

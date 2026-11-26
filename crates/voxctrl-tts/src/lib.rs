@@ -70,8 +70,8 @@ pub use pocket::{
     pocket_tts_voice_catalogue, PocketTtsVoiceInfo, PocketTtsVoiceOption, POCKET_TTS_VOICES,
 };
 pub use reverb::{
-    download_reverb_assets, is_reverb_ready, reverb_model_dir, reverb_runtime_supported, REVERB_LANGUAGES,
-    REVERB_LICENSE_NOTE, REVERB_VOICES,
+    download_reverb_assets, is_reverb_downloaded, is_reverb_ready, reverb_model_dir, reverb_runtime_supported,
+    REVERB_LANGUAGES, REVERB_LICENSE_NOTE, REVERB_VOICES,
 };
 pub use utterance::{ErrorCallback, PlaybackCallback, Utterance};
 pub use voxcpm::is_vox_cpm_2_ready as is_vox_cpm_2_downloaded;

@@ -45,7 +45,7 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
     calls.push({ cmd, args });
     if (cmd === "reverb_runtime_supported") return runtimeOk;
-    if (cmd === "check_reverb_ready") return runtimeOk && modelReady;
+    if (cmd === "check_reverb_ready") return modelReady;
     if (cmd === "list_reverb_voices") return ["en_female_narrator", "de_male_standard"];
     if (cmd.startsWith("list_") || cmd.includes("voices") || cmd.includes("catalogue")) return [];
     if (cmd === "hf_token_env") return null;
@@ -64,7 +64,14 @@ describe("TTS tab: Reverb-TTS", () => {
   test("says it needs an audio.cpp server with Reverb when the runtime lacks it", async () => {
     render(TtsTab, { cfg: config("reverb") });
     expect(await screen.findByText("⚠️ Needs an audio.cpp server with Reverb-TTS")).toBeTruthy();
-    expect(await screen.findByText("❌ Not ready: the audio.cpp server has no Reverb-TTS")).toBeTruthy();
+    expect(await screen.findByText("❌ Model file missing")).toBeTruthy();
+  });
+
+  test("a finished download reads as downloaded even before the server is set", async () => {
+    modelReady = true;
+    render(TtsTab, { cfg: config("reverb") });
+    expect(await screen.findByText("✔ Model downloaded (set the audio.cpp server below to use it)")).toBeTruthy();
+    expect(await screen.findByText("⚠️ Needs an audio.cpp server with Reverb-TTS")).toBeTruthy();
   });
 
   test("checks readiness against the audio.cpp server path as typed", async () => {

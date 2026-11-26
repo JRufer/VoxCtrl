@@ -98,7 +98,14 @@ fn runtime_can_run_reverb(runtime: AudioCppRuntime) -> bool {
 
 /// Ready means the model is on disk *and* a runtime that can run it is there.
 pub fn is_reverb_ready(model_dir: &str) -> bool {
-    model_file(model_dir).exists() && reverb_runtime_supported()
+    is_reverb_downloaded(model_dir) && reverb_runtime_supported()
+}
+
+/// Whether the Reverb-TTS GGUF is on disk, whatever the runtime. Settings
+/// shows this and the runtime check separately, so a finished download reads
+/// as finished even before "audio.cpp server" is set.
+pub fn is_reverb_downloaded(model_dir: &str) -> bool {
+    model_file(model_dir).exists()
 }
 
 /// Downloads the Reverb-TTS GGUF into `model_dir`, installing or upgrading the
@@ -305,6 +312,9 @@ mod tests {
     fn test_is_reverb_ready_false_when_empty() {
         let dir = tempdir().unwrap();
         assert!(!is_reverb_ready(dir.path().to_str().unwrap()));
+        assert!(!is_reverb_downloaded(dir.path().to_str().unwrap()));
+        std::fs::write(dir.path().join(REVERB_MODEL_FILENAME), b"GGUF").unwrap();
+        assert!(is_reverb_downloaded(dir.path().to_str().unwrap()));
     }
 
     #[test]
