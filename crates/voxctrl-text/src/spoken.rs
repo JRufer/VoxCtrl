@@ -1,8 +1,8 @@
 //! Rewrites digits and a few symbols as English words, for TTS models that
 //! read text literally.
 //!
-//! Kitten TTS 2 ships an English text normalizer in its Python package, but
-//! audio.cpp's native port does not include it, and the model itself does
+//! Kitten TTS 2 and Reverb-TTS ship text normalizers in their Python packages, but
+//! audio.cpp's native ports do not include them, and the models themselves do
 //! not reliably read "$4.50", "3rd" or "75%" — so VoxCtrl spells them out
 //! before the text reaches the model. Deliberately small: numbers, money,
 //! percentages, ordinals, clock times and a handful of symbols. Anything it

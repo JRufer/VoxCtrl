@@ -7003,7 +7003,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voxctrl-app"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7045,7 +7045,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-audio"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "cpal",
@@ -7059,7 +7059,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-bugreport"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -7077,7 +7077,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-clipboard"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "tracing",
@@ -7088,7 +7088,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-config"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -7101,7 +7101,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-dbus"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "serde",
@@ -7113,7 +7113,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-history"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "chacha20poly1305",
@@ -7128,7 +7128,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-hotkeys"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7150,7 +7150,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inference"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7184,7 +7184,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-inject"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7204,7 +7204,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7219,7 +7219,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-llm-sidecar"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "encoding_rs",
  "llama-cpp-2",
@@ -7231,7 +7231,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-mcp"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "libc",
@@ -7245,14 +7245,14 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-ort"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "ort",
 ]
 
 [[package]]
 name = "voxctrl-pairing"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7266,7 +7266,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-routing"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7293,7 +7293,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-server"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "axum",
@@ -7326,14 +7326,14 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-text"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "voxctrl-tts"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "cc",
@@ -7361,7 +7361,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-update"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7379,7 +7379,7 @@ dependencies = [
 
 [[package]]
 name = "voxctrl-winput"
-version = "0.9.23"
+version = "0.9.24"
 dependencies = [
  "anyhow",
  "tracing",

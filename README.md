@@ -31,7 +31,7 @@ VoxCtrl acts as an intelligent desktop voice gateway, routing speech to any dest
   * **Spoken Voice Commands**: Say *"VoxCtrl notes, meeting recap"* to dynamically dispatch text to the command named **notes**.
   * **Multi-Target Broadcasting**: Bind a single hotkey gesture to broadcast a single dictation sequentially to multiple output targets.
 * **Neural Text-to-Speech (TTS) Suite**:
-  * 7 offline voice engines: **Kitten TTS 2** (multilingual built-in voices and voice cloning), **Breeze-TTS-2** (voice cloning), **VoxCPM2** (OpenBMB voice cloning), **Pocket-TTS** (voice cloning from reference clip), **Piper** (high-quality ONNX), **Inflect-Micro-v2** (ultra-lightweight 38 MB ONNX), and **eSpeak-NG** (instant fallback).
+  * 8 offline voice engines: **Reverb-TTS** (fast voice cloning in 7 languages; needs an audio.cpp build with Reverb for now), **Kitten TTS 2** (multilingual built-in voices and voice cloning), **Breeze-TTS-2** (voice cloning), **VoxCPM2** (OpenBMB voice cloning), **Pocket-TTS** (voice cloning from reference clip), **Piper** (high-quality ONNX), **Inflect-Micro-v2** (ultra-lightweight 38 MB ONNX), and **eSpeak-NG** (instant fallback).
   * **On-Demand Memory Mode**: Automatically unloads heavy TTS neural models from RAM/VRAM after a configurable idle period (`tts.idle_unload_secs`).
 * **Heads-Up HUD Overlay & Visuals**:
   * Transparent, click-through, voice-reactive animated HUD overlays with 8 distinct styles: **Ocean Wave** (tide pool with bobbing buoy), **Voice Card** (holographic card with 20×6 VU meter), **Waveform** (oscilloscope CRT trace), **Pulse Ring** (sonar radar dial), **Mono Bars**, **Neon Spectrum**, **Retro Terminal** and **Analog VU**.
@@ -87,7 +87,7 @@ VoxCtrl is designed with strict modularity, memory isolation, and high concurren
 | **`voxctrl-llm`** | IPC client communicating with `voxctrl-llm-sidecar` and external OpenAI-compatible LLM endpoints. |
 | **`voxctrl-routing`** | 11-way delivery router, voice command prefix matcher, and multi-target dispatch. |
 | **`voxctrl-hotkeys`** | XDG Desktop Portal `GlobalShortcuts` integration and gesture state machine. |
-| **`voxctrl-tts`** | Neural TTS orchestration (Kitten TTS 2, Breeze-TTS-2, VoxCPM2, Pocket-TTS, Piper, Inflect, eSpeak) and idle memory unloading. |
+| **`voxctrl-tts`** | Neural TTS orchestration (Reverb-TTS, Kitten TTS 2, Breeze-TTS-2, VoxCPM2, Pocket-TTS, Piper, Inflect, eSpeak) and idle memory unloading. |
 | **`voxctrl-inject`** | Text delivery: paste (with clipboard restore) or typing; shortcut choice per focused window; key sending via XTEST, `wtype`, `ydotool`, the RemoteDesktop portal, `xdotool`. |
 | **`voxctrl-clipboard`** | Full-format clipboard backup/restore on Windows, X11 and Wayland. |
 | **`voxctrl-winput`** | Windows `SendInput`: Unicode typing, paste shortcuts, focused-window class. |

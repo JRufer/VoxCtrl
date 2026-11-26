@@ -277,9 +277,9 @@ A release candidate is a SemVer pre-release: `./scripts/bump_version.sh 1.0.0-rc
 - **AUR:** `pkgver` may not contain `-`, so the script leaves the PKGBUILDs at the last full release.
 - **Server compatibility:** an app at `1.0.0-rc.1` counts as older than `1.0.0` when compared with a server's `min_client` (see [clients.md](clients.md)).
 
-### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 on the GPU
+### Pocket-TTS / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 / Reverb-TTS on the GPU
 
-These four engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s
+These five engines run through [audio.cpp](https://github.com/0xShug0/audio.cpp)'s
 prebuilt `audiocpp_server` binary (Linux Vulkan release, pinned by
 `AUDIOCPP_RELEASE_VERSION` in `crates/voxctrl-tts/src/audiocpp.rs`), which already
 ships a Vulkan backend — no VoxCtrl build feature is needed. Toggling `gpu` in
@@ -287,7 +287,15 @@ Settings for any of them just switches the `backend` the resident server is
 started with between `vulkan` and `cpu`. If no usable Vulkan device is found,
 the server reports the failure as a normal TTS error rather than silently
 downgrading. audio.cpp has validated Kitten TTS 2 on CPU and CUDA only, so its
-Vulkan path is the least tested of the four.
+Vulkan path is the least tested of them.
+
+Reverb-TTS is the exception to "prebuilt": its `reverb` family is not in an
+audio.cpp release yet, so testing it needs `audiocpp_server` built from the
+`reverb-tts` branch of JRufer/audio.cpp and set as `tts.audiocpp_server` (see
+[tts.md](tts.md#reverb-tts-neural-7-languages-voice-cloning)). When a release
+ships the family, bump `AUDIOCPP_RELEASE_VERSION` and set
+`AUDIOCPP_RELEASE_HAS_REVERB` to `true` in `audiocpp.rs`; the managed runtime
+then runs it and the setting becomes optional.
 
 When bumping `AUDIOCPP_RELEASE_VERSION`, check the release still ships
 `audio-<tag>-bin-ubuntu-x64-vulkan.tar.gz` and that each family VoxCtrl drives

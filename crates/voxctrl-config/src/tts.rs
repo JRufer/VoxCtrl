@@ -16,6 +16,8 @@ pub enum TtsEngine {
     VoxCpm2,
     #[serde(rename = "kitten_tts_2", alias = "kitten_tts2", alias = "kittentts2")]
     KittenTts2,
+    #[serde(rename = "reverb", alias = "reverb_tts", alias = "reverb-tts")]
+    Reverb,
     /// Speak on the VoxCtrl server set as the Remote Speech Engine, with the
     /// engine and voice chosen there; this machine only plays the audio.
     Server,
@@ -23,7 +25,8 @@ pub enum TtsEngine {
 
 /// How the TTS engine manages the memory of model-backed engines (currently
 /// Inflect-Micro-v2, plus the resident `audiocpp_server` process behind the
-/// audio.cpp-backed engines: Pocket-TTS, Breeze-TTS-2, VoxCPM2 and Kitten TTS 2.
+/// audio.cpp-backed engines: Pocket-TTS, Breeze-TTS-2, VoxCPM2, Kitten TTS 2 and
+/// Reverb-TTS.
 /// Piper and eSpeak shell out per utterance and hold nothing).
 ///
 /// * `AlwaysLoaded` — once loaded, the model stays resident for the lifetime of
@@ -267,6 +270,66 @@ fn default_kitten_tts_2_preset() -> String {
     "stable".into()
 }
 
+/// Reverb-TTS (Software Mansion) — a 297M-parameter zero-shot voice-cloning
+/// model for English, German, French, Spanish, Italian, Polish and Portuguese,
+/// run through audio.cpp's `reverb` family. Preset voices are built into the
+/// GGUF; a clone needs the clip's exact transcript, like Kitten TTS 2.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReverbConfig {
+    /// Voice selection mode: "preset" (a voice built into the model) or
+    /// "clone" (a reference clip from the shared voice folder).
+    #[serde(default = "default_reverb_voice_mode")]
+    pub voice_mode: String,
+    /// Built-in voice, e.g. "en_female_narrator" or "fr_female_standard".
+    #[serde(default = "default_reverb_voice")]
+    pub voice: String,
+    /// Clip ID from the shared voice folder, for "clone" mode. Needs a
+    /// matching `<id>.txt` transcript next to `<id>.wav`.
+    #[serde(default)]
+    pub cloned_voice: String,
+    /// Shared voice directory for custom clips (empty = platform default
+    /// `~/.local/share/voxctrl/cloned-tts-voices/`).
+    #[serde(default)]
+    pub voice_dir: String,
+    /// Language of the text: "de", "en", "es", "fr", "it", "pl" or "pt".
+    /// Empty = the preset voice's own language (English for a clone).
+    #[serde(default)]
+    pub language: String,
+    /// Directory holding the GGUF. Empty = platform default
+    /// (`~/.local/share/voxctrl/models/reverb-tts/`).
+    #[serde(default)]
+    pub model_dir: String,
+    /// Pre-warm model on startup so the first synthesis is instant
+    #[serde(default)]
+    pub prewarm: bool,
+    /// Enable Vulkan GPU acceleration (via audio.cpp's `--backend vulkan`).
+    #[serde(default)]
+    pub gpu: bool,
+}
+
+fn default_reverb_voice_mode() -> String {
+    "preset".into()
+}
+
+fn default_reverb_voice() -> String {
+    "en_female_narrator".into()
+}
+
+impl Default for ReverbConfig {
+    fn default() -> Self {
+        Self {
+            voice_mode: default_reverb_voice_mode(),
+            voice: default_reverb_voice(),
+            cloned_voice: String::new(),
+            voice_dir: String::new(),
+            language: String::new(),
+            model_dir: String::new(),
+            prewarm: false,
+            gpu: false,
+        }
+    }
+}
+
 impl Default for KittenTts2Config {
     fn default() -> Self {
         Self {
@@ -366,6 +429,14 @@ pub struct TtsConfig {
     pub vox_cpm_2: VoxCpm2Config,
     #[serde(default)]
     pub kitten_tts_2: KittenTts2Config,
+    #[serde(default)]
+    pub reverb: ReverbConfig,
+    /// An `audiocpp_server` to run the audio.cpp engines with, in place of
+    /// VoxCtrl's managed install (`~/.local/share/voxctrl/audiocpp/`) and
+    /// PATH — for example one built from source with a model family no
+    /// audio.cpp release has yet. Empty = the managed install, then PATH.
+    #[serde(default)]
+    pub audiocpp_server: String,
     /// With the `server` engine: which of the server's engines to speak
     /// with. Empty = the server's default.
     #[serde(default)]
@@ -402,6 +473,8 @@ impl Default for TtsConfig {
             breeze_tts_2: BreezeTts2Config::default(),
             vox_cpm_2: VoxCpm2Config::default(),
             kitten_tts_2: KittenTts2Config::default(),
+            reverb: ReverbConfig::default(),
+            audiocpp_server: String::new(),
             server_engine: String::new(),
             server_voice: String::new(),
             snippets: {

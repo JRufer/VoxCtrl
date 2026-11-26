@@ -79,10 +79,13 @@ ENVIRONMENT (each overrides the config file):
     VOXCTRL_SERVER_CLEANUP_GPU       false = keep the cleanup model on the CPU
     VOXCTRL_SERVER_TTS               true = speak for clients (text-to-speech)
     VOXCTRL_SERVER_TTS_ENGINE        piper, espeak, pocket_tts, breeze_tts_2,
-                                     vox_cpm_2 or kitten_tts_2
+                                     vox_cpm_2, kitten_tts_2 or reverb
     VOXCTRL_SERVER_TTS_ENGINES       Several engines for clients to choose
                                      between, comma-separated; first = default
     VOXCTRL_SERVER_TTS_VOICE         Default voice for the default engine
+    VOXCTRL_SERVER_AUDIOCPP_SERVER   audiocpp_server binary to use instead of
+                                     the managed one (Reverb needs a build
+                                     with the reverb family)
 
 Full guide: docs/server.md
 ";

@@ -49,7 +49,7 @@ VoxCtrl/
     ├── voxctrl-inject/     # Text delivery: paste (with clipboard restore) or type; key sending per platform
     ├── voxctrl-clipboard/  # Full-format clipboard backup/restore (Windows / X11 / Wayland)
     ├── voxctrl-winput/     # Windows SendInput: Unicode typing, paste shortcuts, window class
-    ├── voxctrl-tts/        # Neural & local TTS (Kitten/Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak). `playback` feature = the app's worker; without it, synthesis only (`synth`) for the server; `remote` = the client of a server's speech
+    ├── voxctrl-tts/        # Neural & local TTS (Reverb/Kitten/Breeze/Piper/Pocket/Inflect/VoxCPM2/eSpeak). `playback` feature = the app's worker; without it, synthesis only (`synth`) for the server; `remote` = the client of a server's speech
     ├── voxctrl-mcp/        # MCP JSON-RPC server (Unix socket / named pipe)
     ├── voxctrl-dbus/       # DBus service (Linux session bus)
     ├── voxctrl-llm/        # OpenAI-compatible LLM HTTP client

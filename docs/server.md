@@ -779,6 +779,7 @@ nothing on a server.
 | `espeak` | Nothing. Needs `espeak-ng` installed; the Docker image includes it | none |
 | `pocket_tts` | The audio.cpp runtime, the Pocket-TTS model and its five built-in voices | `[tts.pocket_tts] voice` |
 | `kitten_tts_2` | The audio.cpp runtime and the Kitten TTS 2 model | `[tts.kitten_tts_2] voice` |
+| `reverb` | The Reverb-TTS model. Needs `[tts] audiocpp_server` (or `VOXCTRL_SERVER_AUDIOCPP_SERVER`) pointing at an audio.cpp build with the `reverb` family, since no release has it yet | `[tts.reverb] voice` |
 | `breeze_tts_2` | The audio.cpp runtime and the Breeze-TTS-2 model | set in `[tts.breeze_tts_2]` |
 | `vox_cpm_2` | The audio.cpp runtime and the VoxCPM2 model | set in `[tts.vox_cpm_2]` |
 
@@ -814,7 +815,7 @@ The panel under it then offers:
 
 - **Engine**: the engines this server has set up, its default first.
 - **Voice**: the server's default for that engine, the engine's own voices, and
-  (for Pocket-TTS, Kitten TTS 2, Breeze-TTS-2 and VoxCPM2) **your own voices**.
+  (for Pocket-TTS, Kitten TTS 2, Reverb-TTS, Breeze-TTS-2 and VoxCPM2) **your own voices**.
 
 The server used is the one under **Settings → Engine → Remote Speech Engine
 Settings**; its address and key are used even if the client transcribes with a
@@ -824,7 +825,7 @@ local engine. If the server does not speak, the panel says what to change on it.
 
 Your voices are the clips in the client's cloned voices folder
 (`~/.local/share/voxctrl/cloned-tts-voices/`): `<name>.wav`, with `<name>.txt`
-beside it holding the words spoken in the clip, which Kitten TTS 2 requires.
+beside it holding the words spoken in the clip, which Kitten TTS 2 and Reverb-TTS require.
 They are the same clips the client's own engines use, so a voice you already
 cloned locally is there to pick.
 
@@ -1053,12 +1054,16 @@ gpu = true
 [tts]
 # true = speak for clients whose TTS engine is "VoxCtrl server".
 enabled = false
-# "piper", "espeak", "pocket_tts", "breeze_tts_2", "vox_cpm_2" or "kitten_tts_2"
+# "piper", "espeak", "pocket_tts", "breeze_tts_2", "vox_cpm_2", "kitten_tts_2"
+# or "reverb"
 engine = "espeak"
 # The Piper voice. Other engines keep their voice in their own sub-section,
 # with the same keys as the app's config: [tts.pocket_tts], [tts.kitten_tts_2],
-# [tts.breeze_tts_2], [tts.vox_cpm_2].
+# [tts.reverb], [tts.breeze_tts_2], [tts.vox_cpm_2].
 voice = "en-us-lessac-medium"
+# An audiocpp_server of your own for the audio.cpp engines; Reverb-TTS needs
+# one with the reverb family. Empty = the managed runtime.
+# audiocpp_server = "/opt/audiocpp/audiocpp_server"
 
 [speech]
 # Engines offered to clients besides tts.engine, which is always offered and
@@ -1110,7 +1115,8 @@ server. Changes to `server.toml` take effect when the server is restarted.
 | `VOXCTRL_SERVER_TTS` | `tts.enabled` | `true` |
 | `VOXCTRL_SERVER_TTS_ENGINE` | `tts.engine` | `piper` |
 | `VOXCTRL_SERVER_TTS_ENGINES` | `speech.engines`: every engine clients may choose between, comma-separated. The first is the default unless `VOXCTRL_SERVER_TTS_ENGINE` is set | `kitten_tts_2,piper` |
-| `VOXCTRL_SERVER_TTS_VOICE` | The default voice of the default engine (`piper`, `pocket_tts`, `kitten_tts_2`) | `en-us-lessac-medium` |
+| `VOXCTRL_SERVER_TTS_VOICE` | The default voice of the default engine (`piper`, `pocket_tts`, `kitten_tts_2`, `reverb`) | `en-us-lessac-medium` |
+| `VOXCTRL_SERVER_AUDIOCPP_SERVER` | `tts.audiocpp_server`: an `audiocpp_server` binary to use instead of the managed one. In Docker, mount it into the container | `/opt/audiocpp/audiocpp_server` |
 | `VOXCTRL_SERVER_LLM` | `llm.enabled` | `true` |
 | `VOXCTRL_SERVER_LLM_ENDPOINT` | `llm.endpoint` | `http://host.docker.internal:11434` |
 | `VOXCTRL_SERVER_LLM_MODEL` | `llm.model` | `llama3.2:1b` |

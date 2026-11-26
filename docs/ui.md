@@ -102,7 +102,8 @@ The main configuration interface. Organized into a sidebar with eleven tabs:
 
 ### TTS Tab
 - Enable/disable toggle
-- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2)
+- Engine selector (eSpeak-NG / Piper / Pocket-TTS / Inflect-Micro-v2 / Breeze-TTS-2 / VoxCPM2 / Kitten TTS 2 / Reverb-TTS)
+- Reverb-TTS: voice source (one of 16 built-in voices, labelled by language, or a cloned clip with its transcript), a language picker (automatic or one of seven), the CC BY-NC 4.0 notice, and the **audio.cpp server** path field. While the runtime has no `reverb` family the section says so and the Test button explains why it is off
 - Kitten TTS 2: voice source (built-in voice or a cloned clip), a built-in voice picker that also accepts a typed name, the Stable/Expressive delivery preset, and the Stellon Labs license notice with its "Powered by Stellon Labs" attribution
 - Voice design speaker prompt inputs for Breeze-TTS-2 and VoxCPM2
 - Reference voice selector with download status per voice and support for custom `.wav` voice clips

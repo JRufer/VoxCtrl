@@ -40,8 +40,8 @@ pub fn engine_id(engine: &TtsEngine) -> String {
 /// Runs one engine and keeps its model loaded between requests.
 #[derive(Default)]
 pub struct Synthesizer {
-    /// The resident audio.cpp server behind Pocket-TTS, Breeze-TTS-2, VoxCPM2
-    /// and Kitten TTS 2. Piper and eSpeak start a process per request.
+    /// The resident audio.cpp server behind Pocket-TTS, Breeze-TTS-2, VoxCPM2,
+    /// Kitten TTS 2 and Reverb-TTS. Piper and eSpeak start a process per request.
     audiocpp: Option<AudioCppSession>,
 }
 
@@ -53,11 +53,13 @@ impl Synthesizer {
     /// Load the configured engine's model now, so the first request does not
     /// wait for it. Nothing to do for engines that hold no model.
     pub fn load(&mut self, config: &TtsConfig) -> Result<()> {
+        audiocpp::set_audiocpp_server_override(&config.audiocpp_server);
         match config.engine {
             TtsEngine::PocketTts => crate::pocket::ensure_pocket_tts_loaded(config, &mut self.audiocpp),
             TtsEngine::BreezeTts2 => crate::breeze::ensure_breeze_tts_2_loaded(config, &mut self.audiocpp),
             TtsEngine::VoxCpm2 => crate::voxcpm::ensure_vox_cpm_2_loaded(config, &mut self.audiocpp),
             TtsEngine::KittenTts2 => crate::kitten::ensure_kitten_tts_2_loaded(config, &mut self.audiocpp),
+            TtsEngine::Reverb => crate::reverb::ensure_reverb_loaded(config, &mut self.audiocpp),
             TtsEngine::Piper | TtsEngine::Espeak | TtsEngine::InflectMicro | TtsEngine::Server => Ok(()),
         }
     }
@@ -67,6 +69,7 @@ impl Synthesizer {
     /// request (Piper, Pocket-TTS). Blocking, and can take seconds.
     pub fn synthesize(&mut self, config: &TtsConfig, text: &str, voice: Option<&str>) -> Result<Vec<u8>> {
         let u = Utterance { text: text.to_string(), voice: voice.map(str::to_string), source_label: None };
+        audiocpp::set_audiocpp_server_override(&config.audiocpp_server);
         match config.engine {
             TtsEngine::Piper => {
                 let (raw, sample_rate) = synth_piper(config, &u)?;
@@ -77,6 +80,7 @@ impl Synthesizer {
             TtsEngine::BreezeTts2 => crate::breeze::synth_breeze_tts_2(config, &u, &mut self.audiocpp),
             TtsEngine::VoxCpm2 => crate::voxcpm::synth_vox_cpm_2(config, &u, &mut self.audiocpp),
             TtsEngine::KittenTts2 => crate::kitten::synth_kitten_tts_2(config, &u, &mut self.audiocpp),
+            TtsEngine::Reverb => crate::reverb::synth_reverb(config, &u, &mut self.audiocpp),
             TtsEngine::InflectMicro | TtsEngine::Server => Err(unsupported(&config.engine)),
         }
     }
@@ -86,6 +90,7 @@ impl Synthesizer {
 /// the engine's program, its model, the voice. Safe to call on every start.
 pub async fn ensure_assets(config: &TtsConfig) -> Result<()> {
     let token = crate::hf::effective_hf_token(config.hf_token.as_deref());
+    audiocpp::set_audiocpp_server_override(&config.audiocpp_server);
     match config.engine {
         TtsEngine::Piper => {
             if piper_binary().is_none() {
@@ -138,6 +143,15 @@ pub async fn ensure_assets(config: &TtsConfig) -> Result<()> {
                 crate::kitten::download_kitten_tts_2_assets(&config.kitten_tts_2.model_dir, token)
                     .await
                     .context("downloading Kitten TTS 2")?;
+            }
+            Ok(())
+        }
+        TtsEngine::Reverb => {
+            audiocpp::ensure_audiocpp_runtime().await.context("downloading the audio.cpp runtime")?;
+            if !crate::reverb::is_reverb_ready(&config.reverb.model_dir) {
+                crate::reverb::download_reverb_assets(&config.reverb.model_dir, token)
+                    .await
+                    .context("downloading Reverb-TTS")?;
             }
             Ok(())
         }
@@ -287,6 +301,7 @@ mod tests {
     fn engines_are_named_as_config_files_spell_them() {
         assert_eq!(engine_id(&TtsEngine::Piper), "piper");
         assert_eq!(engine_id(&TtsEngine::KittenTts2), "kitten_tts_2");
+        assert_eq!(engine_id(&TtsEngine::Reverb), "reverb");
     }
 
     #[test]
@@ -303,6 +318,7 @@ mod tests {
             TtsEngine::BreezeTts2,
             TtsEngine::VoxCpm2,
             TtsEngine::KittenTts2,
+            TtsEngine::Reverb,
         ] {
             assert!(supports(&engine), "{engine:?}");
         }

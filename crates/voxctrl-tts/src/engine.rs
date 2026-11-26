@@ -17,6 +17,7 @@ use crate::breeze::{ensure_breeze_tts_2_loaded, speak_breeze_tts_2};
 use crate::inflect::{ensure_inflect_micro_loaded, speak_inflect_micro};
 use crate::kitten::{ensure_kitten_tts_2_loaded, speak_kitten_tts_2};
 use crate::pocket::{ensure_pocket_tts_loaded, speak_pocket_tts};
+use crate::reverb::{ensure_reverb_loaded, speak_reverb};
 use crate::voxcpm::{ensure_vox_cpm_2_loaded, speak_vox_cpm_2};
 
 /// How long the worker parks in `recv_timeout` when there is nothing to expire.
@@ -130,6 +131,7 @@ fn prewarm_enabled(config: &TtsConfig) -> bool {
         TtsEngine::BreezeTts2 => config.breeze_tts_2.prewarm,
         TtsEngine::VoxCpm2 => config.vox_cpm_2.prewarm,
         TtsEngine::KittenTts2 => config.kitten_tts_2.prewarm,
+        TtsEngine::Reverb => config.reverb.prewarm,
         _ => false,
     }
 }
@@ -151,6 +153,7 @@ fn load_selected_engine(
         TtsEngine::KittenTts2 if audiocpp_session.is_none() => {
             Some(ensure_kitten_tts_2_loaded(config, audiocpp_session))
         }
+        TtsEngine::Reverb if audiocpp_session.is_none() => Some(ensure_reverb_loaded(config, audiocpp_session)),
         _ => None,
     }
 }
@@ -216,6 +219,7 @@ impl TtsEngineWorker {
         info!("TTS engine started (engine={:?}, memory_mode={:?})", self.config.engine, self.config.memory_mode);
         let mut current_config = self.config.clone();
         let mut current_server = self.server.clone();
+        crate::audiocpp::set_audiocpp_server_override(&current_config.audiocpp_server);
 
         // Inflect-Micro-v2 ONNX sessions, cached for the worker's lifetime.
         let mut inflect_model: InflectModelSlot = None;
@@ -294,6 +298,7 @@ impl TtsEngineWorker {
                     );
                     let was_unloading = current_config.unloads_when_idle();
                     current_config = *new_cfg;
+                    crate::audiocpp::set_audiocpp_server_override(&current_config.audiocpp_server);
                     // Switching to on-demand starts the clock now rather than
                     // dropping a model that may be about to be used again.
                     last_used = Instant::now();
@@ -413,6 +418,15 @@ impl TtsEngineWorker {
                                 generation,
                             ),
                             TtsEngine::KittenTts2 => speak_kitten_tts_2(
+                                &current_config,
+                                &utterance,
+                                &mut audiocpp_session,
+                                &self.on_playback_start,
+                                &sink,
+                                &self.generation,
+                                generation,
+                            ),
+                            TtsEngine::Reverb => speak_reverb(
                                 &current_config,
                                 &utterance,
                                 &mut audiocpp_session,

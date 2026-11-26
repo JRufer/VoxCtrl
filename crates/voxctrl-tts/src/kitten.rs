@@ -128,7 +128,7 @@ pub fn is_kitten_tts_2_ready(model_dir: &str) -> bool {
 }
 
 fn runtime_can_run_kitten(runtime: AudioCppRuntime) -> bool {
-    matches!(runtime, AudioCppRuntime::Current | AudioCppRuntime::System)
+    matches!(runtime, AudioCppRuntime::Current | AudioCppRuntime::System | AudioCppRuntime::Custom)
 }
 
 /// Downloads the Kitten TTS 2 GGUF into `model_dir`, installing or upgrading
@@ -336,9 +336,10 @@ mod tests {
     }
 
     #[test]
-    fn test_only_a_current_or_system_runtime_can_run_kitten() {
+    fn test_only_a_current_system_or_custom_runtime_can_run_kitten() {
         assert!(runtime_can_run_kitten(AudioCppRuntime::Current));
         assert!(runtime_can_run_kitten(AudioCppRuntime::System));
+        assert!(runtime_can_run_kitten(AudioCppRuntime::Custom));
         assert!(!runtime_can_run_kitten(AudioCppRuntime::Outdated));
         assert!(!runtime_can_run_kitten(AudioCppRuntime::Missing));
     }

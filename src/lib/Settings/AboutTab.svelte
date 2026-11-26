@@ -134,6 +134,10 @@
         <a class="credit-name-link" href="https://huggingface.co/KittenML/kitten-tts-2" target="_blank">Kitten TTS 2 (KittenML) — Powered by Stellon Labs</a>
         <span class="credit-license non-commercial">Stellon Labs Community License</span>
       </div>
+      <div class="credit-item">
+        <a class="credit-name-link" href="https://huggingface.co/software-mansion/Reverb-TTS" target="_blank">Reverb-TTS (Software Mansion), with the Higgs Audio v2 codec</a>
+        <span class="credit-license non-commercial">CC BY-NC 4.0</span>
+      </div>
     </div>
 
     <p class="credits-hint">Dictation cleanup</p>
