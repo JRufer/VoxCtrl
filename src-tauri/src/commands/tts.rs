@@ -78,15 +78,15 @@ pub fn list_kitten_tts_2_voices() -> Vec<&'static str> {
     voxctrl_tts::KITTEN_TTS_2_VOICES.to_vec()
 }
 
-/// Whether Reverb-TTS can run: the model is downloaded and the audio.cpp
-/// runtime (`audiocpp_server`, or the managed one) has the `reverb` family.
-/// Takes the server path as typed, which may not be saved yet.
+/// Whether the Reverb-TTS model is downloaded. Whether the runtime can run it
+/// is `reverb_runtime_supported`, which Settings shows separately. Takes the
+/// audio.cpp server path as typed, which may not be saved yet.
 #[tauri::command]
 pub async fn check_reverb_ready(model_dir: String, audiocpp_server: Option<String>) -> Result<bool, String> {
     if let Some(path) = audiocpp_server.as_deref() {
         voxctrl_tts::set_audiocpp_server_override(path);
     }
-    Ok(voxctrl_tts::is_reverb_ready(&model_dir))
+    Ok(voxctrl_tts::is_reverb_downloaded(&model_dir))
 }
 
 /// Whether the configured audio.cpp runtime can run Reverb at all. No released
