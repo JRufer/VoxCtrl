@@ -283,7 +283,7 @@ VoxCtrl runs it through audio.cpp's `reverb` family
 > git clone -b reverb-tts https://github.com/JRufer/audio.cpp
 > cd audio.cpp
 > cmake -B build -DCMAKE_BUILD_TYPE=Release -DENGINE_ENABLE_VULKAN=ON   # or -DENGINE_ENABLE_CUDA=ON, or neither for CPU
-> cmake --build build -j --target audiocpp_server
+> cmake --build build -j 4 --target audiocpp_server   # a bare -j has no limit and can run out of RAM
 > ```
 >
 > Until that is set the engine reports itself not ready and Settings says why.
