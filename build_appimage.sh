@@ -489,7 +489,8 @@ done
 #     error: /usr/lib/libwebkit2gtk-4.1.so.0: undefined symbol:
 #     manette_device_get_mapping" (Arch, v0.9.20). So the libraries only
 #     WebKitGTK needs (libmanette, libsoup, libsecret, enchant, hyphen,
-#     seccomp, xslt, lcms2, harfbuzz-icu, libatomic, woff2) and what they in turn
+#     seccomp, xslt, lcms2, harfbuzz-icu, libatomic, woff2, and avif and jxl,
+#     which newer WebKitGTK builds link) and what they in turn
 #     pull in (gudev, evdev, psl, nghttp2, brotli, sqlite, gcrypt) are
 #     host-first as well, still bundled for a desktop with no WebKitGTK.
 #     check-appimage-webkit-deps.sh, run after the strip loop, fails the
@@ -506,7 +507,8 @@ for pat in 'libsystemd.so*' 'libudev.so*' \
            'libsecret-1.so*' 'libgcrypt.so*' 'libenchant-2.so*' \
            'libhyphen.so*' 'libseccomp.so*' 'libxslt.so*' \
            'liblcms2.so*' 'libharfbuzz-icu.so*' 'libatomic.so*' \
-           'libwoff2dec.so*' 'libwoff2common.so*'; do
+           'libwoff2dec.so*' 'libwoff2common.so*' \
+           'libavif.so*' 'libjxl.so*' 'libjxl_threads.so*' 'libjxl_cms.so*' 'libhwy.so*'; do
     find "$root" -name "$pat" -not -path '*/fallback/*' -print \
         -exec mv -t "$root/usr/lib/fallback/" {} + 2>/dev/null || true
 done
